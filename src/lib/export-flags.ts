@@ -65,7 +65,7 @@ export function exportFlagsPdf(data: DashboardData, flagsOverride?: FlagEntry[])
   doc.setFontSize(10);
   doc.setTextColor(120);
   doc.text(`Generated: ${generatedAt}`, 40, 58);
-  doc.text(`Total flags: ${r.length}  |  Risk score: ${data.risk_score}  |  Delayed: ${data.totals.delayed}`, 40, 72);
+  doc.text(`Flags in report: ${r.length}${data.flags && r.length !== data.flags.length ? ` (filtered from ${data.flags.length})` : ""}  |  Risk score: ${data.risk_score}  |  Delayed: ${data.totals.delayed}`, 40, 72);
   doc.setTextColor(0);
 
   autoTable(doc, {
