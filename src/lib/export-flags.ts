@@ -44,8 +44,8 @@ function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function exportFlagsCsv(data: DashboardData) {
-  const r = rows(data);
+export function exportFlagsCsv(data: DashboardData, flagsOverride?: FlagEntry[]) {
+  const r = rows(data, flagsOverride);
   const headers = ["ID","Activity","Owner","Stage","Severity","Status","TAT (d)","Days Taken","Overdue (d)","Reason","Root Cause","Escalation","Generated At"];
   const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = [
@@ -55,8 +55,8 @@ export function exportFlagsCsv(data: DashboardData) {
   downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `flags-report-${nowStamp()}.csv`);
 }
 
-export function exportFlagsPdf(data: DashboardData) {
-  const r = rows(data);
+export function exportFlagsPdf(data: DashboardData, flagsOverride?: FlagEntry[]) {
+  const r = rows(data, flagsOverride);
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const generatedAt = new Date().toLocaleString();
 
