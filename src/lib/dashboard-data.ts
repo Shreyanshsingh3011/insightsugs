@@ -25,6 +25,22 @@ export interface TatRow {
   status: string;
   person: string;
 }
+export interface FlagEntry {
+  id: string;
+  type?: string;
+  activity: string;
+  flagged_to?: { person?: string; email?: string; phone?: string };
+  reason?: string;
+  reason_text?: string;
+  tat?: number | null;
+  days_taken?: number | null;
+  overdue_days?: number | null;
+  severity?: string;
+  status?: string;
+  stage?: string;
+  criticality?: string;
+  escalation_level?: number;
+}
 export interface DashboardData {
   summary: string;
   totals: { rows: number; delayed: number; blocked: number; completed: number; at_risk: number };
@@ -34,6 +50,7 @@ export interface DashboardData {
   person_ranking: PersonEntry[];
   department_ranking: DeptEntry[];
   tat_performance: { rows: TatRow[] };
+  flags?: FlagEntry[];
   mode_badge?: string;
   sheets?: { label: string; name: string; rows: number; columns: number }[];
 }
