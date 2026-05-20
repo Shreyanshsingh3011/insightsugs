@@ -538,13 +538,63 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Chatbot({ data }: { data: DashboardData }) {
-  const [open, setOpen] = useState(false);
+function ShareDialog({ mode, onClose, flagCount }: { mode: null | "email" | "sms"; onClose: () => void; flagCount: number }) {
+  const [to, setTo] = useState("");
+  const [note, setNote] = useState("");
+  const isEmail = mode === "email";
+  const send = () => {
+    if (!to.trim()) { toast.error(`Enter a ${isEmail ? "recipient email" : "phone number"}`); return; }
+    toast.success(`${isEmail ? "Email" : "SMS"} queued for ${to} — third-party delivery integration pending.`);
+    setTo(""); setNote(""); onClose();
+  };
+  return (
+    <Dialog open={!!mode} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {isEmail ? <Mail className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+            <span>Send Flags Report via {isEmail ? "Email" : "SMS"}</span>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Input
+            placeholder={isEmail ? "name@company.com" : "+1 555 123 4567"}
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+          />
+          <Textarea
+            placeholder={`Optional note to include with the ${flagCount}-flag report…`}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+          />
+          <p className="rounded-md border border-border bg-background/40 p-2 text-xs text-muted-foreground">
+            Delivery provider not yet connected. The button below records the intent; we'll wire {isEmail ? "Resend/SendGrid" : "Twilio"} when you're ready.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={send}><Send className="mr-1.5 h-4 w-4" />Send</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const QUICK_ACTIONS = [
+  { icon: TrendingUp, label: "Predict at-risk", prompt: "Predict the next 3 activities or people most likely to slip. Cite the data." },
+  { icon: AlertTriangle, label: "Top dependencies", prompt: "Which delays are blocking the most downstream work? Explain the dependency chain." },
+  { icon: Wand2, label: "Advice", prompt: "Give me 3 concrete actions to reduce the project risk score this week." },
+  { icon: FileDown, label: "Generate report", prompt: "Generate a PDF flags report and download it." },
+];
+
+function Copilot({ data }: { data: DashboardData }) {
+  const [open, setOpen] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   type ChatMsg = { role: "user" | "assistant"; content: string; citations?: Citation[] };
   const [messages, setMessages] = useState<ChatMsg[]>([
-    { role: "assistant", content: "Hi! Ask me anything about this dashboard — totals, delays, people, departments, TAT overruns, flags, reasons. Every answer comes with citations to the exact metric I used." },
+    { role: "assistant", content: "I'm your **DelayLens Copilot**. I can predict at-risk items, explain dependencies, advise next actions, and generate reports — all grounded in your live dashboard data with citations." },
   ]);
   const ask = useServerFn(askChatbot);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -562,16 +612,20 @@ function Chatbot({ data }: { data: DashboardData }) {
     flags: data.flags,
   }), [data]);
 
-  const send = async () => {
-    const q = input.trim();
-    if (!q || busy) return;
-    setInput("");
+  const runAction = (action: "export_flags_pdf" | "export_flags_csv" | "none") => {
+    if (action === "export_flags_pdf") { exportFlagsPdf(data); toast.success("Flags PDF downloaded"); }
+    if (action === "export_flags_csv") { exportFlagsCsv(data); toast.success("Flags CSV downloaded"); }
+  };
+
+  const sendQ = async (q: string) => {
+    if (!q.trim() || busy) return;
     setBusy(true);
     const history = messages.map(({ role, content }) => ({ role, content }));
-    setMessages([...messages, { role: "user", content: q }]);
+    setMessages((m) => [...m, { role: "user", content: q }]);
     try {
       const r = await ask({ data: { question: q, dataJson: compact, history } });
       setMessages((m) => [...m, { role: "assistant", content: r.answer, citations: r.citations }]);
+      runAction(r.action ?? "none");
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", content: "Sorry, I couldn't answer right now. " + (e?.message ?? "") }]);
     } finally {
@@ -579,30 +633,53 @@ function Chatbot({ data }: { data: DashboardData }) {
     }
   };
 
+  const send = async () => { const q = input.trim(); setInput(""); await sendQ(q); };
+
   return (
     <>
-      <button
-        onClick={() => setOpen(!open)}
-        className="fixed bottom-6 right-6 z-40 grid h-14 w-14 place-items-center rounded-full text-primary-foreground transition-transform hover:scale-105"
-        style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}
-        aria-label="Open assistant"
-      >
-        <Bot className="h-6 w-6" />
-      </button>
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-primary-foreground transition-transform hover:scale-105"
+          style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}
+          aria-label="Open Copilot"
+        >
+          <Bot className="h-5 w-5" /> Copilot
+        </button>
+      )}
       {open && (
-        <div className="fixed bottom-24 right-6 z-40 flex h-[640px] w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card" style={{ boxShadow: "var(--shadow-card)" }}>
+        <aside
+          className="fixed right-0 top-0 z-40 flex h-screen w-full flex-col border-l border-border bg-card sm:w-[420px]"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="grid h-8 w-8 place-items-center rounded-lg" style={{ background: "var(--gradient-hero)" }}>
-                <Bot className="h-4 w-4 text-primary-foreground" />
+              <div className="grid h-9 w-9 place-items-center rounded-lg" style={{ background: "var(--gradient-hero)" }}>
+                <Bot className="h-5 w-5 text-primary-foreground" />
               </div>
               <div>
-                <p className="text-sm font-semibold">Data Assistant</p>
-                <p className="text-xs text-muted-foreground">Cited answers from your data</p>
+                <p className="text-sm font-semibold">DelayLens Copilot</p>
+                <p className="text-xs text-muted-foreground">Predictions · Advice · Reports</p>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">✕</button>
+            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close">
+              <X className="h-5 w-5" />
+            </button>
           </div>
+
+          <div className="flex flex-wrap gap-1.5 border-b border-border px-3 py-2">
+            {QUICK_ACTIONS.map((a) => (
+              <button
+                key={a.label}
+                onClick={() => sendQ(a.prompt)}
+                disabled={busy}
+                className="flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-2.5 py-1 text-[11px] text-foreground hover:bg-secondary disabled:opacity-50"
+              >
+                <a.icon className="h-3 w-3" /> {a.label}
+              </button>
+            ))}
+          </div>
+
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {messages.map((m, i) => (
               <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
@@ -620,13 +697,19 @@ function Chatbot({ data }: { data: DashboardData }) {
             ))}
             {busy && <div className="text-xs text-muted-foreground">Thinking…</div>}
           </div>
+
           <div className="border-t border-border p-3">
             <div className="flex gap-2">
-              <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Ask about delays, people, TAT, flags…" />
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && send()}
+                placeholder="Ask for a prediction, advice, or a report…"
+              />
               <Button onClick={send} disabled={busy} size="icon"><Send className="h-4 w-4" /></Button>
             </div>
           </div>
-        </div>
+        </aside>
       )}
     </>
   );
