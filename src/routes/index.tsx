@@ -383,11 +383,52 @@ function DataFeed({ extras, setExtras, data }: { extras: ExtraEntry[]; setExtras
 }
 
 function FlagsPanel({ data }: { data: DashboardData }) {
-  const flags = data.flags ?? [];
+  const allFlags = data.flags ?? [];
   const [selected, setSelected] = useState<FlagEntry | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [shareMode, setShareMode] = useState<null | "email" | "sms">(null);
+
+  const [search, setSearch] = useState("");
+  const [fSeverity, setFSeverity] = useState("all");
+  const [fStatus, setFStatus] = useState("all");
+  const [fStage, setFStage] = useState("all");
+  const [fOwner, setFOwner] = useState("all");
+  const [minOverdue, setMinOverdue] = useState<string>("");
+
+  const uniq = (arr: (string | undefined)[]) =>
+    Array.from(new Set(arr.filter(Boolean) as string[])).sort();
+  const severities = useMemo(() => uniq(allFlags.map((f) => f.severity)), [allFlags]);
+  const statuses = useMemo(() => uniq(allFlags.map((f) => f.status)), [allFlags]);
+  const stages = useMemo(() => uniq(allFlags.map((f) => f.stage)), [allFlags]);
+  const owners = useMemo(() => uniq(allFlags.map((f) => f.flagged_to?.person)), [allFlags]);
+
+  const flags = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const min = Number(minOverdue) || 0;
+    return allFlags.filter((f) => {
+      if (fSeverity !== "all" && (f.severity ?? "") !== fSeverity) return false;
+      if (fStatus !== "all" && (f.status ?? "") !== fStatus) return false;
+      if (fStage !== "all" && (f.stage ?? "") !== fStage) return false;
+      if (fOwner !== "all" && (f.flagged_to?.person ?? "") !== fOwner) return false;
+      if ((f.overdue_days ?? 0) < min) return false;
+      if (q) {
+        const hay = `${f.id} ${f.activity} ${f.flagged_to?.person ?? ""} ${f.reason_text ?? ""} ${f.reason ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [allFlags, search, fSeverity, fStatus, fStage, fOwner, minOverdue]);
+
   const visible = showAll ? flags : flags.slice(0, 8);
+  const activeFilters =
+    (fSeverity !== "all" ? 1 : 0) + (fStatus !== "all" ? 1 : 0) +
+    (fStage !== "all" ? 1 : 0) + (fOwner !== "all" ? 1 : 0) +
+    (minOverdue ? 1 : 0) + (search ? 1 : 0);
+  const resetFilters = () => {
+    setSearch(""); setFSeverity("all"); setFStatus("all");
+    setFStage("all"); setFOwner("all"); setMinOverdue("");
+  };
+
   const sevColor = (s?: string) => {
     const v = (s || "").toLowerCase();
     if (v === "critical") return "bg-destructive/15 text-destructive";
@@ -395,6 +436,8 @@ function FlagsPanel({ data }: { data: DashboardData }) {
     if (v === "medium") return "bg-primary/15 text-primary";
     return "bg-secondary text-muted-foreground";
   };
+
+  const selectCls = "rounded-md border border-input bg-input px-2 py-1.5 text-xs";
 
   return (
     <Card className="mt-8 border-border bg-card p-5">
@@ -405,14 +448,17 @@ function FlagsPanel({ data }: { data: DashboardData }) {
           </div>
           <div>
             <h3 className="text-sm font-semibold">Flags</h3>
-            <p className="text-xs text-muted-foreground">{flags.length} flagged item{flags.length === 1 ? "" : "s"} — open Source to see the issue origin.</p>
+            <p className="text-xs text-muted-foreground">
+              Showing {flags.length} of {allFlags.length} flag{allFlags.length === 1 ? "" : "s"}
+              {activeFilters > 0 ? ` · ${activeFilters} filter${activeFilters === 1 ? "" : "s"} active` : ""}
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => { exportFlagsCsv(data); toast.success("CSV downloaded"); }}>
+          <Button size="sm" variant="outline" disabled={!flags.length} onClick={() => { exportFlagsCsv(data, flags); toast.success(`CSV downloaded (${flags.length} flag${flags.length===1?"":"s"})`); }}>
             <FileSpreadsheet className="mr-1.5 h-4 w-4" /> CSV
           </Button>
-          <Button size="sm" variant="outline" onClick={() => { exportFlagsPdf(data); toast.success("PDF downloaded"); }}>
+          <Button size="sm" variant="outline" disabled={!flags.length} onClick={() => { exportFlagsPdf(data, flags); toast.success(`PDF downloaded (${flags.length} flag${flags.length===1?"":"s"})`); }}>
             <FileDown className="mr-1.5 h-4 w-4" /> PDF
           </Button>
           <Button size="sm" variant="outline" onClick={() => setShareMode("email")}>
@@ -424,10 +470,35 @@ function FlagsPanel({ data }: { data: DashboardData }) {
         </div>
       </div>
 
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+        <Input placeholder="Search activity, owner, reason…" value={search} onChange={(e) => setSearch(e.target.value)} className="lg:col-span-2 h-9 text-xs" />
+        <select className={selectCls} value={fSeverity} onChange={(e) => setFSeverity(e.target.value)}>
+          <option value="all">All severities</option>
+          {severities.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className={selectCls} value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+          <option value="all">All statuses</option>
+          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className={selectCls} value={fStage} onChange={(e) => setFStage(e.target.value)}>
+          <option value="all">All stages</option>
+          {stages.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className={selectCls} value={fOwner} onChange={(e) => setFOwner(e.target.value)}>
+          <option value="all">All owners</option>
+          {owners.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <Input placeholder="Min overdue days" type="number" min={0} value={minOverdue} onChange={(e) => setMinOverdue(e.target.value)} className="h-9 text-xs" />
+        {activeFilters > 0 && (
+          <Button variant="ghost" size="sm" onClick={resetFilters} className="justify-self-start">
+            <X className="mr-1 h-3.5 w-3.5" /> Clear filters
+          </Button>
+        )}
+      </div>
+
       <ShareDialog mode={shareMode} onClose={() => setShareMode(null)} flagCount={flags.length} />
 
-
-      {!flags.length && <p className="mt-4 text-sm text-muted-foreground">No flags in current dataset.</p>}
+      {!flags.length && <p className="mt-4 text-sm text-muted-foreground">No flags match the current filters.</p>}
 
       {!!flags.length && (
         <div className="mt-4 overflow-x-auto">
