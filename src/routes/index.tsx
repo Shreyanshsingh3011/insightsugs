@@ -14,8 +14,11 @@ import { askChatbot } from "@/lib/chat.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Upload, Plus, AlertTriangle, CheckCircle2, Clock, TrendingUp, Bot, Database, Sparkles, Flag, FileSearch, ChevronDown, ChevronUp, Quote } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Send, Upload, Plus, AlertTriangle, CheckCircle2, Clock, TrendingUp, Bot, Database, Sparkles, Flag, FileSearch, ChevronDown, ChevronUp, Quote, FileDown, FileSpreadsheet, Mail, MessageSquare, Wand2, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
+import { exportFlagsCsv, exportFlagsPdf } from "@/lib/export-flags";
 import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
 
