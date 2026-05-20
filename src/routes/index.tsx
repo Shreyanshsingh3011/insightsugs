@@ -497,8 +497,9 @@ function Chatbot({ data }: { data: DashboardData }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
-    { role: "assistant", content: "Hi! Ask me anything about this dashboard — totals, delays, people, departments, TAT overruns, reasons. I only answer from the loaded data." },
+  type ChatMsg = { role: "user" | "assistant"; content: string; citations?: Citation[] };
+  const [messages, setMessages] = useState<ChatMsg[]>([
+    { role: "assistant", content: "Hi! Ask me anything about this dashboard — totals, delays, people, departments, TAT overruns, flags, reasons. Every answer comes with citations to the exact metric I used." },
   ]);
   const ask = useServerFn(askChatbot);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -513,6 +514,7 @@ function Chatbot({ data }: { data: DashboardData }) {
     person_ranking: data.person_ranking,
     department_ranking: data.department_ranking,
     tat_performance: data.tat_performance,
+    flags: data.flags,
   }), [data]);
 
   const send = async () => {
@@ -520,11 +522,11 @@ function Chatbot({ data }: { data: DashboardData }) {
     if (!q || busy) return;
     setInput("");
     setBusy(true);
-    const history = messages;
+    const history = messages.map(({ role, content }) => ({ role, content }));
     setMessages([...messages, { role: "user", content: q }]);
     try {
       const r = await ask({ data: { question: q, dataJson: compact, history } });
-      setMessages((m) => [...m, { role: "assistant", content: r.answer }]);
+      setMessages((m) => [...m, { role: "assistant", content: r.answer, citations: r.citations }]);
     } catch (e: any) {
       setMessages((m) => [...m, { role: "assistant", content: "Sorry, I couldn't answer right now. " + (e?.message ?? "") }]);
     } finally {
@@ -543,7 +545,7 @@ function Chatbot({ data }: { data: DashboardData }) {
         <Bot className="h-6 w-6" />
       </button>
       {open && (
-        <div className="fixed bottom-24 right-6 z-40 flex h-[600px] w-[400px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card" style={{ boxShadow: "var(--shadow-card)" }}>
+        <div className="fixed bottom-24 right-6 z-40 flex h-[640px] w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card" style={{ boxShadow: "var(--shadow-card)" }}>
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="grid h-8 w-8 place-items-center rounded-lg" style={{ background: "var(--gradient-hero)" }}>
@@ -551,7 +553,7 @@ function Chatbot({ data }: { data: DashboardData }) {
               </div>
               <div>
                 <p className="text-sm font-semibold">Data Assistant</p>
-                <p className="text-xs text-muted-foreground">Answers only from your data</p>
+                <p className="text-xs text-muted-foreground">Cited answers from your data</p>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">✕</button>
@@ -562,8 +564,11 @@ function Chatbot({ data }: { data: DashboardData }) {
                 {m.role === "user" ? (
                   <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">{m.content}</div>
                 ) : (
-                  <div className="prose prose-sm prose-invert max-w-none text-sm text-foreground [&_p]:my-1 [&_ul]:my-1 [&_table]:text-xs">
-                    <ReactMarkdown>{m.content}</ReactMarkdown>
+                  <div className="space-y-2">
+                    <div className="prose prose-sm prose-invert max-w-none text-sm text-foreground [&_p]:my-1 [&_ul]:my-1 [&_table]:text-xs">
+                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                    </div>
+                    {m.citations && m.citations.length > 0 && <CitationsBlock items={m.citations} />}
                   </div>
                 )}
               </div>
@@ -572,12 +577,43 @@ function Chatbot({ data }: { data: DashboardData }) {
           </div>
           <div className="border-t border-border p-3">
             <div className="flex gap-2">
-              <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Ask about delays, people, TAT…" />
+              <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Ask about delays, people, TAT, flags…" />
               <Button onClick={send} disabled={busy} size="icon"><Send className="h-4 w-4" /></Button>
             </div>
           </div>
         </div>
       )}
     </>
+  );
+}
+
+function CitationsBlock({ items }: { items: Citation[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-border bg-background/40">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
+      >
+        <span className="flex items-center gap-1.5">
+          <Quote className="h-3 w-3" />
+          {open ? "Hide sources" : `Show sources (${items.length})`}
+        </span>
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {open && (
+        <ul className="space-y-1.5 border-t border-border px-3 py-2 text-xs">
+          {items.map((c, i) => (
+            <li key={i} className="flex flex-col gap-0.5">
+              <span className="font-medium text-foreground">{c.label}</span>
+              <span className="text-muted-foreground">
+                <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{c.source}</span>
+                <span className="ml-2 italic">"{c.value}"</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
