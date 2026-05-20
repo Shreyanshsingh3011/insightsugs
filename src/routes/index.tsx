@@ -14,7 +14,10 @@ import { askChatbot } from "@/lib/chat.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Upload, Plus, AlertTriangle, CheckCircle2, Clock, TrendingUp, Bot, Database, Sparkles } from "lucide-react";
+import { Send, Upload, Plus, AlertTriangle, CheckCircle2, Clock, TrendingUp, Bot, Database, Sparkles, Flag, FileSearch, ChevronDown, ChevronUp, Quote } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { FlagEntry } from "@/lib/dashboard-data";
+import type { Citation } from "@/lib/chat.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [
