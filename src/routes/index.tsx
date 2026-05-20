@@ -77,7 +77,7 @@ function Dashboard() {
           </>
         )}
       </main>
-      {data && <Chatbot data={data} />}
+      {data && <Copilot data={data} />}
     </div>
   );
 }
