@@ -386,6 +386,7 @@ function FlagsPanel({ data }: { data: DashboardData }) {
   const flags = data.flags ?? [];
   const [selected, setSelected] = useState<FlagEntry | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [shareMode, setShareMode] = useState<null | "email" | "sms">(null);
   const visible = showAll ? flags : flags.slice(0, 8);
   const sevColor = (s?: string) => {
     const v = (s || "").toLowerCase();
@@ -404,10 +405,27 @@ function FlagsPanel({ data }: { data: DashboardData }) {
           </div>
           <div>
             <h3 className="text-sm font-semibold">Flags</h3>
-            <p className="text-xs text-muted-foreground">{flags.length} flagged item{flags.length === 1 ? "" : "s"} — open the source to inspect raw payload.</p>
+            <p className="text-xs text-muted-foreground">{flags.length} flagged item{flags.length === 1 ? "" : "s"} — open Source to see the issue origin.</p>
           </div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => { exportFlagsCsv(data); toast.success("CSV downloaded"); }}>
+            <FileSpreadsheet className="mr-1.5 h-4 w-4" /> CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => { exportFlagsPdf(data); toast.success("PDF downloaded"); }}>
+            <FileDown className="mr-1.5 h-4 w-4" /> PDF
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShareMode("email")}>
+            <Mail className="mr-1.5 h-4 w-4" /> Email
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShareMode("sms")}>
+            <MessageSquare className="mr-1.5 h-4 w-4" /> SMS
+          </Button>
+        </div>
       </div>
+
+      <ShareDialog mode={shareMode} onClose={() => setShareMode(null)} flagCount={flags.length} />
+
 
       {!flags.length && <p className="mt-4 text-sm text-muted-foreground">No flags in current dataset.</p>}
 
