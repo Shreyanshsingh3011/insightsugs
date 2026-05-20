@@ -18,8 +18,8 @@ function nowStamp() {
   return d.toISOString().replace(/[:.]/g, "-").slice(0, 19);
 }
 
-function rows(data: DashboardData) {
-  const flags = data.flags ?? [];
+function rows(data: DashboardData, flagsOverride?: FlagEntry[]) {
+  const flags = flagsOverride ?? data.flags ?? [];
   return flags.map((f) => ({
     id: f.id,
     activity: f.activity,
@@ -44,8 +44,8 @@ function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function exportFlagsCsv(data: DashboardData) {
-  const r = rows(data);
+export function exportFlagsCsv(data: DashboardData, flagsOverride?: FlagEntry[]) {
+  const r = rows(data, flagsOverride);
   const headers = ["ID","Activity","Owner","Stage","Severity","Status","TAT (d)","Days Taken","Overdue (d)","Reason","Root Cause","Escalation","Generated At"];
   const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = [
@@ -55,8 +55,8 @@ export function exportFlagsCsv(data: DashboardData) {
   downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `flags-report-${nowStamp()}.csv`);
 }
 
-export function exportFlagsPdf(data: DashboardData) {
-  const r = rows(data);
+export function exportFlagsPdf(data: DashboardData, flagsOverride?: FlagEntry[]) {
+  const r = rows(data, flagsOverride);
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const generatedAt = new Date().toLocaleString();
 
@@ -65,7 +65,7 @@ export function exportFlagsPdf(data: DashboardData) {
   doc.setFontSize(10);
   doc.setTextColor(120);
   doc.text(`Generated: ${generatedAt}`, 40, 58);
-  doc.text(`Total flags: ${r.length}  |  Risk score: ${data.risk_score}  |  Delayed: ${data.totals.delayed}`, 40, 72);
+  doc.text(`Flags in report: ${r.length}${data.flags && r.length !== data.flags.length ? ` (filtered from ${data.flags.length})` : ""}  |  Risk score: ${data.risk_score}  |  Delayed: ${data.totals.delayed}`, 40, 72);
   doc.setTextColor(0);
 
   autoTable(doc, {
