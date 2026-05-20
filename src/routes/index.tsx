@@ -458,26 +458,50 @@ function FlagsPanel({ data }: { data: DashboardData }) {
               <span>{selected?.id} — Source</span>
             </DialogTitle>
           </DialogHeader>
-          {selected && (
-            <div className="space-y-3">
-              <div className="grid gap-2 text-sm sm:grid-cols-2">
-                <Field label="Activity" value={selected.activity} />
-                <Field label="Owner" value={selected.flagged_to?.person ?? "—"} />
-                <Field label="Stage" value={selected.stage ?? "—"} />
-                <Field label="Severity" value={selected.severity ?? "—"} />
-                <Field label="TAT" value={`${selected.tat ?? "—"} days`} />
-                <Field label="Days taken" value={`${selected.days_taken ?? "—"} days`} />
-                <Field label="Overdue" value={`${selected.overdue_days ?? 0} days`} />
-                <Field label="Escalation" value={`Level ${selected.escalation_level ?? 0}`} />
+          {selected && (() => {
+            const owner = selected.flagged_to?.person;
+            const reason = selected.reason_text?.trim() || selected.reason || "Not specified";
+            const overrun = selected.tat && selected.days_taken ? Math.max(0, selected.days_taken - selected.tat) : (selected.overdue_days ?? 0);
+            const overrunPct = selected.tat && selected.days_taken ? Math.round(((selected.days_taken - selected.tat) / selected.tat) * 100) : null;
+            const personRow = owner ? data.person_ranking.find((p) => p.person === owner) : undefined;
+            const tatRow = data.tat_performance.rows.find((r) => r.activity === selected.activity);
+            const rootCause =
+              (selected.days_taken ?? 0) === 0 && (selected.overdue_days ?? 0) === 0
+                ? `Activity not yet started — ${selected.stage ?? "stage"} pending action from ${owner ?? "owner"}.`
+                : overrunPct !== null
+                  ? `Took ${selected.days_taken}d vs ${selected.tat}d TAT — ${overrunPct}% overrun (${overrun}d late).`
+                  : `${overrun}d overdue beyond planned TAT.`;
+            return (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wider text-destructive">Root cause</p>
+                  <p className="mt-1 text-sm">{rootCause}</p>
+                  <p className="mt-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">Reason flagged:</span> {reason}</p>
+                </div>
+
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <Field label="Activity" value={selected.activity} />
+                  <Field label="Responsible" value={owner ?? "—"} />
+                  <Field label="Stage" value={selected.stage ?? "—"} />
+                  <Field label="Severity" value={selected.severity ?? "—"} />
+                  <Field label="Planned TAT" value={selected.tat != null ? `${selected.tat} days` : "—"} />
+                  <Field label="Actual taken" value={selected.days_taken != null ? `${selected.days_taken} days` : "Not started"} />
+                  <Field label="Overdue" value={`${selected.overdue_days ?? 0} days`} />
+                  <Field label="Escalation" value={`Level ${selected.escalation_level ?? 0}`} />
+                </div>
+
+                <div>
+                  <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">Where this surfaced</p>
+                  <ul className="space-y-1.5 text-xs text-muted-foreground">
+                    <li>• Flag record <span className="font-mono text-foreground">{selected.id}</span> from the source dataset.</li>
+                    {tatRow && <li>• Appears in TAT performance with {tatRow.overrun_pct.toFixed(0)}% overrun.</li>}
+                    {personRow && <li>• {personRow.person} is linked to {personRow.delay_count} delay(s) totaling {personRow.total_overdue_days}d overdue.</li>}
+                    {!personRow && owner && <li>• {owner} is not currently in the people-ranking aggregate.</li>}
+                  </ul>
+                </div>
               </div>
-              <div>
-                <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Raw payload (source)</p>
-                <pre className="max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 text-xs">
-{JSON.stringify(selected, null, 2)}
-                </pre>
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </Card>
