@@ -65,6 +65,7 @@ ${data.dataJson}
     // Try to parse JSON (strip code fences if present)
     let answer = text;
     let citations: Citation[] = [];
+    let action: "none" | "export_flags_pdf" | "export_flags_csv" = "none";
     const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
     try {
       const parsed = JSON.parse(cleaned);
@@ -79,10 +80,13 @@ ${data.dataJson}
               value: String(c.value ?? ""),
             }));
         }
+        if (parsed.action === "export_flags_pdf" || parsed.action === "export_flags_csv") {
+          action = parsed.action;
+        }
       }
     } catch {
       // model didn't return JSON — fall back to raw text
     }
 
-    return { answer, citations };
+    return { answer, citations, action };
   });
