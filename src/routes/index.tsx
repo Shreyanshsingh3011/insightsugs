@@ -379,6 +379,120 @@ function DataFeed({ extras, setExtras, data }: { extras: ExtraEntry[]; setExtras
   );
 }
 
+function FlagsPanel({ data }: { data: DashboardData }) {
+  const flags = data.flags ?? [];
+  const [selected, setSelected] = useState<FlagEntry | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? flags : flags.slice(0, 8);
+  const sevColor = (s?: string) => {
+    const v = (s || "").toLowerCase();
+    if (v === "critical") return "bg-destructive/15 text-destructive";
+    if (v === "high") return "bg-accent/15 text-accent";
+    if (v === "medium") return "bg-primary/15 text-primary";
+    return "bg-secondary text-muted-foreground";
+  };
+
+  return (
+    <Card className="mt-8 border-border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="grid h-8 w-8 place-items-center rounded-lg" style={{ background: "var(--gradient-danger)" }}>
+            <Flag className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold">Flags</h3>
+            <p className="text-xs text-muted-foreground">{flags.length} flagged item{flags.length === 1 ? "" : "s"} — open the source to inspect raw payload.</p>
+          </div>
+        </div>
+      </div>
+
+      {!flags.length && <p className="mt-4 text-sm text-muted-foreground">No flags in current dataset.</p>}
+
+      {!!flags.length && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border">
+                <th className="py-2 pr-4">ID</th>
+                <th className="py-2 pr-4">Activity</th>
+                <th className="py-2 pr-4">Owner</th>
+                <th className="py-2 pr-4">Stage</th>
+                <th className="py-2 pr-4">Overdue</th>
+                <th className="py-2 pr-4">Severity</th>
+                <th className="py-2 pr-4">Status</th>
+                <th className="py-2">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((f) => (
+                <tr key={f.id} className="border-b border-border/40 last:border-0">
+                  <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{f.id}</td>
+                  <td className="max-w-xs truncate py-3 pr-4">{f.activity}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">{f.flagged_to?.person ?? "—"}</td>
+                  <td className="py-3 pr-4 text-muted-foreground">{f.stage ?? "—"}</td>
+                  <td className="py-3 pr-4">{f.overdue_days ?? 0}d</td>
+                  <td className="py-3 pr-4"><span className={`rounded-md px-2 py-0.5 text-xs ${sevColor(f.severity)}`}>{f.severity ?? "—"}</span></td>
+                  <td className="py-3 pr-4 text-muted-foreground">{f.status ?? "—"}</td>
+                  <td className="py-3">
+                    <Button size="sm" variant="outline" onClick={() => setSelected(f)}>
+                      <FileSearch className="mr-1.5 h-3.5 w-3.5" /> Source
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {flags.length > 8 && (
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => setShowAll((s) => !s)}>
+              {showAll ? <><ChevronUp className="mr-1 h-4 w-4" /> Show less</> : <><ChevronDown className="mr-1 h-4 w-4" /> Show all {flags.length}</>}
+            </Button>
+          )}
+        </div>
+      )}
+
+      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Flag className="h-4 w-4 text-destructive" />
+              <span>{selected?.id} — Source</span>
+            </DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-3">
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <Field label="Activity" value={selected.activity} />
+                <Field label="Owner" value={selected.flagged_to?.person ?? "—"} />
+                <Field label="Stage" value={selected.stage ?? "—"} />
+                <Field label="Severity" value={selected.severity ?? "—"} />
+                <Field label="TAT" value={`${selected.tat ?? "—"} days`} />
+                <Field label="Days taken" value={`${selected.days_taken ?? "—"} days`} />
+                <Field label="Overdue" value={`${selected.overdue_days ?? 0} days`} />
+                <Field label="Escalation" value={`Level ${selected.escalation_level ?? 0}`} />
+              </div>
+              <div>
+                <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">Raw payload (source)</p>
+                <pre className="max-h-72 overflow-auto rounded-lg border border-border bg-background p-3 text-xs">
+{JSON.stringify(selected, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/40 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-sm">{value}</p>
+    </div>
+  );
+}
+
 function Chatbot({ data }: { data: DashboardData }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
