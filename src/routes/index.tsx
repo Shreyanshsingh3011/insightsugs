@@ -55,7 +55,7 @@ function Dashboard() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header />
-      <main className="mx-auto max-w-[1400px] px-6 pb-24">
+      <main className="mx-auto max-w-[1400px] px-6 pb-24 sm:pr-[440px]">
         {isLoading && <div className="py-32 text-center text-muted-foreground">Loading dashboard…</div>}
         {error && <div className="py-32 text-center text-destructive">Failed to load. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>}
         {data && (
