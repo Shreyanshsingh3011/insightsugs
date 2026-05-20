@@ -18,8 +18,8 @@ function nowStamp() {
   return d.toISOString().replace(/[:.]/g, "-").slice(0, 19);
 }
 
-function rows(data: DashboardData) {
-  const flags = data.flags ?? [];
+function rows(data: DashboardData, flagsOverride?: FlagEntry[]) {
+  const flags = flagsOverride ?? data.flags ?? [];
   return flags.map((f) => ({
     id: f.id,
     activity: f.activity,
