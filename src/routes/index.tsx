@@ -69,6 +69,7 @@ function Dashboard() {
               <DeptRanking data={data} />
             </div>
             <TatTable data={data} />
+            <FlagsPanel data={data} />
             <DataFeed extras={extras} setExtras={setExtras} data={data} />
           </>
         )}
