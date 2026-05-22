@@ -1,11 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { generateText } from "ai";
-import { createLovableAiGatewayProvider } from "./ai-gateway";
 
 export interface Citation {
-  source: string; // e.g. "totals.delayed", "person_ranking[0]", "tat_performance.rows[2]", "flags[FLAG-003]"
-  label: string;  // human label e.g. "Delayed tasks"
-  value: string;  // exact value/quote, e.g. "47" or "Pradeep S. Bhattacharya — 53d overdue"
+  source: string;
+  label: string;
+  value: string;
 }
 
 export const askChatbot = createServerFn({ method: "POST" })
@@ -18,9 +16,9 @@ export const askChatbot = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("LOVABLE_API_KEY missing");
-    const gateway = createLovableAiGatewayProvider(key);
-    const model = gateway("google/gemini-3-flash-preview");
+    if (!key) {
+      throw new Error("AI is not configured (LOVABLE_API_KEY missing).");
+    }
 
     const system = `You are DelayLens Copilot — an AI analyst for a project-delay dashboard.
 
@@ -53,40 +51,76 @@ JSON DATA:
 ${data.dataJson}
 \`\`\``;
 
-    const { text } = await generateText({
-      model,
-      system,
-      messages: [
-        ...data.history.map((m) => ({ role: m.role, content: m.content })),
-        { role: "user" as const, content: data.question },
-      ],
-    });
-
-    // Try to parse JSON (strip code fences if present)
-    let answer = text;
-    let citations: Citation[] = [];
-    let action: "none" | "export_flags_pdf" | "export_flags_csv" = "none";
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
     try {
-      const parsed = JSON.parse(cleaned);
-      if (typeof parsed?.answer === "string") {
-        answer = parsed.answer;
-        if (Array.isArray(parsed.citations)) {
-          citations = parsed.citations
-            .filter((c: any) => c && typeof c === "object")
-            .map((c: any) => ({
-              source: String(c.source ?? ""),
-              label: String(c.label ?? ""),
-              value: String(c.value ?? ""),
-            }));
-        }
-        if (parsed.action === "export_flags_pdf" || parsed.action === "export_flags_csv") {
-          action = parsed.action;
-        }
-      }
-    } catch {
-      // model didn't return JSON — fall back to raw text
-    }
+      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            { role: "system", content: system },
+            ...data.history.map((m) => ({ role: m.role, content: m.content })),
+            { role: "user", content: data.question },
+          ],
+        }),
+      });
 
-    return { answer, citations, action };
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => "");
+        if (res.status === 429) {
+          throw new Error("Rate limit reached. Please try again in a minute.");
+        }
+        if (res.status === 402) {
+          throw new Error("AI credits exhausted. Add credits in Settings → Workspace → Usage.");
+        }
+        console.error("AI gateway error:", res.status, bodyText.slice(0, 500));
+        throw new Error(`AI gateway error (${res.status}). Please try again.`);
+      }
+
+      const json = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      const text = json.choices?.[0]?.message?.content ?? "";
+
+      let answer = text;
+      let citations: Citation[] = [];
+      let action: "none" | "export_flags_pdf" | "export_flags_csv" = "none";
+      const cleaned = text
+        .trim()
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/```$/i, "")
+        .trim();
+      try {
+        const parsed = JSON.parse(cleaned);
+        if (typeof parsed?.answer === "string") {
+          answer = parsed.answer;
+          if (Array.isArray(parsed.citations)) {
+            citations = parsed.citations
+              .filter((c: any) => c && typeof c === "object")
+              .map((c: any) => ({
+                source: String(c.source ?? ""),
+                label: String(c.label ?? ""),
+                value: String(c.value ?? ""),
+              }));
+          }
+          if (parsed.action === "export_flags_pdf" || parsed.action === "export_flags_csv") {
+            action = parsed.action;
+          }
+        }
+      } catch {
+        // model didn't return JSON — fall back to raw text
+      }
+
+      if (!answer || !answer.trim()) {
+        answer = "I couldn't produce a response for that. Please try rephrasing.";
+      }
+
+      return { answer, citations, action };
+    } catch (err: any) {
+      console.error("askChatbot failed:", err?.message ?? err);
+      throw err instanceof Error ? err : new Error("Chatbot failed.");
+    }
   });
