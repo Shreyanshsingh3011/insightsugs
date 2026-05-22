@@ -698,7 +698,9 @@ function Copilot({ data }: { data: DashboardData }) {
       setMessages((m) => [...m, { role: "assistant", content: r.answer, citations: r.citations }]);
       runAction(r.action ?? "none");
     } catch (e: any) {
-      setMessages((m) => [...m, { role: "assistant", content: "Sorry, I couldn't answer right now. " + (e?.message ?? "") }]);
+      const msg = e?.message ?? "Unknown error";
+      toast.error(msg);
+      setMessages((m) => [...m, { role: "assistant", content: "Sorry, I couldn't answer right now. " + msg }]);
     } finally {
       setBusy(false);
     }
