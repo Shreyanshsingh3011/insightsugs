@@ -154,6 +154,7 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
   return {
     version: 2,
     source: { url: input.sheetUrl, headers, rowIds: rows.map((_, i) => String(i + 1)) },
+    nodeLabels,
     edges: rawEdges.map((e, i) => ({
       id: `local-${i}`,
       from: [{ t: "row", i: e.from }],
