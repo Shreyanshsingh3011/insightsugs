@@ -35,7 +35,7 @@ return { edges, labels };`;
 function splitIds(v: unknown): string[] {
   if (v === null || v === undefined || v === "") return [];
   return String(v)
-    .split(/[,;|\s]+/)
+    .split(/[,;|/\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
