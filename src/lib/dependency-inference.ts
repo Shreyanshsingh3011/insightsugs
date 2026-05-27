@@ -1,36 +1,26 @@
 // Local dependency inference: fetches a sheet (Apps Script / public JSON) and
 // derives a dependency chain from the actual rows + a user-supplied logic
-// snippet (or a sensible default rule).
+// snippet. Supports two return shapes from the user's JS body:
+//   1. Mapping: { taskColumn, assignedColumn, dependencyColumn, statusColumn, delayColumn }
+//   2. Advanced: { edges:[{from,to,label?}], nodes?, labels?, meta? }
 
-import type { DependencyChainResponse, ChainEdge } from "./dependency-chain";
+import type { DependencyChainResponse, ChainEdge, NodeMeta } from "./dependency-chain";
 
 export interface InferenceInput {
   sheetUrl: string;
-  logic?: string; // optional JS body, see DEFAULT_LOGIC
-  idColumn?: string;
-  dependsOnColumn?: string;
-  labelColumn?: string;
+  logic?: string;
 }
 
-export const DEFAULT_LOGIC = `// Available: rows, headers, helpers { splitIds }
-// Return: { edges:[{from,to,label?}], nodes?: string[], labels?: Record<string,string> }
-// Rule: each row's "Sr. No." depends on id(s) listed in "Dependent activities".
-// Edge direction = dependency -> current row (so prerequisites come first in topo order).
-const ID = "Sr. No.";
-const DEP = "Dependent activities";
-const NAME = "Process Descriptions";
-const edges = [];
-const labels = {};
-for (const r of rows) {
-  const me = String(r[ID] ?? "").trim();
-  if (!me) continue;
-  labels[me] = String(r[NAME] ?? "").slice(0, 80);
-  for (const dep of helpers.splitIds(r[DEP])) {
-    if (dep === me) continue;
-    edges.push({ from: dep, to: me });
-  }
-}
-return { edges, labels };`;
+export const DEFAULT_LOGIC = `// Map the sheet columns to dependency fields.
+// Available: rows, headers, helpers { splitIds }
+// Return either this mapping shape OR an advanced { edges, labels } shape.
+return {
+  taskColumn: "Task Name",
+  assignedColumn: "Assigned To",
+  dependencyColumn: "Depends On",
+  statusColumn: "Status",
+  delayColumn: "Delay Days"
+};`;
 
 function splitIds(v: unknown): string[] {
   if (v === null || v === undefined || v === "") return [];
@@ -113,7 +103,6 @@ function transitiveClosure(nodes: string[], edges: ChainEdge[]) {
       descendants: Array.from(desc.get(n) ?? []),
     };
   }
-  // skip edges = transitive edges not in direct edges
   const directSet = new Set(edges.map((e) => `${e.from}→${e.to}`));
   const skipEdges: ChainEdge[] = [];
   for (const [from, ds] of desc) {
@@ -122,6 +111,59 @@ function transitiveClosure(nodes: string[], edges: ChainEdge[]) {
     }
   }
   return { transitive, skipEdges };
+}
+
+interface MappingResult {
+  taskColumn?: string;
+  assignedColumn?: string;
+  dependencyColumn?: string;
+  statusColumn?: string;
+  delayColumn?: string;
+}
+interface AdvancedResult {
+  edges?: ChainEdge[];
+  nodes?: string[];
+  labels?: Record<string, string>;
+  meta?: Record<string, NodeMeta>;
+}
+
+function deriveFromMapping(
+  rows: Record<string, unknown>[],
+  m: MappingResult,
+): { edges: ChainEdge[]; labels: Record<string, string>; meta: Record<string, NodeMeta> } {
+  const taskCol = m.taskColumn ?? "Task Name";
+  const depCol = m.dependencyColumn ?? "Depends On";
+  const assignCol = m.assignedColumn;
+  const statusCol = m.statusColumn;
+  const delayCol = m.delayColumn;
+
+  const edges: ChainEdge[] = [];
+  const labels: Record<string, string> = {};
+  const meta: Record<string, NodeMeta> = {};
+
+  for (const r of rows) {
+    const task = String(r[taskCol] ?? "").trim();
+    if (!task) continue;
+    labels[task] = task;
+    const delayRaw = delayCol ? r[delayCol] : undefined;
+    const delayNum = typeof delayRaw === "number" ? delayRaw : parseFloat(String(delayRaw ?? ""));
+    meta[task] = {
+      task,
+      assignee: assignCol ? String(r[assignCol] ?? "").trim() || undefined : undefined,
+      status: statusCol ? String(r[statusCol] ?? "").trim() || undefined : undefined,
+      delay: Number.isFinite(delayNum) ? delayNum : 0,
+    };
+    for (const dep of splitIds(r[depCol])) {
+      if (dep === task) continue;
+      edges.push({ from: dep, to: task });
+    }
+  }
+  // Ensure dependency-only nodes have labels too
+  for (const e of edges) {
+    if (!labels[e.from]) labels[e.from] = e.from;
+    if (!meta[e.from]) meta[e.from] = { task: e.from };
+  }
+  return { edges, labels, meta };
 }
 
 export async function inferDependencyChain(input: InferenceInput): Promise<DependencyChainResponse> {
@@ -133,20 +175,33 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
     rows: Record<string, unknown>[],
     headers: string[],
     helpers: { splitIds: typeof splitIds },
-  ) => { edges: ChainEdge[]; nodes?: string[]; labels?: Record<string, string> };
+  ) => MappingResult & AdvancedResult;
 
   const out = fn(rows, headers, { splitIds });
-  const rawEdges: ChainEdge[] = (out.edges ?? []).map((e) => ({
-    from: String(e.from),
-    to: String(e.to),
-    label: e.label,
-  })).filter((e) => e.from && e.to);
+
+  let rawEdges: ChainEdge[] = [];
+  let nodeLabels: Record<string, string> = {};
+  let nodeMeta: Record<string, NodeMeta> = {};
+
+  if (out && (out.taskColumn || out.dependencyColumn || out.assignedColumn)) {
+    const derived = deriveFromMapping(rows, out);
+    rawEdges = derived.edges;
+    nodeLabels = derived.labels;
+    nodeMeta = derived.meta;
+  } else {
+    rawEdges = (out.edges ?? []).map((e) => ({
+      from: String(e.from),
+      to: String(e.to),
+      label: e.label,
+    })).filter((e) => e.from && e.to);
+    if (out.labels) for (const [k, v] of Object.entries(out.labels)) nodeLabels[String(k)] = String(v);
+    if (out.meta) for (const [k, v] of Object.entries(out.meta)) nodeMeta[String(k)] = v;
+  }
 
   const nodeSet = new Set<string>(out.nodes?.map(String) ?? []);
   for (const e of rawEdges) { nodeSet.add(e.from); nodeSet.add(e.to); }
+  for (const k of Object.keys(nodeLabels)) nodeSet.add(k);
   const nodes = Array.from(nodeSet);
-  const nodeLabels: Record<string, string> = {};
-  if (out.labels) for (const [k, v] of Object.entries(out.labels)) nodeLabels[String(k)] = String(v);
 
   const { order, isDAG } = topoSort(nodes, rawEdges);
   const { transitive, skipEdges } = transitiveClosure(nodes, rawEdges);
@@ -155,6 +210,7 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
     version: 2,
     source: { url: input.sheetUrl, headers, rowIds: rows.map((_, i) => String(i + 1)) },
     nodeLabels,
+    nodeMeta,
     edges: rawEdges.map((e, i) => ({
       id: `local-${i}`,
       from: [{ t: "row", i: e.from }],
