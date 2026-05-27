@@ -822,11 +822,34 @@ function CitationsBlock({ items }: { items: Citation[] }) {
   );
 }
 
+const RESOLVER_KEY = "dependency.resolver.v1";
+
 function DependencyChainPanel() {
+  const [resolverInput, setResolverInput] = useState("");
+  const [activeResolver, setActiveResolver] = useState("");
+
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem(RESOLVER_KEY);
+      if (s) { setResolverInput(s); setActiveResolver(s); }
+    } catch {}
+  }, []);
+
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["dependency-chain"],
-    queryFn: loadDependencyChain,
+    queryKey: ["dependency-chain", activeResolver],
+    queryFn: () => loadDependencyChain(activeResolver || undefined),
   });
+
+  const apply = () => {
+    const v = resolverInput.trim();
+    try { localStorage.setItem(RESOLVER_KEY, v); } catch {}
+    setActiveResolver(v);
+  };
+  const reset = () => {
+    setResolverInput("");
+    setActiveResolver("");
+    try { localStorage.removeItem(RESOLVER_KEY); } catch {}
+  };
 
   return (
     <Card className="mt-8 border-border bg-card p-5">
@@ -845,8 +868,31 @@ function DependencyChainPanel() {
         </Button>
       </div>
 
+      <div className="mb-4 rounded-lg border border-border bg-background/40 p-3">
+        <div className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          Emergent resolver source
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            value={resolverInput}
+            onChange={(e) => setResolverInput(e.target.value)}
+            placeholder="Paste resolver URL, sheet URL, or `d=` code…"
+            className="font-mono text-xs"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={apply} disabled={isFetching}>Apply</Button>
+            <Button size="sm" variant="ghost" onClick={reset}>Default</Button>
+          </div>
+        </div>
+        <div className="mt-2 text-[11px] text-muted-foreground">
+          Accepts a full <code>/api/studio/resolve?d=…</code> URL, a raw sheet URL
+          (<code>/api/public/&lt;code&gt;</code>), or just the <code>d</code> token. Saved locally.
+        </div>
+      </div>
+
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
-      {error && <div className="py-8 text-center text-sm text-destructive">Failed to resolve dependency chain.</div>}
+      {error && <div className="py-8 text-center text-sm text-destructive">Failed to resolve dependency chain: {String((error as Error).message)}</div>}
+
 
       {data && (
         <div className="space-y-5">
