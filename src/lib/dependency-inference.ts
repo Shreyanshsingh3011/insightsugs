@@ -265,7 +265,22 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
     if (out.meta) for (const [k, v] of Object.entries(out.meta)) nodeMeta[String(k)] = v;
   }
 
-  const nodeSet = new Set<string>(out.nodes?.map(String) ?? []);
+  const extraNodes = out.nodes?.map(String) ?? [];
+  for (const n of extraNodes) {
+    if (!nodeLabels[n]) nodeLabels[n] = n;
+  }
+  return finalise(sheetUrl, headers, rows, rawEdges, nodeLabels, nodeMeta);
+}
+
+function finalise(
+  sheetUrl: string,
+  headers: string[],
+  rows: Record<string, unknown>[],
+  rawEdges: ChainEdge[],
+  nodeLabels: Record<string, string>,
+  nodeMeta: Record<string, NodeMeta>,
+): DependencyChainResponse {
+  const nodeSet = new Set<string>();
   for (const e of rawEdges) { nodeSet.add(e.from); nodeSet.add(e.to); }
   for (const k of Object.keys(nodeLabels)) nodeSet.add(k);
   const nodes = Array.from(nodeSet);
@@ -275,7 +290,7 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
 
   return {
     version: 2,
-    source: { url: input.sheetUrl, headers, rowIds: rows.map((_, i) => String(i + 1)) },
+    source: { url: sheetUrl, headers, rowIds: rows.map((_, i) => String(i + 1)) },
     nodeLabels,
     nodeMeta,
     edges: rawEdges.map((e, i) => ({
