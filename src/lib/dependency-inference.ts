@@ -166,10 +166,77 @@ function deriveFromMapping(
   return { edges, labels, meta };
 }
 
-export async function inferDependencyChain(input: InferenceInput): Promise<DependencyChainResponse> {
-  const { rows, headers } = await fetchSheet(input.sheetUrl);
-  const logic = (input.logic ?? DEFAULT_LOGIC).trim();
+interface EmergentPayload {
+  src?: { u?: string; h?: string[]; r?: string[] };
+  cn?: string[];
+  ce?: { f: string; t: string; k?: string; l?: string }[];
+  e?: unknown[];
+}
 
+function tryDecodeEmergent(s: string): EmergentPayload | null {
+  const v = s.trim();
+  if (!v) return null;
+  let token: string | null = null;
+  if (v.startsWith("http")) {
+    try {
+      const u = new URL(v);
+      token = u.searchParams.get("d");
+    } catch { return null; }
+  } else if (/^eyJ/.test(v)) {
+    token = v;
+  }
+  if (!token) return null;
+  try {
+    // base64 → JSON (tolerate url-safe and missing padding)
+    const b64 = token.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4 ? b64 + "=".repeat(4 - (b64.length % 4)) : b64;
+    const json = atob(pad);
+    return JSON.parse(json) as EmergentPayload;
+  } catch { return null; }
+}
+
+function mappingFromEmergent(p: EmergentPayload, headers: string[]): MappingResult {
+  const has = (h: string) => headers.includes(h);
+  const pick = (...cands: string[]) => cands.find((c) => has(c));
+  const ce = p.ce?.[0];
+  const taskColumn = ce?.f && has(ce.f) ? ce.f : pick("Sr. No.", "ID", "Id");
+  const dependencyColumn = ce?.t && has(ce.t) ? ce.t : pick("Dependent activities", "Depends On", "Dependencies");
+  return {
+    taskColumn,
+    dependencyColumn,
+    assignedColumn: pick("Responsible Person", "Assigned To", "Owner", "approvers name"),
+    statusColumn: pick("Status as on Date", "Status"),
+    delayColumn: pick("Days Taken", "Delay Days", "Delay"),
+  };
+}
+
+export async function inferDependencyChain(input: InferenceInput): Promise<DependencyChainResponse> {
+  const rawLogic = (input.logic ?? "").trim();
+  const emergent = tryDecodeEmergent(rawLogic);
+
+  // Resolve effective sheet URL: Emergent payload's src.u takes precedence
+  const sheetUrl = emergent?.src?.u || input.sheetUrl;
+  if (!sheetUrl) throw new Error("No sheet URL provided");
+
+  const { rows, headers } = await fetchSheet(sheetUrl);
+
+  // If logic is an Emergent URL/token, synthesise mapping from its descriptor.
+  if (emergent) {
+    const m = mappingFromEmergent(emergent, headers);
+    // Pick a friendly label column (truncated process description)
+    const labelCol = ["Process Descriptions", "Stages of Process", "Task Name"].find((c) => headers.includes(c));
+    const derived = deriveFromMapping(rows, m);
+    if (labelCol) {
+      for (const r of rows) {
+        const id = String(r[m.taskColumn ?? ""] ?? "").trim();
+        const lbl = String(r[labelCol] ?? "").trim();
+        if (id && lbl) derived.labels[id] = lbl.length > 60 ? lbl.slice(0, 57) + "…" : lbl;
+      }
+    }
+    return finalise(sheetUrl, headers, rows, derived.edges, derived.labels, derived.meta);
+  }
+
+  const logic = rawLogic || DEFAULT_LOGIC;
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const fn = new Function("rows", "headers", "helpers", `"use strict";${logic}`) as (
     rows: Record<string, unknown>[],
