@@ -21,60 +21,32 @@ export type Activity = {
   criticality: "Critical" | "Normal";
   status: string;
   dependsOn: number[];
+  assignee?: string;
 };
 
 const NODE_W = 240;
-const NODE_H = 100;
+const NODE_H = 90;
 const ACCENT = "oklch(0.7 0.18 25)";
-
-function parseDelay(status: string): number {
-  const m = status.match(/(\d+)\s*days?\s*delay/i);
-  return m ? parseInt(m[1], 10) : 0;
-}
-
-function statusBorder(status: string, delay: number): string {
-  const s = status.toLowerCase();
-  if (delay > 0 || s.includes("delay") || s.includes("block")) return "border-destructive/60";
-  if (s.includes("on track")) return "border-emerald-500/50";
-  if (s.includes("done") || s.includes("complet")) return "border-sky-500/50";
-  return "border-border";
-}
 
 type ActivityNodeData = Activity & Record<string, unknown>;
 
 function ActivityNode({ data }: NodeProps<Node<ActivityNodeData, "activity">>) {
-  const delay = parseDelay(data.status);
-  const border = statusBorder(data.status, delay);
   return (
-    <div
-      className={`w-[240px] rounded-xl border ${border} bg-card/95 p-3 shadow-sm backdrop-blur transition-transform duration-150 hover:scale-[1.02]`}
-    >
-      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-muted-foreground" />
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[11px] text-muted-foreground">#{data.uid}</span>
-        {data.criticality === "Critical" && (
-          <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">
-            Critical
-          </span>
-        )}
-      </div>
-      <div className="mt-1 line-clamp-2 text-[13px] font-medium text-foreground">
+    <div className="w-[240px] rounded-xl border border-cyan-500/40 bg-card/95 p-3 shadow-[0_0_20px_-8px_rgb(34,211,238)] backdrop-blur transition-transform duration-150 hover:scale-[1.02]">
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-cyan-400" />
+      <div className="line-clamp-2 text-[13px] font-semibold text-foreground">
         {data.description}
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-          {data.stage}
-        </span>
-        {delay > 0 && (
-          <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold text-destructive">
-            +{delay}d
-          </span>
-        )}
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-muted-foreground" />
+      {data.assignee && (
+        <div className="mt-1.5 text-[11px] text-muted-foreground">
+          <span className="text-cyan-400/80">Assigned:</span> {data.assignee}
+        </div>
+      )}
+      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-cyan-400" />
     </div>
   );
 }
+
 
 const nodeTypes = { activity: ActivityNode };
 

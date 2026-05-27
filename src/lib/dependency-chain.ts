@@ -18,14 +18,22 @@ export interface ChainEdge {
   to: string;
   label?: string;
 }
+export interface NodeMeta {
+  task?: string;
+  assignee?: string;
+  status?: string;
+  delay?: number;
+}
 export interface DependencyChainResponse {
   version: number;
   nodeLabels?: Record<string, string>;
+  nodeMeta?: Record<string, NodeMeta>;
   source: {
     url: string;
     headers: string[];
     rowIds: string[];
   } | null;
+
   edges: ConfiguredEdge[];
   chain: {
     nodes: string[];

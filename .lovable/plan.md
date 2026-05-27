@@ -1,42 +1,83 @@
 ## Goal
-Make the Dependency Chain panel always derive mapping from the actual sheet rows you point it at, using a clear dependency rule, with no Emergent resolver step.
+
+Make the existing `DependencyChainPanel` in `src/routes/index.tsx` a fully dynamic engine: Apps Script URL + pasted JS mapping logic → resolves dependencies → renders a Task+Assignee-only React Flow graph, analysis cards, and feeds the DelayLens Copilot.
+
+Most plumbing already exists (sheet fetch, `new Function` execution, `DependencyFlow`, localStorage). This plan fills the gaps.
 
 ## Changes
 
-### 1. `src/lib/dependency-inference.ts`
-- Update `DEFAULT_LOGIC` so the rule is explicit: each row's `Sr. No.` depends on the id(s) in `Dependent activities`. Edge direction = **from dependency → to current row** (i.e. `Dependent activities` value → `Sr. No.`), so the topo order reads as "do prerequisites first".
-- Split the cell on `,`, `;`, whitespace, and `/` so multi-id cells still work.
-- Carry `label` per node = `Process Descriptions` (truncated to ~60 chars) into the response so the graph can render it.
-- Add an optional `nodeLabels: Record<string,string>` field on the returned `DependencyChainResponse` (extend the type).
+### 1. `src/lib/dependency-inference.ts` — support two logic shapes
 
-### 2. `src/lib/dependency-chain.ts`
-- Extend `DependencyChainResponse` with optional `nodeLabels?: Record<string, string>`.
-- No other changes.
+Today the pasted logic must return `{ edges, labels }`. Add support for the mapping-style shape the user describes:
 
-### 3. `src/routes/index.tsx` — `DependencyChainPanel`
-- Drop the two-mode tabs. Single panel:
-  - One input: **Sheet URL** (Apps Script `/exec` or any public JSON), persisted to `localStorage` (`dependency.sheet.v1`).
-  - Collapsible "Advanced logic" `<details>` with the editable JS textarea (still persisted), defaulting to the new rule. Most users never open it.
-  - Buttons: **Resolve** (re-runs) and **Reset logic**.
-- Auto-run on mount when a saved sheet URL exists (`enabled: !!sheetUrl`).
-- Remove `RESOLVER_KEY`, `activeResolver`, `loadDependencyChain` import, and all resolver-mode UI.
-- Pass `data.nodeLabels` into `chainToActivities` so each node shows its `Process Descriptions` instead of the raw `Sr. No.`.
-- Empty-state hint when no URL is saved: "Paste your Apps Script web app URL to map dependencies from your sheet."
+```js
+return {
+  taskColumn: "Task Name",
+  assignedColumn: "Assigned To",
+  dependencyColumn: "Depends On",
+  statusColumn: "Status",
+  delayColumn: "Delay Days"
+}
+```
 
-### 4. `src/components/DependencyFlow.tsx`
-- Already renders `description` per node; just ensure `chainToActivities` populates `description` from `nodeLabels[id]` (falling back to the node id). No component-internal change expected — verify and adjust only if needed.
+After running `new Function(...)`:
+- If result has `edges` → use existing path.
+- If result has `taskColumn` (mapping shape) → derive edges internally: each row's task depends on ids/names listed in `dependencyColumn` (use `helpers.splitIds`). Build `nodeLabels` from `taskColumn`, and a new `nodeMeta: Record<string, { task, assignee, status, delay }>` from the mapped columns.
 
-### 5. `chainToActivities` (in `src/routes/index.tsx`)
-- Use `data.nodeLabels?.[node] ?? node` for `description`; keep `uid`/`id` as the Sr. No.; build `dependsOn` from `directEdges` as before.
+Extend `DependencyChainResponse` (in `src/lib/dependency-chain.ts`) with optional `nodeMeta` and keep the existing `nodeLabels`.
 
-## Edge cases handled
-- Sheet URL returns an array, `{ data: [...] }`, or `{ rows: [...] }` — already handled in `fetchSheet`.
-- `Dependent activities` is `null`/`""` → row contributes a node but no incoming edge.
-- Cell with multiple ids (`"2, 3"`) → multiple edges.
-- Self-reference or unknown id → still added as edge; cycles surface via `isDAG: false` in the existing stats line.
-- CORS: Apps Script `/exec` deployed "Anyone" supports CORS GET; if the user's URL blocks CORS we surface the fetch error in the existing red error line (no silent failure).
+Update `DEFAULT_LOGIC` to the mapping example above (user-facing default), keeping the advanced `edges` form documented in a comment.
+
+### 2. `src/routes/index.tsx` — UI polish on `DependencyChainPanel`
+
+- Promote the dependency logic editor out of `<details>` so it is always visible below the URL field.
+- Style as a "VS Code terminal" block: dark `bg-[#0b1020]`, mono font, cyan neon border using `shadow-[0_0_0_1px_rgb(34,211,238),0_0_24px_-4px_rgb(34,211,238)]` and a top bar with "● ● ●" dots + label `DEPENDENCY LOGIC (PASTE FROM EMERGENT)`.
+- Field 1 label updated to `SHEET URL (APPS SCRIPT WEB APP OR PUBLIC JSON)`.
+- Keep Resolve / Refresh / Reset behavior and localStorage keys (`dependency.sheet.v1`, `dependency.logic.v1`).
+
+### 3. `src/components/DependencyFlow.tsx` — Task + Assignee only
+
+Confirm/adjust the node renderer so each node shows two lines:
+- Line 1: Task Name (bold)
+- Line 2: `Assigned: <name>` (muted)
+
+No dates, status, IDs, or raw JSON in the graph. `chainToActivities` in `index.tsx` will pass `description = task` and a new `assignee` field sourced from `nodeMeta`.
+
+### 4. New analysis cards (in `DependencyChainPanel`)
+
+Compute from `chain` + `nodeMeta`:
+- **Top Blocker** — node with max `descendants.length` (most downstream tasks waiting).
+- **Critical Chain** — longest path through the DAG (DFS on topo order).
+- **At Risk Tasks** — nodes whose any ancestor has `status !== "Done"` or `delay > 0`.
+- **Most Delayed Person** — group `nodeMeta` by assignee, sum `delay`, pick max.
+
+Render as a 4-card grid above the graph with a one-line human insight, e.g.
+`"Electrical Work is delayed because Survey Work (Ajay) is pending for 12 days."`
+
+### 5. Copilot integration
+
+In `askChatbot` call site (line ~674), include a compact dependency context when available: pass `{ chain: data.chain, nodeMeta, topBlocker, criticalChain }` via the existing extras/context channel so the assistant can answer:
+- Why is this task delayed?
+- Who is blocking task X?
+- Which dependency chain is critical?
+- Show all tasks dependent on X
+- Which employee is causing highest delay?
+
+Store the latest resolved chain in a module-level ref or lift it to `Dashboard` state so the chat panel can read it. No server changes required — context is appended to the user message payload.
+
+### 6. Persistence
+
+Already handled. Verify both keys load on mount and the resolved chain auto-runs via `useQuery({ enabled: !!savedSheet })`.
+
+## Technical notes
+
+- `new Function` sandbox stays client-side; no eval on server.
+- `splitIds` already accepts `, ; | / whitespace` separators.
+- React Flow is already wired through `DependencyFlow`; no new deps.
+- No Monaco — a styled `<textarea>` with the neon shell meets the "VS Code style" bar without adding ~2MB of bundle.
 
 ## Out of scope
-- Server-side proxy for non-CORS sheet URLs.
-- Editing the dependency rule per-row in the UI.
-- Persisting graph layout.
+
+- Real Monaco editor (textarea-with-chrome instead).
+- Server-side resolver (kept fully client-side).
+- Editing sheet data from the dashboard.

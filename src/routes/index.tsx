@@ -23,6 +23,7 @@ import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
 import { inferDependencyChain, DEFAULT_LOGIC } from "@/lib/dependency-inference";
 import type { DependencyChainResponse } from "@/lib/dependency-chain";
+import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 
 export const Route = createFileRoute("/")({
@@ -667,6 +668,8 @@ function Copilot({ data }: { data: DashboardData }) {
   const [open, setOpen] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dep, setDep] = useState<DepSnapshot>(() => depStore.get());
+  useEffect(() => depStore.subscribe(() => setDep(depStore.get())), []);
   type ChatMsg = { role: "user" | "assistant"; content: string; citations?: Citation[] };
   const [messages, setMessages] = useState<ChatMsg[]>([
     { role: "assistant", content: "I'm your **DelayLens Copilot**. I can predict at-risk items, explain dependencies, advise next actions, and generate reports — all grounded in your live dashboard data with citations." },
@@ -685,7 +688,17 @@ function Copilot({ data }: { data: DashboardData }) {
     department_ranking: data.department_ranking,
     tat_performance: data.tat_performance,
     flags: data.flags,
-  }), [data]);
+    dependency_chain: dep.chain ? {
+      nodes: dep.chain.chain.nodes,
+      directEdges: dep.chain.chain.directEdges,
+      topoOrder: dep.chain.chain.topoOrder,
+      isDAG: dep.chain.chain.isDAG,
+      nodeLabels: dep.chain.nodeLabels,
+      nodeMeta: dep.chain.nodeMeta,
+      insights: dep.insights,
+    } : null,
+  }), [data, dep]);
+
 
   const runAction = (action: "export_flags_pdf" | "export_flags_csv" | "none") => {
     if (action === "export_flags_pdf") { exportFlagsPdf(data); toast.success("Flags PDF downloaded"); }
@@ -846,6 +859,13 @@ function DependencyChainPanel() {
     enabled: !!savedSheet,
   });
 
+  const insights = useMemo(() => computeInsights(data), [data]);
+
+  // Push to shared store so Copilot can read live dependency context
+  useEffect(() => {
+    depStore.set({ chain: data ?? null, insights });
+  }, [data, insights]);
+
   const resolve = () => {
     const v = sheetInput.trim();
     try {
@@ -865,7 +885,7 @@ function DependencyChainPanel() {
             Dependency Chain
           </div>
           <div className="text-xs text-muted-foreground">
-            Mapping is derived from your actual sheet rows using the rule below.
+            Live mapping from your sheet, resolved via the JS logic below.
           </div>
         </div>
         <Button size="sm" variant="outline" onClick={() => refetch()} disabled={!savedSheet || isFetching}>
@@ -873,9 +893,9 @@ function DependencyChainPanel() {
         </Button>
       </div>
 
-      <div className="mb-4 space-y-3 rounded-lg border border-border bg-background/40 p-3">
+      <div className="mb-4 space-y-4">
         <div>
-          <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Sheet URL (Apps Script web app or public JSON)
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -891,32 +911,42 @@ function DependencyChainPanel() {
           </div>
         </div>
 
-        <details className="group">
-          <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
-            Advanced — edit dependency logic
-          </summary>
-          <div className="mt-2">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                JS body — gets <code>rows</code>, <code>headers</code>, <code>helpers</code>; returns <code>{`{ edges, labels? }`}</code>
+        {/* Neon VS Code-style editor */}
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Dependency Logic (paste from Emergent)
+            </span>
+            <button type="button" onClick={resetLogic} className="text-[10px] text-cyan-400 hover:underline">
+              Reset to default
+            </button>
+          </div>
+          <div
+            className="overflow-hidden rounded-lg border border-cyan-500/40 bg-[#0b1020]"
+            style={{ boxShadow: "0 0 0 1px rgba(34,211,238,0.25), 0 0 28px -6px rgba(34,211,238,0.45)" }}
+          >
+            <div className="flex items-center gap-2 border-b border-cyan-500/20 bg-[#080c1a] px-3 py-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-yellow-500/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
+              <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-cyan-300/80">
+                dependency-logic.js
               </span>
-              <button type="button" onClick={resetLogic} className="text-[10px] text-primary hover:underline">
-                Reset to default
-              </button>
             </div>
             <Textarea
               value={logicInput}
               onChange={(e) => setLogicInput(e.target.value)}
-              rows={10}
-              className="font-mono text-[11px] leading-relaxed"
+              rows={12}
+              spellCheck={false}
+              className="rounded-none border-0 bg-transparent font-mono text-[12px] leading-relaxed text-cyan-100 placeholder:text-cyan-100/30 focus-visible:ring-0"
             />
           </div>
-        </details>
+        </div>
       </div>
 
       {!savedSheet && (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          Paste your Apps Script web app URL above to map dependencies from your sheet.
+          Paste your Apps Script web app URL above and hit Resolve.
         </div>
       )}
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
@@ -924,6 +954,8 @@ function DependencyChainPanel() {
 
       {data && (
         <div className="space-y-5">
+          <InsightCards insights={insights} />
+
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Nodes" value={data.chain.stats.nodeCount} />
             <Stat label="Direct edges" value={data.chain.stats.directCount} />
@@ -937,28 +969,115 @@ function DependencyChainPanel() {
           </div>
 
           <DependencyFlow activities={chainToActivities(data)} />
-
-          {data.chain.topoOrder.length > 0 && (
-            <div>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Topological order</div>
-              <div className="flex flex-wrap gap-1.5">
-                {data.chain.topoOrder.map((n, i) => (
-                  <span key={n} className="rounded bg-secondary px-2 py-1 text-xs">
-                    <span className="mr-1 text-muted-foreground">{i + 1}.</span>
-                    {data.nodeLabels?.[n] ? `${n} · ${data.nodeLabels[n]}` : n}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <EdgeList title="Direct edges" edges={data.chain.directEdges} />
-          {data.chain.skipEdges.length > 0 && (
-            <EdgeList title="Skip edges" edges={data.chain.skipEdges} />
-          )}
         </div>
       )}
     </Card>
+  );
+}
+
+function computeInsights(data: DependencyChainResponse | undefined): DepSnapshot["insights"] {
+  if (!data) return {};
+  const t = data.chain.transitive;
+  const meta = data.nodeMeta ?? {};
+  const labels = data.nodeLabels ?? {};
+  const labelOf = (id: string) => labels[id] || meta[id]?.task || id;
+
+  // Top blocker
+  let topBlocker: DepSnapshot["insights"]["topBlocker"];
+  for (const [id, v] of Object.entries(t)) {
+    const downstream = v.descendants.length;
+    if (!topBlocker || downstream > topBlocker.downstream) {
+      topBlocker = { id, label: labelOf(id), downstream };
+    }
+  }
+
+  // Critical chain = longest path in DAG
+  const order = data.chain.topoOrder;
+  const adj = new Map<string, string[]>();
+  for (const e of data.chain.directEdges) {
+    if (!adj.has(e.from)) adj.set(e.from, []);
+    adj.get(e.from)!.push(e.to);
+  }
+  const dist = new Map<string, number>();
+  const prev = new Map<string, string | null>();
+  for (const n of order) { dist.set(n, 0); prev.set(n, null); }
+  let bestEnd = order[0];
+  for (const u of order) {
+    const du = dist.get(u) ?? 0;
+    for (const v of adj.get(u) ?? []) {
+      if ((dist.get(v) ?? 0) < du + 1) {
+        dist.set(v, du + 1);
+        prev.set(v, u);
+        if ((dist.get(v) ?? 0) > (dist.get(bestEnd) ?? 0)) bestEnd = v;
+      }
+    }
+  }
+  const critical: string[] = [];
+  let cur: string | null = bestEnd;
+  while (cur) { critical.unshift(labelOf(cur)); cur = prev.get(cur) ?? null; }
+
+  // At-risk: any ancestor not done OR with delay>0
+  const atRisk: string[] = [];
+  for (const [id, v] of Object.entries(t)) {
+    const risky = v.ancestors.some((a) => {
+      const m = meta[a];
+      if (!m) return false;
+      const notDone = m.status && !/done|complet/i.test(m.status);
+      return notDone || (m.delay ?? 0) > 0;
+    });
+    if (risky) atRisk.push(labelOf(id));
+  }
+
+  // Most delayed person
+  const totals = new Map<string, number>();
+  for (const m of Object.values(meta)) {
+    if (!m.assignee) continue;
+    totals.set(m.assignee, (totals.get(m.assignee) ?? 0) + (m.delay ?? 0));
+  }
+  let mostDelayedPerson: DepSnapshot["insights"]["mostDelayedPerson"];
+  for (const [name, totalDelay] of totals) {
+    if (!mostDelayedPerson || totalDelay > mostDelayedPerson.totalDelay) {
+      mostDelayedPerson = { name, totalDelay };
+    }
+  }
+
+  return { topBlocker, criticalChain: critical, atRisk: atRisk.slice(0, 5), mostDelayedPerson };
+}
+
+function InsightCards({ insights }: { insights: DepSnapshot["insights"] }) {
+  const { topBlocker, criticalChain, atRisk, mostDelayedPerson } = insights;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <InsightCard
+        title="Top Blocker"
+        accent="text-amber-400"
+        body={topBlocker ? `${topBlocker.label} blocks ${topBlocker.downstream} downstream task${topBlocker.downstream === 1 ? "" : "s"}.` : "—"}
+      />
+      <InsightCard
+        title="Critical Chain"
+        accent="text-cyan-400"
+        body={criticalChain && criticalChain.length > 1 ? criticalChain.join(" → ") : "No multi-step path."}
+      />
+      <InsightCard
+        title="At-Risk Tasks"
+        accent="text-rose-400"
+        body={atRisk && atRisk.length > 0 ? atRisk.join(", ") : "None detected."}
+      />
+      <InsightCard
+        title="Most Delayed Person"
+        accent="text-fuchsia-400"
+        body={mostDelayedPerson && mostDelayedPerson.totalDelay > 0 ? `${mostDelayedPerson.name} · ${mostDelayedPerson.totalDelay}d total delay` : "—"}
+      />
+    </div>
+  );
+}
+
+function InsightCard({ title, body, accent }: { title: string; body: string; accent: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-3">
+      <div className={`text-[10px] font-semibold uppercase tracking-wider ${accent}`}>{title}</div>
+      <div className="mt-1 text-xs text-foreground">{body}</div>
+    </div>
   );
 }
 
@@ -975,10 +1094,11 @@ function chainToActivities(data: DependencyChainResponse): Activity[] {
   return nodes.map((n: string) => ({
     uid: n,
     id: idOf.get(n)!,
-    description: data.nodeLabels?.[n] || `Row ${n}`,
-    stage: "ROW",
+    description: data.nodeLabels?.[n] || data.nodeMeta?.[n]?.task || n,
+    stage: "",
     criticality: "Normal" as const,
-    status: "On Track",
+    status: data.nodeMeta?.[n]?.status ?? "",
+    assignee: data.nodeMeta?.[n]?.assignee,
     dependsOn: [...(parents.get(n) ?? [])].map((p) => idOf.get(p)!).filter(Boolean),
   }));
 }
@@ -988,28 +1108,6 @@ function Stat({ label, value }: { label: string; value: number | string }) {
     <div className="rounded-lg border border-border bg-background/40 p-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-xl font-semibold text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function EdgeList({ title, edges, fallback }: { title: string; edges: { from: string; to: string; label?: string }[]; fallback?: { from: string; to: string; label?: string }[] }) {
-  const list = edges.length > 0 ? edges : (fallback ?? []);
-  if (!list.length) return null;
-  return (
-    <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}{edges.length === 0 && fallback && fallback.length > 0 ? " (configured)" : ""}
-      </div>
-      <ul className="space-y-1.5 text-sm">
-        {list.map((e, i) => (
-          <li key={i} className="flex items-center gap-2 rounded-md border border-border bg-background/30 px-3 py-2">
-            <span className="font-medium text-foreground">{e.from}</span>
-            <span className="text-muted-foreground">→</span>
-            <span className="font-medium text-foreground">{e.to}</span>
-            {e.label && <span className="ml-auto rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{e.label}</span>}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
