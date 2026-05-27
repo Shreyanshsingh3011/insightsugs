@@ -133,7 +133,7 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
     rows: Record<string, unknown>[],
     headers: string[],
     helpers: { splitIds: typeof splitIds },
-  ) => { edges: ChainEdge[]; nodes?: string[] };
+  ) => { edges: ChainEdge[]; nodes?: string[]; labels?: Record<string, string> };
 
   const out = fn(rows, headers, { splitIds });
   const rawEdges: ChainEdge[] = (out.edges ?? []).map((e) => ({
@@ -145,6 +145,8 @@ export async function inferDependencyChain(input: InferenceInput): Promise<Depen
   const nodeSet = new Set<string>(out.nodes?.map(String) ?? []);
   for (const e of rawEdges) { nodeSet.add(e.from); nodeSet.add(e.to); }
   const nodes = Array.from(nodeSet);
+  const nodeLabels: Record<string, string> = {};
+  if (out.labels) for (const [k, v] of Object.entries(out.labels)) nodeLabels[String(k)] = String(v);
 
   const { order, isDAG } = topoSort(nodes, rawEdges);
   const { transitive, skipEdges } = transitiveClosure(nodes, rawEdges);
