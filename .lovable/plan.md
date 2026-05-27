@@ -1,42 +1,42 @@
-## Problem
+## Goal
+Make the Dependency Chain panel always derive mapping from the actual sheet rows you point it at, using a clear dependency rule, with no Emergent resolver step.
 
-The DelayLens Copilot sidebar accepts a question but never returns an answer.
+## Changes
 
-The shared link you sent (`depcheck.preview.emergentagent.com/.../share/...`) is a "shared map" loader screen and doesn't expose any data I can use to debug, so the diagnosis is based on the project itself.
+### 1. `src/lib/dependency-inference.ts`
+- Update `DEFAULT_LOGIC` so the rule is explicit: each row's `Sr. No.` depends on the id(s) in `Dependent activities`. Edge direction = **from dependency → to current row** (i.e. `Dependent activities` value → `Sr. No.`), so the topo order reads as "do prerequisites first".
+- Split the cell on `,`, `;`, whitespace, and `/` so multi-id cells still work.
+- Carry `label` per node = `Process Descriptions` (truncated to ~60 chars) into the response so the graph can render it.
+- Add an optional `nodeLabels: Record<string,string>` field on the returned `DependencyChainResponse` (extend the type).
 
-### What I verified
-- `LOVABLE_API_KEY` is present.
-- The AI Gateway responds 200 to `google/gemini-3-flash-preview` with both `Authorization: Bearer …` and `Lovable-API-Key: …` headers — the gateway itself works.
-- The server function `askChatbot` uses Vercel AI SDK's `generateText` via `@ai-sdk/openai-compatible`. Gemini 3 flash returns a `reasoning_details` block that this provider stack has been flaky with, and any thrown error inside the handler propagates as an opaque rejection to the client (we only show `e.message`, which is often empty for non-Error throws), so the UI ends up silent / generic.
-- The handler also has no logging, so `server-function-logs` shows nothing useful.
+### 2. `src/lib/dependency-chain.ts`
+- Extend `DependencyChainResponse` with optional `nodeLabels?: Record<string, string>`.
+- No other changes.
 
-## Fix
+### 3. `src/routes/index.tsx` — `DependencyChainPanel`
+- Drop the two-mode tabs. Single panel:
+  - One input: **Sheet URL** (Apps Script `/exec` or any public JSON), persisted to `localStorage` (`dependency.sheet.v1`).
+  - Collapsible "Advanced logic" `<details>` with the editable JS textarea (still persisted), defaulting to the new rule. Most users never open it.
+  - Buttons: **Resolve** (re-runs) and **Reset logic**.
+- Auto-run on mount when a saved sheet URL exists (`enabled: !!sheetUrl`).
+- Remove `RESOLVER_KEY`, `activeResolver`, `loadDependencyChain` import, and all resolver-mode UI.
+- Pass `data.nodeLabels` into `chainToActivities` so each node shows its `Process Descriptions` instead of the raw `Sr. No.`.
+- Empty-state hint when no URL is saved: "Paste your Apps Script web app URL to map dependencies from your sheet."
 
-Rewrite `src/lib/chat.functions.ts` to call the AI Gateway directly with `fetch`, drop the AI SDK dependency for this path, and add explicit error handling.
+### 4. `src/components/DependencyFlow.tsx`
+- Already renders `description` per node; just ensure `chainToActivities` populates `description` from `nodeLabels[id]` (falling back to the node id). No component-internal change expected — verify and adjust only if needed.
 
-1. **Direct gateway call** in `askChatbot`:
-   - `POST https://ai.gateway.lovable.dev/v1/chat/completions`
-   - Headers: `Authorization: Bearer ${process.env.LOVABLE_API_KEY}`, `Content-Type: application/json`
-   - Body: `{ model: "google/gemini-3-flash-preview", messages: [system, ...history, user] }` (non-streaming)
-   - Read `data.choices[0].message.content`.
-2. **Robust JSON extraction**: strip ```json fences, try `JSON.parse`; on failure, return raw text as `answer` with empty citations and `action: "none"` (existing fallback behaviour, kept).
-3. **Explicit error surfaces** so the UI shows something useful:
-   - 429 → throw `Error("Rate limit reached. Please try again in a minute.")`
-   - 402 → throw `Error("AI credits exhausted. Add credits in Settings → Workspace → Usage.")`
-   - other non-OK → throw with status + body snippet
-   - missing `LOVABLE_API_KEY` → throw clear message
-   - wrap handler body in try/catch and `console.error` the failure so it appears in `server-function-logs`.
-4. **Keep the existing return shape** (`{ answer, citations, action }`) so `src/routes/index.tsx` (Copilot, quick actions, runAction) needs no changes.
-5. **Client toast on failure**: in `Copilot.sendQ`, also `toast.error(e.message)` alongside the inline assistant bubble so the user sees the reason.
+### 5. `chainToActivities` (in `src/routes/index.tsx`)
+- Use `data.nodeLabels?.[node] ?? node` for `description`; keep `uid`/`id` as the Sr. No.; build `dependsOn` from `directEdges` as before.
 
-### Files touched
-- `src/lib/chat.functions.ts` — rewritten handler, same exported signature.
-- `src/routes/index.tsx` — one-line `toast.error` in the chat `catch`.
+## Edge cases handled
+- Sheet URL returns an array, `{ data: [...] }`, or `{ rows: [...] }` — already handled in `fetchSheet`.
+- `Dependent activities` is `null`/`""` → row contributes a node but no incoming edge.
+- Cell with multiple ids (`"2, 3"`) → multiple edges.
+- Self-reference or unknown id → still added as edge; cycles surface via `isDAG: false` in the existing stats line.
+- CORS: Apps Script `/exec` deployed "Anyone" supports CORS GET; if the user's URL blocks CORS we surface the fetch error in the existing red error line (no silent failure).
 
-No schema, route, or dependency changes. `@ai-sdk/openai-compatible` and `ai` stay installed (used nowhere else critical right now; leaving them avoids unrelated build churn).
-
-## Verification
-
-- After the change, send "hello" in the Copilot — expect a real assistant reply.
-- Trigger a known-bad path (temporarily mis-spell the model) and confirm the error toast + `server-function-logs` show the reason.
-- Confirm quick actions (Predict at-risk, Top dependencies, Export PDF/CSV) still work and `action` still triggers the export.
+## Out of scope
+- Server-side proxy for non-CORS sheet URLs.
+- Editing the dependency rule per-row in the UI.
+- Persisting graph layout.

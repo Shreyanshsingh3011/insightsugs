@@ -20,6 +20,7 @@ export interface ChainEdge {
 }
 export interface DependencyChainResponse {
   version: number;
+  nodeLabels?: Record<string, string>;
   source: {
     url: string;
     headers: string[];
