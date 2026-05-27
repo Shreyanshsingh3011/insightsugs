@@ -853,10 +853,12 @@ function DependencyChainPanel() {
     } catch {}
   }, []);
 
+  const hasEmergent = /(^|[?&])d=eyJ/.test(logicInput) || /^eyJ/.test(logicInput.trim());
+  const canResolve = !!savedSheet || hasEmergent;
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["dependency-infer", savedSheet, logicInput],
     queryFn: () => inferDependencyChain({ sheetUrl: savedSheet, logic: logicInput }),
-    enabled: !!savedSheet,
+    enabled: canResolve,
   });
 
   const insights = useMemo(() => computeInsights(data), [data]);
@@ -888,7 +890,7 @@ function DependencyChainPanel() {
             Live mapping from your sheet, resolved via the JS logic below.
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={!savedSheet || isFetching}>
+        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={!canResolve || isFetching}>
           {isFetching ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
@@ -905,7 +907,7 @@ function DependencyChainPanel() {
               placeholder="https://script.google.com/macros/s/…/exec"
               className="font-mono text-xs"
             />
-            <Button size="sm" onClick={resolve} disabled={!sheetInput.trim() || isFetching}>
+            <Button size="sm" onClick={resolve} disabled={(!sheetInput.trim() && !hasEmergent) || isFetching}>
               {isFetching ? "Resolving…" : "Resolve"}
             </Button>
           </div>
@@ -944,9 +946,9 @@ function DependencyChainPanel() {
         </div>
       </div>
 
-      {!savedSheet && (
+      {!canResolve && (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          Paste your Apps Script web app URL above and hit Resolve.
+          Paste an Apps Script URL above, or an Emergent resolver URL in the logic box below, then hit Resolve.
         </div>
       )}
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
