@@ -862,6 +862,9 @@ function DependencyChainPanel() {
             {data.source && <> · Source rows: {data.source.rowIds.length} · Columns: {data.source.headers.length}</>}
           </div>
 
+          <DependencyFlow activities={chainToActivities(data)} />
+
+
           {data.chain.topoOrder.length > 0 && (
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Topological order</div>
