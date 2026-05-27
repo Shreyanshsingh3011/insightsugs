@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { exportFlagsCsv, exportFlagsPdf } from "@/lib/export-flags";
 import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
+import { loadDependencyChain } from "@/lib/dependency-chain";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [
