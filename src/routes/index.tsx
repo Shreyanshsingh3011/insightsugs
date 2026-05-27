@@ -22,6 +22,7 @@ import { exportFlagsCsv, exportFlagsPdf } from "@/lib/export-flags";
 import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
 import { loadDependencyChain } from "@/lib/dependency-chain";
+import { inferDependencyChain, DEFAULT_LOGIC } from "@/lib/dependency-inference";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 
 export const Route = createFileRoute("/")({
@@ -823,33 +824,62 @@ function CitationsBlock({ items }: { items: Citation[] }) {
 }
 
 const RESOLVER_KEY = "dependency.resolver.v1";
+const SHEET_KEY = "dependency.sheet.v1";
+const LOGIC_KEY = "dependency.logic.v1";
+
+type Mode = "resolver" | "infer";
 
 function DependencyChainPanel() {
+  const [mode, setMode] = useState<Mode>("resolver");
   const [resolverInput, setResolverInput] = useState("");
   const [activeResolver, setActiveResolver] = useState("");
+  const [sheetInput, setSheetInput] = useState("");
+  const [logicInput, setLogicInput] = useState(DEFAULT_LOGIC);
+  const [inferKey, setInferKey] = useState(0); // bump to re-run inference
 
   useEffect(() => {
     try {
-      const s = localStorage.getItem(RESOLVER_KEY);
-      if (s) { setResolverInput(s); setActiveResolver(s); }
+      const r = localStorage.getItem(RESOLVER_KEY);
+      if (r) { setResolverInput(r); setActiveResolver(r); }
+      const s = localStorage.getItem(SHEET_KEY);
+      if (s) setSheetInput(s);
+      const l = localStorage.getItem(LOGIC_KEY);
+      if (l) setLogicInput(l);
     } catch {}
   }, []);
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const resolverQuery = useQuery({
     queryKey: ["dependency-chain", activeResolver],
     queryFn: () => loadDependencyChain(activeResolver || undefined),
+    enabled: mode === "resolver",
   });
 
-  const apply = () => {
+  const inferQuery = useQuery({
+    queryKey: ["dependency-infer", inferKey],
+    queryFn: () => inferDependencyChain({ sheetUrl: sheetInput.trim(), logic: logicInput }),
+    enabled: mode === "infer" && inferKey > 0 && !!sheetInput.trim(),
+  });
+
+  const { data, isLoading, error, refetch, isFetching } =
+    mode === "resolver" ? resolverQuery : inferQuery;
+
+  const applyResolver = () => {
     const v = resolverInput.trim();
     try { localStorage.setItem(RESOLVER_KEY, v); } catch {}
     setActiveResolver(v);
   };
-  const reset = () => {
-    setResolverInput("");
-    setActiveResolver("");
+  const resetResolver = () => {
+    setResolverInput(""); setActiveResolver("");
     try { localStorage.removeItem(RESOLVER_KEY); } catch {}
   };
+  const runInference = () => {
+    try {
+      localStorage.setItem(SHEET_KEY, sheetInput.trim());
+      localStorage.setItem(LOGIC_KEY, logicInput);
+    } catch {}
+    setInferKey((k) => k + 1);
+  };
+  const resetLogic = () => setLogicInput(DEFAULT_LOGIC);
 
   return (
     <Card className="mt-8 border-border bg-card p-5">
@@ -860,7 +890,7 @@ function DependencyChainPanel() {
             Dependency Chain Resolver
           </div>
           <div className="text-xs text-muted-foreground">
-            Live column-level dependency graph resolved from the source sheet.
+            Resolve via Emergent studio, or infer dependencies locally from the sheet using your own logic.
           </div>
         </div>
         <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
@@ -868,31 +898,81 @@ function DependencyChainPanel() {
         </Button>
       </div>
 
-      <div className="mb-4 rounded-lg border border-border bg-background/40 p-3">
-        <div className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-          Emergent resolver source
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            value={resolverInput}
-            onChange={(e) => setResolverInput(e.target.value)}
-            placeholder="Paste resolver URL, sheet URL, or `d=` code…"
-            className="font-mono text-xs"
-          />
-          <div className="flex gap-2">
-            <Button size="sm" onClick={apply} disabled={isFetching}>Apply</Button>
-            <Button size="sm" variant="ghost" onClick={reset}>Default</Button>
-          </div>
-        </div>
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          Accepts a full <code>/api/studio/resolve?d=…</code> URL, a raw sheet URL
-          (<code>/api/public/&lt;code&gt;</code>), or just the <code>d</code> token. Saved locally.
-        </div>
+      <div className="mb-4 flex gap-2">
+        <Button size="sm" variant={mode === "resolver" ? "default" : "outline"} onClick={() => setMode("resolver")}>
+          Emergent Resolver
+        </Button>
+        <Button size="sm" variant={mode === "infer" ? "default" : "outline"} onClick={() => setMode("infer")}>
+          Sheet + Custom Logic
+        </Button>
       </div>
 
-      {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
-      {error && <div className="py-8 text-center text-sm text-destructive">Failed to resolve dependency chain: {String((error as Error).message)}</div>}
+      {mode === "resolver" && (
+        <div className="mb-4 rounded-lg border border-border bg-background/40 p-3">
+          <div className="mb-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+            Emergent resolver source
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              value={resolverInput}
+              onChange={(e) => setResolverInput(e.target.value)}
+              placeholder="Paste resolver URL, sheet URL, or `d=` code…"
+              className="font-mono text-xs"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={applyResolver} disabled={isFetching}>Apply</Button>
+              <Button size="sm" variant="ghost" onClick={resetResolver}>Default</Button>
+            </div>
+          </div>
+          <div className="mt-2 text-[11px] text-muted-foreground">
+            Accepts a full <code>/api/studio/resolve?d=…</code> URL, a raw sheet URL
+            (<code>/api/public/&lt;code&gt;</code>), or just the <code>d</code> token. Saved locally.
+          </div>
+        </div>
+      )}
 
+      {mode === "infer" && (
+        <div className="mb-4 space-y-3 rounded-lg border border-border bg-background/40 p-3">
+          <div>
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Sheet URL (Apps Script web app or public JSON)
+            </div>
+            <Input
+              value={sheetInput}
+              onChange={(e) => setSheetInput(e.target.value)}
+              placeholder="https://script.google.com/macros/s/…/exec  or  https://…/api/public/<code>"
+              className="font-mono text-xs"
+            />
+          </div>
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Inference logic (JS) — receives <code>rows</code>, <code>headers</code>, <code>helpers</code>; returns <code>{`{ edges, nodes? }`}</code>
+              </span>
+              <button type="button" onClick={resetLogic} className="text-[10px] text-primary hover:underline">
+                Reset to default
+              </button>
+            </div>
+            <Textarea
+              value={logicInput}
+              onChange={(e) => setLogicInput(e.target.value)}
+              rows={10}
+              className="font-mono text-[11px] leading-relaxed"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={runInference} disabled={!sheetInput.trim() || isFetching}>
+              {isFetching ? "Inferring…" : "Resolve from data"}
+            </Button>
+            <span className="self-center text-[11px] text-muted-foreground">
+              The logic runs in your browser against the actual fetched rows.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
+      {error && <div className="py-8 text-center text-sm text-destructive">Failed: {String((error as Error).message)}</div>}
 
       {data && (
         <div className="space-y-5">
@@ -909,7 +989,6 @@ function DependencyChainPanel() {
           </div>
 
           <DependencyFlow activities={chainToActivities(data)} />
-
 
           {data.chain.topoOrder.length > 0 && (
             <div>
