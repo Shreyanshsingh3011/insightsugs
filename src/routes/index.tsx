@@ -22,6 +22,7 @@ import { exportFlagsCsv, exportFlagsPdf } from "@/lib/export-flags";
 import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
 import { loadDependencyChain } from "@/lib/dependency-chain";
+import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [
@@ -861,6 +862,9 @@ function DependencyChainPanel() {
             {data.source && <> · Source rows: {data.source.rowIds.length} · Columns: {data.source.headers.length}</>}
           </div>
 
+          <DependencyFlow activities={chainToActivities(data)} />
+
+
           {data.chain.topoOrder.length > 0 && (
             <div>
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Topological order</div>
@@ -887,6 +891,26 @@ function DependencyChainPanel() {
       )}
     </Card>
   );
+}
+
+function chainToActivities(data: Awaited<ReturnType<typeof loadDependencyChain>>): Activity[] {
+  const nodes = data.chain.nodes.length ? data.chain.nodes : (data.source?.rowIds ?? []);
+  const idOf = new Map<string, number>();
+  nodes.forEach((n, i) => idOf.set(n, i + 1));
+  const parents = new Map<string, Set<string>>();
+  data.chain.directEdges.forEach((e) => {
+    if (!parents.has(e.to)) parents.set(e.to, new Set());
+    parents.get(e.to)!.add(e.from);
+  });
+  return nodes.map((n) => ({
+    uid: n,
+    id: idOf.get(n)!,
+    description: `Row ${n}`,
+    stage: "ROW",
+    criticality: "Normal" as const,
+    status: "On Track",
+    dependsOn: [...(parents.get(n) ?? [])].map((p) => idOf.get(p)!).filter(Boolean),
+  }));
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {
