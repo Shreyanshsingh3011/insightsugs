@@ -946,9 +946,9 @@ function DependencyChainPanel() {
         </div>
       </div>
 
-      {!savedSheet && (
+      {!canResolve && (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          Paste your Apps Script web app URL above and hit Resolve.
+          Paste an Apps Script URL above, or an Emergent resolver URL in the logic box below, then hit Resolve.
         </div>
       )}
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
