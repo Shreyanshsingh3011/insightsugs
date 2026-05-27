@@ -820,3 +820,102 @@ function CitationsBlock({ items }: { items: Citation[] }) {
     </div>
   );
 }
+
+function DependencyChainPanel() {
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["dependency-chain"],
+    queryFn: loadDependencyChain,
+  });
+
+  return (
+    <Card className="mt-8 border-border bg-card p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <FileSearch className="h-4 w-4 text-primary" />
+            Dependency Chain Resolver
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Live column-level dependency graph resolved from the source sheet.
+          </div>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
+          {isFetching ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
+      {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
+      {error && <div className="py-8 text-center text-sm text-destructive">Failed to resolve dependency chain.</div>}
+
+      {data && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Nodes" value={data.chain.stats.nodeCount} />
+            <Stat label="Direct edges" value={data.chain.stats.directCount} />
+            <Stat label="Skip edges" value={data.chain.stats.skipCount} />
+            <Stat label="Transitive" value={data.chain.stats.transitiveEdgeCount} />
+          </div>
+
+          <div className="text-xs text-muted-foreground">
+            DAG: <span className={data.chain.isDAG ? "text-emerald-500" : "text-destructive"}>{data.chain.isDAG ? "yes" : "cycle detected"}</span>
+            {data.source && <> · Source rows: {data.source.rowIds.length} · Columns: {data.source.headers.length}</>}
+          </div>
+
+          {data.chain.topoOrder.length > 0 && (
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Topological order</div>
+              <div className="flex flex-wrap gap-1.5">
+                {data.chain.topoOrder.map((n, i) => (
+                  <span key={n} className="rounded bg-secondary px-2 py-1 text-xs">
+                    <span className="mr-1 text-muted-foreground">{i + 1}.</span>{n}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <EdgeList title="Direct edges" edges={data.chain.directEdges} fallback={data.edges.map(e => ({
+            from: e.from[0]?.i ?? "?",
+            to: e.to[0]?.i ?? "?",
+            label: e.label || e.cardinality,
+          }))} />
+
+          {data.chain.skipEdges.length > 0 && (
+            <EdgeList title="Skip edges" edges={data.chain.skipEdges} />
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-3">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 text-xl font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function EdgeList({ title, edges, fallback }: { title: string; edges: { from: string; to: string; label?: string }[]; fallback?: { from: string; to: string; label?: string }[] }) {
+  const list = edges.length > 0 ? edges : (fallback ?? []);
+  if (!list.length) return null;
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}{edges.length === 0 && fallback && fallback.length > 0 ? " (configured)" : ""}
+      </div>
+      <ul className="space-y-1.5 text-sm">
+        {list.map((e, i) => (
+          <li key={i} className="flex items-center gap-2 rounded-md border border-border bg-background/30 px-3 py-2">
+            <span className="font-medium text-foreground">{e.from}</span>
+            <span className="text-muted-foreground">→</span>
+            <span className="font-medium text-foreground">{e.to}</span>
+            {e.label && <span className="ml-auto rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{e.label}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
