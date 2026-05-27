@@ -668,6 +668,8 @@ function Copilot({ data }: { data: DashboardData }) {
   const [open, setOpen] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dep, setDep] = useState<DepSnapshot>(() => depStore.get());
+  useEffect(() => depStore.subscribe(() => setDep(depStore.get())), []);
   type ChatMsg = { role: "user" | "assistant"; content: string; citations?: Citation[] };
   const [messages, setMessages] = useState<ChatMsg[]>([
     { role: "assistant", content: "I'm your **DelayLens Copilot**. I can predict at-risk items, explain dependencies, advise next actions, and generate reports — all grounded in your live dashboard data with citations." },
@@ -686,7 +688,17 @@ function Copilot({ data }: { data: DashboardData }) {
     department_ranking: data.department_ranking,
     tat_performance: data.tat_performance,
     flags: data.flags,
-  }), [data]);
+    dependency_chain: dep.chain ? {
+      nodes: dep.chain.chain.nodes,
+      directEdges: dep.chain.chain.directEdges,
+      topoOrder: dep.chain.chain.topoOrder,
+      isDAG: dep.chain.chain.isDAG,
+      nodeLabels: dep.chain.nodeLabels,
+      nodeMeta: dep.chain.nodeMeta,
+      insights: dep.insights,
+    } : null,
+  }), [data, dep]);
+
 
   const runAction = (action: "export_flags_pdf" | "export_flags_csv" | "none") => {
     if (action === "export_flags_pdf") { exportFlagsPdf(data); toast.success("Flags PDF downloaded"); }
