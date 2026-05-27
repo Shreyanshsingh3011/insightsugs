@@ -74,6 +74,7 @@ function Dashboard() {
             </div>
             <TatTable data={data} />
             <FlagsPanel data={data} />
+            <DependencyChainPanel />
             <DataFeed extras={extras} setExtras={setExtras} data={data} />
           </>
         )}
