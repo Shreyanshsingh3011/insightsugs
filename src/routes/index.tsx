@@ -23,6 +23,7 @@ import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
 import { inferDependencyChain, DEFAULT_LOGIC } from "@/lib/dependency-inference";
 import type { DependencyChainResponse } from "@/lib/dependency-chain";
+import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 
 export const Route = createFileRoute("/")({
@@ -1095,29 +1096,6 @@ function Stat({ label, value }: { label: string; value: number | string }) {
     <div className="rounded-lg border border-border bg-background/40 p-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 text-xl font-semibold text-foreground">{value}</div>
-    </div>
-  );
-}
-
-
-function EdgeList({ title, edges, fallback }: { title: string; edges: { from: string; to: string; label?: string }[]; fallback?: { from: string; to: string; label?: string }[] }) {
-  const list = edges.length > 0 ? edges : (fallback ?? []);
-  if (!list.length) return null;
-  return (
-    <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}{edges.length === 0 && fallback && fallback.length > 0 ? " (configured)" : ""}
-      </div>
-      <ul className="space-y-1.5 text-sm">
-        {list.map((e, i) => (
-          <li key={i} className="flex items-center gap-2 rounded-md border border-border bg-background/30 px-3 py-2">
-            <span className="font-medium text-foreground">{e.from}</span>
-            <span className="text-muted-foreground">→</span>
-            <span className="font-medium text-foreground">{e.to}</span>
-            {e.label && <span className="ml-auto rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">{e.label}</span>}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
