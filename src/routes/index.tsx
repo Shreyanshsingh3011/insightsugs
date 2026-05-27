@@ -963,19 +963,19 @@ function DependencyChainPanel() {
 }
 
 
-function chainToActivities(data: Awaited<ReturnType<typeof loadDependencyChain>>): Activity[] {
+function chainToActivities(data: DependencyChainResponse): Activity[] {
   const nodes = data.chain.nodes.length ? data.chain.nodes : (data.source?.rowIds ?? []);
   const idOf = new Map<string, number>();
-  nodes.forEach((n, i) => idOf.set(n, i + 1));
+  nodes.forEach((n: string, i: number) => idOf.set(n, i + 1));
   const parents = new Map<string, Set<string>>();
   data.chain.directEdges.forEach((e) => {
     if (!parents.has(e.to)) parents.set(e.to, new Set());
     parents.get(e.to)!.add(e.from);
   });
-  return nodes.map((n) => ({
+  return nodes.map((n: string) => ({
     uid: n,
     id: idOf.get(n)!,
-    description: `Row ${n}`,
+    description: data.nodeLabels?.[n] || `Row ${n}`,
     stage: "ROW",
     criticality: "Normal" as const,
     status: "On Track",
