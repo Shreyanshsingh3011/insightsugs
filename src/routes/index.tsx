@@ -890,7 +890,7 @@ function DependencyChainPanel() {
             Live mapping from your sheet, resolved via the JS logic below.
           </div>
         </div>
-        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={!savedSheet || isFetching}>
+        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={!canResolve || isFetching}>
           {isFetching ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
