@@ -21,8 +21,8 @@ export const depStore = {
     snapshot = s;
     listeners.forEach((l) => l());
   },
-  subscribe: (l: () => void) => {
+  subscribe: (l: () => void): (() => void) => {
     listeners.add(l);
-    return () => listeners.delete(l);
+    return () => { listeners.delete(l); };
   },
 };
