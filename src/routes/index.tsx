@@ -907,7 +907,7 @@ function DependencyChainPanel() {
               placeholder="https://script.google.com/macros/s/…/exec"
               className="font-mono text-xs"
             />
-            <Button size="sm" onClick={resolve} disabled={!sheetInput.trim() || isFetching}>
+            <Button size="sm" onClick={resolve} disabled={(!sheetInput.trim() && !hasEmergent) || isFetching}>
               {isFetching ? "Resolving…" : "Resolve"}
             </Button>
           </div>
