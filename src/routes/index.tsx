@@ -669,7 +669,7 @@ function Copilot({ data }: { data: DashboardData }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [dep, setDep] = useState<DepSnapshot>(() => depStore.get());
-  useEffect(() => depStore.subscribe(() => setDep(depStore.get())), []);
+  useEffect(() => { const u = depStore.subscribe(() => setDep(depStore.get())); return () => { u; }; }, []);
   type ChatMsg = { role: "user" | "assistant"; content: string; citations?: Citation[] };
   const [messages, setMessages] = useState<ChatMsg[]>([
     { role: "assistant", content: "I'm your **DelayLens Copilot**. I can predict at-risk items, explain dependencies, advise next actions, and generate reports — all grounded in your live dashboard data with citations." },
