@@ -893,6 +893,26 @@ function DependencyChainPanel() {
   );
 }
 
+function chainToActivities(data: Awaited<ReturnType<typeof loadDependencyChain>>): Activity[] {
+  const nodes = data.chain.nodes.length ? data.chain.nodes : (data.source?.rowIds ?? []);
+  const idOf = new Map<string, number>();
+  nodes.forEach((n, i) => idOf.set(n, i + 1));
+  const parents = new Map<string, Set<string>>();
+  data.chain.directEdges.forEach((e) => {
+    if (!parents.has(e.to)) parents.set(e.to, new Set());
+    parents.get(e.to)!.add(e.from);
+  });
+  return nodes.map((n) => ({
+    uid: n,
+    id: idOf.get(n)!,
+    description: `Row ${n}`,
+    stage: "ROW",
+    criticality: "Normal" as const,
+    status: "On Track",
+    dependsOn: [...(parents.get(n) ?? [])].map((p) => idOf.get(p)!).filter(Boolean),
+  }));
+}
+
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-lg border border-border bg-background/40 p-3">
