@@ -42,8 +42,32 @@ export interface DependencyChainResponse {
   };
 }
 
-export async function loadDependencyChain(): Promise<DependencyChainResponse> {
-  const res = await fetch(RESOLVE_URL);
+const RESOLVER_BASE = "https://depcheck.preview.emergentagent.com/api/studio/resolve";
+
+/**
+ * Accepts:
+ *  - full resolver URL (https://…/resolve?d=…)
+ *  - just the `d` token (eyJ…)
+ *  - a raw sheet/source URL (https://connector-flow-1…/api/public/<code>) → wrapped into a minimal resolver payload
+ *  - empty/undefined → default RESOLVE_URL
+ */
+export function buildResolverUrl(input?: string): string {
+  const v = (input ?? "").trim();
+  if (!v) return RESOLVE_URL;
+  if (v.startsWith("http")) {
+    if (v.includes("/api/studio/resolve")) return v;
+    // raw source URL — wrap into minimal resolver descriptor
+    const payload = { v: 2, src: { u: v, h: [], r: [] }, g: [], e: [], cn: [], ce: [] };
+    const token = btoa(JSON.stringify(payload));
+    return `${RESOLVER_BASE}?d=${token}`;
+  }
+  // assume bare token
+  return `${RESOLVER_BASE}?d=${v}`;
+}
+
+export async function loadDependencyChain(input?: string): Promise<DependencyChainResponse> {
+  const url = buildResolverUrl(input);
+  const res = await fetch(url);
   if (!res.ok) throw new Error("Resolver " + res.status);
   return res.json();
 }
