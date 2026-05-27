@@ -853,10 +853,12 @@ function DependencyChainPanel() {
     } catch {}
   }, []);
 
+  const hasEmergent = /(^|[?&])d=eyJ/.test(logicInput) || /^eyJ/.test(logicInput.trim());
+  const canResolve = !!savedSheet || hasEmergent;
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["dependency-infer", savedSheet, logicInput],
     queryFn: () => inferDependencyChain({ sheetUrl: savedSheet, logic: logicInput }),
-    enabled: !!savedSheet,
+    enabled: canResolve,
   });
 
   const insights = useMemo(() => computeInsights(data), [data]);
