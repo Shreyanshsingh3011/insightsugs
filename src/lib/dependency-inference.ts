@@ -12,21 +12,25 @@ export interface InferenceInput {
   labelColumn?: string;
 }
 
-export const DEFAULT_LOGIC = `// Available: rows (array of row objects), headers (string[]), helpers { splitIds }
-// Return: { edges: [{ from, to, label? }], nodes?: string[] }
-// Default rule: use "Sr. No." as id and "Dependent activities" as the dependency.
-const idCol = "Sr. No.";
-const depCol = "Dependent activities";
-const labelCol = "Process Descriptions";
+export const DEFAULT_LOGIC = `// Available: rows, headers, helpers { splitIds }
+// Return: { edges:[{from,to,label?}], nodes?: string[], labels?: Record<string,string> }
+// Rule: each row's "Sr. No." depends on id(s) listed in "Dependent activities".
+// Edge direction = dependency -> current row (so prerequisites come first in topo order).
+const ID = "Sr. No.";
+const DEP = "Dependent activities";
+const NAME = "Process Descriptions";
 const edges = [];
+const labels = {};
 for (const r of rows) {
-  const from = String(r[idCol] ?? "").trim();
-  if (!from) continue;
-  for (const t of splitIds(r[depCol])) {
-    edges.push({ from, to: t, label: String(r[labelCol] ?? "").slice(0, 60) });
+  const me = String(r[ID] ?? "").trim();
+  if (!me) continue;
+  labels[me] = String(r[NAME] ?? "").slice(0, 80);
+  for (const dep of helpers.splitIds(r[DEP])) {
+    if (dep === me) continue;
+    edges.push({ from: dep, to: me });
   }
 }
-return { edges };`;
+return { edges, labels };`;
 
 function splitIds(v: unknown): string[] {
   if (v === null || v === undefined || v === "") return [];
