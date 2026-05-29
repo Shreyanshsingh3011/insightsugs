@@ -36,7 +36,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 const STORAGE_KEY = "dashboard.extras.v1";
-const COLORS = ["oklch(0.78 0.18 145)", "oklch(0.72 0.19 50)", "oklch(0.7 0.18 280)", "oklch(0.75 0.18 200)", "oklch(0.7 0.2 10)", "oklch(0.68 0.03 255)"];
+const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-2)", "var(--chart-5)", "var(--chart-4)", "var(--muted-foreground)"];
 
 function Dashboard() {
   const { data: base, isLoading, error, refetch } = useQuery({
@@ -169,7 +169,7 @@ function StatusChart({ data }: { data: DashboardData }) {
             <Pie data={rows} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
               {rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
-            <Tooltip contentStyle={{ background: "oklch(0.21 0.025 265)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
+            <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
           </PieChart>
         </ResponsiveContainer>
@@ -186,12 +186,12 @@ function ReasonsChart({ data }: { data: DashboardData }) {
       <div className="mt-4 h-64">
         <ResponsiveContainer>
           <BarChart data={rows}>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.03 265)" />
-            <XAxis dataKey="name" stroke="oklch(0.68 0.03 255)" fontSize={11} />
-            <YAxis stroke="oklch(0.68 0.03 255)" fontSize={11} />
-            <Tooltip contentStyle={{ background: "oklch(0.21 0.025 265)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
-            <Bar dataKey="count" fill="oklch(0.78 0.18 145)" radius={[6,6,0,0]} />
-            <Bar dataKey="days" fill="oklch(0.72 0.19 50)" radius={[6,6,0,0]} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={11} />
+            <YAxis stroke="var(--muted-foreground)" fontSize={11} />
+            <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
+            <Bar dataKey="count" fill="var(--chart-1)" radius={[6,6,0,0]} />
+            <Bar dataKey="days" fill="var(--chart-3)" radius={[6,6,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -209,7 +209,7 @@ function RiskGauge({ data }: { data: DashboardData }) {
       <div className="mt-6 flex flex-col items-center justify-center">
         <div className="relative h-44 w-44">
           <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-            <circle cx="50" cy="50" r="42" fill="none" stroke="oklch(0.3 0.03 265)" strokeWidth="10" />
+            <circle cx="50" cy="50" r="42" fill="none" stroke="var(--border)" strokeWidth="10" />
             <circle cx="50" cy="50" r="42" fill="none" stroke={color} strokeWidth="10"
               strokeDasharray={`${(score/100)*264} 264`} strokeLinecap="round" />
           </svg>
