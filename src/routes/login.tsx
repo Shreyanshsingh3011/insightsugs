@@ -85,6 +85,17 @@ function LoginPage() {
           {mode === "signup" && (
             <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
           )}
+          {mode === "signup" && (
+            <Select value={requestedRole} onValueChange={(v) => setRequestedRole(v as RequestedRole)}>
+              <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="super_admin">Super admin</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
           <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={1} />
           <Button type="submit" className="w-full" disabled={busy}>
