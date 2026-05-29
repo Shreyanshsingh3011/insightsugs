@@ -79,7 +79,7 @@ function LoginPage() {
             <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
           )}
           <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+          <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={1} />
           <Button type="submit" className="w-full" disabled={busy}>
             {mode === "signin" ? "Sign in" : "Sign up"}
           </Button>
