@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
-  CalendarDays, Settings, Sun, Moon, Activity,
+  CalendarDays, Settings, Sun, Moon, Activity, FileText, Sparkles,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -47,6 +47,8 @@ function AuthLayout() {
           <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
           <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
           <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+          <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Documents</SideLink>
+          <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
           {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
           {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
           {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
@@ -65,6 +67,8 @@ function AuthLayout() {
             <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
             <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+            <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Docs</SideLink>
+            <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
             {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
             {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
             {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
