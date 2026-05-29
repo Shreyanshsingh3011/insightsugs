@@ -4,8 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useSession } from "@/hooks/useSession";
+
+type RequestedRole = "super_admin" | "admin" | "user";
+
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign in — DelayLens" }] }),
@@ -19,7 +23,9 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [requestedRole, setRequestedRole] = useState<RequestedRole>("user");
   const [busy, setBusy] = useState(false);
+
 
   useEffect(() => {
     if (session) router.navigate({ to: "/dashboard", replace: true });
@@ -38,11 +44,12 @@ function LoginPage() {
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: { full_name: fullName },
+            data: { full_name: fullName, requested_role: requestedRole },
           },
         });
         if (error) throw error;
-        toast.success("Account created. Check your email to confirm.");
+        toast.success(`Account created as ${requestedRole.replace("_", " ")}. Check your email to confirm.`);
+
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Authentication failed");
@@ -78,6 +85,17 @@ function LoginPage() {
           {mode === "signup" && (
             <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
           )}
+          {mode === "signup" && (
+            <Select value={requestedRole} onValueChange={(v) => setRequestedRole(v as RequestedRole)}>
+              <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="super_admin">Super admin</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
           <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={1} />
           <Button type="submit" className="w-full" disabled={busy}>
