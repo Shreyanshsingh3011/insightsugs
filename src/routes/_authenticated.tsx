@@ -65,6 +65,10 @@ function AuthLayout() {
             <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
             <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+            {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
+            {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
+            {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
+            {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
             <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
           </nav>
           <div className="hidden flex-1 md:block" />
