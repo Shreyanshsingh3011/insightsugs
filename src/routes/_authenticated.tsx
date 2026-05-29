@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
-  CalendarDays, Settings, Sun, Moon, Activity,
+  CalendarDays, Settings, Sun, Moon, Activity, FileText, Sparkles,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
