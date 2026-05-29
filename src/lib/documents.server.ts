@@ -25,12 +25,9 @@ async function extractPdf(buffer: ArrayBuffer): Promise<ExtractedText> {
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const pageCount = pdf.numPages;
-  const pages: ExtractedText["pages"] = [];
-  for (let i = 1; i <= pageCount; i++) {
-    const { text } = await extractText(pdf, { mergePages: true, pageNumbers: [i] });
-    const t = Array.isArray(text) ? text.join("\n") : String(text ?? "");
-    pages.push({ page: i, text: t });
-  }
+  const { text } = await extractText(pdf, { mergePages: false });
+  const arr = Array.isArray(text) ? text : [String(text ?? "")];
+  const pages = arr.map((t, i) => ({ page: i + 1, text: String(t ?? "") }));
   return { pages, pageCount };
 }
 
