@@ -173,6 +173,30 @@ export type Database = {
         }
         Relationships: []
       }
+      escalation_runs: {
+        Row: {
+          details: Json
+          id: string
+          notifications_created: number
+          overdue_count: number
+          ran_at: string
+        }
+        Insert: {
+          details?: Json
+          id?: string
+          notifications_created?: number
+          overdue_count?: number
+          ran_at?: string
+        }
+        Update: {
+          details?: Json
+          id?: string
+          notifications_created?: number
+          overdue_count?: number
+          ran_at?: string
+        }
+        Relationships: []
+      }
       holidays: {
         Row: {
           holiday_date: string
@@ -188,6 +212,42 @@ export type Database = {
           holiday_date?: string
           id?: string
           label?: string | null
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          activity_id: string | null
+          body: string | null
+          created_at: string
+          id: string
+          kind: string
+          project_id: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          activity_id?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          project_id?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          activity_id?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          project_id?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -321,6 +381,30 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      weekly_reports: {
+        Row: {
+          generated_at: string
+          id: string
+          summary: Json
+          week_end: string
+          week_start: string
+        }
+        Insert: {
+          generated_at?: string
+          id?: string
+          summary?: Json
+          week_end: string
+          week_start: string
+        }
+        Update: {
+          generated_at?: string
+          id?: string
+          summary?: Json
+          week_end?: string
+          week_start?: string
         }
         Relationships: []
       }
