@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { computeDueDate } from "@/lib/business-days";
 
 export const Route = createFileRoute("/_authenticated/projects")({
   head: () => ({ meta: [{ title: "Projects — DelayLens" }] }),
@@ -103,7 +104,16 @@ function ProjectsPage() {
 
   const patchActivity = useMutation({
     mutationFn: async (vars: { id: string; patch: Partial<Activity> }) => {
-      const { error } = await supabase.from("activities").update(vars.patch).eq("id", vars.id);
+      const current = activities?.find((a) => a.id === vars.id);
+      const merged: Partial<Activity> = { ...vars.patch };
+      const startISO = (merged.start_date ?? current?.start_date) ?? null;
+      const tat = (merged.tat_days ?? current?.tat_days) ?? null;
+      if (("start_date" in merged || "tat_days" in merged) && startISO && tat) {
+        const { data: hols } = await supabase.from("holidays").select("holiday_date");
+        const set = new Set((hols ?? []).map((h) => h.holiday_date as string));
+        merged.due_date = computeDueDate(startISO, tat, set);
+      }
+      const { error } = await supabase.from("activities").update(merged).eq("id", vars.id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["activities", selected?.id] }),
