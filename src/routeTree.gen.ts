@@ -18,6 +18,7 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authenticated/my-activities'
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminHolidaysRouteImport } from './routes/_authenticated/admin.holidays'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
@@ -70,6 +71,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCopilotRoute = AuthenticatedCopilotRouteImport.update({
+  id: '/copilot',
+  path: '/copilot',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -101,6 +107,7 @@ const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/copilot': typeof AuthenticatedCopilotRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
@@ -116,6 +123,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/copilot': typeof AuthenticatedCopilotRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
@@ -133,6 +141,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
+  '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
   '/_authenticated/my-activities': typeof AuthenticatedMyActivitiesRoute
@@ -150,6 +159,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/copilot'
     | '/dashboard'
     | '/documents'
     | '/my-activities'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/copilot'
     | '/dashboard'
     | '/documents'
     | '/my-activities'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/login'
+    | '/_authenticated/copilot'
     | '/_authenticated/dashboard'
     | '/_authenticated/documents'
     | '/_authenticated/my-activities'
@@ -267,6 +279,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/copilot': {
+      id: '/_authenticated/copilot'
+      path: '/copilot'
+      fullPath: '/copilot'
+      preLoaderRoute: typeof AuthenticatedCopilotRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/admin/users'
@@ -306,6 +325,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
   AuthenticatedMyActivitiesRoute: typeof AuthenticatedMyActivitiesRoute
@@ -318,6 +338,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
   AuthenticatedMyActivitiesRoute: AuthenticatedMyActivitiesRoute,
