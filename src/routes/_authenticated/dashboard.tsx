@@ -25,6 +25,7 @@ import { inferDependencyChain, DEFAULT_LOGIC } from "@/lib/dependency-inference"
 import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
+import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [
@@ -56,58 +57,56 @@ function Dashboard() {
     [base, extras],
   );
 
+  const { widgets } = useDashboardWidgets();
+
+  const renderWidget = (id: string) => {
+    if (!data) return null;
+    switch (id) {
+      case "summary": return <SummaryBar key={id} data={data} extrasCount={extras.length} />;
+      case "kpi": return <KpiGrid key={id} data={data} />;
+      case "charts":
+        return (
+          <div key={id} className="mt-6 grid gap-6 lg:grid-cols-3">
+            <StatusChart data={data} />
+            <ReasonsChart data={data} />
+            <RiskGauge data={data} />
+          </div>
+        );
+      case "rankings":
+        return (
+          <div key={id} className="mt-6 grid gap-6 lg:grid-cols-2">
+            <PersonRanking data={data} />
+            <DeptRanking data={data} />
+          </div>
+        );
+      case "tat": return <TatTable key={id} data={data} />;
+      case "flags": return <FlagsPanel key={id} data={data} />;
+      case "dependencies": return <DependencyChainPanel key={id} />;
+      case "feed": return <DataFeed key={id} extras={extras} setExtras={setExtras} data={data} />;
+      default: return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Header />
-      <main className="mx-auto max-w-[1400px] px-6 pb-24 sm:pr-[440px]">
+    <main className="w-full px-4 pb-24 pt-6 sm:px-6 lg:pr-[440px]">
+      <div className="mx-auto max-w-[1400px]">
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Project delay intelligence overview.</p>
+        </div>
         {isLoading && <div className="py-32 text-center text-muted-foreground">Loading dashboard…</div>}
         {error && <div className="py-32 text-center text-destructive">Failed to load. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>}
         {data && (
-          <>
-            <SummaryBar data={data} extrasCount={extras.length} />
-            <KpiGrid data={data} />
-            <div className="mt-8 grid gap-6 lg:grid-cols-3">
-              <StatusChart data={data} />
-              <ReasonsChart data={data} />
-              <RiskGauge data={data} />
-            </div>
-            <div className="mt-8 grid gap-6 lg:grid-cols-2">
-              <PersonRanking data={data} />
-              <DeptRanking data={data} />
-            </div>
-            <TatTable data={data} />
-            <FlagsPanel data={data} />
-            <DependencyChainPanel />
-            <DataFeed extras={extras} setExtras={setExtras} data={data} />
-          </>
+          <div className="space-y-2">
+            {widgets.filter((w) => w.visible).map((w) => renderWidget(w.id))}
+          </div>
         )}
-      </main>
+      </div>
       {data && <Copilot data={data} />}
-    </div>
+    </main>
   );
 }
 
-function Header() {
-  return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4 sm:pr-[440px]">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
-            <Sparkles className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">DelayLens</h1>
-            <p className="text-xs text-muted-foreground">Project Delay Intelligence</p>
-          </div>
-        </div>
-        <div className="hidden gap-2 text-xs text-muted-foreground sm:flex">
-          <span className="rounded-full border border-border px-3 py-1">Live data</span>
-          <span className="rounded-full border border-border px-3 py-1">AI assistant</span>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 function SummaryBar({ data, extrasCount }: { data: DashboardData; extrasCount: number }) {
   return (
