@@ -44,11 +44,12 @@ function LoginPage() {
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: { full_name: fullName },
+            data: { full_name: fullName, requested_role: requestedRole },
           },
         });
         if (error) throw error;
-        toast.success("Account created. Check your email to confirm.");
+        toast.success(`Account created as ${requestedRole.replace("_", " ")}. Check your email to confirm.`);
+
       }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Authentication failed");
