@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useRouter } from "@tanstack/re
 import { useSession, useRoles, useIsAdmin, useIsSuper } from "@/hooks/useSession";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText } from "lucide-react";
+import { LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell, CalendarDays } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthLayout,
@@ -35,7 +35,9 @@ function AuthLayout() {
           <nav className="flex flex-1 items-center gap-1 text-sm">
             <NavLink to="/_authenticated/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</NavLink>
             <NavLink to="/_authenticated/my-activities" icon={<ListChecks className="h-4 w-4" />}>My Activities</NavLink>
+            <NavLink to="/_authenticated/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</NavLink>
             {isAdmin && <NavLink to="/_authenticated/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</NavLink>}
+            {isAdmin && <NavLink to="/_authenticated/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</NavLink>}
             {isSuper && <NavLink to="/_authenticated/admin/users" icon={<Users className="h-4 w-4" />}>Users</NavLink>}
             {isAdmin && <NavLink to="/_authenticated/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</NavLink>}
           </nav>
