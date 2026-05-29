@@ -27,7 +27,7 @@ async function extractPdf(buffer: ArrayBuffer): Promise<ExtractedText> {
   const pageCount = pdf.numPages;
   const pages: ExtractedText["pages"] = [];
   for (let i = 1; i <= pageCount; i++) {
-    const { text } = await extractText(pdf, { mergePages: false, pageNumbers: [i] });
+    const { text } = await extractText(pdf, { mergePages: true, pageNumbers: [i] });
     const t = Array.isArray(text) ? text.join("\n") : String(text ?? "");
     pages.push({ page: i, text: t });
   }
