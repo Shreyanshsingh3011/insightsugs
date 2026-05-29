@@ -1,0 +1,190 @@
+import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import {
+  getAdminSupabase,
+  extractText,
+  chunkText,
+  embedTexts,
+  summarize,
+  toPgVector,
+} from "./documents.server";
+
+// ----- Folders ---------------------------------------------------------------
+
+export const listFolders = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    // ensure defaults exist
+    await supabase.rpc("seed_default_doc_folders", { _user_id: userId });
+    const { data, error } = await supabase
+      .from("doc_folders")
+      .select("id,name,parent_id,created_at")
+      .order("name");
+    if (error) throw new Error(error.message);
+    return { folders: data ?? [] };
+  });
+
+export const createFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { name: string; parent_id?: string | null }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    const name = data.name.trim().slice(0, 80);
+    if (!name) throw new Error("Folder name required");
+    const { data: row, error } = await supabase
+      .from("doc_folders")
+      .insert({ name, parent_id: data.parent_id ?? null, owner_id: userId })
+      .select("id,name,parent_id,created_at")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+// ----- Documents -------------------------------------------------------------
+
+export const listDocuments = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder_id?: string | null } = {}) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase } = context as { supabase: any };
+    let q = supabase
+      .from("documents")
+      .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error")
+      .order("created_at", { ascending: false });
+    if (data.folder_id) q = q.eq("folder_id", data.folder_id);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return { documents: rows ?? [] };
+  });
+
+export const getDocument = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase } = context as { supabase: any };
+    const { data: row, error } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("id", data.id)
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const deleteDocument = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase } = context as { supabase: any };
+    const { data: doc, error: gerr } = await supabase
+      .from("documents")
+      .select("id,storage_path")
+      .eq("id", data.id)
+      .single();
+    if (gerr) throw new Error(gerr.message);
+    await supabase.storage.from("documents").remove([doc.storage_path]).catch(() => {});
+    const { error } = await supabase.from("documents").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ----- Register + process ----------------------------------------------------
+// Client uploads to storage directly (RLS-scoped), then calls this fn with the
+// resulting storage_path. We insert the row and synchronously process it.
+
+export const registerAndProcessDocument = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (d: {
+      name: string;
+      mime_type: string;
+      size_bytes: number;
+      storage_path: string;
+      folder_id?: string | null;
+    }) => d,
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+
+    const { data: inserted, error: ierr } = await supabase
+      .from("documents")
+      .insert({
+        owner_id: userId,
+        folder_id: data.folder_id ?? null,
+        name: data.name.slice(0, 200),
+        mime_type: data.mime_type,
+        size_bytes: data.size_bytes,
+        storage_path: data.storage_path,
+        status: "processing",
+      })
+      .select("id")
+      .single();
+    if (ierr) throw new Error(ierr.message);
+
+    const docId = inserted.id as string;
+    const admin = getAdminSupabase();
+
+    try {
+      const { data: file, error: dlErr } = await admin.storage
+        .from("documents")
+        .download(data.storage_path);
+      if (dlErr || !file) throw new Error(dlErr?.message ?? "download failed");
+      const buf = await file.arrayBuffer();
+
+      const ex = await extractText(buf, data.mime_type, data.name);
+      const chunks = chunkText(ex.pages);
+
+      if (chunks.length === 0) {
+        await admin
+          .from("documents")
+          .update({
+            status: "ready",
+            page_count: ex.pageCount,
+            summary: "No text could be extracted from this document.",
+            key_points: [],
+          })
+          .eq("id", docId);
+        return { id: docId, status: "ready" };
+      }
+
+      const embeddings = await embedTexts(chunks.map((c) => c.content));
+      const rows = chunks.map((c, i) => ({
+        document_id: docId,
+        owner_id: userId,
+        chunk_index: c.index,
+        content: c.content,
+        page_no: c.pageNo,
+        token_count: Math.ceil(c.content.length / 4),
+        embedding: toPgVector(embeddings[i] ?? []),
+      }));
+      // insert in batches
+      for (let i = 0; i < rows.length; i += 50) {
+        const { error: cerr } = await admin
+          .from("document_chunks")
+          .insert(rows.slice(i, i + 50));
+        if (cerr) throw new Error(cerr.message);
+      }
+
+      const allText = ex.pages.map((p) => p.text).join("\n\n");
+      const s = await summarize(allText, data.name);
+
+      await admin
+        .from("documents")
+        .update({
+          status: "ready",
+          page_count: ex.pageCount,
+          summary: s.summary,
+          key_points: s.key_points,
+        })
+        .eq("id", docId);
+
+      return { id: docId, status: "ready" };
+    } catch (e: any) {
+      await admin
+        .from("documents")
+        .update({ status: "failed", status_error: String(e?.message ?? e).slice(0, 500) })
+        .eq("id", docId);
+      throw e;
+    }
+  });
