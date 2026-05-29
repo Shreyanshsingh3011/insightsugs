@@ -28,7 +28,7 @@ type Activity = {
   start_date: string | null;
   tat_days: number | null;
   due_date: string | null;
-  status: string;
+  status: "pending" | "in_progress" | "blocked" | "completed" | "overdue";
 };
 type Profile = { id: string; full_name: string; email: string };
 

@@ -65,7 +65,7 @@ function MyActivitiesPage() {
 
   const updateStatus = useMutation({
     mutationFn: async (vars: { id: string; status: Activity["status"]; reason_id?: string; note?: string }) => {
-      const patch: Record<string, unknown> = { status: vars.status };
+      const patch: Partial<Activity> = { status: vars.status };
       if (vars.status === "completed") patch.completed_at = new Date().toISOString();
       if (vars.reason_id) patch.delay_reason_id = vars.reason_id;
       if (vars.note !== undefined) patch.delay_note = vars.note;
