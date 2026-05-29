@@ -23,7 +23,9 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [requestedRole, setRequestedRole] = useState<RequestedRole>("user");
   const [busy, setBusy] = useState(false);
+
 
   useEffect(() => {
     if (session) router.navigate({ to: "/dashboard", replace: true });
