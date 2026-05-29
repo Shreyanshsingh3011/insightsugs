@@ -44,15 +44,15 @@ function AuthLayout() {
           <span className="text-sm font-medium tracking-tight">DelayLens</span>
         </div>
         <nav className="flex-1 space-y-0.5 p-3 text-sm">
-          <SideLink to="/_authenticated/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
-          <SideLink to="/_authenticated/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
-          <SideLink to="/_authenticated/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
-          {isAdmin && <SideLink to="/_authenticated/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
-          {isAdmin && <SideLink to="/_authenticated/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
-          {isSuper && <SideLink to="/_authenticated/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
-          {isAdmin && <SideLink to="/_authenticated/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
+          <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
+          <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
+          <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+          {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
+          {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
+          {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
+          {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
           <div className="my-2 h-px bg-border" />
-          <SideLink to="/_authenticated/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
+          <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
         </nav>
         <div className="border-t border-border p-3 text-xs text-muted-foreground truncate">
           {session.user.email}
@@ -62,10 +62,10 @@ function AuthLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-border bg-card/80 px-4 backdrop-blur md:px-6">
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm md:hidden">
-            <SideLink to="/_authenticated/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
-            <SideLink to="/_authenticated/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
-            <SideLink to="/_authenticated/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
-            <SideLink to="/_authenticated/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
+            <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
+            <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
+            <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+            <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
           </nav>
           <div className="hidden flex-1 md:block" />
           <Button
