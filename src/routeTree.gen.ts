@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authenticated/my-activities'
@@ -35,6 +36,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
   id: '/projects',
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
+  '/settings': typeof AuthenticatedSettingsRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/_authenticated/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
+  '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
@@ -136,6 +145,7 @@ export interface FileRouteTypes {
     | '/my-activities'
     | '/notifications'
     | '/projects'
+    | '/settings'
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/my-activities'
     | '/notifications'
     | '/projects'
+    | '/settings'
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-activities'
     | '/_authenticated/notifications'
     | '/_authenticated/projects'
+    | '/_authenticated/settings'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/holidays'
     | '/_authenticated/admin/users'
@@ -200,6 +212,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/projects': {
       id: '/_authenticated/projects'
@@ -272,6 +291,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMyActivitiesRoute: typeof AuthenticatedMyActivitiesRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
+  AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminHolidaysRoute: typeof AuthenticatedAdminHolidaysRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -282,6 +302,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMyActivitiesRoute: AuthenticatedMyActivitiesRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
+  AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminHolidaysRoute: AuthenticatedAdminHolidaysRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,

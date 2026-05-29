@@ -2,7 +2,11 @@ import { createFileRoute, Outlet, redirect, Link, useRouter } from "@tanstack/re
 import { useSession, useRoles, useIsAdmin, useIsSuper } from "@/hooks/useSession";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell, CalendarDays } from "lucide-react";
+import { useTheme } from "@/hooks/useTheme";
+import {
+  LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
+  CalendarDays, Settings, Sun, Moon, Activity,
+} from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthLayout,
@@ -14,6 +18,7 @@ function AuthLayout() {
   const router = useRouter();
   const isAdmin = useIsAdmin();
   const isSuper = useIsSuper();
+  const { mode, toggle } = useTheme();
 
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
@@ -27,40 +32,70 @@ function AuthLayout() {
     router.navigate({ to: "/login" });
   };
 
+  const isDark = mode === "dark" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-          <Link to="/_authenticated/dashboard" className="font-semibold tracking-tight">DelayLens</Link>
-          <nav className="flex flex-1 items-center gap-1 text-sm">
-            <NavLink to="/_authenticated/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</NavLink>
-            <NavLink to="/_authenticated/my-activities" icon={<ListChecks className="h-4 w-4" />}>My Activities</NavLink>
-            <NavLink to="/_authenticated/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</NavLink>
-            {isAdmin && <NavLink to="/_authenticated/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</NavLink>}
-            {isAdmin && <NavLink to="/_authenticated/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</NavLink>}
-            {isSuper && <NavLink to="/_authenticated/admin/users" icon={<Users className="h-4 w-4" />}>Users</NavLink>}
-            {isAdmin && <NavLink to="/_authenticated/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</NavLink>}
+    <div className="flex min-h-screen w-full bg-background text-foreground">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-card md:flex">
+        <div className="flex h-14 items-center gap-2 px-5 border-b border-border">
+          <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground">
+            <Activity className="h-4 w-4" />
+          </div>
+          <span className="text-sm font-medium tracking-tight">DelayLens</span>
+        </div>
+        <nav className="flex-1 space-y-0.5 p-3 text-sm">
+          <SideLink to="/_authenticated/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
+          <SideLink to="/_authenticated/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
+          <SideLink to="/_authenticated/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+          {isAdmin && <SideLink to="/_authenticated/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
+          {isAdmin && <SideLink to="/_authenticated/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
+          {isSuper && <SideLink to="/_authenticated/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
+          {isAdmin && <SideLink to="/_authenticated/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
+          <div className="my-2 h-px bg-border" />
+          <SideLink to="/_authenticated/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
+        </nav>
+        <div className="border-t border-border p-3 text-xs text-muted-foreground truncate">
+          {session.user.email}
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-border bg-card/80 px-4 backdrop-blur md:px-6">
+          <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm md:hidden">
+            <SideLink to="/_authenticated/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
+            <SideLink to="/_authenticated/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
+            <SideLink to="/_authenticated/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+            <SideLink to="/_authenticated/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
           </nav>
-          <span className="hidden text-xs text-muted-foreground sm:inline">{session.user.email}</span>
+          <div className="hidden flex-1 md:block" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggle}
+            aria-label="Toggle theme"
+            className="h-9 w-9"
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
           <Button variant="ghost" size="sm" onClick={signOut}>
             <LogOut className="mr-1.5 h-4 w-4" /> Sign out
           </Button>
-        </div>
-      </header>
-      {rolesLoading ? null : <Outlet />}
+        </header>
+        {rolesLoading ? null : <Outlet />}
+      </div>
     </div>
   );
 }
 
-function NavLink({ to, icon, children }: { to: string; icon: React.ReactNode; children: React.ReactNode }) {
+function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <Link
       to={to as never}
-      className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&.active]:bg-accent [&.active]:text-foreground"
+      className="flex items-center gap-2 rounded-md px-3 py-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground [&.active]:bg-accent [&.active]:text-accent-foreground [&.active]:font-medium"
       activeProps={{ className: "active" }}
     >
       {icon}
-      {children}
+      <span className="truncate">{children}</span>
     </Link>
   );
 }

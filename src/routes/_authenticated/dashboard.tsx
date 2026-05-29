@@ -25,6 +25,7 @@ import { inferDependencyChain, DEFAULT_LOGIC } from "@/lib/dependency-inference"
 import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
+import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [
@@ -35,7 +36,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 const STORAGE_KEY = "dashboard.extras.v1";
-const COLORS = ["oklch(0.78 0.18 145)", "oklch(0.72 0.19 50)", "oklch(0.7 0.18 280)", "oklch(0.75 0.18 200)", "oklch(0.7 0.2 10)", "oklch(0.68 0.03 255)"];
+const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-2)", "var(--chart-5)", "var(--chart-4)", "var(--muted-foreground)"];
 
 function Dashboard() {
   const { data: base, isLoading, error, refetch } = useQuery({
@@ -56,58 +57,56 @@ function Dashboard() {
     [base, extras],
   );
 
+  const { widgets } = useDashboardWidgets();
+
+  const renderWidget = (id: string) => {
+    if (!data) return null;
+    switch (id) {
+      case "summary": return <SummaryBar key={id} data={data} extrasCount={extras.length} />;
+      case "kpi": return <KpiGrid key={id} data={data} />;
+      case "charts":
+        return (
+          <div key={id} className="mt-6 grid gap-6 lg:grid-cols-3">
+            <StatusChart data={data} />
+            <ReasonsChart data={data} />
+            <RiskGauge data={data} />
+          </div>
+        );
+      case "rankings":
+        return (
+          <div key={id} className="mt-6 grid gap-6 lg:grid-cols-2">
+            <PersonRanking data={data} />
+            <DeptRanking data={data} />
+          </div>
+        );
+      case "tat": return <TatTable key={id} data={data} />;
+      case "flags": return <FlagsPanel key={id} data={data} />;
+      case "dependencies": return <DependencyChainPanel key={id} />;
+      case "feed": return <DataFeed key={id} extras={extras} setExtras={setExtras} data={data} />;
+      default: return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Header />
-      <main className="mx-auto max-w-[1400px] px-6 pb-24 sm:pr-[440px]">
+    <main className="w-full px-4 pb-24 pt-6 sm:px-6 lg:pr-[440px]">
+      <div className="mx-auto max-w-[1400px]">
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Project delay intelligence overview.</p>
+        </div>
         {isLoading && <div className="py-32 text-center text-muted-foreground">Loading dashboard…</div>}
         {error && <div className="py-32 text-center text-destructive">Failed to load. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>}
         {data && (
-          <>
-            <SummaryBar data={data} extrasCount={extras.length} />
-            <KpiGrid data={data} />
-            <div className="mt-8 grid gap-6 lg:grid-cols-3">
-              <StatusChart data={data} />
-              <ReasonsChart data={data} />
-              <RiskGauge data={data} />
-            </div>
-            <div className="mt-8 grid gap-6 lg:grid-cols-2">
-              <PersonRanking data={data} />
-              <DeptRanking data={data} />
-            </div>
-            <TatTable data={data} />
-            <FlagsPanel data={data} />
-            <DependencyChainPanel />
-            <DataFeed extras={extras} setExtras={setExtras} data={data} />
-          </>
+          <div className="space-y-2">
+            {widgets.filter((w) => w.visible).map((w) => renderWidget(w.id))}
+          </div>
         )}
-      </main>
+      </div>
       {data && <Copilot data={data} />}
-    </div>
+    </main>
   );
 }
 
-function Header() {
-  return (
-    <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-4 sm:pr-[440px]">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl" style={{ background: "var(--gradient-hero)", boxShadow: "var(--shadow-glow)" }}>
-            <Sparkles className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">DelayLens</h1>
-            <p className="text-xs text-muted-foreground">Project Delay Intelligence</p>
-          </div>
-        </div>
-        <div className="hidden gap-2 text-xs text-muted-foreground sm:flex">
-          <span className="rounded-full border border-border px-3 py-1">Live data</span>
-          <span className="rounded-full border border-border px-3 py-1">AI assistant</span>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 function SummaryBar({ data, extrasCount }: { data: DashboardData; extrasCount: number }) {
   return (
@@ -170,7 +169,7 @@ function StatusChart({ data }: { data: DashboardData }) {
             <Pie data={rows} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90} paddingAngle={2}>
               {rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
-            <Tooltip contentStyle={{ background: "oklch(0.21 0.025 265)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
+            <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
           </PieChart>
         </ResponsiveContainer>
@@ -187,12 +186,12 @@ function ReasonsChart({ data }: { data: DashboardData }) {
       <div className="mt-4 h-64">
         <ResponsiveContainer>
           <BarChart data={rows}>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.03 265)" />
-            <XAxis dataKey="name" stroke="oklch(0.68 0.03 255)" fontSize={11} />
-            <YAxis stroke="oklch(0.68 0.03 255)" fontSize={11} />
-            <Tooltip contentStyle={{ background: "oklch(0.21 0.025 265)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
-            <Bar dataKey="count" fill="oklch(0.78 0.18 145)" radius={[6,6,0,0]} />
-            <Bar dataKey="days" fill="oklch(0.72 0.19 50)" radius={[6,6,0,0]} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={11} />
+            <YAxis stroke="var(--muted-foreground)" fontSize={11} />
+            <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid oklch(0.3 0.03 265)", borderRadius: 8 }} />
+            <Bar dataKey="count" fill="var(--chart-1)" radius={[6,6,0,0]} />
+            <Bar dataKey="days" fill="var(--chart-3)" radius={[6,6,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -210,7 +209,7 @@ function RiskGauge({ data }: { data: DashboardData }) {
       <div className="mt-6 flex flex-col items-center justify-center">
         <div className="relative h-44 w-44">
           <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
-            <circle cx="50" cy="50" r="42" fill="none" stroke="oklch(0.3 0.03 265)" strokeWidth="10" />
+            <circle cx="50" cy="50" r="42" fill="none" stroke="var(--border)" strokeWidth="10" />
             <circle cx="50" cy="50" r="42" fill="none" stroke={color} strokeWidth="10"
               strokeDasharray={`${(score/100)*264} 264`} strokeLinecap="round" />
           </svg>
