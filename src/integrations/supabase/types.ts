@@ -152,6 +152,36 @@ export type Database = {
           },
         ]
       }
+      copilot_messages: {
+        Row: {
+          citations: Json
+          content: string
+          created_at: string
+          id: string
+          role: string
+          scope: Json
+          user_id: string
+        }
+        Insert: {
+          citations?: Json
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          scope?: Json
+          user_id: string
+        }
+        Update: {
+          citations?: Json
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          scope?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       delay_reasons: {
         Row: {
           active: boolean
@@ -172,6 +202,141 @@ export type Database = {
           label?: string
         }
         Relationships: []
+      }
+      doc_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          parent_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          owner_id: string
+          parent_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          parent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "doc_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "doc_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          document_id: string
+          embedding: string | null
+          id: string
+          owner_id: string
+          page_no: number | null
+          token_count: number | null
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string
+          document_id: string
+          embedding?: string | null
+          id?: string
+          owner_id: string
+          page_no?: number | null
+          token_count?: number | null
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          document_id?: string
+          embedding?: string | null
+          id?: string
+          owner_id?: string
+          page_no?: number | null
+          token_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          created_at: string
+          folder_id: string | null
+          id: string
+          key_points: Json | null
+          mime_type: string
+          name: string
+          owner_id: string
+          page_count: number | null
+          size_bytes: number
+          status: Database["public"]["Enums"]["document_status"]
+          status_error: string | null
+          storage_path: string
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          folder_id?: string | null
+          id?: string
+          key_points?: Json | null
+          mime_type: string
+          name: string
+          owner_id: string
+          page_count?: number | null
+          size_bytes?: number
+          status?: Database["public"]["Enums"]["document_status"]
+          status_error?: string | null
+          storage_path: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          folder_id?: string | null
+          id?: string
+          key_points?: Json | null
+          mime_type?: string
+          name?: string
+          owner_id?: string
+          page_count?: number | null
+          size_bytes?: number
+          status?: Database["public"]["Enums"]["document_status"]
+          status_error?: string | null
+          storage_path?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "doc_folders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       escalation_runs: {
         Row: {
@@ -425,6 +590,27 @@ export type Database = {
         Returns: boolean
       }
       is_admin_or_super: { Args: { _user_id: string }; Returns: boolean }
+      match_doc_chunks: {
+        Args: {
+          _match_count?: number
+          _query: string
+          _scope_document: string
+          _scope_folder: string
+          _user_id: string
+        }
+        Returns: {
+          chunk_id: string
+          content: string
+          document_id: string
+          document_name: string
+          page_no: number
+          similarity: number
+        }[]
+      }
+      seed_default_doc_folders: {
+        Args: { _user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       activity_status:
@@ -434,6 +620,7 @@ export type Database = {
         | "blocked"
         | "overdue"
       app_role: "super_admin" | "admin" | "user"
+      document_status: "pending" | "processing" | "ready" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -569,6 +756,7 @@ export const Constants = {
         "overdue",
       ],
       app_role: ["super_admin", "admin", "user"],
+      document_status: ["pending", "processing", "ready", "failed"],
     },
   },
 } as const
