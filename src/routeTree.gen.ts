@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedSheetsRouteImport } from './routes/_authenticated/sheets'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
@@ -19,6 +20,7 @@ import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authent
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
+import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminHolidaysRouteImport } from './routes/_authenticated/admin.holidays'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
@@ -38,6 +40,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedSheetsRoute = AuthenticatedSheetsRouteImport.update({
+  id: '/sheets',
+  path: '/sheets',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
@@ -76,6 +83,12 @@ const AuthenticatedCopilotRoute = AuthenticatedCopilotRouteImport.update({
   path: '/copilot',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSheetsSheetIdRoute =
+  AuthenticatedSheetsSheetIdRouteImport.update({
+    id: '/$sheetId',
+    path: '/$sheetId',
+    getParentRoute: () => AuthenticatedSheetsRoute,
+  } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -114,9 +127,11 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
 }
@@ -130,9 +145,11 @@ export interface FileRoutesByTo {
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
 }
@@ -148,9 +165,11 @@ export interface FileRoutesById {
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
 }
@@ -166,9 +185,11 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/projects'
     | '/settings'
+    | '/sheets'
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
+    | '/sheets/$sheetId'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
   fileRoutesByTo: FileRoutesByTo
@@ -182,9 +203,11 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/projects'
     | '/settings'
+    | '/sheets'
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
+    | '/sheets/$sheetId'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
   id:
@@ -199,9 +222,11 @@ export interface FileRouteTypes {
     | '/_authenticated/notifications'
     | '/_authenticated/projects'
     | '/_authenticated/settings'
+    | '/_authenticated/sheets'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/holidays'
     | '/_authenticated/admin/users'
+    | '/_authenticated/sheets/$sheetId'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
   fileRoutesById: FileRoutesById
@@ -236,6 +261,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/sheets': {
+      id: '/_authenticated/sheets'
+      path: '/sheets'
+      fullPath: '/sheets'
+      preLoaderRoute: typeof AuthenticatedSheetsRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
@@ -286,6 +318,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCopilotRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sheets/$sheetId': {
+      id: '/_authenticated/sheets/$sheetId'
+      path: '/$sheetId'
+      fullPath: '/sheets/$sheetId'
+      preLoaderRoute: typeof AuthenticatedSheetsSheetIdRouteImport
+      parentRoute: typeof AuthenticatedSheetsRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/admin/users'
@@ -324,6 +363,17 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedSheetsRouteChildren {
+  AuthenticatedSheetsSheetIdRoute: typeof AuthenticatedSheetsSheetIdRoute
+}
+
+const AuthenticatedSheetsRouteChildren: AuthenticatedSheetsRouteChildren = {
+  AuthenticatedSheetsSheetIdRoute: AuthenticatedSheetsSheetIdRoute,
+}
+
+const AuthenticatedSheetsRouteWithChildren =
+  AuthenticatedSheetsRoute._addFileChildren(AuthenticatedSheetsRouteChildren)
+
 interface AuthenticatedRouteChildren {
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
@@ -332,6 +382,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminHolidaysRoute: typeof AuthenticatedAdminHolidaysRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
@@ -345,6 +396,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminHolidaysRoute: AuthenticatedAdminHolidaysRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
@@ -364,3 +416,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
