@@ -362,6 +362,30 @@ export type Database = {
         }
         Relationships: []
       }
+      google_connections: {
+        Row: {
+          connection_id: string
+          created_at: string
+          google_email: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          connection_id: string
+          created_at?: string
+          google_email?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          connection_id?: string
+          created_at?: string
+          google_email?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       holidays: {
         Row: {
           holiday_date: string
@@ -528,6 +552,115 @@ export type Database = {
           },
         ]
       }
+      sheet_column_mappings: {
+        Row: {
+          canonical_field: string | null
+          created_at: string
+          id: string
+          position: number
+          sheet_registry_id: string
+          source_header: string
+        }
+        Insert: {
+          canonical_field?: string | null
+          created_at?: string
+          id?: string
+          position?: number
+          sheet_registry_id: string
+          source_header: string
+        }
+        Update: {
+          canonical_field?: string | null
+          created_at?: string
+          id?: string
+          position?: number
+          sheet_registry_id?: string
+          source_header?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_column_mappings_sheet_registry_id_fkey"
+            columns: ["sheet_registry_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_registry"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sheet_registry: {
+        Row: {
+          created_at: string
+          display_name: string
+          google_sheet_id: string
+          id: string
+          last_refreshed_at: string | null
+          row_count: number
+          sheet_type: Database["public"]["Enums"]["sheet_type"]
+          tab_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          google_sheet_id: string
+          id?: string
+          last_refreshed_at?: string | null
+          row_count?: number
+          sheet_type: Database["public"]["Enums"]["sheet_type"]
+          tab_name?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          google_sheet_id?: string
+          id?: string
+          last_refreshed_at?: string | null
+          row_count?: number
+          sheet_type?: Database["public"]["Enums"]["sheet_type"]
+          tab_name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sheet_rows: {
+        Row: {
+          canonical: Json
+          created_at: string
+          extras: Json
+          id: string
+          row_index: number
+          sheet_registry_id: string
+        }
+        Insert: {
+          canonical?: Json
+          created_at?: string
+          extras?: Json
+          id?: string
+          row_index: number
+          sheet_registry_id: string
+        }
+        Update: {
+          canonical?: Json
+          created_at?: string
+          extras?: Json
+          id?: string
+          row_index?: number
+          sheet_registry_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_rows_sheet_registry_id_fkey"
+            columns: ["sheet_registry_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_registry"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -621,6 +754,14 @@ export type Database = {
         | "overdue"
       app_role: "super_admin" | "admin" | "user"
       document_status: "pending" | "processing" | "ready" | "failed"
+      sheet_type:
+        | "progress"
+        | "material_reconciliation"
+        | "procurement"
+        | "contractor_billing"
+        | "bill_tracking"
+        | "pms"
+        | "tat"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -757,6 +898,15 @@ export const Constants = {
       ],
       app_role: ["super_admin", "admin", "user"],
       document_status: ["pending", "processing", "ready", "failed"],
+      sheet_type: [
+        "progress",
+        "material_reconciliation",
+        "procurement",
+        "contractor_billing",
+        "bill_tracking",
+        "pms",
+        "tat",
+      ],
     },
   },
 } as const
