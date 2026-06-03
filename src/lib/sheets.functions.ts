@@ -1,141 +1,83 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import {
-  authorizeAppUserOAuth,
-  callAsAppUser,
-} from "@/integrations/lovable/appUserConnector";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 
-const GATEWAY_BASE_URL = "https://connector-gateway.lovable.dev";
-const GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/spreadsheets.readonly",
-  "https://www.googleapis.com/auth/drive.metadata.readonly",
-  "openid",
-  "email",
-];
+const SHEET_TYPE_ENUM = z.enum([
+  "progress",
+  "material_reconciliation",
+  "procurement",
+  "contractor_billing",
+  "bill_tracking",
+  "pms",
+  "tat",
+]);
 
-function requireGoogleClientId(): string {
-  const id = process.env.GOOGLE_APP_USER_CONNECTOR_CLIENT_ID;
-  if (!id) {
+const APPS_SCRIPT_URL = z
+  .string()
+  .url()
+  .refine(
+    (u) => /^https:\/\/script\.google(usercontent)?\.com\//.test(u),
+    "Must be a https://script.google.com/.../exec URL",
+  );
+
+/**
+ * Apps Script web app response normalizer.
+ * Accepts either:
+ *   { headers: [...], rows: [[...], ...] }
+ *   { values: [[...], ...] }      // first row treated as headers
+ *   [{colA: 1, colB: 2}, ...]      // array of objects
+ */
+function normalizeAppsScriptPayload(payload: unknown): { headers: string[]; rows: string[][] } {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const obj = payload as Record<string, unknown>;
+    if (Array.isArray(obj.headers) && Array.isArray(obj.rows)) {
+      return {
+        headers: obj.headers.map((h) => String(h ?? "").trim()),
+        rows: (obj.rows as unknown[][]).map((r) =>
+          (Array.isArray(r) ? r : []).map((c) => (c == null ? "" : String(c))),
+        ),
+      };
+    }
+    if (Array.isArray(obj.values) && obj.values.length > 0) {
+      const all = obj.values as unknown[][];
+      const headers = (all[0] ?? []).map((h) => String(h ?? "").trim());
+      const rows = all.slice(1).map((r) =>
+        (Array.isArray(r) ? r : []).map((c) => (c == null ? "" : String(c))),
+      );
+      return { headers, rows };
+    }
+  }
+  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object") {
+    const objs = payload as Record<string, unknown>[];
+    const headerSet = new Set<string>();
+    for (const o of objs) Object.keys(o).forEach((k) => headerSet.add(k));
+    const headers = Array.from(headerSet);
+    const rows = objs.map((o) => headers.map((h) => (o[h] == null ? "" : String(o[h]))));
+    return { headers, rows };
+  }
+  return { headers: [], rows: [] };
+}
+
+async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: string[][] }> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Apps Script returned ${res.status}: ${text.slice(0, 300)}`);
+  }
+  let payload: unknown;
+  try {
+    payload = await res.json();
+  } catch {
     throw new Error(
-      "GOOGLE_APP_USER_CONNECTOR_CLIENT_ID is not set. Configure your Google OAuth client in project secrets.",
+      "Apps Script did not return JSON. Make sure doGet returns ContentService.createTextOutput(JSON.stringify(...)).setMimeType(JSON).",
     );
   }
-  return id;
-}
-
-// 1. Start Google OAuth for current user (popup, web_message flow)
-export const startGoogleConnect = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ targetOrigin: z.string().url() }).parse(input))
-  .handler(async ({ data, context }) => {
-    const { authorizationUrl } = await authorizeAppUserOAuth({
-      gatewayBaseUrl: GATEWAY_BASE_URL,
-      connectorId: "google",
-      appUserId: context.userId,
-      connectorClientId: requireGoogleClientId(),
-      returnUrl: data.targetOrigin,
-      responseMode: "web_message",
-      webMessageTargetOrigin: data.targetOrigin,
-      credentialsConfiguration: { scopes: GOOGLE_SCOPES },
-    });
-    return { authorizationUrl };
-  });
-
-// 2. Persist the connection_id returned by the popup
-export const saveGoogleConnection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
-    z.object({
-      connectionId: z.string().min(1),
-      googleEmail: z.string().email().optional(),
-    }).parse(input),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase
-      .from("google_connections")
-      .upsert(
-        {
-          user_id: userId,
-          connection_id: data.connectionId,
-          google_email: data.googleEmail ?? null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      );
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-// 3. Current connection status
-export const getGoogleConnection = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data, error } = await supabase
-      .from("google_connections")
-      .select("connection_id, google_email, created_at")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    return data
-      ? { connected: true as const, googleEmail: data.google_email, createdAt: data.created_at }
-      : { connected: false as const };
-  });
-
-// 4. Disconnect (just removes the row; doesn't revoke at Google)
-export const disconnectGoogle = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase.from("google_connections").delete().eq("user_id", userId);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-// 5. Inspect a sheet — fetch header row + sample rows + AI-propose mapping
-async function getUserConnectionId(supabase: any, userId: string): Promise<string> {
-  const { data, error } = await supabase
-    .from("google_connections")
-    .select("connection_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.connection_id) throw new Error("Google account not connected.");
-  return data.connection_id;
-}
-
-async function fetchSheetValues(connectionId: string, sheetId: string, range: string) {
-  const res = await callAsAppUser({
-    gatewayBaseUrl: GATEWAY_BASE_URL,
-    connectionId,
-    connectorId: "google_sheets",
-    path: `/v4/spreadsheets/${sheetId}/values/${range}`,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Google Sheets read failed (${res.status}): ${text.slice(0, 300)}`);
+  const normalized = normalizeAppsScriptPayload(payload);
+  if (normalized.headers.length === 0) {
+    throw new Error("Couldn't find a header row in the Apps Script response.");
   }
-  return res.json() as Promise<{ range: string; values?: string[][] }>;
-}
-
-async function fetchSheetMetadata(connectionId: string, sheetId: string) {
-  const res = await callAsAppUser({
-    gatewayBaseUrl: GATEWAY_BASE_URL,
-    connectionId,
-    connectorId: "google_sheets",
-    path: `/v4/spreadsheets/${sheetId}?fields=properties.title,sheets.properties(title,sheetId)`,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Google Sheets metadata failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-  return res.json() as Promise<{
-    properties: { title: string };
-    sheets: Array<{ properties: { title: string; sheetId: number } }>;
-  }>;
+  return normalized;
 }
 
 async function proposeMapping(
@@ -191,60 +133,41 @@ For EACH source header, return the best matching canonical field, or null if no 
   }
 }
 
+// Inspect: fetch the Apps Script URL, return headers + sample + AI-suggested mapping
 export const inspectSheet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({
-      googleSheetId: z.string().min(10),
-      sheetType: z.enum([
-        "progress", "material_reconciliation", "procurement",
-        "contractor_billing", "bill_tracking", "pms", "tat",
-      ]),
-      tabName: z.string().optional(),
-    }).parse(input),
+    z
+      .object({
+        appsScriptUrl: APPS_SCRIPT_URL,
+        sheetType: SHEET_TYPE_ENUM,
+      })
+      .parse(input),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const connectionId = await getUserConnectionId(supabase, userId);
-
-    const meta = await fetchSheetMetadata(connectionId, data.googleSheetId);
-    const tabName = data.tabName ?? meta.sheets[0]?.properties.title ?? "Sheet1";
-
-    const range = `${tabName}!A1:Z6`;
-    const values = await fetchSheetValues(connectionId, data.googleSheetId, encodeURIComponent(range));
-    const rows = values.values ?? [];
-    const headers = (rows[0] ?? []).map((h) => String(h ?? "").trim()).filter(Boolean);
-    const sampleRows = rows.slice(1);
-
-    if (headers.length === 0) {
-      throw new Error("No header row found in the first tab.");
-    }
-
+  .handler(async ({ data }) => {
+    const { headers, rows } = await fetchAppsScript(data.appsScriptUrl);
+    const sampleRows = rows.slice(0, 5);
     const mapping = await proposeMapping(data.sheetType as SheetType, headers, sampleRows);
-
     return {
-      spreadsheetTitle: meta.properties.title,
-      tabName,
       headers,
       sampleRows,
+      totalRows: rows.length,
       proposedMapping: mapping,
     };
   });
 
-// 6. Save the registry entry + mapping, and immediately fetch all rows
+// Register + first sync
 export const registerAndSyncSheet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({
-      googleSheetId: z.string().min(10),
-      sheetType: z.enum([
-        "progress", "material_reconciliation", "procurement",
-        "contractor_billing", "bill_tracking", "pms", "tat",
-      ]),
-      tabName: z.string().min(1),
-      displayName: z.string().min(1).max(200),
-      mapping: z.record(z.string(), z.string().nullable()),
-    }).parse(input),
+    z
+      .object({
+        appsScriptUrl: APPS_SCRIPT_URL,
+        sheetType: SHEET_TYPE_ENUM,
+        displayName: z.string().min(1).max(200),
+        mapping: z.record(z.string(), z.string().nullable()),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
@@ -254,8 +177,7 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
       .insert({
         user_id: userId,
         sheet_type: data.sheetType,
-        google_sheet_id: data.googleSheetId,
-        tab_name: data.tabName,
+        apps_script_url: data.appsScriptUrl,
         display_name: data.displayName,
       })
       .select("id")
@@ -281,7 +203,7 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
 async function syncRowsInternal(supabase: any, userId: string, registryId: string) {
   const { data: reg, error: regErr } = await supabase
     .from("sheet_registry")
-    .select("google_sheet_id, tab_name, user_id")
+    .select("apps_script_url, user_id")
     .eq("id", registryId)
     .maybeSingle();
   if (regErr) throw new Error(regErr.message);
@@ -296,28 +218,14 @@ async function syncRowsInternal(supabase: any, userId: string, registryId: strin
   const mapping: Record<string, string | null> = {};
   for (const m of maps ?? []) mapping[m.source_header] = m.canonical_field;
 
-  const connectionId = await getUserConnectionId(supabase, userId);
-  const range = `${reg.tab_name}!A1:ZZ10000`;
-  const values = await fetchSheetValues(connectionId, reg.google_sheet_id, encodeURIComponent(range));
-  const allRows = values.values ?? [];
-  if (allRows.length === 0) {
-    await supabase.from("sheet_rows").delete().eq("sheet_registry_id", registryId);
-    await supabase.from("sheet_registry").update({
-      last_refreshed_at: new Date().toISOString(),
-      row_count: 0,
-    }).eq("id", registryId);
-    return;
-  }
+  const { headers, rows } = await fetchAppsScript(reg.apps_script_url);
 
-  const headers = (allRows[0] ?? []).map((h) => String(h ?? "").trim());
-  const dataRows = allRows.slice(1);
-
-  const toInsert = dataRows.map((row, idx) => {
+  const toInsert = rows.map((row, idx) => {
     const canonical: Record<string, string> = {};
     const extras: Record<string, string> = {};
     headers.forEach((h, i) => {
       if (!h) return;
-      const cell = row[i] != null ? String(row[i]) : "";
+      const cell = row[i] ?? "";
       const target = mapping[h];
       if (target) canonical[target] = cell;
       else extras[h] = cell;
@@ -330,7 +238,6 @@ async function syncRowsInternal(supabase: any, userId: string, registryId: strin
     };
   });
 
-  // Full-replace
   const { error: delErr } = await supabase
     .from("sheet_rows")
     .delete()
@@ -338,7 +245,6 @@ async function syncRowsInternal(supabase: any, userId: string, registryId: strin
   if (delErr) throw new Error(delErr.message);
 
   if (toInsert.length > 0) {
-    // Batch to keep payloads sane
     const BATCH = 500;
     for (let i = 0; i < toInsert.length; i += BATCH) {
       const slice = toInsert.slice(i, i + BATCH);
@@ -370,7 +276,9 @@ export const listSheets = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data, error } = await supabase
       .from("sheet_registry")
-      .select("id, sheet_type, display_name, google_sheet_id, tab_name, row_count, last_refreshed_at, created_at")
+      .select(
+        "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at, created_at",
+      )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -384,7 +292,9 @@ export const getSheetDetail = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { data: reg, error: regErr } = await supabase
       .from("sheet_registry")
-      .select("id, sheet_type, display_name, google_sheet_id, tab_name, row_count, last_refreshed_at")
+      .select(
+        "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
+      )
       .eq("id", data.registryId)
       .eq("user_id", userId)
       .maybeSingle();
@@ -419,4 +329,112 @@ export const deleteSheet = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// Copilot: answer a question using selected sheets as context
+export const askCopilot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        question: z.string().min(1).max(2000),
+        sheetIds: z.array(z.string().uuid()).min(1).max(10),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const apiKey = process.env.LOVABLE_API_KEY;
+    if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
+
+    const { supabase, userId } = context;
+
+    const { data: regs, error: regErr } = await supabase
+      .from("sheet_registry")
+      .select("id, display_name, sheet_type")
+      .in("id", data.sheetIds)
+      .eq("user_id", userId);
+    if (regErr) throw new Error(regErr.message);
+    if (!regs || regs.length === 0) throw new Error("No matching sheets.");
+
+    const PER_SHEET_LIMIT = 300;
+    const blocks: string[] = [];
+    const sources: { id: string; name: string; type: string; rowsUsed: number; truncated: boolean }[] = [];
+
+    for (const r of regs) {
+      const { data: rows } = await supabase
+        .from("sheet_rows")
+        .select("row_index, canonical, extras")
+        .eq("sheet_registry_id", r.id)
+        .order("row_index", { ascending: true })
+        .limit(PER_SHEET_LIMIT + 1);
+      const slice = (rows ?? []).slice(0, PER_SHEET_LIMIT);
+      const truncated = (rows ?? []).length > PER_SHEET_LIMIT;
+      sources.push({
+        id: r.id,
+        name: r.display_name,
+        type: r.sheet_type,
+        rowsUsed: slice.length,
+        truncated,
+      });
+
+      const lines = slice.map((row: any) => {
+        const merged = { ...(row.canonical ?? {}), ...(row.extras ?? {}) };
+        return JSON.stringify(merged);
+      });
+      blocks.push(
+        `### Sheet: ${r.display_name} (type=${r.sheet_type}, rows=${slice.length}${truncated ? ", truncated" : ""})\n${lines.join("\n")}`,
+      );
+    }
+
+    const systemPrompt = `You are a construction project analyst assistant.
+You are given data from one or more of the user's tracking sheets (progress, procurement, billing, etc).
+Answer the user's question USING ONLY the provided sheet data.
+- Cite sheet names when you reference figures.
+- If the data is insufficient, say so explicitly.
+- Prefer concise, structured answers (bullets / short tables in markdown) when summarizing.`;
+
+    const userPrompt = `Question: ${data.question}
+
+Sheet data:
+${blocks.join("\n\n")}`;
+
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Lovable-API-Key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`AI request failed (${res.status}): ${text.slice(0, 300)}`);
+    }
+    const body = await res.json();
+    const answer = body?.choices?.[0]?.message?.content ?? "(no answer)";
+
+    // Persist the exchange
+    await supabase.from("copilot_messages").insert([
+      {
+        user_id: userId,
+        role: "user",
+        content: data.question,
+        scope: { sheetIds: data.sheetIds },
+      },
+      {
+        user_id: userId,
+        role: "assistant",
+        content: answer,
+        scope: { sheetIds: data.sheetIds },
+        citations: sources,
+      },
+    ]);
+
+    return { answer, sources };
   });

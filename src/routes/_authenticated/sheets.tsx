@@ -8,21 +8,19 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, RefreshCw, Trash2, Link2, Unlink, Sheet as SheetIcon } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle } from "lucide-react";
 import {
-  startGoogleConnect, getGoogleConnection, saveGoogleConnection, disconnectGoogle,
   listSheets, inspectSheet, registerAndSyncSheet, refreshSheet, deleteSheet,
 } from "@/lib/sheets.functions";
-import { connectAppUser } from "@/integrations/lovable/appUserConnectorClient";
 import {
-  SHEET_TYPE_LABELS, SHEET_TYPES, CANONICAL_FIELDS, extractSheetId, type SheetType,
+  SHEET_TYPE_LABELS, SHEET_TYPES, CANONICAL_FIELDS, type SheetType,
 } from "@/lib/sheets-schemas";
-
-const GATEWAY_BASE_URL = "https://connector-gateway.lovable.dev";
 
 export const Route = createFileRoute("/_authenticated/sheets")({
   component: SheetsPage,
@@ -30,50 +28,12 @@ export const Route = createFileRoute("/_authenticated/sheets")({
 
 function SheetsPage() {
   const qc = useQueryClient();
-  const fetchConn = useServerFn(getGoogleConnection);
   const fetchList = useServerFn(listSheets);
-  const startConn = useServerFn(startGoogleConnect);
-  const saveConn = useServerFn(saveGoogleConnection);
-  const disconnect = useServerFn(disconnectGoogle);
   const removeSheet = useServerFn(deleteSheet);
   const refresh = useServerFn(refreshSheet);
 
-  const conn = useQuery({ queryKey: ["google-conn"], queryFn: () => fetchConn() });
-  const sheets = useQuery({
-    queryKey: ["sheets-list"],
-    queryFn: () => fetchList(),
-    enabled: !!conn.data?.connected,
-  });
-
+  const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
   const [addOpen, setAddOpen] = useState(false);
-
-  const connectMut = useMutation({
-    mutationFn: async () => {
-      const result = await connectAppUser({
-        connectorId: "google",
-        gatewayBaseUrl: GATEWAY_BASE_URL,
-        start: (targetOrigin) => startConn({ data: { targetOrigin } }),
-      });
-      if (!result.success || !result.connectionId) {
-        throw new Error(result.error ?? "OAuth failed");
-      }
-      await saveConn({ data: { connectionId: result.connectionId } });
-    },
-    onSuccess: () => {
-      toast.success("Google account connected");
-      qc.invalidateQueries({ queryKey: ["google-conn"] });
-      qc.invalidateQueries({ queryKey: ["sheets-list"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to connect"),
-  });
-
-  const disconnectMut = useMutation({
-    mutationFn: () => disconnect({}),
-    onSuccess: () => {
-      toast.success("Disconnected");
-      qc.invalidateQueries({ queryKey: ["google-conn"] });
-    },
-  });
 
   const refreshMut = useMutation({
     mutationFn: (id: string) => refresh({ data: { registryId: id } }),
@@ -98,51 +58,21 @@ function SheetsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">My Sheets</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Connect your Google account and register the sheets you want the app to read.
+            Register the Apps Script web app URL for each sheet you want the app to read.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {conn.data?.connected ? (
-            <>
-              <Badge variant="secondary" className="gap-1">
-                <Link2 className="h-3 w-3" />
-                {conn.data.googleEmail ?? "Google connected"}
-              </Badge>
-              <Button variant="outline" size="sm" onClick={() => disconnectMut.mutate()}>
-                <Unlink className="mr-1.5 h-4 w-4" /> Disconnect
-              </Button>
-              <Button size="sm" onClick={() => setAddOpen(true)}>
-                <Plus className="mr-1.5 h-4 w-4" /> Add sheet
-              </Button>
-            </>
-          ) : (
-            <Button onClick={() => connectMut.mutate()} disabled={connectMut.isPending}>
-              {connectMut.isPending ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : (
-                <Link2 className="mr-1.5 h-4 w-4" />
-              )}
-              Connect Google
-            </Button>
-          )}
-        </div>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="mr-1.5 h-4 w-4" /> Add sheet
+        </Button>
       </div>
 
-      {!conn.data?.connected ? (
-        <Card className="p-8 text-center">
-          <SheetIcon className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-          <h2 className="text-base font-medium">Connect your Google account</h2>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Sign in with the Google account that owns your project sheets. The app will get read-only access
-            to the sheets you register here — nothing else.
-          </p>
-        </Card>
-      ) : sheets.isLoading ? (
+      {sheets.isLoading ? (
         <div className="flex justify-center py-8 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : (sheets.data?.sheets ?? []).length === 0 ? (
         <Card className="p-8 text-center">
+          <SheetIcon className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
           <h2 className="text-base font-medium">No sheets yet</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             Click <strong>Add sheet</strong> to register your first one. The AI will read the headers and
@@ -165,7 +95,7 @@ function SheetsPage() {
                   <Badge variant="outline">{SHEET_TYPE_LABELS[s.sheet_type as SheetType]}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {s.row_count} rows · tab “{s.tab_name}” ·{" "}
+                  {s.row_count} rows ·{" "}
                   {s.last_refreshed_at
                     ? `refreshed ${new Date(s.last_refreshed_at).toLocaleString()}`
                     : "never refreshed"}
@@ -208,49 +138,42 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const register = useServerFn(registerAndSyncSheet);
 
   const [sheetType, setSheetType] = useState<SheetType>("progress");
-  const [urlOrId, setUrlOrId] = useState("");
+  const [appsScriptUrl, setAppsScriptUrl] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [step, setStep] = useState<"input" | "mapping">("input");
   const [inspectResult, setInspectResult] = useState<{
-    spreadsheetTitle: string;
-    tabName: string;
     headers: string[];
     sampleRows: string[][];
+    totalRows: number;
     proposedMapping: Record<string, string | null>;
   } | null>(null);
 
   const resetAll = () => {
     setStep("input");
     setInspectResult(null);
-    setUrlOrId("");
+    setAppsScriptUrl("");
     setDisplayName("");
     setSheetType("progress");
   };
 
   const inspectMut = useMutation({
-    mutationFn: async () => {
-      const id = extractSheetId(urlOrId);
-      if (!id) throw new Error("That doesn't look like a Google Sheet URL or ID.");
-      return inspect({ data: { googleSheetId: id, sheetType } });
-    },
+    mutationFn: () => inspect({ data: { appsScriptUrl, sheetType } }),
     onSuccess: (data) => {
       setInspectResult(data);
-      if (!displayName) setDisplayName(data.spreadsheetTitle);
       setStep("mapping");
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't read that sheet"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't read that URL"),
   });
 
   const registerMut = useMutation({
     mutationFn: async () => {
       if (!inspectResult) throw new Error("Run inspect first");
-      const id = extractSheetId(urlOrId)!;
+      if (!displayName.trim()) throw new Error("Give the sheet a name");
       return register({
         data: {
-          googleSheetId: id,
+          appsScriptUrl,
           sheetType,
-          tabName: inspectResult.tabName,
-          displayName: displayName || inspectResult.spreadsheetTitle,
+          displayName: displayName.trim(),
           mapping: inspectResult.proposedMapping,
         },
       });
@@ -307,16 +230,7 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
               </Select>
             </div>
             <div>
-              <Label>Google Sheet URL or ID</Label>
-              <Input
-                className="mt-1.5"
-                placeholder="https://docs.google.com/spreadsheets/d/…"
-                value={urlOrId}
-                onChange={(e) => setUrlOrId(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Display name (optional)</Label>
+              <Label>Display name</Label>
               <Input
                 className="mt-1.5"
                 placeholder="e.g. Site A — Progress"
@@ -324,12 +238,34 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
                 onChange={(e) => setDisplayName(e.target.value)}
               />
             </div>
+            <div>
+              <Label>Apps Script web app URL</Label>
+              <Input
+                className="mt-1.5"
+                placeholder="https://script.google.com/macros/s/…/exec"
+                value={appsScriptUrl}
+                onChange={(e) => setAppsScriptUrl(e.target.value)}
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                Your <code>doGet</code> should return JSON in the shape{" "}
+                <code>{`{ "headers": [...], "rows": [[...], ...] }`}</code>. Array-of-objects also works.
+              </p>
+              <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Anyone with this URL can read the sheet data. Only paste URLs deployed as{" "}
+                  <strong>Anyone</strong> that you're OK exposing.
+                </span>
+              </div>
+            </div>
           </div>
         ) : inspectResult ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
-              <div className="font-medium">{inspectResult.spreadsheetTitle}</div>
-              <div className="text-xs text-muted-foreground">Tab: {inspectResult.tabName}</div>
+              <div className="font-medium">{displayName || "Untitled"}</div>
+              <div className="text-xs text-muted-foreground">
+                {inspectResult.headers.length} columns · {inspectResult.totalRows} rows detected
+              </div>
             </div>
             <p className="text-sm text-muted-foreground">
               AI suggested these mappings. Adjust any that look wrong, then save.
@@ -374,7 +310,10 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
         <DialogFooter>
           {step === "input" ? (
-            <Button onClick={() => inspectMut.mutate()} disabled={inspectMut.isPending || !urlOrId}>
+            <Button
+              onClick={() => inspectMut.mutate()}
+              disabled={inspectMut.isPending || !appsScriptUrl || !displayName}
+            >
               {inspectMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Inspect with AI
             </Button>

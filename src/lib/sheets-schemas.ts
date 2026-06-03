@@ -54,12 +54,3 @@ export const SHEET_TYPES: SheetType[] = [
   "progress", "material_reconciliation", "procurement",
   "contractor_billing", "bill_tracking", "pms", "tat",
 ];
-
-export function extractSheetId(input: string): string | null {
-  // Accept either a raw ID or a full Google Sheets URL.
-  const trimmed = input.trim();
-  const m = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  if (m) return m[1];
-  if (/^[a-zA-Z0-9_-]{20,}$/.test(trimmed)) return trimmed;
-  return null;
-}
