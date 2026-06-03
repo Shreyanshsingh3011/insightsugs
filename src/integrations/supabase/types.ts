@@ -362,30 +362,6 @@ export type Database = {
         }
         Relationships: []
       }
-      google_connections: {
-        Row: {
-          connection_id: string
-          created_at: string
-          google_email: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          connection_id: string
-          created_at?: string
-          google_email?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          connection_id?: string
-          created_at?: string
-          google_email?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       holidays: {
         Row: {
           holiday_date: string
@@ -589,38 +565,35 @@ export type Database = {
       }
       sheet_registry: {
         Row: {
+          apps_script_url: string
           created_at: string
           display_name: string
-          google_sheet_id: string
           id: string
           last_refreshed_at: string | null
           row_count: number
           sheet_type: Database["public"]["Enums"]["sheet_type"]
-          tab_name: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          apps_script_url: string
           created_at?: string
           display_name: string
-          google_sheet_id: string
           id?: string
           last_refreshed_at?: string | null
           row_count?: number
           sheet_type: Database["public"]["Enums"]["sheet_type"]
-          tab_name?: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          apps_script_url?: string
           created_at?: string
           display_name?: string
-          google_sheet_id?: string
           id?: string
           last_refreshed_at?: string | null
           row_count?: number
           sheet_type?: Database["public"]["Enums"]["sheet_type"]
-          tab_name?: string
           updated_at?: string
           user_id?: string
         }
