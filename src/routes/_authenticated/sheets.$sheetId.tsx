@@ -27,7 +27,7 @@ function SheetDetailPage() {
   const refreshMut = useMutation({
     mutationFn: () => refresh({ data: { registryId: sheetId } }),
     onSuccess: () => {
-      toast.success("Refreshed from Google");
+      toast.success("Refreshed");
       qc.invalidateQueries({ queryKey: ["sheet-detail", sheetId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Refresh failed"),
@@ -68,8 +68,6 @@ function SheetDetailPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{reg.display_name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">{SHEET_TYPE_LABELS[type]}</Badge>
-            <span>tab “{reg.tab_name}”</span>
-            <span>·</span>
             <span>{reg.row_count} rows</span>
             <span>·</span>
             <span>
@@ -81,9 +79,10 @@ function SheetDetailPage() {
         </div>
         <Button onClick={() => refreshMut.mutate()} disabled={refreshMut.isPending}>
           <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshMut.isPending ? "animate-spin" : ""}`} />
-          Refresh from Google
+          Refresh
         </Button>
       </div>
+
 
       <Card className="overflow-hidden">
         <div className="max-h-[70vh] overflow-auto">

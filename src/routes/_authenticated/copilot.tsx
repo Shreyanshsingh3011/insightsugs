@@ -1,311 +1,168 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import { supabase } from "@/integrations/supabase/client";
-import { useSession } from "@/hooks/useSession";
-import { listFolders, listDocuments, registerAndProcessDocument } from "@/lib/documents.functions";
-import {
-  listCopilotMessages,
-  sendCopilotMessage,
-  clearCopilotConversation,
-} from "@/lib/copilot.functions";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Send, Loader2, Upload, Trash2, FileText, Paperclip } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Sparkles } from "lucide-react";
+import { listSheets, askCopilot } from "@/lib/sheets.functions";
+import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 
 export const Route = createFileRoute("/_authenticated/copilot")({
   component: CopilotPage,
 });
 
-const ACCEPT = ".pdf,.docx,.doc,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,application/pdf";
+type Source = { id: string; name: string; type: string; rowsUsed: number; truncated: boolean };
+type Turn = { question: string; answer: string; sources: Source[] };
 
 function CopilotPage() {
-  const { userId } = useSession();
-  const qc = useQueryClient();
+  const fetchList = useServerFn(listSheets);
+  const ask = useServerFn(askCopilot);
 
-  const foldersFn = useServerFn(listFolders);
-  const docsFn = useServerFn(listDocuments);
-  const msgsFn = useServerFn(listCopilotMessages);
-  const sendFn = useServerFn(sendCopilotMessage);
-  const clearFn = useServerFn(clearCopilotConversation);
-  const registerFn = useServerFn(registerAndProcessDocument);
+  const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
 
-  const folders = useQuery({
-    queryKey: ["doc-folders"],
-    queryFn: () => foldersFn({ data: undefined as any }),
-  });
-  const [scopeFolder, setScopeFolder] = useState<string>("all");
-  const [scopeDoc, setScopeDoc] = useState<string>("all");
-  const docs = useQuery({
-    queryKey: ["documents", scopeFolder === "all" ? null : scopeFolder],
-    queryFn: () =>
-      docsFn({ data: { folder_id: scopeFolder === "all" ? null : scopeFolder } }),
-  });
-  const messages = useQuery({
-    queryKey: ["copilot-messages"],
-    queryFn: () => msgsFn({ data: undefined as any }),
-  });
+  const [question, setQuestion] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [history, setHistory] = useState<Turn[]>([]);
 
-  const [input, setInput] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.data?.messages.length]);
-
-  const sendMu = useMutation({
-    mutationFn: async (q: string) =>
-      sendFn({
-        data: {
-          question: q,
-          scope_folder_id: scopeFolder === "all" ? null : scopeFolder,
-          scope_document_id: scopeDoc === "all" ? null : scopeDoc,
-        },
-      }),
-    onMutate: (q) => {
-      // optimistic user bubble
-      qc.setQueryData(["copilot-messages"], (old: any) => ({
-        messages: [
-          ...(old?.messages ?? []),
-          {
-            id: `tmp-${Date.now()}`,
-            role: "user",
-            content: q,
-            citations: [],
-            scope: {},
-            created_at: new Date().toISOString(),
-          },
-        ],
-      }));
+  const askMut = useMutation({
+    mutationFn: () =>
+      ask({ data: { question: question.trim(), sheetIds: Array.from(selected) } }),
+    onSuccess: (res) => {
+      setHistory((h) => [
+        ...h,
+        { question: question.trim(), answer: res.answer, sources: res.sources },
+      ]);
+      setQuestion("");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["copilot-messages"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "AI request failed"),
   });
 
-  const clearMu = useMutation({
-    mutationFn: async () => clearFn({ data: undefined as any }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["copilot-messages"] }),
-  });
-
-  // Inline upload
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState<string | null>(null);
-  async function handleUpload(files: FileList | null) {
-    if (!files || !userId) return;
-    const f = files[0];
-    setUploading(f.name);
-    try {
-      const ext = f.name.split(".").pop() ?? "bin";
-      const folderTarget = scopeFolder === "all" ? null : scopeFolder;
-      const path = `${userId}/${folderTarget ?? "copilot"}/${crypto.randomUUID()}.${ext}`;
-      const { error } = await supabase.storage
-        .from("documents")
-        .upload(path, f, { contentType: f.type || "application/octet-stream" });
-      if (error) throw error;
-      await registerFn({
-        data: {
-          name: f.name,
-          mime_type: f.type || "application/octet-stream",
-          size_bytes: f.size,
-          storage_path: path,
-          folder_id: folderTarget,
-        },
-      });
-      qc.invalidateQueries({ queryKey: ["documents"] });
-    } catch (e: any) {
-      alert(`Upload failed: ${e.message ?? e}`);
-    } finally {
-      setUploading(null);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  }
-
-  const submit = () => {
-    const q = input.trim();
-    if (!q || sendMu.isPending) return;
-    setInput("");
-    sendMu.mutate(q);
+  const toggle = (id: string) => {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
-  const msgs = messages.data?.messages ?? [];
+  const canSend = question.trim().length > 0 && selected.size > 0 && !askMut.isPending;
 
   return (
-    <main className="flex h-[calc(100vh-3.5rem)] flex-col">
-      {/* Scope bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card/40 p-3">
-        <Sparkles className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">Co-pilot</span>
-        <div className="mx-2 h-4 w-px bg-border" />
-        <span className="text-xs text-muted-foreground">Search in</span>
-        <Select
-          value={scopeFolder}
-          onValueChange={(v) => {
-            setScopeFolder(v);
-            setScopeDoc("all");
-          }}
-        >
-          <SelectTrigger className="h-8 w-[180px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All folders</SelectItem>
-            {folders.data?.folders.map((f: any) => (
-              <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={scopeDoc} onValueChange={setScopeDoc}>
-          <SelectTrigger className="h-8 w-[200px] text-xs">
-            <SelectValue placeholder="Any document" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Any document</SelectItem>
-            {docs.data?.documents.map((d: any) => (
-              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ml-auto flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ACCEPT}
-            className="hidden"
-            onChange={(e) => handleUpload(e.target.files)}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => fileRef.current?.click()}
-            disabled={!!uploading}
-          >
-            {uploading ? (
-              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="mr-2 h-3.5 w-3.5" />
-            )}
-            {uploading ? `Processing ${uploading.slice(0, 18)}…` : "Upload"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              if (confirm("Clear conversation?")) clearMu.mutate();
-            }}
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" /> Clear
-          </Button>
-        </div>
-      </div>
+    <div className="mx-auto grid w-full max-w-6xl gap-4 p-4 md:grid-cols-[260px_1fr] md:p-6">
+      {/* Sidebar: sheet picker */}
+      <aside>
+        <Card className="p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-medium">Sheets in context</h2>
+            <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+          </div>
+          {sheets.isLoading ? (
+            <div className="flex justify-center py-4 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </div>
+          ) : (sheets.data?.sheets ?? []).length === 0 ? (
+            <p className="py-2 text-xs text-muted-foreground">
+              Register sheets first on the My Sheets page.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {sheets.data!.sheets.map((s: any) => (
+                <li key={s.id}>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 hover:bg-muted/50">
+                    <Checkbox
+                      checked={selected.has(s.id)}
+                      onCheckedChange={() => toggle(s.id)}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm">{s.display_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {SHEET_TYPE_LABELS[s.sheet_type as SheetType]} · {s.row_count} rows
+                      </div>
+                    </div>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </aside>
 
       {/* Conversation */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-4 p-6">
-          {msgs.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center">
-              <Sparkles className="mx-auto mb-3 h-8 w-8 text-primary/60" />
-              <h2 className="text-base font-semibold">Ask your documents anything</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Upload a file or pick a folder, then ask a question. Answers are grounded only in the documents you can access.
-              </p>
-            </div>
-          )}
+      <section className="flex min-h-[60vh] flex-col gap-4">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            <Sparkles className="h-5 w-5 text-primary" /> Copilot
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ask anything about the sheets you've selected. Answers are based only on that data.
+          </p>
+        </div>
 
-          {msgs.map((m: any) => (
-            <div
-              key={m.id}
-              className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
-                  m.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-card border border-border"
-                }`}
-              >
-                <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-ul:my-1">
-                  <ReactMarkdown>{m.content}</ReactMarkdown>
-                </div>
-                {Array.isArray(m.citations) && m.citations.length > 0 && (
-                  <div className="mt-3 space-y-1 border-t border-border/50 pt-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
-                      Sources
-                    </p>
-                    {m.citations.map((c: any, i: number) => (
-                      <div key={i} className="flex items-start gap-1.5 text-xs opacity-90">
-                        <FileText className="mt-0.5 h-3 w-3 shrink-0" />
-                        <div className="min-w-0">
-                          <span className="font-medium">[{i + 1}]</span>{" "}
-                          <span className="truncate">{c.document_name}</span>
-                          {c.page_no && (
-                            <Badge variant="outline" className="ml-1 h-4 px-1 text-[10px]">
-                              p.{c.page_no}
-                            </Badge>
-                          )}
-                          <p className="mt-0.5 line-clamp-2 opacity-70">{c.snippet}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+        <div className="flex-1 space-y-4">
+          {history.length === 0 && !askMut.isPending ? (
+            <Card className="p-8 text-center text-sm text-muted-foreground">
+              Select one or more sheets on the left, then ask a question below.
+            </Card>
+          ) : (
+            history.map((t, i) => (
+              <div key={i} className="space-y-2">
+                <Card className="bg-muted/40 p-3 text-sm">
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">You</div>
+                  {t.question}
+                </Card>
+                <Card className="p-3 text-sm">
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">Copilot</div>
+                  <div className="whitespace-pre-wrap">{t.answer}</div>
+                  {t.sources.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {t.sources.map((s) => (
+                        <Badge key={s.id} variant="outline" className="text-xs">
+                          {s.name} ({s.rowsUsed}{s.truncated ? "+" : ""} rows)
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </Card>
               </div>
-            </div>
-          ))}
-
-          {sendMu.isPending && (
-            <div className="flex justify-start">
-              <div className="rounded-2xl border border-border bg-card px-4 py-3 text-sm">
-                <Loader2 className="inline h-3.5 w-3.5 animate-spin" /> Thinking…
-              </div>
-            </div>
+            ))
           )}
-          {sendMu.isError && (
-            <p className="text-center text-xs text-destructive">
-              {(sendMu.error as Error)?.message ?? "Something went wrong"}
-            </p>
+          {askMut.isPending && (
+            <Card className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Thinking…
+            </Card>
           )}
         </div>
-      </div>
 
-      {/* Composer */}
-      <div className="border-t border-border bg-card/40 p-3">
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-10 w-10 shrink-0"
-            onClick={() => fileRef.current?.click()}
-            title="Upload a document"
-            disabled={!!uploading}
-          >
-            {uploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Paperclip className="h-4 w-4" />
-            )}
-          </Button>
+        <Card className="p-3">
           <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="e.g. Which activities are running late?  Or: total certified billing for Vendor X?"
+            rows={3}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canSend) {
                 e.preventDefault();
-                submit();
+                askMut.mutate();
               }
             }}
-            placeholder="Ask anything about your documents… (Enter to send, Shift+Enter for newline)"
-            className="min-h-[44px] flex-1 resize-none"
-            rows={1}
           />
-          <Button onClick={submit} disabled={sendMu.isPending || !input.trim()} className="h-10">
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </main>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</span>
+            <Button onClick={() => askMut.mutate()} disabled={!canSend}>
+              {askMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Ask
+            </Button>
+          </div>
+        </Card>
+      </section>
+    </div>
   );
 }
