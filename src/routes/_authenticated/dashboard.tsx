@@ -487,6 +487,7 @@ function DataFeed({ extras, setExtras, data }: { extras: ExtraEntry[]; setExtras
 }
 
 function FlagsPanel({ data }: { data: DashboardData }) {
+  const navigate = useNavigate();
   const allFlags = data.flags ?? [];
   const [selected, setSelected] = useState<FlagEntry | null>(null);
   const [showAll, setShowAll] = useState(false);
