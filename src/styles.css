@@ -1,6 +1,6 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
-@import url("https://rsms.me/inter/inter.css");
+
 @source "../src";
 
 @custom-variant dark (&:is(.dark *));
