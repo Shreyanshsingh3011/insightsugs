@@ -6,6 +6,7 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   CalendarDays, Settings, Sun, Moon, Activity, FileText, Sparkles, Sheet as SheetIcon,
+  AlertTriangle,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -47,6 +48,7 @@ function AuthLayout() {
           <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
           <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
           <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+          <SideLink to="/alerts" icon={<AlertTriangle className="h-4 w-4" />}>Alerts</SideLink>
           <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Documents</SideLink>
           <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>My Sheets</SideLink>
           <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
@@ -68,6 +70,7 @@ function AuthLayout() {
             <SideLink to="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />}>Dashboard</SideLink>
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
             <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
+            <SideLink to="/alerts" icon={<AlertTriangle className="h-4 w-4" />}>Alerts</SideLink>
             <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Docs</SideLink>
             <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>Sheets</SideLink>
             <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
