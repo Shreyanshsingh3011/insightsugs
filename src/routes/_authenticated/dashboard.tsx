@@ -11,11 +11,15 @@ import {
   fetchDashboard, mergeData, type DashboardData, type ExtraEntry,
 } from "@/lib/dashboard-data";
 import { askChatbot } from "@/lib/chat.functions";
+import { listSheets } from "@/lib/sheets.functions";
+import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Send, Upload, Plus, AlertTriangle, CheckCircle2, Clock, TrendingUp, Bot, Database, Sparkles, Flag, FileSearch, ChevronDown, ChevronUp, Quote, FileDown, FileSpreadsheet, Mail, MessageSquare, Wand2, X } from "lucide-react";
+import { Send, Upload, Plus, AlertTriangle, CheckCircle2, Clock, TrendingUp, Bot, Database, Sparkles, Flag, FileSearch, ChevronDown, ChevronUp, Quote, FileDown, FileSpreadsheet, Mail, MessageSquare, Wand2, X, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { exportFlagsCsv, exportFlagsPdf } from "@/lib/export-flags";
@@ -26,6 +30,7 @@ import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
+
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [
