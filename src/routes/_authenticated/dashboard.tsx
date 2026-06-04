@@ -41,12 +41,33 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 const STORAGE_KEY = "dashboard.extras.v1";
+const SHEETS_KEY = "dashboard.selectedSheets.v1";
 const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-2)", "var(--chart-5)", "var(--chart-4)", "var(--muted-foreground)"];
 
 function Dashboard() {
+  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
+  useEffect(() => {
+    try { const s = localStorage.getItem(SHEETS_KEY); if (s) setSelectedSheetIds(JSON.parse(s)); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem(SHEETS_KEY, JSON.stringify(selectedSheetIds)); } catch {}
+  }, [selectedSheetIds]);
+
+  const listSheetsFn = useServerFn(listSheets);
+  const { data: sheetsList } = useQuery({
+    queryKey: ["sheets-list"],
+    queryFn: () => listSheetsFn(),
+  });
+
+  const buildFn = useServerFn(buildDashboardFromSheets);
+  const dynamic = selectedSheetIds.length > 0;
+
   const { data: base, isLoading, error, refetch } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: fetchDashboard,
+    queryKey: dynamic ? ["dashboard", "dynamic", ...selectedSheetIds] : ["dashboard", "static"],
+    queryFn: () =>
+      dynamic
+        ? buildFn({ data: { sheetIds: selectedSheetIds } })
+        : fetchDashboard(),
   });
 
   const [extras, setExtras] = useState<ExtraEntry[]>([]);
@@ -95,9 +116,20 @@ function Dashboard() {
   return (
     <main className="w-full px-4 pb-24 pt-6 sm:px-6 lg:pr-[440px]">
       <div className="mx-auto max-w-[1400px]">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Project delay intelligence overview.</p>
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+            <p className="text-sm text-muted-foreground">
+              {dynamic
+                ? `Aggregated from ${selectedSheetIds.length} sheet${selectedSheetIds.length === 1 ? "" : "s"}.`
+                : "Static demo source. Pick sheets below to go live."}
+            </p>
+          </div>
+          <SheetPicker
+            sheets={sheetsList?.sheets ?? []}
+            selected={selectedSheetIds}
+            onChange={setSelectedSheetIds}
+          />
         </div>
         {isLoading && <div className="py-32 text-center text-muted-foreground">Loading dashboard…</div>}
         {error && <div className="py-32 text-center text-destructive">Failed to load. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>}
@@ -107,10 +139,73 @@ function Dashboard() {
           </div>
         )}
       </div>
-      {data && <Copilot data={data} />}
+      {data && <Copilot data={data} sheetIds={selectedSheetIds} />}
     </main>
   );
 }
+
+function SheetPicker({
+  sheets,
+  selected,
+  onChange,
+}: {
+  sheets: { id: string; display_name: string; sheet_type: string; row_count: number | null }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const toggle = (id: string) => {
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  };
+  const label = selected.length === 0
+    ? "Select sheets"
+    : selected.length === sheets.length
+      ? `All ${sheets.length} sheets`
+      : `${selected.length} of ${sheets.length} sheets`;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Database className="mr-2 h-4 w-4" />
+          {label}
+          <ChevronDown className="ml-2 h-4 w-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Data sources</p>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onChange(sheets.map((s) => s.id))}>All</Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onChange([])}>None</Button>
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto p-2">
+          {sheets.length === 0 && (
+            <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+              No sheets registered yet. Add one from the Sheets page.
+            </p>
+          )}
+          {sheets.map((s) => (
+            <label key={s.id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-secondary">
+              <Checkbox
+                checked={selected.includes(s.id)}
+                onCheckedChange={() => toggle(s.id)}
+                className="mt-0.5"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{s.display_name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {s.sheet_type} · {s.row_count ?? 0} rows
+                </p>
+              </div>
+            </label>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 
 
 function SummaryBar({ data, extrasCount }: { data: DashboardData; extrasCount: number }) {
