@@ -622,7 +622,11 @@ function FlagsPanel({ data }: { data: DashboardData }) {
             </thead>
             <tbody>
               {visible.map((f) => (
-                <tr key={f.id} className="border-b border-border/40 last:border-0">
+                <tr
+                  key={f.id}
+                  onClick={() => navigate({ to: "/alerts", search: { id: f.id } })}
+                  className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-accent/40"
+                >
                   <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{f.id}</td>
                   <td className="max-w-xs truncate py-3 pr-4">{f.activity}</td>
                   <td className="py-3 pr-4 text-muted-foreground">{f.flagged_to?.person ?? "—"}</td>
@@ -631,8 +635,12 @@ function FlagsPanel({ data }: { data: DashboardData }) {
                   <td className="py-3 pr-4"><span className={`rounded-md px-2 py-0.5 text-xs ${sevColor(f.severity)}`}>{f.severity ?? "—"}</span></td>
                   <td className="py-3 pr-4 text-muted-foreground">{f.status ?? "—"}</td>
                   <td className="py-3">
-                    <Button size="sm" variant="outline" onClick={() => setSelected(f)}>
-                      <FileSearch className="mr-1.5 h-3.5 w-3.5" /> Source
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); navigate({ to: "/alerts", search: { id: f.id } }); }}
+                    >
+                      <FileSearch className="mr-1.5 h-3.5 w-3.5" /> View alert
                     </Button>
                   </td>
                 </tr>
