@@ -763,7 +763,7 @@ const QUICK_ACTIONS = [
   { icon: FileDown, label: "Generate report", prompt: "Generate a PDF flags report and download it." },
 ];
 
-function Copilot({ data }: { data: DashboardData }) {
+function Copilot({ data, sheetIds: _sheetIds }: { data: DashboardData; sheetIds?: string[] }) {
   const [open, setOpen] = useState(true);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
