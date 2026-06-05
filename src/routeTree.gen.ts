@@ -21,7 +21,9 @@ import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
+import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
+import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminHolidaysRouteImport } from './routes/_authenticated/admin.holidays'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
@@ -89,12 +91,23 @@ const AuthenticatedAlertsRoute = AuthenticatedAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAlertsIndexRoute =
+  AuthenticatedAlertsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedAlertsRoute,
+  } as any)
 const AuthenticatedSheetsSheetIdRoute =
   AuthenticatedSheetsSheetIdRouteImport.update({
     id: '/$sheetId',
     path: '/$sheetId',
     getParentRoute: () => AuthenticatedSheetsRoute,
   } as any)
+const AuthenticatedAlertsIdRoute = AuthenticatedAlertsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedAlertsRoute,
+} as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -126,7 +139,7 @@ const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/alerts': typeof AuthenticatedAlertsRoute
+  '/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/copilot': typeof AuthenticatedCopilotRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -138,14 +151,15 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/alerts': typeof AuthenticatedAlertsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -157,7 +171,9 @@ export interface FileRoutesByTo {
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
 }
@@ -166,7 +182,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
-  '/_authenticated/alerts': typeof AuthenticatedAlertsRoute
+  '/_authenticated/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
@@ -178,7 +194,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
 }
@@ -199,14 +217,15 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
+    | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/alerts/'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
-    | '/alerts'
     | '/copilot'
     | '/dashboard'
     | '/documents'
@@ -218,7 +237,9 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
+    | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/alerts'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
   id:
@@ -238,7 +259,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/holidays'
     | '/_authenticated/admin/users'
+    | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
+    | '/_authenticated/alerts/'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
   fileRoutesById: FileRoutesById
@@ -337,12 +360,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/alerts/': {
+      id: '/_authenticated/alerts/'
+      path: '/'
+      fullPath: '/alerts/'
+      preLoaderRoute: typeof AuthenticatedAlertsIndexRouteImport
+      parentRoute: typeof AuthenticatedAlertsRoute
+    }
     '/_authenticated/sheets/$sheetId': {
       id: '/_authenticated/sheets/$sheetId'
       path: '/$sheetId'
       fullPath: '/sheets/$sheetId'
       preLoaderRoute: typeof AuthenticatedSheetsSheetIdRouteImport
       parentRoute: typeof AuthenticatedSheetsRoute
+    }
+    '/_authenticated/alerts/$id': {
+      id: '/_authenticated/alerts/$id'
+      path: '/$id'
+      fullPath: '/alerts/$id'
+      preLoaderRoute: typeof AuthenticatedAlertsIdRouteImport
+      parentRoute: typeof AuthenticatedAlertsRoute
     }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
@@ -382,6 +419,19 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedAlertsRouteChildren {
+  AuthenticatedAlertsIdRoute: typeof AuthenticatedAlertsIdRoute
+  AuthenticatedAlertsIndexRoute: typeof AuthenticatedAlertsIndexRoute
+}
+
+const AuthenticatedAlertsRouteChildren: AuthenticatedAlertsRouteChildren = {
+  AuthenticatedAlertsIdRoute: AuthenticatedAlertsIdRoute,
+  AuthenticatedAlertsIndexRoute: AuthenticatedAlertsIndexRoute,
+}
+
+const AuthenticatedAlertsRouteWithChildren =
+  AuthenticatedAlertsRoute._addFileChildren(AuthenticatedAlertsRouteChildren)
+
 interface AuthenticatedSheetsRouteChildren {
   AuthenticatedSheetsSheetIdRoute: typeof AuthenticatedSheetsSheetIdRoute
 }
@@ -394,7 +444,7 @@ const AuthenticatedSheetsRouteWithChildren =
   AuthenticatedSheetsRoute._addFileChildren(AuthenticatedSheetsRouteChildren)
 
 interface AuthenticatedRouteChildren {
-  AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRoute
+  AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
@@ -409,7 +459,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedAlertsRoute: AuthenticatedAlertsRoute,
+  AuthenticatedAlertsRoute: AuthenticatedAlertsRouteWithChildren,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
