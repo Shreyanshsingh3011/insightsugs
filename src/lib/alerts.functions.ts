@@ -131,7 +131,7 @@ export const sendAlert = createServerFn({ method: "POST" })
 
     // 4. In-app notifications
     const notifRows = recList
-      .filter((r) => r.user_id)
+      .filter((r): r is typeof r & { user_id: string } => !!r.user_id)
       .map((r) => ({
         user_id: r.user_id,
         kind: "alert",
