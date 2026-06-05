@@ -624,7 +624,7 @@ function FlagsPanel({ data }: { data: DashboardData }) {
               {visible.map((f) => (
                 <tr
                   key={f.id}
-                  onClick={() => navigate({ to: "/alerts", search: { id: f.id } })}
+                  onClick={() => navigate({ to: "/alerts/$id", params: { id: f.id } })}
                   className="cursor-pointer border-b border-border/40 transition-colors last:border-0 hover:bg-accent/40"
                 >
                   <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{f.id}</td>
@@ -638,7 +638,7 @@ function FlagsPanel({ data }: { data: DashboardData }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={(e) => { e.stopPropagation(); navigate({ to: "/alerts", search: { id: f.id } }); }}
+                      onClick={(e) => { e.stopPropagation(); navigate({ to: "/alerts/$id", params: { id: f.id } }); }}
                     >
                       <FileSearch className="mr-1.5 h-3.5 w-3.5" /> View alert
                     </Button>
