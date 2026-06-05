@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import {
   ArrowLeft, Flag, AlertTriangle, Clock, User, Building2, Mail, Phone,
   FileSearch, TrendingUp, Lock, Send, CheckCircle2, MessageSquare, ShieldCheck,
