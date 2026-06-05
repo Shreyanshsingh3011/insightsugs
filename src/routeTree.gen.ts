@@ -23,6 +23,7 @@ import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
+import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminHolidaysRouteImport } from './routes/_authenticated/admin.holidays'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
@@ -102,6 +103,11 @@ const AuthenticatedSheetsSheetIdRoute =
     path: '/$sheetId',
     getParentRoute: () => AuthenticatedSheetsRoute,
   } as any)
+const AuthenticatedAlertsIdRoute = AuthenticatedAlertsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedAlertsRoute,
+} as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
@@ -186,6 +194,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
+    | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/alerts/'
     | '/api/public/hooks/escalate'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/holidays'
     | '/admin/users'
+    | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/alerts'
     | '/api/public/hooks/escalate'
@@ -248,6 +259,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/holidays'
     | '/_authenticated/admin/users'
+    | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
     | '/_authenticated/alerts/'
     | '/api/public/hooks/escalate'
@@ -362,6 +374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSheetsSheetIdRouteImport
       parentRoute: typeof AuthenticatedSheetsRoute
     }
+    '/_authenticated/alerts/$id': {
+      id: '/_authenticated/alerts/$id'
+      path: '/$id'
+      fullPath: '/alerts/$id'
+      preLoaderRoute: typeof AuthenticatedAlertsIdRouteImport
+      parentRoute: typeof AuthenticatedAlertsRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/admin/users'
@@ -401,10 +420,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAlertsRouteChildren {
+  AuthenticatedAlertsIdRoute: typeof AuthenticatedAlertsIdRoute
   AuthenticatedAlertsIndexRoute: typeof AuthenticatedAlertsIndexRoute
 }
 
 const AuthenticatedAlertsRouteChildren: AuthenticatedAlertsRouteChildren = {
+  AuthenticatedAlertsIdRoute: AuthenticatedAlertsIdRoute,
   AuthenticatedAlertsIndexRoute: AuthenticatedAlertsIndexRoute,
 }
 
