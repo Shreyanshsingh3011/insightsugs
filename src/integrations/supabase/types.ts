@@ -100,6 +100,133 @@ export type Database = {
           },
         ]
       }
+      alert_messages: {
+        Row: {
+          alert_id: string
+          author_id: string
+          body: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          alert_id: string
+          author_id: string
+          body: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          alert_id?: string
+          author_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_messages_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alert_recipients: {
+        Row: {
+          alert_id: string
+          channel: string
+          created_at: string
+          delivered_at: string | null
+          email: string
+          error: string | null
+          id: string
+          name: string | null
+          user_id: string | null
+        }
+        Insert: {
+          alert_id: string
+          channel: string
+          created_at?: string
+          delivered_at?: string | null
+          email: string
+          error?: string | null
+          id?: string
+          name?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          alert_id?: string
+          channel?: string
+          created_at?: string
+          delivered_at?: string | null
+          email?: string
+          error?: string | null
+          id?: string
+          name?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_recipients_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alerts: {
+        Row: {
+          activity: string
+          created_at: string
+          flag_id: string
+          id: string
+          reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          root_cause: string | null
+          sent_by: string
+          severity: string | null
+          source: string | null
+          stage: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          activity: string
+          created_at?: string
+          flag_id: string
+          id?: string
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          root_cause?: string | null
+          sent_by: string
+          severity?: string | null
+          source?: string | null
+          stage?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          activity?: string
+          created_at?: string
+          flag_id?: string
+          id?: string
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          root_cause?: string | null
+          sent_by?: string
+          severity?: string | null
+          source?: string | null
+          stage?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       audit_log: {
         Row: {
           activity_id: string | null
@@ -696,6 +823,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin_or_super: { Args: { _user_id: string }; Returns: boolean }
+      is_alert_recipient: {
+        Args: { _alert_id: string; _user_id: string }
+        Returns: boolean
+      }
       match_doc_chunks: {
         Args: {
           _match_count?: number

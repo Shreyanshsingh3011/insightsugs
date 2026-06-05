@@ -1,70 +1,61 @@
-## Plan — Apps Script-driven sheets + multi-sheet AI
+## Goal
 
-### Goal
-Replace per-user Google OAuth with a registry of public Apps Script web app URLs (one per sheet). Keep AI copilot working as today, plus let the user pick multiple registered sheets as context for a single question.
+Turn the Alert details page into a read-only record with an admin "Send Alert" workflow that notifies the responsible person, project members, and assignees of dependent activities — via in-app notifications and email — and supports a reply thread plus a Resolve action.
 
-### Scope changes vs current code
+## 1. Read-only alert details
 
-**Remove (Google OAuth path):**
-- `src/integrations/lovable/appUserConnector.ts`, `appUserConnectorClient.ts`
-- "Connect Google" UI + start-OAuth server fn
-- `google_connections` table
-- The "inspect sheet via Google Sheets API" path
+- The Alert details page (`/alerts/$id`) is already display-only. Add an explicit "Read-only record" badge and confirm no input/textarea/contenteditable fields exist.
+- Replies and Resolve live in a separate "Communication" panel below — not edits to the alert itself.
 
-**Keep / repurpose:**
-- `sheet_registry` table — repurposed to store Apps Script URL instead of spreadsheet ID
-- `sheet_column_mappings`, `sheet_rows` tables — unchanged
-- `sheet-schemas.ts` canonical schemas — unchanged
-- `/sheets` and `/sheets/$sheetId` routes — kept, simplified
+## 2. New database tables
 
-### Phase 1a — Apps Script registry & ingest
+- `alerts` — persisted dispatch record keyed by `flag_id` (string, e.g. `FLAG-001`). Stores snapshot of activity, stage, severity, source, root cause, reason, status (`open` / `acknowledged` / `resolved`), `sent_by`, `resolved_by`, `resolved_at`.
+- `alert_recipients` — `alert_id`, `user_id` (nullable for external email-only), `email`, `channel` (`inapp` | `email`), `delivered_at`, `error`.
+- `alert_messages` — thread: `alert_id`, `author_id`, `body`, `created_at`.
 
-1. **DB migration**
-   - `sheet_registry`: drop `google_connection_id`, `spreadsheet_id`, `sheet_name` columns; add `apps_script_url text not null`, keep `title`, `sheet_type`, `user_id`, timestamps.
-   - Drop `google_connections` table.
+RLS: super_admin + admin can insert/update alerts; recipients + admins can read alerts/messages they're part of; recipients + admins can insert messages.
 
-2. **Server functions** (`src/lib/sheets.functions.ts`, rewritten)
-   - `registerSheet({ title, sheetType, appsScriptUrl })` — validates URL (`https://script.google.com/.../exec`), fetches once to confirm it returns JSON, runs AI column-mapping against the headers, returns suggested mapping for user approval.
-   - `saveSheetMapping({ sheetId, mapping })` — stores in `sheet_column_mappings`.
-   - `syncSheet({ sheetId })` — fetches Apps Script URL, normalizes rows using mapping, upserts into `sheet_rows`. Manual trigger only (per earlier decision).
-   - `listSheets()` / `getSheetRows({ sheetId })` — unchanged behavior.
-   - `deleteSheet({ sheetId })`.
+## 3. Recipient resolution
 
-3. **UI** (`/sheets`)
-   - "Add sheet" dialog: title, sheet type dropdown (7 canonical types), Apps Script URL field.
-   - On submit → call register → show AI-suggested mapping → user confirms → save + sync.
-   - List of registered sheets with Refresh + Delete buttons.
+A server-side resolver builds the recipient set for a flag:
 
-### Phase 1b — AI Copilot with multi-sheet context
+1. Responsible person — `flag.flagged_to.email` (+ matching `profiles.id` if found).
+2. Project members — look up the activity by title/stage in `activities`, then read its `project_members`.
+3. Dependent activity assignees — pull `activities` in the same project whose `depends_on` (or upstream/downstream link in the dep-chain resolver) touches the flagged activity; collect their `assignee_id`.
 
-1. **New route** `/copilot` (already partially scaffolded? if not, add it).
-2. **UI**: chat-style input + a multi-select list of the user's registered sheets ("Use sheets as context").
-3. **Server fn** `askCopilot({ question, sheetIds[] })`:
-   - Loads rows for each selected sheet (capped, e.g. 500 rows/sheet to stay within token budget).
-   - Builds a structured context block: `[sheet title, type, mapped columns, rows…]` per sheet.
-   - Calls Lovable AI Gateway (`google/gemini-3-flash-preview`) with system prompt explaining the canonical schemas + "answer based only on provided sheet data, cite sheet titles".
-   - Returns `{ answer, sourcesUsed }`.
-4. Render answer + which sheets contributed.
+Deduped by email. External-only emails (no profile) still get email but no in-app row.
 
-### Apps Script response contract (expected)
-The deployed `doGet(e)` should return JSON like:
-```json
-{ "headers": ["activity","owner",...], "rows": [["Foundation","R. Kumar",...], ...] }
-```
-If a user's script returns a different shape (e.g. array of objects), the register step's AI mapping will detect and normalize. We'll document the recommended shape in the Add-Sheet dialog.
+## 4. Server functions (`src/lib/alerts.functions.ts`)
 
-### Out of scope (later phases, unchanged)
-- Anomaly detection / proactive status indicators
-- Write-back to an "Actions" tab
-- Reminders (email / WhatsApp / SMS)
-- Source-sheet description parity recommendations
+- `sendAlert({ flagId })` — admin-only via `requireSupabaseAuth` + role check. Re-fetches the flag from the dashboard data, resolves recipients, upserts the `alerts` row, inserts `alert_recipients`, inserts a `notifications` row per in-app recipient, calls Lovable Emails `sendTransactionalEmail` per email recipient.
+- `listAlerts()` — alerts visible to the current user (admin = all, others = where they are a recipient).
+- `getAlert({ id })` — alert + recipients + messages.
+- `replyToAlert({ alertId, body })` — recipient/admin inserts into `alert_messages`; pings other recipients in-app.
+- `resolveAlert({ alertId })` — admin marks resolved.
 
-### Technical notes
-- Apps Script URLs are public → simple `fetch()` from a server function. No connector, no OAuth.
-- All tables remain RLS-scoped to `user_id = auth.uid()`.
-- `LOVABLE_API_KEY` already provisioned for AI calls.
-- No new secrets required.
+## 5. Email template
 
-### Risks
-- A public Apps Script URL leaks the sheet data to anyone who has the URL. Acceptable per user's "Public — Anyone" choice, but we'll show a one-line warning in the UI.
-- Large sheets (>1000 rows) sent to AI will be truncated; we'll surface this in the copilot response.
+New React Email template `src/lib/email-templates/alert-dispatch.tsx` rendering severity, activity, stage, root cause, reason, link back to `/alerts/{flagId}`. Registered in `src/lib/email-templates/registry.ts`. Sent via the existing `/lovable/email/transactional/send` route.
+
+Prereq: if Lovable Emails infra / domain isn't set up yet, surface the email setup dialog first, then continue.
+
+## 6. UI changes
+
+- **Alert details (`/alerts/$id`)**:
+  - "Read-only record" badge.
+  - Admin-only **Send Alert** button (disabled once dispatched → shows "Dispatched · N recipients").
+  - Recipients list (name/email · channel · delivered).
+  - **Communication** panel: message thread, textarea + Send (any recipient/admin), **Resolve** button (admin), status pill.
+- **Alerts list (`/alerts`)**: add "Dispatched" indicator column derived from `alerts` rows.
+- **Navbar**: existing Alerts link unchanged.
+
+## 7. Out of scope (this pass)
+
+- SMS dispatch — deferred (requires Twilio connector + verified number). Will add as a follow-up once you confirm Twilio.
+
+## Technical notes
+
+- Admin check uses existing `public.is_admin_or_super(auth.uid())`.
+- Dependent-activity expansion uses `activities.depends_on` when present, otherwise falls back to the dep-chain resolver output already wired in `src/lib/dependency-chain.ts` (best-effort, no failure if it can't map).
+- In-app delivery writes to existing `notifications` table with `link = /alerts/{flagId}`.
+- All writes routed through `createServerFn` + `requireSupabaseAuth`; no admin client in client code.
