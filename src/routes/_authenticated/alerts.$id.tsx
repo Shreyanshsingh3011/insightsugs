@@ -13,6 +13,7 @@ import {
 import { fetchDashboard, type DashboardData, type FlagEntry } from "@/lib/dashboard-data";
 import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
 import { sendAlert, getAlertByFlag, replyToAlert, resolveAlert } from "@/lib/alerts.functions";
+import { listEmailGroups } from "@/lib/email-groups.functions";
 import { useIsAdmin } from "@/hooks/useSession";
 
 const SHEETS_KEY = "dashboard.selectedSheets.v1";
@@ -60,6 +61,14 @@ function AlertDetails() {
   const getAlertFn = useServerFn(getAlertByFlag);
   const replyFn = useServerFn(replyToAlert);
   const resolveFn = useServerFn(resolveAlert);
+  const listGroupsFn = useServerFn(listEmailGroups);
+
+  const groupsQ = useQuery<any[]>({
+    queryKey: ["email-groups"],
+    queryFn: () => listGroupsFn(),
+    enabled: isAdmin,
+  });
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
 
   const dynamic = selectedSheetIds.length > 0;
   const { data, isLoading } = useQuery<DashboardData>({
@@ -87,6 +96,28 @@ function AlertDetails() {
     });
   }, [recipients]);
 
+  // Auto-suggest groups matching the current flag.
+  const suggestedGroupIds = useMemo(() => {
+    if (!flag || !groupsQ.data) return new Set<string>();
+    const out = new Set<string>();
+    for (const g of groupsQ.data) {
+      const a = g.applies_to ?? {};
+      const sevMatch = (a.severities ?? []).length === 0 || a.severities.includes(flag.severity ?? "");
+      const stageMatch = (a.stages ?? []).length === 0 || a.stages.includes(flag.stage ?? "");
+      const actMatch = (a.activities ?? []).length === 0 || a.activities.includes(flag.activity);
+      const anyFilter = (a.severities ?? []).length || (a.stages ?? []).length || (a.activities ?? []).length;
+      if (anyFilter && sevMatch && stageMatch && actMatch) out.add(g.id);
+    }
+    return out;
+  }, [flag, groupsQ.data]);
+
+  // Initialize selection with auto-suggested groups once data loads
+  useEffect(() => {
+    if (suggestedGroupIds.size && selectedGroupIds.size === 0) {
+      setSelectedGroupIds(new Set(suggestedGroupIds));
+    }
+  }, [suggestedGroupIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sendMut = useMutation({
     mutationFn: async () => {
       if (!flag) throw new Error("Flag not loaded");
@@ -112,6 +143,11 @@ function AlertDetails() {
         const matchesOwner = responsible && p.person.trim().toLowerCase() === responsible;
         const matchesActivity = p.activities?.some((a) => a === flag.activity);
         if (matchesOwner || matchesActivity) addExtra(p.email, p.person);
+      }
+      // Add members from selected email groups
+      for (const g of groupsQ.data ?? []) {
+        if (!selectedGroupIds.has(g.id)) continue;
+        for (const m of g.members ?? []) addExtra(m.email, m.name);
       }
       return sendFn({
         data: {
@@ -224,6 +260,47 @@ function AlertDetails() {
                   <p className="text-2xl font-semibold text-destructive">{flag.overdue_days ?? 0}d</p>
                 </div>
               </div>
+
+              {isAdmin && !dispatched && (groupsQ.data?.length ?? 0) > 0 && (
+                <div className="mt-4 border-t border-border/40 pt-4">
+                  <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Include email groups
+                    {suggestedGroupIds.size > 0 && (
+                      <span className="ml-2 normal-case text-emerald-600">
+                        ({suggestedGroupIds.size} auto-matched)
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groupsQ.data!.map((g: any) => {
+                      const checked = selectedGroupIds.has(g.id);
+                      const suggested = suggestedGroupIds.has(g.id);
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedGroupIds((prev) => {
+                              const n = new Set(prev);
+                              if (n.has(g.id)) n.delete(g.id); else n.add(g.id);
+                              return n;
+                            });
+                          }}
+                          className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                            checked
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/50"
+                          }`}
+                          title={suggested ? "Auto-matched to this flag" : undefined}
+                        >
+                          {g.name} <span className="opacity-60">({g.members?.length ?? 0})</span>
+                          {suggested && <span className="ml-1">★</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {isAdmin && (
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
