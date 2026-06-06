@@ -13,6 +13,7 @@ import {
 import { fetchDashboard, type DashboardData, type FlagEntry } from "@/lib/dashboard-data";
 import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
 import { sendAlert, getAlertByFlag, replyToAlert, resolveAlert } from "@/lib/alerts.functions";
+import { listEmailGroups } from "@/lib/email-groups.functions";
 import { useIsAdmin } from "@/hooks/useSession";
 
 const SHEETS_KEY = "dashboard.selectedSheets.v1";
