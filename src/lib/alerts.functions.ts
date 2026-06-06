@@ -62,6 +62,16 @@ export const sendAlert = createServerFn({ method: "POST" })
       addRecip(flag.responsible_email, prof?.id ?? null, prof?.full_name ?? flag.responsible_name ?? null);
     }
 
+    // Extra recipients passed from the client (e.g. emails sourced from sheet/dashboard data)
+    for (const extra of flag.extra_recipients ?? []) {
+      const { data: prof } = await supabaseAdmin
+        .from("profiles")
+        .select("id, full_name, email")
+        .ilike("email", extra.email)
+        .maybeSingle();
+      addRecip(extra.email, prof?.id ?? null, prof?.full_name ?? extra.name ?? null);
+    }
+
     // Match activity by title -> project_id
     const { data: actMatches } = await supabaseAdmin
       .from("activities")
