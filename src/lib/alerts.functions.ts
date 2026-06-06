@@ -12,6 +12,13 @@ const FlagSnapshot = z.object({
   reason: z.string().max(2000).optional().nullable(),
   responsible_email: z.string().email().max(255).optional().nullable(),
   responsible_name: z.string().max(255).optional().nullable(),
+  extra_recipients: z
+    .array(z.object({
+      email: z.string().email().max(255),
+      name: z.string().max(255).optional().nullable(),
+    }))
+    .max(200)
+    .optional(),
 });
 
 async function assertAdmin(supabase: any, userId: string) {
