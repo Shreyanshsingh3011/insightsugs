@@ -144,6 +144,11 @@ function AlertDetails() {
         const matchesActivity = p.activities?.some((a) => a === flag.activity);
         if (matchesOwner || matchesActivity) addExtra(p.email, p.person);
       }
+      // Add members from selected email groups
+      for (const g of groupsQ.data ?? []) {
+        if (!selectedGroupIds.has(g.id)) continue;
+        for (const m of g.members ?? []) addExtra(m.email, m.name);
+      }
       return sendFn({
         data: {
           flag: {
