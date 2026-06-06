@@ -61,6 +61,14 @@ function AlertDetails() {
   const getAlertFn = useServerFn(getAlertByFlag);
   const replyFn = useServerFn(replyToAlert);
   const resolveFn = useServerFn(resolveAlert);
+  const listGroupsFn = useServerFn(listEmailGroups);
+
+  const groupsQ = useQuery<any[]>({
+    queryKey: ["email-groups"],
+    queryFn: () => listGroupsFn(),
+    enabled: isAdmin,
+  });
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
 
   const dynamic = selectedSheetIds.length > 0;
   const { data, isLoading } = useQuery<DashboardData>({
