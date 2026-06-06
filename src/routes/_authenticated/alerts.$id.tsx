@@ -261,6 +261,47 @@ function AlertDetails() {
                 </div>
               </div>
 
+              {isAdmin && !dispatched && (groupsQ.data?.length ?? 0) > 0 && (
+                <div className="mt-4 border-t border-border/40 pt-4">
+                  <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Include email groups
+                    {suggestedGroupIds.size > 0 && (
+                      <span className="ml-2 normal-case text-emerald-600">
+                        ({suggestedGroupIds.size} auto-matched)
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groupsQ.data!.map((g: any) => {
+                      const checked = selectedGroupIds.has(g.id);
+                      const suggested = suggestedGroupIds.has(g.id);
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedGroupIds((prev) => {
+                              const n = new Set(prev);
+                              if (n.has(g.id)) n.delete(g.id); else n.add(g.id);
+                              return n;
+                            });
+                          }}
+                          className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                            checked
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-muted/30 text-muted-foreground hover:bg-muted/50"
+                          }`}
+                          title={suggested ? "Auto-matched to this flag" : undefined}
+                        >
+                          {g.name} <span className="opacity-60">({g.members?.length ?? 0})</span>
+                          {suggested && <span className="ml-1">★</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {isAdmin && (
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
                   {!dispatched ? (
