@@ -96,6 +96,28 @@ function AlertDetails() {
     });
   }, [recipients]);
 
+  // Auto-suggest groups matching the current flag.
+  const suggestedGroupIds = useMemo(() => {
+    if (!flag || !groupsQ.data) return new Set<string>();
+    const out = new Set<string>();
+    for (const g of groupsQ.data) {
+      const a = g.applies_to ?? {};
+      const sevMatch = (a.severities ?? []).length === 0 || a.severities.includes(flag.severity ?? "");
+      const stageMatch = (a.stages ?? []).length === 0 || a.stages.includes(flag.stage ?? "");
+      const actMatch = (a.activities ?? []).length === 0 || a.activities.includes(flag.activity);
+      const anyFilter = (a.severities ?? []).length || (a.stages ?? []).length || (a.activities ?? []).length;
+      if (anyFilter && sevMatch && stageMatch && actMatch) out.add(g.id);
+    }
+    return out;
+  }, [flag, groupsQ.data]);
+
+  // Initialize selection with auto-suggested groups once data loads
+  useEffect(() => {
+    if (suggestedGroupIds.size && selectedGroupIds.size === 0) {
+      setSelectedGroupIds(new Set(suggestedGroupIds));
+    }
+  }, [suggestedGroupIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sendMut = useMutation({
     mutationFn: async () => {
       if (!flag) throw new Error("Flag not loaded");
