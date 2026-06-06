@@ -26,6 +26,7 @@ import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authen
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminHolidaysRouteImport } from './routes/_authenticated/admin.holidays'
+import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
@@ -120,6 +121,12 @@ const AuthenticatedAdminHolidaysRoute =
     path: '/admin/holidays',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedAdminEmailGroupsRoute =
+  AuthenticatedAdminEmailGroupsRouteImport.update({
+    id: '/admin/email-groups',
+    path: '/admin/email-groups',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminAuditRoute = AuthenticatedAdminAuditRouteImport.update({
   id: '/admin/audit',
   path: '/admin/audit',
@@ -156,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
+  '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -177,6 +185,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
+  '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -201,6 +210,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
+  '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/holidays': typeof AuthenticatedAdminHolidaysRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -225,6 +235,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sheets'
     | '/admin/audit'
+    | '/admin/email-groups'
     | '/admin/holidays'
     | '/admin/users'
     | '/alerts/$id'
@@ -246,6 +257,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sheets'
     | '/admin/audit'
+    | '/admin/email-groups'
     | '/admin/holidays'
     | '/admin/users'
     | '/alerts/$id'
@@ -269,6 +281,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/sheets'
     | '/_authenticated/admin/audit'
+    | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/holidays'
     | '/_authenticated/admin/users'
     | '/_authenticated/alerts/$id'
@@ -409,6 +422,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminHolidaysRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/email-groups': {
+      id: '/_authenticated/admin/email-groups'
+      path: '/admin/email-groups'
+      fullPath: '/admin/email-groups'
+      preLoaderRoute: typeof AuthenticatedAdminEmailGroupsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/audit': {
       id: '/_authenticated/admin/audit'
       path: '/admin/audit'
@@ -475,6 +495,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
+  AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
   AuthenticatedAdminHolidaysRoute: typeof AuthenticatedAdminHolidaysRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
 }
@@ -490,6 +511,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
+  AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
   AuthenticatedAdminHolidaysRoute: AuthenticatedAdminHolidaysRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
 }
@@ -509,3 +531,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
