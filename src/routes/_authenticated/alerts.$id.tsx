@@ -98,6 +98,21 @@ function AlertDetails() {
           : overrunPct !== null
             ? `Took ${flag.days_taken}d vs ${flag.tat}d TAT — ${overrunPct}% overrun (${overrun}d late).`
             : `${overrun}d overdue beyond planned TAT.`;
+      // Collect emails from sheet/dashboard data: the responsible person (by name match)
+      // and anyone in person_ranking whose activities include this flag's activity.
+      const extras = new Map<string, { email: string; name: string | null }>();
+      const addExtra = (email?: string | null, name?: string | null) => {
+        const e = (email ?? "").trim().toLowerCase();
+        if (!e || !e.includes("@")) return;
+        if (!extras.has(e)) extras.set(e, { email: e, name: name ?? null });
+      };
+      const responsible = flag.flagged_to?.person?.trim().toLowerCase();
+      for (const p of data?.person_ranking ?? []) {
+        if (!p.email) continue;
+        const matchesOwner = responsible && p.person.trim().toLowerCase() === responsible;
+        const matchesActivity = p.activities?.some((a) => a === flag.activity);
+        if (matchesOwner || matchesActivity) addExtra(p.email, p.person);
+      }
       return sendFn({
         data: {
           flag: {
@@ -110,6 +125,7 @@ function AlertDetails() {
             reason: flag.reason_text?.trim() || flag.reason || null,
             responsible_email: flag.flagged_to?.email ?? null,
             responsible_name: flag.flagged_to?.person ?? null,
+            extra_recipients: Array.from(extras.values()),
           },
         },
       });
