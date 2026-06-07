@@ -58,6 +58,7 @@ function AuthLayout() {
           {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Email groups</SideLink>}
           {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
           {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
+          {isSuper && <SideLink to="/admin/integrations" icon={<Plug className="h-4 w-4" />}>Integrations</SideLink>}
           <div className="my-2 h-px bg-border" />
           <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
         </nav>
