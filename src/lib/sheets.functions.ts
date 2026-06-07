@@ -89,51 +89,25 @@ async function proposeMapping(
   headers: string[],
   sampleRows: string[][],
 ): Promise<Record<string, string | null>> {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
-
   const canonical = CANONICAL_FIELDS[sheetType];
-  const prompt = `You are mapping spreadsheet column headers to a canonical schema.
-
-Canonical fields for sheet type "${sheetType}":
-${canonical.map((f) => `- ${f}`).join("\n")}
-
-Source headers (in order):
-${headers.map((h, i) => `${i}: ${JSON.stringify(h)}`).join("\n")}
-
-Sample rows (first ${sampleRows.length}):
-${sampleRows.map((r) => JSON.stringify(r)).join("\n")}
-
-For EACH source header, return the best matching canonical field, or null if no match. Respond with ONLY a JSON object mapping source header -> canonical field name or null. No prose.`;
-
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Lovable-API-Key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`AI mapping failed (${res.status}): ${text.slice(0, 300)}`);
-  }
-  const body = await res.json();
-  const content = body?.choices?.[0]?.message?.content ?? "{}";
   try {
-    const parsed = JSON.parse(content);
+    const out = await callEmergent<{ mapping?: Record<string, string | null> }>(
+      "map-columns",
+      { sheetType, canonicalFields: canonical, headers, sampleRows },
+    );
+    const parsed = out?.mapping ?? {};
     const result: Record<string, string | null> = {};
     for (const h of headers) {
-      const v = parsed[h];
+      const v = (parsed as any)[h];
       result[h] = typeof v === "string" && canonical.includes(v) ? v : null;
     }
     return result;
-  } catch {
-    return Object.fromEntries(headers.map((h) => [h, null]));
+  } catch (e) {
+    if (e instanceof EmergentNotConfiguredError) {
+      // Graceful fallback: no AI suggestion, user maps manually.
+      return Object.fromEntries(headers.map((h) => [h, null]));
+    }
+    throw e;
   }
 }
 
