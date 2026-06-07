@@ -74,6 +74,7 @@ function AuthLayout() {
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
             <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
             <SideLink to="/alerts" icon={<AlertTriangle className="h-4 w-4" />}>Alerts</SideLink>
+            <SideLink to="/concerns" icon={<MessageSquareWarning className="h-4 w-4" />}>Concerns</SideLink>
             <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Docs</SideLink>
             <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>Sheets</SideLink>
             <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
