@@ -28,7 +28,6 @@ import type { Citation } from "@/lib/chat.functions";
 import { DEFAULT_LOGIC } from "@/lib/dependency-inference";
 import { inferDependenciesEmergent } from "@/lib/dependencies.functions";
 import { RaiseConcernDialog } from "@/components/RaiseConcernDialog";
-import { toast as concernToast } from "sonner";
 import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
