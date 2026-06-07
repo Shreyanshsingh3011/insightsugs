@@ -142,7 +142,7 @@ export const getConcern = createServerFn({ method: "POST" })
       .eq("concern_id", data.id)
       .order("created_at");
 
-    const authorIds = Array.from(new Set((messages ?? []).map((m: any) => m.author_id)));
+    const authorIds = Array.from(new Set((messages ?? []).map((m: any) => m.author_id as string)));
     let authorMap: Record<string, { full_name: string | null; email: string | null }> = {};
     if (authorIds.length) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
