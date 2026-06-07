@@ -321,9 +321,6 @@ export const askCopilot = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
-
     const { supabase, userId } = context;
 
     const { data: regs, error: regErr } = await supabase
@@ -334,68 +331,69 @@ export const askCopilot = createServerFn({ method: "POST" })
     if (regErr) throw new Error(regErr.message);
     if (!regs || regs.length === 0) throw new Error("No matching sheets.");
 
-    const PER_SHEET_LIMIT = 300;
-    const blocks: string[] = [];
-    const sources: { id: string; name: string; type: string; rowsUsed: number; truncated: boolean }[] = [];
+    // 1) Computed aggregates across ALL rows (not truncated).
+    //    Re-use buildDashboardFromSheets so Copilot sees the same shape as the UI.
+    const { buildDashboardFromSheets } = await import("./dashboard.functions");
+    let aggregates: unknown = null;
+    try {
+      // buildDashboardFromSheets is a serverFn; calling its handler shape directly via a fresh call.
+      aggregates = await (buildDashboardFromSheets as any)({ data: { sheetIds: data.sheetIds } });
+    } catch (e) {
+      aggregates = { error: (e as Error).message };
+    }
+
+    // 2) Row sample for row-level questions. Cap and report the cap honestly.
+    const PER_SHEET_SAMPLE = 1000;
+    const sources: { id: string; name: string; type: string; rowsTotal: number; rowsUsed: number; truncated: boolean }[] = [];
+    const sampleRows: Array<{ sheet: string; type: string; row_index: number; data: Record<string, unknown> }> = [];
 
     for (const r of regs) {
+      const { count } = await supabase
+        .from("sheet_rows")
+        .select("row_index", { count: "exact", head: true })
+        .eq("sheet_registry_id", r.id);
       const { data: rows } = await supabase
         .from("sheet_rows")
         .select("row_index, canonical, extras")
         .eq("sheet_registry_id", r.id)
         .order("row_index", { ascending: true })
-        .limit(PER_SHEET_LIMIT + 1);
-      const slice = (rows ?? []).slice(0, PER_SHEET_LIMIT);
-      const truncated = (rows ?? []).length > PER_SHEET_LIMIT;
+        .limit(PER_SHEET_SAMPLE);
+      const slice = rows ?? [];
+      const total = count ?? slice.length;
       sources.push({
         id: r.id,
         name: r.display_name,
         type: r.sheet_type,
+        rowsTotal: total,
         rowsUsed: slice.length,
-        truncated,
+        truncated: total > slice.length,
       });
-
-      const lines = slice.map((row: any) => {
-        const merged = { ...(row.canonical ?? {}), ...(row.extras ?? {}) };
-        return JSON.stringify(merged);
-      });
-      blocks.push(
-        `### Sheet: ${r.display_name} (type=${r.sheet_type}, rows=${slice.length}${truncated ? ", truncated" : ""})\n${lines.join("\n")}`,
-      );
+      for (const row of slice) {
+        sampleRows.push({
+          sheet: r.display_name,
+          type: r.sheet_type,
+          row_index: row.row_index,
+          data: { ...(row.canonical ?? {}), ...(row.extras ?? {}) },
+        });
+      }
     }
 
-    const systemPrompt = `You are a construction project analyst assistant.
-You are given data from one or more of the user's tracking sheets (progress, procurement, billing, etc).
-Answer the user's question USING ONLY the provided sheet data.
-- Cite sheet names when you reference figures.
-- If the data is insufficient, say so explicitly.
-- Prefer concise, structured answers (bullets / short tables in markdown) when summarizing.`;
-
-    const userPrompt = `Question: ${data.question}
-
-Sheet data:
-${blocks.join("\n\n")}`;
-
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Lovable-API-Key": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`AI request failed (${res.status}): ${text.slice(0, 300)}`);
+    let answer: string;
+    try {
+      const out = await callEmergent<{ answer?: string }>("copilot", {
+        question: data.question,
+        aggregates,
+        rows: sampleRows,
+        sources,
+      });
+      answer = out?.answer ?? "(no answer)";
+    } catch (e) {
+      if (e instanceof EmergentNotConfiguredError) {
+        answer = EMERGENT_UNCONFIGURED_MSG;
+      } else {
+        throw e;
+      }
     }
-    const body = await res.json();
-    const answer = body?.choices?.[0]?.message?.content ?? "(no answer)";
 
     // Persist the exchange
     await supabase.from("copilot_messages").insert([
