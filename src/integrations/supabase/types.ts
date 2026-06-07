@@ -279,6 +279,101 @@ export type Database = {
           },
         ]
       }
+      concern_messages: {
+        Row: {
+          author_id: string
+          body: string
+          concern_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          author_id: string
+          body: string
+          concern_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          author_id?: string
+          body?: string
+          concern_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "concern_messages_concern_id_fkey"
+            columns: ["concern_id"]
+            isOneToOne: false
+            referencedRelation: "concerns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      concerns: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          activity: string | null
+          body: string
+          created_at: string
+          id: string
+          last_nudged_at: string | null
+          raised_by: string
+          raised_by_dept: string | null
+          registry_id: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          row_index: number | null
+          severity: string
+          status: string
+          target_dept: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          activity?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          last_nudged_at?: string | null
+          raised_by: string
+          raised_by_dept?: string | null
+          registry_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          row_index?: number | null
+          severity?: string
+          status?: string
+          target_dept: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          activity?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          last_nudged_at?: string | null
+          raised_by?: string
+          raised_by_dept?: string | null
+          registry_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          row_index?: number | null
+          severity?: string
+          status?: string
+          target_dept?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       copilot_messages: {
         Row: {
           citations: Json
@@ -653,6 +748,30 @@ export type Database = {
           holiday_date?: string
           id?: string
           label?: string | null
+        }
+        Relationships: []
+      }
+      integrations: {
+        Row: {
+          api_key: string
+          base_url: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          api_key?: string
+          base_url?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          api_key?: string
+          base_url?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
         }
         Relationships: []
       }
