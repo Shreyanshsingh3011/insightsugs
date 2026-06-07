@@ -708,11 +708,24 @@ function FlagsPanel({ data }: { data: DashboardData }) {
                     {!personRow && owner && <li>• {owner} is not currently in the people-ranking aggregate.</li>}
                   </ul>
                 </div>
+
+                <div className="flex justify-end border-t border-border pt-3">
+                  <Button size="sm" variant="outline" onClick={() => { setConcernFor(selected); setSelected(null); }}>
+                    <AlertTriangle className="mr-1.5 h-3.5 w-3.5 text-amber-500" /> Raise concern
+                  </Button>
+                </div>
               </div>
             );
           })()}
         </DialogContent>
       </Dialog>
+
+      <RaiseConcernDialog
+        open={!!concernFor}
+        onOpenChange={(o) => !o && setConcernFor(null)}
+        defaultActivity={concernFor?.activity ?? null}
+        ownerEmail={concernFor?.flagged_to?.email ?? null}
+      />
     </Card>
   );
 }
