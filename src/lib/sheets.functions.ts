@@ -373,7 +373,7 @@ export const askCopilot = createServerFn({ method: "POST" })
           sheet: r.display_name,
           type: r.sheet_type,
           row_index: row.row_index,
-          data: { ...(row.canonical ?? {}), ...(row.extras ?? {}) },
+          data: { ...((row.canonical as Record<string, unknown>) ?? {}), ...((row.extras as Record<string, unknown>) ?? {}) },
         });
       }
     }
