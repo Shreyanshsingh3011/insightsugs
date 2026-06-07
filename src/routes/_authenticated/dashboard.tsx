@@ -25,7 +25,9 @@ import { toast } from "sonner";
 import { exportFlagsCsv, exportFlagsPdf } from "@/lib/export-flags";
 import type { FlagEntry } from "@/lib/dashboard-data";
 import type { Citation } from "@/lib/chat.functions";
-import { inferDependencyChain, DEFAULT_LOGIC } from "@/lib/dependency-inference";
+import { DEFAULT_LOGIC } from "@/lib/dependency-inference";
+import { inferDependenciesEmergent } from "@/lib/dependencies.functions";
+import { RaiseConcernDialog } from "@/components/RaiseConcernDialog";
 import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
@@ -492,6 +494,7 @@ function FlagsPanel({ data }: { data: DashboardData }) {
   const [selected, setSelected] = useState<FlagEntry | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [shareMode, setShareMode] = useState<null | "email" | "sms">(null);
+  const [concernFor, setConcernFor] = useState<FlagEntry | null>(null);
 
   const [search, setSearch] = useState("");
   const [fSeverity, setFSeverity] = useState("all");
@@ -704,11 +707,24 @@ function FlagsPanel({ data }: { data: DashboardData }) {
                     {!personRow && owner && <li>• {owner} is not currently in the people-ranking aggregate.</li>}
                   </ul>
                 </div>
+
+                <div className="flex justify-end border-t border-border pt-3">
+                  <Button size="sm" variant="outline" onClick={() => { setConcernFor(selected); setSelected(null); }}>
+                    <AlertTriangle className="mr-1.5 h-3.5 w-3.5 text-amber-500" /> Raise concern
+                  </Button>
+                </div>
               </div>
             );
           })()}
         </DialogContent>
       </Dialog>
+
+      <RaiseConcernDialog
+        open={!!concernFor}
+        onOpenChange={(o) => !o && setConcernFor(null)}
+        defaultActivity={concernFor?.activity ?? null}
+        ownerEmail={concernFor?.flagged_to?.email ?? null}
+      />
     </Card>
   );
 }
@@ -963,11 +979,14 @@ function DependencyChainPanel() {
 
   const hasEmergent = /(^|[?&])d=eyJ/.test(logicInput) || /^eyJ/.test(logicInput.trim());
   const canResolve = !!savedSheet || hasEmergent;
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const inferFn = useServerFn(inferDependenciesEmergent);
+  const { data: inferResult, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["dependency-infer", savedSheet, logicInput],
-    queryFn: () => inferDependencyChain({ sheetUrl: savedSheet, logic: logicInput }),
+    queryFn: () => inferFn({ data: { appsScriptUrl: savedSheet, logic: logicInput } }),
     enabled: canResolve,
   });
+  const data = inferResult?.ok ? inferResult.chain : undefined;
+  const notConfigured = inferResult && !inferResult.ok;
 
   const insights = useMemo(() => computeInsights(data), [data]);
 
@@ -1061,6 +1080,11 @@ function DependencyChainPanel() {
       )}
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
       {error && <div className="py-8 text-center text-sm text-destructive">Failed: {String((error as Error).message)}</div>}
+      {notConfigured && (
+        <div className="py-6 text-center text-sm text-muted-foreground">
+          {(inferResult as any)?.message ?? "AI service isn't connected yet."}
+        </div>
+      )}
 
       {data && (
         <div className="space-y-5">
