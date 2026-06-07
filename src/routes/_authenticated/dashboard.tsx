@@ -495,6 +495,7 @@ function FlagsPanel({ data }: { data: DashboardData }) {
   const [selected, setSelected] = useState<FlagEntry | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [shareMode, setShareMode] = useState<null | "email" | "sms">(null);
+  const [concernFor, setConcernFor] = useState<FlagEntry | null>(null);
 
   const [search, setSearch] = useState("");
   const [fSeverity, setFSeverity] = useState("all");
