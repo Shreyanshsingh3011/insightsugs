@@ -1067,6 +1067,11 @@ function DependencyChainPanel() {
       )}
       {isLoading && <div className="py-8 text-center text-sm text-muted-foreground">Resolving chain…</div>}
       {error && <div className="py-8 text-center text-sm text-destructive">Failed: {String((error as Error).message)}</div>}
+      {notConfigured && (
+        <div className="py-6 text-center text-sm text-muted-foreground">
+          {(inferResult as any)?.message ?? "AI service isn't connected yet."}
+        </div>
+      )}
 
       {data && (
         <div className="space-y-5">
