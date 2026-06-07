@@ -966,11 +966,14 @@ function DependencyChainPanel() {
 
   const hasEmergent = /(^|[?&])d=eyJ/.test(logicInput) || /^eyJ/.test(logicInput.trim());
   const canResolve = !!savedSheet || hasEmergent;
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const inferFn = useServerFn(inferDependenciesEmergent);
+  const { data: inferResult, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["dependency-infer", savedSheet, logicInput],
-    queryFn: () => inferDependencyChain({ sheetUrl: savedSheet, logic: logicInput }),
+    queryFn: () => inferFn({ data: { appsScriptUrl: savedSheet, logic: logicInput } }),
     enabled: canResolve,
   });
+  const data = inferResult?.ok ? inferResult.chain : undefined;
+  const notConfigured = inferResult && !inferResult.ok;
 
   const insights = useMemo(() => computeInsights(data), [data]);
 
