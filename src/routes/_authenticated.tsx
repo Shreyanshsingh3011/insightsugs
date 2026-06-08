@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, redirect, Link, useRouter } from "@tanstack/react-router";
-import { useSession, useRoles, useIsAdmin, useIsSuper } from "@/hooks/useSession";
+import { useSession, useRoles } from "@/hooks/useSession";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
@@ -15,10 +15,10 @@ export const Route = createFileRoute("/_authenticated")({
 
 function AuthLayout() {
   const { session, loading } = useSession();
-  const { isLoading: rolesLoading } = useRoles();
+  const { data: roles, isLoading: rolesLoading } = useRoles();
   const router = useRouter();
-  const isAdmin = useIsAdmin();
-  const isSuper = useIsSuper();
+  const isAdmin = !!roles?.some((r) => r === "admin" || r === "super_admin");
+  const isSuper = !!roles?.includes("super_admin");
   const { mode, toggle } = useTheme();
 
   if (loading) {
@@ -83,6 +83,7 @@ function AuthLayout() {
             {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Groups</SideLink>}
             {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
             {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
+            {isSuper && <SideLink to="/admin/integrations" icon={<Plug className="h-4 w-4" />}>Integrations</SideLink>}
             <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
           </nav>
           <div className="hidden flex-1 md:block" />
