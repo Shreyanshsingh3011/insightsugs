@@ -24,10 +24,10 @@ export function useSession() {
 }
 
 export function useRoles() {
-  const { userId } = useSession();
-  return useQuery({
+  const { userId, loading } = useSession();
+  const query = useQuery({
     queryKey: ["roles", userId],
-    enabled: !!userId,
+    enabled: !!userId && !loading,
     queryFn: async (): Promise<AppRole[]> => {
       const { data, error } = await supabase
         .from("user_roles")
@@ -37,6 +37,7 @@ export function useRoles() {
       return (data ?? []).map((r) => r.role as AppRole);
     },
   });
+  return { ...query, isLoading: loading || query.isLoading, isPending: loading || query.isPending };
 }
 
 export function useIsAdmin() {
