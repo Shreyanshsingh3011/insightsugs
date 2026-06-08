@@ -753,22 +753,28 @@ export type Database = {
       }
       integrations: {
         Row: {
+          active_env: string | null
           api_key: string
           base_url: string
+          environments: Json
           key: string
           updated_at: string
           updated_by: string | null
         }
         Insert: {
+          active_env?: string | null
           api_key?: string
           base_url?: string
+          environments?: Json
           key: string
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
+          active_env?: string | null
           api_key?: string
           base_url?: string
+          environments?: Json
           key?: string
           updated_at?: string
           updated_by?: string | null
