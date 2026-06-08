@@ -2,7 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useIsSuper } from "@/hooks/useSession";
+import { useRoles } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,8 @@ export const Route = createFileRoute("/_authenticated/admin/integrations")({
 });
 
 function IntegrationsPage() {
-  const isSuper = useIsSuper();
+  const { data: roles, isLoading: rolesLoading } = useRoles();
+  const isSuper = !!roles?.includes("super_admin");
   const getFn = useServerFn(getEmergentConfig);
   const saveFn = useServerFn(saveEmergentConfig);
   const testFn = useServerFn(testEmergentConnection);
@@ -29,7 +30,7 @@ function IntegrationsPage() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["emergent-config"],
     queryFn: () => getFn(),
-    enabled: isSuper,
+    enabled: !rolesLoading && isSuper,
   });
 
   const [baseUrl, setBaseUrl] = useState("");
@@ -55,6 +56,10 @@ function IntegrationsPage() {
     onSuccess: (r: any) => setTestResult(r),
     onError: (e: any) => setTestResult({ ok: false, status: 0, message: e?.message ?? "Test failed" }),
   });
+
+  if (rolesLoading) {
+    return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+  }
 
   if (!isSuper) {
     throw redirect({ to: "/dashboard" });
