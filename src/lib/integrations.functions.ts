@@ -197,27 +197,3 @@ export const testEmergentConnection = createServerFn({ method: "POST" })
     return await pingEmergent(data.env_id);
   });
 
-// Back-compat: old single save endpoint -> upserts the active env or "prod".
-export const saveEmergentConfig = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { base_url: string; api_key: string }) =>
-    z
-      .object({ base_url: z.string().trim().url().max(500), api_key: z.string().max(500) })
-      .parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as any;
-    await assertSuper(supabase, userId);
-    const row = await loadRow();
-    const { active } = normalizeEnvs(row);
-    const id = active ?? "prod";
-    return await (upsertEmergentEnv as any)({
-      data: {
-        env_id: id,
-        name: id === "prod" ? "Production" : id,
-        base_url: data.base_url,
-        api_key: data.api_key,
-        make_active: true,
-      },
-    });
-  });
