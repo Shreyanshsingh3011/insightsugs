@@ -78,7 +78,7 @@ function AuthLayout() {
             <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>Sheets</SideLink>
             <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
             {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
-            {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
+            
             {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Groups</SideLink>}
             {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
             {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
