@@ -316,30 +316,38 @@ export const askCopilot = createServerFn({ method: "POST" })
     z
       .object({
         question: z.string().min(1).max(2000),
-        sheetIds: z.array(z.string().uuid()).min(1).max(10),
+        sheetIds: z.array(z.string().uuid()).max(10).default([]),
+        documentIds: z.array(z.string().uuid()).max(10).default([]),
+      })
+      .refine((v) => v.sheetIds.length + v.documentIds.length > 0, {
+        message: "Select at least one sheet or document.",
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    const { data: regs, error: regErr } = await supabase
-      .from("sheet_registry")
-      .select("id, display_name, sheet_type")
-      .in("id", data.sheetIds)
-      .eq("user_id", userId);
-    if (regErr) throw new Error(regErr.message);
-    if (!regs || regs.length === 0) throw new Error("No matching sheets.");
+    let regs: { id: string; display_name: string; sheet_type: string }[] = [];
+    if (data.sheetIds.length > 0) {
+      const { data: r, error: regErr } = await supabase
+        .from("sheet_registry")
+        .select("id, display_name, sheet_type")
+        .in("id", data.sheetIds)
+        .eq("user_id", userId);
+      if (regErr) throw new Error(regErr.message);
+      regs = r ?? [];
+    }
 
     // 1) Computed aggregates across ALL rows (not truncated).
     //    Re-use buildDashboardFromSheets so Copilot sees the same shape as the UI.
-    const { buildDashboardFromSheets } = await import("./dashboard.functions");
     let aggregates: unknown = null;
-    try {
-      // buildDashboardFromSheets is a serverFn; calling its handler shape directly via a fresh call.
-      aggregates = await (buildDashboardFromSheets as any)({ data: { sheetIds: data.sheetIds } });
-    } catch (e) {
-      aggregates = { error: (e as Error).message };
+    if (data.sheetIds.length > 0) {
+      const { buildDashboardFromSheets } = await import("./dashboard.functions");
+      try {
+        aggregates = await (buildDashboardFromSheets as any)({ data: { sheetIds: data.sheetIds } });
+      } catch (e) {
+        aggregates = { error: (e as Error).message };
+      }
     }
 
     // 2) Row sample for row-level questions. Cap and report the cap honestly.
@@ -378,12 +386,39 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
 
+    // 3) Document context: pull summaries + key points for selected documents.
+    const documentContext: Array<{ id: string; name: string; summary: string | null; key_points: unknown }> = [];
+    if (data.documentIds.length > 0) {
+      const { data: docs, error: dErr } = await supabase
+        .from("documents")
+        .select("id,name,summary,key_points")
+        .in("id", data.documentIds);
+      if (dErr) throw new Error(dErr.message);
+      for (const d of docs ?? []) {
+        documentContext.push({
+          id: d.id,
+          name: d.name,
+          summary: d.summary,
+          key_points: d.key_points,
+        });
+        sources.push({
+          id: d.id,
+          name: d.name,
+          type: "document",
+          rowsTotal: 0,
+          rowsUsed: 0,
+          truncated: false,
+        });
+      }
+    }
+
     let answer: string;
     try {
       const out = await callEmergent<{ answer?: string }>("copilot", {
         question: data.question,
         aggregates,
         rows: sampleRows,
+        documents: documentContext,
         sources,
       });
       answer = out?.answer ?? "(no answer)";
@@ -401,13 +436,13 @@ export const askCopilot = createServerFn({ method: "POST" })
         user_id: userId,
         role: "user",
         content: data.question,
-        scope: { sheetIds: data.sheetIds },
+        scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
       },
       {
         user_id: userId,
         role: "assistant",
         content: answer,
-        scope: { sheetIds: data.sheetIds },
+        scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
         citations: sources,
       },
     ]);
