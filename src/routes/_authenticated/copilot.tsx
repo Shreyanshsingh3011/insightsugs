@@ -8,8 +8,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, FileText } from "lucide-react";
 import { listSheets, askCopilot } from "@/lib/sheets.functions";
+import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 
 export const Route = createFileRoute("/_authenticated/copilot")({
@@ -21,17 +22,29 @@ type Turn = { question: string; answer: string; sources: Source[] };
 
 function CopilotPage() {
   const fetchList = useServerFn(listSheets);
+  const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
 
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
+  const documents = useQuery({
+    queryKey: ["copilot-documents"],
+    queryFn: () => fetchDocs({ data: {} }),
+  });
 
   const [question, setQuestion] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<Turn[]>([]);
 
   const askMut = useMutation({
     mutationFn: () =>
-      ask({ data: { question: question.trim(), sheetIds: Array.from(selected) } }),
+      ask({
+        data: {
+          question: question.trim(),
+          sheetIds: Array.from(selected),
+          documentIds: Array.from(selectedDocs),
+        },
+      }),
     onSuccess: (res) => {
       setHistory((h) => [
         ...h,
