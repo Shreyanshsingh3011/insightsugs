@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
-  CalendarDays, Settings, Sun, Moon, Activity, FileText, Sparkles, Sheet as SheetIcon,
+  Settings, Sun, Moon, Activity, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, Plug, MessageSquareWarning,
 } from "lucide-react";
 
@@ -54,7 +54,6 @@ function AuthLayout() {
           <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>My Sheets</SideLink>
           <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
           {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
-          {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
           {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Email groups</SideLink>}
           {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
           {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
@@ -79,7 +78,7 @@ function AuthLayout() {
             <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>Sheets</SideLink>
             <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
             {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
-            {isAdmin && <SideLink to="/admin/holidays" icon={<CalendarDays className="h-4 w-4" />}>Holidays</SideLink>}
+            
             {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Groups</SideLink>}
             {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
             {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
