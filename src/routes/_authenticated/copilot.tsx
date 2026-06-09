@@ -64,12 +64,24 @@ function CopilotPage() {
     });
   };
 
-  const canSend = question.trim().length > 0 && selected.size > 0 && !askMut.isPending;
+  const toggleDoc = (id: string) => {
+    setSelectedDocs((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const canSend =
+    question.trim().length > 0 &&
+    (selected.size > 0 || selectedDocs.size > 0) &&
+    !askMut.isPending;
 
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-4 p-4 md:grid-cols-[260px_1fr] md:p-6">
-      {/* Sidebar: sheet picker */}
-      <aside>
+      {/* Sidebar: sheet + document picker */}
+      <aside className="space-y-3">
         <Card className="p-3">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-medium">Sheets in context</h2>
@@ -105,7 +117,48 @@ function CopilotPage() {
             </ul>
           )}
         </Card>
+
+        <Card className="p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-medium">
+              <FileText className="h-3.5 w-3.5" /> Documents
+            </h2>
+            <span className="text-xs text-muted-foreground">{selectedDocs.size} selected</span>
+          </div>
+          {documents.isLoading ? (
+            <div className="flex justify-center py-4 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+            </div>
+          ) : (documents.data?.documents ?? []).length === 0 ? (
+            <p className="py-2 text-xs text-muted-foreground">
+              Upload documents on the Documents page.
+            </p>
+          ) : (
+            <ul className="max-h-64 space-y-1.5 overflow-y-auto">
+              {documents.data!.documents.map((d: any) => (
+                <li key={d.id}>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 hover:bg-muted/50">
+                    <Checkbox
+                      checked={selectedDocs.has(d.id)}
+                      onCheckedChange={() => toggleDoc(d.id)}
+                      disabled={d.status !== "ready"}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0">
+                      <div className="truncate text-sm">{d.name}</div>
+                      <div className="text-xs text-muted-foreground capitalize">
+                        {d.status}
+                        {d.page_count ? ` · ${d.page_count} pages` : ""}
+                      </div>
+                    </div>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </aside>
+
 
       {/* Conversation */}
       <section className="flex min-h-[60vh] flex-col gap-4">
