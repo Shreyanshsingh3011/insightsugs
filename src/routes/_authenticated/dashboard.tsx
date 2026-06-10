@@ -112,6 +112,7 @@ function Dashboard() {
       case "tat": return <TatTable key={id} data={data} />;
       case "flags": return <FlagsPanel key={id} data={data} />;
       case "dependencies": return <DependencyChainPanel key={id} />;
+      case "myDeps": return <MyDependentActivities key={id} />;
       case "feed": return <DataFeed key={id} extras={extras} setExtras={setExtras} data={data} />;
       default: return null;
     }
