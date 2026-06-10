@@ -34,6 +34,7 @@ function SheetsPage() {
 
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<null | { id: string; display_name: string; apps_script_url: string; source_url: string | null }>(null);
 
   const refreshMut = useMutation({
     mutationFn: (id: string) => refresh({ data: { registryId: id } }),
