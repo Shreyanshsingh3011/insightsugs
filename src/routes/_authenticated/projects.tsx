@@ -158,7 +158,10 @@ function ProjectsPage() {
         </Dialog>
       </div>
 
+      <ProjectsFromSheets />
+
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
+
         <Card className="p-2">
           {projects?.length === 0 && <p className="p-4 text-sm text-muted-foreground">No projects yet.</p>}
           {projects?.map((p) => (
