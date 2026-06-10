@@ -178,17 +178,11 @@ function EditSheetMetaDialog({
   const [src, setSrc] = useState("");
   const [name, setName] = useState("");
 
-  // sync inputs whenever a new row is opened
-  useState(() => {
-    // no-op initial; the effect below handles it
-    return null;
-  });
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  useStateOnEditing(editing, (e) => {
-    setApps(e?.apps_script_url ?? "");
-    setSrc(e?.source_url ?? "");
-    setName(e?.display_name ?? "");
-  });
+  useEffect(() => {
+    setApps(editing?.apps_script_url ?? "");
+    setSrc(editing?.source_url ?? "");
+    setName(editing?.display_name ?? "");
+  }, [editing]);
 
   const mut = useMutation({
     mutationFn: () =>
