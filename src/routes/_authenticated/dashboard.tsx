@@ -32,6 +32,8 @@ import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
+import { useIsSuper } from "@/hooks/useSession";
+import { MyDependentActivities } from "@/components/MyDependentActivities";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
