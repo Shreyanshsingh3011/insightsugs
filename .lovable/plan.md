@@ -1,61 +1,81 @@
-## Goal
+## Scope
 
-Turn the Alert details page into a read-only record with an admin "Send Alert" workflow that notifies the responsible person, project members, and assignees of dependent activities — via in-app notifications and email — and supports a reply thread plus a Resolve action.
+Four discrete changes across Sheets, Dashboard, Projects, plus a user-matching helper.
 
-## 1. Read-only alert details
+---
 
-- The Alert details page (`/alerts/$id`) is already display-only. Add an explicit "Read-only record" badge and confirm no input/textarea/contenteditable fields exist.
-- Replies and Resolve live in a separate "Communication" panel below — not edits to the alert itself.
+## 1. Sheets page — per-row actions
 
-## 2. New database tables
+File: `src/routes/_authenticated/sheets.tsx`
 
-- `alerts` — persisted dispatch record keyed by `flag_id` (string, e.g. `FLAG-001`). Stores snapshot of activity, stage, severity, source, root cause, reason, status (`open` / `acknowledged` / `resolved`), `sent_by`, `resolved_by`, `resolved_at`.
-- `alert_recipients` — `alert_id`, `user_id` (nullable for external email-only), `email`, `channel` (`inapp` | `email`), `delivered_at`, `error`.
-- `alert_messages` — thread: `alert_id`, `author_id`, `body`, `created_at`.
+- Each row in the sheet registry list gets two new icon buttons:
+  - **Open sheet link** — opens `apps_script_url`'s associated Google Sheet in a new tab. If `sheet_registry` does not already store the raw spreadsheet URL, add a small dialog that lets the user paste/edit it (column `source_url`, see migration below).
+  - **Add API endpoint** — opens the existing "register sheet" dialog pre-populated for editing the Apps Script URL of that row (re-uses the existing `registerSheet`/`updateSheetEndpoint` server fn).
+- Add a new top-level "Add API endpoint" button that opens the same dialog in create mode (parity with existing flow; just makes it visible).
 
-RLS: super_admin + admin can insert/update alerts; recipients + admins can read alerts/messages they're part of; recipients + admins can insert messages.
+Migration: `ALTER TABLE public.sheet_registry ADD COLUMN source_url text;` (nullable, no policy change).
 
-## 3. Recipient resolution
+---
 
-A server-side resolver builds the recipient set for a flag:
+## 2. Dashboard — Dependent Activity table on home
 
-1. Responsible person — `flag.flagged_to.email` (+ matching `profiles.id` if found).
-2. Project members — look up the activity by title/stage in `activities`, then read its `project_members`.
-3. Dependent activity assignees — pull `activities` in the same project whose `depends_on` (or upstream/downstream link in the dep-chain resolver) touches the flagged activity; collect their `assignee_id`.
+File: `src/routes/_authenticated/dashboard.tsx` + new component `src/components/DependentActivitiesTable.tsx`.
 
-Deduped by email. External-only emails (no profile) still get email but no in-app row.
+Behaviour:
+- New card "My dependent activities" near the top of the dashboard, visible to all signed-in users.
+- Data source: existing dependency mapping in `dep-store.ts` / `dependencies.functions.ts` joined with the user's matched activities (see §4).
+- Each row shows: activity name · predecessor activity · predecessor status · my status.
+- Rows whose predecessor is **not cleared** render at 50 % opacity and are non-interactive (cursor-not-allowed). Cleared predecessors → full opacity and clickable.
+- Clicking a clickable row opens a dialog ("Dependency details") listing the full predecessor → successor chain (re-use `dependency-chain.ts`) with statuses, sheet origin, and a deep-link to `/sheets/$sheetId`.
 
-## 4. Server functions (`src/lib/alerts.functions.ts`)
+---
 
-- `sendAlert({ flagId })` — admin-only via `requireSupabaseAuth` + role check. Re-fetches the flag from the dashboard data, resolves recipients, upserts the `alerts` row, inserts `alert_recipients`, inserts a `notifications` row per in-app recipient, calls Lovable Emails `sendTransactionalEmail` per email recipient.
-- `listAlerts()` — alerts visible to the current user (admin = all, others = where they are a recipient).
-- `getAlert({ id })` — alert + recipients + messages.
-- `replyToAlert({ alertId, body })` — recipient/admin inserts into `alert_messages`; pings other recipients in-app.
-- `resolveAlert({ alertId })` — admin marks resolved.
+## 3. Dashboard — gate dependency mapping section to super admin
 
-## 5. Email template
+Same file. Wrap the existing dependency-mapping/settings section with a `useSession()`-derived `isSuperAdmin` check. Non-super-admins simply don't see it. No data change.
 
-New React Email template `src/lib/email-templates/alert-dispatch.tsx` rendering severity, activity, stage, root cause, reason, link back to `/alerts/{flagId}`. Registered in `src/lib/email-templates/registry.ts`. Sent via the existing `/lovable/email/transactional/send` route.
+---
 
-Prereq: if Lovable Emails infra / domain isn't set up yet, surface the email setup dialog first, then continue.
+## 4. User ↔ activity matching helper
 
-## 6. UI changes
+New file: `src/lib/user-activity-match.ts` (pure helper) + a server fn `getMyActivities` in `src/lib/sheets.functions.ts`.
 
-- **Alert details (`/alerts/$id`)**:
-  - "Read-only record" badge.
-  - Admin-only **Send Alert** button (disabled once dispatched → shows "Dispatched · N recipients").
-  - Recipients list (name/email · channel · delivered).
-  - **Communication** panel: message thread, textarea + Send (any recipient/admin), **Resolve** button (admin), status pill.
-- **Alerts list (`/alerts`)**: add "Dispatched" indicator column derived from `alerts` rows.
-- **Navbar**: existing Alerts link unchanged.
+Logic:
+1. For each registered sheet's rows, look in `canonical`/`extras` for an email-like field (`email`, `assignee_email`, `owner_email`). If it matches `auth.user.email` (case-insensitive), include the row.
+2. Else, fall back to comparing a name-like field (`assignee`, `owner`, `name`, `responsible`) against `profile.full_name` (case-insensitive, trimmed).
+3. Return `{ sheet_id, row_index, activity_name, status, matched_via: 'email' | 'name' }`.
 
-## 7. Out of scope (this pass)
+This feeds the new dashboard table in §2 and is also reusable for `my-activities.tsx`.
 
-- SMS dispatch — deferred (requires Twilio connector + verified number). Will add as a follow-up once you confirm Twilio.
+---
+
+## 5. Projects page — pickup from a registered sheet
+
+File: `src/routes/_authenticated/projects.tsx` + new server fn `listProjectsFromSheets` in `src/lib/sheets.functions.ts`.
+
+- Aggregate distinct `(project_name, project_code)` pairs across the user's registered `sheet_rows` (looking at `canonical.project_name` / `canonical.project_code` and common extras keys like `Project Name`, `Project Code`).
+- Render a simple table; no DB writes. Existing manual `projects` table is left alone for now.
+
+---
 
 ## Technical notes
 
-- Admin check uses existing `public.is_admin_or_super(auth.uid())`.
-- Dependent-activity expansion uses `activities.depends_on` when present, otherwise falls back to the dep-chain resolver output already wired in `src/lib/dependency-chain.ts` (best-effort, no failure if it can't map).
-- In-app delivery writes to existing `notifications` table with `link = /alerts/{flagId}`.
-- All writes routed through `createServerFn` + `requireSupabaseAuth`; no admin client in client code.
+- All new server fns use `requireSupabaseAuth`; reads scoped through the existing user-scoped RLS on `sheet_registry`/`sheet_rows`.
+- No new RLS policies needed besides the `sheet_registry.source_url` column (inherits existing policies).
+- Bearer-token attacher is already wired (`attachSupabaseAuth` in `src/start.ts`).
+- No new external secrets.
+
+---
+
+## Files touched
+
+- migration: add `sheet_registry.source_url`
+- edit: `src/routes/_authenticated/sheets.tsx`
+- edit: `src/routes/_authenticated/dashboard.tsx`
+- edit: `src/routes/_authenticated/projects.tsx`
+- edit: `src/lib/sheets.functions.ts` (3 new fns)
+- new: `src/lib/user-activity-match.ts`
+- new: `src/components/DependentActivitiesTable.tsx`
+- new: `src/components/DependencyDetailsDialog.tsx`
+
+Ready to implement on approval.
