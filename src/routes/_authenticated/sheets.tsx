@@ -104,7 +104,34 @@ function SheetsPage() {
                     : "never refreshed"}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                {s.source_url ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title="Open Google Sheet"
+                  >
+                    <a href={s.source_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="mr-1.5 h-4 w-4" /> Open sheet
+                    </a>
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setEditing({
+                      id: s.id,
+                      display_name: s.display_name,
+                      apps_script_url: s.apps_script_url ?? "",
+                      source_url: s.source_url ?? null,
+                    })
+                  }
+                  title="Edit API endpoint & sheet link"
+                >
+                  <Link2 className="mr-1.5 h-4 w-4" /> Edit link
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -118,7 +145,7 @@ function SheetsPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    if (confirm(`Remove “${s.display_name}”?`)) deleteMut.mutate(s.id);
+                    if (confirm(`Remove "${s.display_name}"?`)) deleteMut.mutate(s.id);
                   }}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -130,8 +157,103 @@ function SheetsPage() {
       )}
 
       <AddSheetDialog open={addOpen} onOpenChange={setAddOpen} />
+      <EditSheetMetaDialog
+        editing={editing}
+        onClose={() => setEditing(null)}
+      />
     </div>
   );
+}
+
+function EditSheetMetaDialog({
+  editing,
+  onClose,
+}: {
+  editing: null | { id: string; display_name: string; apps_script_url: string; source_url: string | null };
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const update = useServerFn(updateSheetMeta);
+  const [apps, setApps] = useState("");
+  const [src, setSrc] = useState("");
+  const [name, setName] = useState("");
+
+  // sync inputs whenever a new row is opened
+  useState(() => {
+    // no-op initial; the effect below handles it
+    return null;
+  });
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useStateOnEditing(editing, (e) => {
+    setApps(e?.apps_script_url ?? "");
+    setSrc(e?.source_url ?? "");
+    setName(e?.display_name ?? "");
+  });
+
+  const mut = useMutation({
+    mutationFn: () =>
+      update({
+        data: {
+          registryId: editing!.id,
+          appsScriptUrl: apps.trim() || undefined,
+          sourceUrl: src.trim() === "" ? null : src.trim(),
+          displayName: name.trim() || undefined,
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Sheet updated");
+      qc.invalidateQueries({ queryKey: ["sheets-list"] });
+      onClose();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Update failed"),
+  });
+
+  return (
+    <Dialog open={!!editing} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit sheet endpoint & link</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Display name</Label>
+            <Input className="mt-1.5" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Apps Script web app URL (API endpoint)</Label>
+            <Input
+              className="mt-1.5 font-mono text-xs"
+              value={apps}
+              onChange={(e) => setApps(e.target.value)}
+              placeholder="https://script.google.com/macros/s/…/exec"
+            />
+          </div>
+          <div>
+            <Label>Google Sheet link (for "Open sheet" button)</Label>
+            <Input
+              className="mt-1.5 font-mono text-xs"
+              value={src}
+              onChange={(e) => setSrc(e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/…"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Tiny helper to sync local form state when the editing row changes
+import { useEffect as _useEffect } from "react";
+function useStateOnEditing<T>(value: T, run: (v: T) => void) {
+  _useEffect(() => { run(value); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [value]);
 }
 
 function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
