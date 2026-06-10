@@ -278,7 +278,7 @@ export const updateSheetMeta = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const patch: Record<string, unknown> = {};
+    const patch: { apps_script_url?: string; source_url?: string | null; display_name?: string } = {};
     if (data.appsScriptUrl !== undefined) patch.apps_script_url = data.appsScriptUrl;
     if (data.sourceUrl !== undefined) patch.source_url = data.sourceUrl;
     if (data.displayName !== undefined) patch.display_name = data.displayName;
