@@ -255,13 +255,187 @@ export const listSheets = createServerFn({ method: "GET" })
     const { data, error } = await supabase
       .from("sheet_registry")
       .select(
-        "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at, created_at",
+        "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at",
       )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
     return { sheets: data ?? [] };
   });
+
+// Update endpoint / source-link / display name for an existing sheet
+export const updateSheetMeta = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        registryId: z.string().uuid(),
+        appsScriptUrl: APPS_SCRIPT_URL.optional(),
+        sourceUrl: z.string().trim().url().max(2000).nullable().optional(),
+        displayName: z.string().min(1).max(200).optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const patch: Record<string, unknown> = {};
+    if (data.appsScriptUrl !== undefined) patch.apps_script_url = data.appsScriptUrl;
+    if (data.sourceUrl !== undefined) patch.source_url = data.sourceUrl;
+    if (data.displayName !== undefined) patch.display_name = data.displayName;
+    if (Object.keys(patch).length === 0) return { ok: true };
+    const { error } = await supabase
+      .from("sheet_registry")
+      .update(patch)
+      .eq("id", data.registryId)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// Distinct projects pulled from rows of the user's registered sheets
+export const listProjectsFromSheets = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: regs } = await supabase
+      .from("sheet_registry")
+      .select("id, display_name")
+      .eq("user_id", userId);
+    const regIds = (regs ?? []).map((r) => r.id as string);
+    if (regIds.length === 0) return { projects: [] as { name: string; code: string | null; source: string }[] };
+
+    const { data: rows, error } = await supabase
+      .from("sheet_rows")
+      .select("sheet_registry_id, canonical, extras")
+      .in("sheet_registry_id", regIds)
+      .limit(5000);
+    if (error) throw new Error(error.message);
+
+    const regName = new Map((regs ?? []).map((r) => [r.id as string, r.display_name as string]));
+    const NAME_KEYS = ["project_name", "Project Name", "Project", "project", "PROJECT"];
+    const CODE_KEYS = ["project_code", "Project Code", "Project_ID", "ProjectId", "project_code".toUpperCase()];
+
+    const pickKey = (obj: Record<string, unknown> | null | undefined, keys: string[]): string | null => {
+      if (!obj) return null;
+      for (const k of keys) {
+        const v = obj[k];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+      return null;
+    };
+
+    const seen = new Map<string, { name: string; code: string | null; source: string }>();
+    for (const r of rows ?? []) {
+      const canonical = r.canonical as Record<string, unknown> | null;
+      const extras = r.extras as Record<string, unknown> | null;
+      const name = pickKey(canonical, NAME_KEYS) ?? pickKey(extras, NAME_KEYS);
+      const code = pickKey(canonical, CODE_KEYS) ?? pickKey(extras, CODE_KEYS);
+      if (!name) continue;
+      const key = `${name.toLowerCase()}|${(code ?? "").toLowerCase()}`;
+      if (!seen.has(key)) {
+        seen.set(key, {
+          name,
+          code,
+          source: regName.get(r.sheet_registry_id as string) ?? "",
+        });
+      }
+    }
+    return { projects: Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name)) };
+  });
+
+// Activities matched to the current user via email-first, name-fallback,
+// joined with the user's dependency mapping from `localStorage`-style payload
+// supplied by the client (super admin sets it on dashboard).
+export const getMyDependentActivities = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+
+    // current user identity
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", userId)
+      .maybeSingle();
+    const myEmail = (profile?.email ?? "").toLowerCase().trim();
+    const myName = (profile?.full_name ?? "").toLowerCase().trim();
+
+    // sheets owned by the user (registry is per-owner)
+    const { data: regs } = await supabase
+      .from("sheet_registry")
+      .select("id, display_name")
+      .eq("user_id", userId);
+    const regIds = (regs ?? []).map((r) => r.id as string);
+    if (regIds.length === 0) return { rows: [] };
+
+    const regName = new Map((regs ?? []).map((r) => [r.id as string, r.display_name as string]));
+
+    const { data: rows } = await supabase
+      .from("sheet_rows")
+      .select("sheet_registry_id, row_index, canonical, extras")
+      .in("sheet_registry_id", regIds)
+      .limit(10000);
+
+    const EMAIL_KEYS = [
+      "email", "Email", "EMAIL",
+      "assignee_email", "Assignee Email", "Responsible Person Mail ID", "approvers email id",
+      "owner_email", "Owner Email",
+    ];
+    const NAME_KEYS = [
+      "assignee", "Assignee", "owner", "Owner",
+      "Responsible Person", "responsible_person", "approvers name", "name", "Name",
+    ];
+    const STATUS_KEYS = ["status", "Status", "Status as on Date"];
+    const ACTIVITY_KEYS = [
+      "activity", "Activity", "task", "Task",
+      "Stages of Process", "Process Descriptions",
+    ];
+    const DEP_KEYS = ["dependent_activities", "Dependent activities", "Dependent Activities", "depends_on"];
+
+    const pick = (obj: Record<string, unknown> | null | undefined, keys: string[]): string | null => {
+      if (!obj) return null;
+      for (const k of keys) {
+        const v = obj[k];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+      return null;
+    };
+
+    type Out = {
+      sheet_id: string;
+      sheet_name: string;
+      row_index: number;
+      activity: string;
+      status: string | null;
+      predecessor: string | null;
+      matched_via: "email" | "name";
+    };
+    const out: Out[] = [];
+
+    for (const r of rows ?? []) {
+      const c = r.canonical as Record<string, unknown> | null;
+      const e = r.extras as Record<string, unknown> | null;
+      const email = (pick(c, EMAIL_KEYS) ?? pick(e, EMAIL_KEYS) ?? "").toLowerCase();
+      const name = (pick(c, NAME_KEYS) ?? pick(e, NAME_KEYS) ?? "").toLowerCase();
+      let via: "email" | "name" | null = null;
+      if (myEmail && email && email === myEmail) via = "email";
+      else if (myName && name && name === myName) via = "name";
+      if (!via) continue;
+
+      out.push({
+        sheet_id: r.sheet_registry_id as string,
+        sheet_name: regName.get(r.sheet_registry_id as string) ?? "",
+        row_index: r.row_index as number,
+        activity: pick(c, ACTIVITY_KEYS) ?? pick(e, ACTIVITY_KEYS) ?? `Row ${r.row_index}`,
+        status: pick(c, STATUS_KEYS) ?? pick(e, STATUS_KEYS),
+        predecessor: pick(c, DEP_KEYS) ?? pick(e, DEP_KEYS),
+        matched_via: via,
+      });
+    }
+
+    return { rows: out };
+  });
+
 
 export const getSheetDetail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
