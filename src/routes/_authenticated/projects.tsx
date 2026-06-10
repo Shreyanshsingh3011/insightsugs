@@ -241,3 +241,55 @@ function ProjectsPage() {
     </div>
   );
 }
+
+function ProjectsFromSheets() {
+  const fn = useServerFn(listProjectsFromSheets);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["projects-from-sheets"],
+    queryFn: () => fn(),
+  });
+  const list = (data?.projects ?? []) as { name: string; code: string | null; source: string }[];
+
+  return (
+    <Card className="mt-6 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <FileSpreadsheet className="h-4 w-4 text-primary" />
+        <h2 className="text-sm font-semibold">Projects detected on your sheets</h2>
+        <Badge variant="outline" className="ml-auto">{list.length}</Badge>
+      </div>
+      {isLoading && <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>}
+      {error && (
+        <p className="py-4 text-center text-sm text-destructive">
+          {error instanceof Error ? error.message : "Failed to load."}
+        </p>
+      )}
+      {!isLoading && !error && list.length === 0 && (
+        <p className="py-4 text-center text-sm text-muted-foreground">
+          No project name / code columns found on your registered sheets yet.
+        </p>
+      )}
+      {list.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-2 py-2">Project name</th>
+                <th className="px-2 py-2">Code</th>
+                <th className="px-2 py-2">Source sheet</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((p) => (
+                <tr key={`${p.name}|${p.code ?? ""}`} className="border-t border-border">
+                  <td className="px-2 py-2 font-medium">{p.name}</td>
+                  <td className="px-2 py-2">{p.code ?? "—"}</td>
+                  <td className="px-2 py-2 text-xs text-muted-foreground">{p.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
