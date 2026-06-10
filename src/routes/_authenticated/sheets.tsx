@@ -62,9 +62,11 @@ function SheetsPage() {
             Register the Apps Script web app URL for each sheet you want the app to read.
           </p>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" /> Add sheet
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" /> Add API endpoint
+          </Button>
+        </div>
       </div>
 
       {sheets.isLoading ? (
