@@ -49,6 +49,7 @@ const SHEETS_KEY = "dashboard.selectedSheets.v1";
 const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-2)", "var(--chart-5)", "var(--chart-4)", "var(--muted-foreground)"];
 
 function Dashboard() {
+  const isSuper = useIsSuper();
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
   useEffect(() => {
     try { const s = localStorage.getItem(SHEETS_KEY); if (s) setSelectedSheetIds(JSON.parse(s)); } catch {}
