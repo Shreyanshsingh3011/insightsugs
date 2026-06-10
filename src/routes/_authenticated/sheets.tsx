@@ -14,9 +14,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle, ExternalLink, Link2 } from "lucide-react";
 import {
-  listSheets, inspectSheet, registerAndSyncSheet, refreshSheet, deleteSheet,
+  listSheets, inspectSheet, registerAndSyncSheet, refreshSheet, deleteSheet, updateSheetMeta,
 } from "@/lib/sheets.functions";
 import {
   SHEET_TYPE_LABELS, SHEET_TYPES, CANONICAL_FIELDS, type SheetType,
