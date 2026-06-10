@@ -32,6 +32,8 @@ import type { DependencyChainResponse } from "@/lib/dependency-chain";
 import { depStore, type DepSnapshot } from "@/lib/dep-store";
 import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
+import { useIsSuper } from "@/hooks/useSession";
+import { MyDependentActivities } from "@/components/MyDependentActivities";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -47,6 +49,7 @@ const SHEETS_KEY = "dashboard.selectedSheets.v1";
 const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-2)", "var(--chart-5)", "var(--chart-4)", "var(--muted-foreground)"];
 
 function Dashboard() {
+  const isSuper = useIsSuper();
   const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
   useEffect(() => {
     try { const s = localStorage.getItem(SHEETS_KEY); if (s) setSelectedSheetIds(JSON.parse(s)); } catch {}
@@ -109,7 +112,7 @@ function Dashboard() {
         );
       case "tat": return <TatTable key={id} data={data} />;
       case "flags": return <FlagsPanel key={id} data={data} />;
-      case "dependencies": return <DependencyChainPanel key={id} />;
+      case "dependencies": return isSuper ? <DependencyChainPanel key={id} /> : null;
       case "feed": return <DataFeed key={id} extras={extras} setExtras={setExtras} data={data} />;
       default: return null;
     }
@@ -137,6 +140,7 @@ function Dashboard() {
         {error && <div className="py-32 text-center text-destructive">Failed to load. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>}
         {data && (
           <div className="space-y-2">
+            <MyDependentActivities />
             {widgets.filter((w) => w.visible).map((w) => renderWidget(w.id))}
           </div>
         )}

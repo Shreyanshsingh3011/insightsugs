@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession, useIsAdmin } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
@@ -9,9 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, FileSpreadsheet } from "lucide-react";
 import { computeDueDate } from "@/lib/business-days";
+import { listProjectsFromSheets } from "@/lib/sheets.functions";
 
 export const Route = createFileRoute("/_authenticated/projects")({
   head: () => ({ meta: [{ title: "Projects — DelayLens" }] }),
@@ -155,7 +158,10 @@ function ProjectsPage() {
         </Dialog>
       </div>
 
+      <ProjectsFromSheets />
+
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
+
         <Card className="p-2">
           {projects?.length === 0 && <p className="p-4 text-sm text-muted-foreground">No projects yet.</p>}
           {projects?.map((p) => (
@@ -233,5 +239,57 @@ function ProjectsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ProjectsFromSheets() {
+  const fn = useServerFn(listProjectsFromSheets);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["projects-from-sheets"],
+    queryFn: () => fn(),
+  });
+  const list = (data?.projects ?? []) as { name: string; code: string | null; source: string }[];
+
+  return (
+    <Card className="mt-6 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <FileSpreadsheet className="h-4 w-4 text-primary" />
+        <h2 className="text-sm font-semibold">Projects detected on your sheets</h2>
+        <Badge variant="outline" className="ml-auto">{list.length}</Badge>
+      </div>
+      {isLoading && <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>}
+      {error && (
+        <p className="py-4 text-center text-sm text-destructive">
+          {error instanceof Error ? error.message : "Failed to load."}
+        </p>
+      )}
+      {!isLoading && !error && list.length === 0 && (
+        <p className="py-4 text-center text-sm text-muted-foreground">
+          No project name / code columns found on your registered sheets yet.
+        </p>
+      )}
+      {list.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-2 py-2">Project name</th>
+                <th className="px-2 py-2">Code</th>
+                <th className="px-2 py-2">Source sheet</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((p) => (
+                <tr key={`${p.name}|${p.code ?? ""}`} className="border-t border-border">
+                  <td className="px-2 py-2 font-medium">{p.name}</td>
+                  <td className="px-2 py-2">{p.code ?? "—"}</td>
+                  <td className="px-2 py-2 text-xs text-muted-foreground">{p.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }

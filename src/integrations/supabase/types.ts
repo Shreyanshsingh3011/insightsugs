@@ -973,6 +973,7 @@ export type Database = {
           last_refreshed_at: string | null
           row_count: number
           sheet_type: Database["public"]["Enums"]["sheet_type"]
+          source_url: string | null
           updated_at: string
           user_id: string
         }
@@ -984,6 +985,7 @@ export type Database = {
           last_refreshed_at?: string | null
           row_count?: number
           sheet_type: Database["public"]["Enums"]["sheet_type"]
+          source_url?: string | null
           updated_at?: string
           user_id: string
         }
@@ -995,6 +997,7 @@ export type Database = {
           last_refreshed_at?: string | null
           row_count?: number
           sheet_type?: Database["public"]["Enums"]["sheet_type"]
+          source_url?: string | null
           updated_at?: string
           user_id?: string
         }
