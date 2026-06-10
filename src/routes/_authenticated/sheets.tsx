@@ -245,10 +245,7 @@ function EditSheetMetaDialog({
 }
 
 // Tiny helper to sync local form state when the editing row changes
-import { useEffect as _useEffect } from "react";
-function useStateOnEditing<T>(value: T, run: (v: T) => void) {
-  _useEffect(() => { run(value); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [value]);
-}
+
 
 function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const qc = useQueryClient();
