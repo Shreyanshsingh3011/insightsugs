@@ -214,12 +214,12 @@ function EditSheetMetaDialog({
             <Input className="mt-1.5" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div>
-            <Label>Apps Script web app URL (API endpoint)</Label>
+            <Label>API endpoint URL (Apps Script, Emergent, or any JSON API)</Label>
             <Input
               className="mt-1.5 font-mono text-xs"
               value={apps}
               onChange={(e) => setApps(e.target.value)}
-              placeholder="https://script.google.com/macros/s/…/exec"
+              placeholder="https://script.google.com/macros/s/…/exec  •  https://…/api/public/…"
             />
           </div>
           <div>
