@@ -34,6 +34,8 @@ import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
 import { useIsSuper } from "@/hooks/useSession";
 import { MyDependentActivities } from "@/components/MyDependentActivities";
+import { ActiveIntegrationCard } from "@/components/ActiveIntegrationCard";
+
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
