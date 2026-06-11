@@ -1,81 +1,50 @@
-## Scope
+# Show active environment data on the dashboard
 
-Four discrete changes across Sheets, Dashboard, Projects, plus a user-matching helper.
+Add a new dashboard card that surfaces the **currently active Emergent environment** and its live data, so everyone (not just super admins) can see which integration the app is running against and whether it is healthy.
 
----
+## What the card shows
 
-## 1. Sheets page — per-row actions
+- **Active environment name** (e.g. "Production") + short ID badge (e.g. `prod`)
+- **Live status**: green "Connected" / red "Down" pill from a fresh `/health` ping
+- **Base URL host** (host only — e.g. `connector-flow-1.preview.emergentagent.com`), no API key
+- **Last checked** timestamp + a "Refresh" button
+- **Super admin only**: a "Manage" link to `/admin/integrations`
+- If no environment is configured yet: a friendly empty state ("No live integration configured")
 
-File: `src/routes/_authenticated/sheets.tsx`
+## Where it goes
 
-- Each row in the sheet registry list gets two new icon buttons:
-  - **Open sheet link** — opens `apps_script_url`'s associated Google Sheet in a new tab. If `sheet_registry` does not already store the raw spreadsheet URL, add a small dialog that lets the user paste/edit it (column `source_url`, see migration below).
-  - **Add API endpoint** — opens the existing "register sheet" dialog pre-populated for editing the Apps Script URL of that row (re-uses the existing `registerSheet`/`updateSheetEndpoint` server fn).
-- Add a new top-level "Add API endpoint" button that opens the same dialog in create mode (parity with existing flow; just makes it visible).
+- New widget on `src/routes/_authenticated/dashboard.tsx`, rendered at the top of the dashboard grid (above the existing widgets) so it's the first thing users see.
+- It is a normal widget, visible to everyone — no role gating on visibility (only the "Manage" action is super-admin-only).
 
-Migration: `ALTER TABLE public.sheet_registry ADD COLUMN source_url text;` (nullable, no policy change).
+## How the data is fetched (technical)
 
----
+1. **New public-safe server fn** `getActiveIntegrationStatus` in `src/lib/integrations.functions.ts`:
+   - Uses `requireSupabaseAuth` (any signed-in user).
+   - Loads the active env via the existing `loadRow` / `normalizeEnvs` helpers.
+   - Calls the existing `pingEmergent()` (which already hits `/health`).
+   - Returns a **safe DTO** only — no api_key, no full record:
+     ```ts
+     {
+       configured: boolean,
+       env: { id, name, base_url_host } | null,
+       status: { ok, status, message, checkedAt } | null
+     }
+     ```
+   - The host is extracted with `new URL(base_url).host` so we never leak query strings or paths.
 
-## 2. Dashboard — Dependent Activity table on home
+2. **New component** `src/components/ActiveIntegrationCard.tsx`:
+   - `useQuery` against the new server fn with `refetchInterval: 60_000` (auto-refresh every minute) and a manual Refresh button that calls `refetch()`.
+   - Status pill driven by `status.ok` + `status.status`.
+   - Uses `useRoles()` to conditionally show the "Manage" link.
 
-File: `src/routes/_authenticated/dashboard.tsx` + new component `src/components/DependentActivitiesTable.tsx`.
-
-Behaviour:
-- New card "My dependent activities" near the top of the dashboard, visible to all signed-in users.
-- Data source: existing dependency mapping in `dep-store.ts` / `dependencies.functions.ts` joined with the user's matched activities (see §4).
-- Each row shows: activity name · predecessor activity · predecessor status · my status.
-- Rows whose predecessor is **not cleared** render at 50 % opacity and are non-interactive (cursor-not-allowed). Cleared predecessors → full opacity and clickable.
-- Clicking a clickable row opens a dialog ("Dependency details") listing the full predecessor → successor chain (re-use `dependency-chain.ts`) with statuses, sheet origin, and a deep-link to `/sheets/$sheetId`.
-
----
-
-## 3. Dashboard — gate dependency mapping section to super admin
-
-Same file. Wrap the existing dependency-mapping/settings section with a `useSession()`-derived `isSuperAdmin` check. Non-super-admins simply don't see it. No data change.
-
----
-
-## 4. User ↔ activity matching helper
-
-New file: `src/lib/user-activity-match.ts` (pure helper) + a server fn `getMyActivities` in `src/lib/sheets.functions.ts`.
-
-Logic:
-1. For each registered sheet's rows, look in `canonical`/`extras` for an email-like field (`email`, `assignee_email`, `owner_email`). If it matches `auth.user.email` (case-insensitive), include the row.
-2. Else, fall back to comparing a name-like field (`assignee`, `owner`, `name`, `responsible`) against `profile.full_name` (case-insensitive, trimmed).
-3. Return `{ sheet_id, row_index, activity_name, status, matched_via: 'email' | 'name' }`.
-
-This feeds the new dashboard table in §2 and is also reusable for `my-activities.tsx`.
-
----
-
-## 5. Projects page — pickup from a registered sheet
-
-File: `src/routes/_authenticated/projects.tsx` + new server fn `listProjectsFromSheets` in `src/lib/sheets.functions.ts`.
-
-- Aggregate distinct `(project_name, project_code)` pairs across the user's registered `sheet_rows` (looking at `canonical.project_name` / `canonical.project_code` and common extras keys like `Project Name`, `Project Code`).
-- Render a simple table; no DB writes. Existing manual `projects` table is left alone for now.
-
----
-
-## Technical notes
-
-- All new server fns use `requireSupabaseAuth`; reads scoped through the existing user-scoped RLS on `sheet_registry`/`sheet_rows`.
-- No new RLS policies needed besides the `sheet_registry.source_url` column (inherits existing policies).
-- Bearer-token attacher is already wired (`attachSupabaseAuth` in `src/start.ts`).
-- No new external secrets.
-
----
+3. **Dashboard wiring**: add an `"integration-status"` widget id in the dashboard's widget registry/grid so it renders at the top. No changes to user widget preferences are required — it's always-on like the existing header cards.
 
 ## Files touched
 
-- migration: add `sheet_registry.source_url`
-- edit: `src/routes/_authenticated/sheets.tsx`
-- edit: `src/routes/_authenticated/dashboard.tsx`
-- edit: `src/routes/_authenticated/projects.tsx`
-- edit: `src/lib/sheets.functions.ts` (3 new fns)
-- new: `src/lib/user-activity-match.ts`
-- new: `src/components/DependentActivitiesTable.tsx`
-- new: `src/components/DependencyDetailsDialog.tsx`
+- `src/lib/integrations.functions.ts` — add `getActiveIntegrationStatus` (read-only, safe DTO).
+- `src/components/ActiveIntegrationCard.tsx` — new component.
+- `src/routes/_authenticated/dashboard.tsx` — render the new card.
 
-Ready to implement on approval.
+## Out of scope (call out and confirm if needed)
+
+- Rendering the **sheet data** from the active environment on the dashboard. That's a separate, larger change (pick a sheet, fetch via the active env, render as a table). If you also want that, say the word and I'll fold it in — otherwise this plan only surfaces the integration's own status/identity.

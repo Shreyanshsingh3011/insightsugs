@@ -34,6 +34,8 @@ import { DependencyFlow, type Activity } from "@/components/DependencyFlow";
 import { useDashboardWidgets } from "@/hooks/useDashboardWidgets";
 import { useIsSuper } from "@/hooks/useSession";
 import { MyDependentActivities } from "@/components/MyDependentActivities";
+import { ActiveIntegrationCard } from "@/components/ActiveIntegrationCard";
+
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -140,6 +142,7 @@ function Dashboard() {
         {error && <div className="py-32 text-center text-destructive">Failed to load. <Button variant="link" onClick={() => refetch()}>Retry</Button></div>}
         {data && (
           <div className="space-y-2">
+            <ActiveIntegrationCard />
             <MyDependentActivities />
             {widgets.filter((w) => w.visible).map((w) => renderWidget(w.id))}
           </div>

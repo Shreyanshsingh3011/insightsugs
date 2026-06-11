@@ -197,3 +197,31 @@ export const testEmergentConnection = createServerFn({ method: "POST" })
     return await pingEmergent(data.env_id);
   });
 
+// Public-safe (any signed-in user): returns active env name/host + live ping.
+// Never returns the API key or full base_url with query params.
+export const getActiveIntegrationStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const row = await loadRow();
+    const { envs, active } = normalizeEnvs(row);
+    if (envs.length === 0 || !active) {
+      return { configured: false as const, env: null, status: null };
+    }
+    const activeEnv = envs.find((e) => e.id === active) ?? envs[0];
+    let host = activeEnv.base_url;
+    try {
+      host = new URL(activeEnv.base_url).host;
+    } catch {}
+    const ping = await pingEmergent(activeEnv.id);
+    return {
+      configured: true as const,
+      env: { id: activeEnv.id, name: activeEnv.name, base_url_host: host },
+      status: {
+        ok: ping.ok,
+        status: ping.status,
+        message: ping.message,
+        checkedAt: new Date().toISOString(),
+      },
+    };
+  });
+
