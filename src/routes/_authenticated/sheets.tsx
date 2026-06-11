@@ -355,10 +355,10 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
               />
             </div>
             <div>
-              <Label>Apps Script web app URL</Label>
+              <Label>API endpoint URL</Label>
               <Input
                 className="mt-1.5"
-                placeholder="https://script.google.com/macros/s/…/exec"
+                placeholder="https://script.google.com/macros/s/…/exec  •  https://…/api/public/…"
                 value={appsScriptUrl}
                 onChange={(e) => setAppsScriptUrl(e.target.value)}
               />
