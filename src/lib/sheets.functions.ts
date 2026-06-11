@@ -17,13 +17,13 @@ const SHEET_TYPE_ENUM = z.enum([
   "tat",
 ]);
 
+// Accepts any HTTPS endpoint that returns JSON in one of the shapes
+// handled by normalizeAppsScriptPayload — Google Apps Script web apps,
+// Emergent connector URLs, or any custom API that returns rows.
 const APPS_SCRIPT_URL = z
   .string()
   .url()
-  .refine(
-    (u) => /^https:\/\/script\.google(usercontent)?\.com\//.test(u),
-    "Must be a https://script.google.com/.../exec URL",
-  );
+  .refine((u) => /^https:\/\//.test(u), "Must be an https:// URL");
 
 /**
  * Apps Script web app response normalizer.
