@@ -1035,7 +1035,7 @@ function DependencyChainPanel() {
             <Input
               value={sheetInput}
               onChange={(e) => setSheetInput(e.target.value)}
-              placeholder="https://script.google.com/macros/s/…/exec"
+              placeholder="https://script.google.com/macros/s/…/exec  •  https://…/api/public/…"
               className="font-mono text-xs"
             />
             <Button size="sm" onClick={resolve} disabled={(!sheetInput.trim() && !hasEmergent) || isFetching}>
