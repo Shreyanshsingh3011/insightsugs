@@ -4,8 +4,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 import { callEmergent, EmergentNotConfiguredError } from "@/lib/emergent-client";
 
-const EMERGENT_UNCONFIGURED_MSG =
-  "AI service isn't connected yet. Ask a super admin to set it up in Admin → Integrations.";
 
 const SHEET_TYPE_ENUM = z.enum([
   "progress",
@@ -32,18 +30,37 @@ const APPS_SCRIPT_URL = z
  *   { values: [[...], ...] }      // first row treated as headers
  *   [{colA: 1, colB: 2}, ...]      // array of objects
  */
+function arrayOfObjectsToTable(objs: Record<string, unknown>[]): { headers: string[]; rows: string[][] } {
+  const headerSet = new Set<string>();
+  for (const o of objs) Object.keys(o).forEach((k) => headerSet.add(k));
+  const headers = Array.from(headerSet);
+  const rows = objs.map((o) =>
+    headers.map((h) => {
+      const v = o[h];
+      if (v == null) return "";
+      if (typeof v === "object") return JSON.stringify(v);
+      return String(v);
+    }),
+  );
+  return { headers, rows };
+}
+
+// Walks a JSON payload and finds the first useful tabular shape.
 function normalizeAppsScriptPayload(payload: unknown): { headers: string[]; rows: string[][] } {
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object" && payload[0] !== null) {
+    return arrayOfObjectsToTable(payload as Record<string, unknown>[]);
+  }
+  if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
     if (Array.isArray(obj.headers) && Array.isArray(obj.rows)) {
       return {
-        headers: obj.headers.map((h) => String(h ?? "").trim()),
+        headers: (obj.headers as unknown[]).map((h) => String(h ?? "").trim()),
         rows: (obj.rows as unknown[][]).map((r) =>
           (Array.isArray(r) ? r : []).map((c) => (c == null ? "" : String(c))),
         ),
       };
     }
-    if (Array.isArray(obj.values) && obj.values.length > 0) {
+    if (Array.isArray(obj.values) && (obj.values as unknown[]).length > 0) {
       const all = obj.values as unknown[][];
       const headers = (all[0] ?? []).map((h) => String(h ?? "").trim());
       const rows = all.slice(1).map((r) =>
@@ -51,37 +68,93 @@ function normalizeAppsScriptPayload(payload: unknown): { headers: string[]; rows
       );
       return { headers, rows };
     }
-  }
-  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object") {
-    const objs = payload as Record<string, unknown>[];
-    const headerSet = new Set<string>();
-    for (const o of objs) Object.keys(o).forEach((k) => headerSet.add(k));
-    const headers = Array.from(headerSet);
-    const rows = objs.map((o) => headers.map((h) => (o[h] == null ? "" : String(o[h]))));
-    return { headers, rows };
+    // Common keys used by APIs that wrap rows
+    for (const key of ["data", "rows", "records", "items", "results"]) {
+      const v = obj[key];
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0] !== null) {
+        return arrayOfObjectsToTable(v as Record<string, unknown>[]);
+      }
+    }
+    // Fallback: scan for the first array-of-objects anywhere in the object
+    for (const v of Object.values(obj)) {
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0] !== null) {
+        return arrayOfObjectsToTable(v as Record<string, unknown>[]);
+      }
+    }
   }
   return { headers: [], rows: [] };
 }
 
+function parseCsv(text: string): { headers: string[]; rows: string[][] } {
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let field = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { cur.push(field); field = ""; }
+    else if (ch === "\n") { cur.push(field); rows.push(cur); cur = []; field = ""; }
+    else if (ch === "\r") { /* skip */ }
+    else field += ch;
+  }
+  if (field.length > 0 || cur.length > 0) { cur.push(field); rows.push(cur); }
+  const headers = (rows.shift() ?? []).map((h) => h.trim());
+  return { headers, rows };
+}
+
+// Convert popular spreadsheet "open" URLs into a fetchable data URL.
+function toFetchableUrl(url: string): string {
+  // Google Sheets: https://docs.google.com/spreadsheets/d/<id>/edit#gid=<gid>
+  const gs = url.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([^/]+)/i);
+  if (gs) {
+    const id = gs[1];
+    const gid = url.match(/[?#&]gid=(\d+)/)?.[1];
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
+  }
+  // Excel online share links → try to coerce to download
+  if (/^https:\/\/(1drv\.ms|.*\.sharepoint\.com|onedrive\.live\.com)/i.test(url)) {
+    return url.includes("download=1") ? url : url + (url.includes("?") ? "&" : "?") + "download=1";
+  }
+  return url;
+}
+
 async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: string[][] }> {
-  const res = await fetch(url, { redirect: "follow" });
+  const target = toFetchableUrl(url);
+  const res = await fetch(target, { redirect: "follow" });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Apps Script returned ${res.status}: ${text.slice(0, 300)}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Source URL returned ${res.status}: ${text.slice(0, 300)}`);
   }
-  let payload: unknown;
-  try {
-    payload = await res.json();
-  } catch {
-    throw new Error(
-      "Apps Script did not return JSON. Make sure doGet returns ContentService.createTextOutput(JSON.stringify(...)).setMimeType(JSON).",
-    );
+  const ctype = (res.headers.get("content-type") || "").toLowerCase();
+  const body = await res.text();
+
+  // Try JSON first when the server claims JSON or the body looks JSON-y
+  const looksJson = ctype.includes("json") || /^\s*[\[{]/.test(body);
+  if (looksJson) {
+    try {
+      const payload = JSON.parse(body);
+      const normalized = normalizeAppsScriptPayload(payload);
+      if (normalized.headers.length > 0) return normalized;
+    } catch {
+      /* fall through to CSV */
+    }
   }
-  const normalized = normalizeAppsScriptPayload(payload);
-  if (normalized.headers.length === 0) {
-    throw new Error("Couldn't find a header row in the Apps Script response.");
+
+  // CSV fallback (Google Sheets export, Excel CSV, generic CSV)
+  if (ctype.includes("csv") || ctype.includes("text/plain") || /,|\n/.test(body)) {
+    const csv = parseCsv(body);
+    if (csv.headers.length > 0) return csv;
   }
-  return normalized;
+
+  throw new Error(
+    "Couldn't read tabular data from this URL. Provide a JSON endpoint (with rows/headers/values or an array of objects), a Google Sheets share link, or a direct CSV URL.",
+  );
 }
 
 async function proposeMapping(
@@ -586,20 +659,95 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
 
+    // Build context for Lovable AI. We answer directly so Copilot works
+    // regardless of whether the optional Emergent integration is configured.
+    const lovableKey = process.env.LOVABLE_API_KEY;
+
+    // Pull document RAG chunks for selected documents (best-effort).
+    let docChunkBlocks: string[] = [];
+    if (data.documentIds.length > 0) {
+      try {
+        const { embedTexts, toPgVector } = await import("./documents.server");
+        const [qVec] = await embedTexts([data.question]);
+        for (const docId of data.documentIds) {
+          const { data: matches } = await (supabase as any).rpc("match_doc_chunks", {
+            _user_id: userId,
+            _query: toPgVector(qVec),
+            _scope_folder: null,
+            _scope_document: docId,
+            _match_count: 6,
+          });
+          for (const m of (matches ?? []) as any[]) {
+            docChunkBlocks.push(
+              `[${m.document_name}${m.page_no ? ` p.${m.page_no}` : ""}]\n${m.content}`,
+            );
+          }
+        }
+      } catch (e) {
+        // RAG is optional; continue with summaries only
+        console.warn("Copilot RAG fallback:", (e as Error).message);
+      }
+    }
+
     let answer: string;
-    try {
-      const out = await callEmergent<{ answer?: string }>("copilot", {
-        question: data.question,
-        aggregates,
-        rows: sampleRows,
-        documents: documentContext,
-        sources,
-      });
-      answer = out?.answer ?? "(no answer)";
-    } catch (e) {
-      if (e instanceof EmergentNotConfiguredError) {
-        answer = EMERGENT_UNCONFIGURED_MSG;
-      } else {
+    if (!lovableKey) {
+      answer = "AI isn't configured for this workspace yet.";
+    } else {
+      const docSummariesBlock = documentContext
+        .map(
+          (d) =>
+            `Document: ${d.name}\nSummary: ${d.summary ?? "(none)"}\nKey points: ${
+              Array.isArray(d.key_points) ? (d.key_points as unknown[]).join("; ") : ""
+            }`,
+        )
+        .join("\n\n");
+
+      const rowsBlock = sampleRows.length
+        ? JSON.stringify(sampleRows.slice(0, 400))
+        : "(no sheet rows in scope)";
+
+      const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
+
+      const chunksBlock = docChunkBlocks.length
+        ? docChunkBlocks.join("\n\n---\n\n")
+        : "(no document excerpts retrieved)";
+
+      const system =
+        "You are a helpful analyst answering questions about the user's sheets and documents. " +
+        "Use ONLY the provided context. If the answer isn't in the context, say you don't know. " +
+        "Cite source names in parentheses. Be concise and use markdown when helpful.";
+
+      const userMsg =
+        `QUESTION: ${data.question}\n\n` +
+        (aggBlock ? `SHEET AGGREGATES:\n${aggBlock}\n\n` : "") +
+        `SHEET ROW SAMPLE (JSON):\n${rowsBlock}\n\n` +
+        (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
+        `DOCUMENT EXCERPTS:\n${chunksBlock}`;
+
+      try {
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Lovable-API-Key": lovableKey,
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: userMsg },
+            ],
+          }),
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          if (res.status === 429) throw new Error("AI rate limit exceeded — please retry shortly.");
+          if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
+          throw new Error(`AI error (${res.status}): ${t.slice(0, 300)}`);
+        }
+        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        answer = j.choices?.[0]?.message?.content?.trim() ?? "(empty response)";
+      } catch (e) {
         throw e;
       }
     }
