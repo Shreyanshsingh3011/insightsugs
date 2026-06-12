@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
-import { callEmergent, EmergentNotConfiguredError } from "@/lib/emergent-client";
+import { callEmergent } from "@/lib/emergent-client";
 
 
 const SHEET_TYPE_ENUM = z.enum([
