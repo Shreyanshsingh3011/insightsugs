@@ -355,22 +355,23 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
               />
             </div>
             <div>
-              <Label>API endpoint URL</Label>
+              <Label>Sheet URL</Label>
               <Input
                 className="mt-1.5"
-                placeholder="https://script.google.com/macros/s/…/exec  •  https://…/api/public/…"
+                placeholder="Google Sheets link • Excel/OneDrive link • Apps Script /exec • JSON or CSV URL"
                 value={appsScriptUrl}
                 onChange={(e) => setAppsScriptUrl(e.target.value)}
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                Your <code>doGet</code> should return JSON in the shape{" "}
-                <code>{`{ "headers": [...], "rows": [[...], ...] }`}</code>. Array-of-objects also works.
+                Paste a Google Sheets share link, an Excel/OneDrive share link, or any
+                HTTPS endpoint returning JSON (<code>{`{ headers, rows }`}</code> or an
+                array of objects) or CSV.
               </p>
               <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
-                  Anyone with this URL can read the sheet data. Only paste URLs deployed as{" "}
-                  <strong>Anyone</strong> that you're OK exposing.
+                  The sheet must be viewable by <strong>Anyone with the link</strong>.
+                  Don't paste links to data you wouldn't share publicly.
                 </span>
               </div>
             </div>
