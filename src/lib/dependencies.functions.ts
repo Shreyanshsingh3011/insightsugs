@@ -24,14 +24,17 @@ export const inferDependenciesEmergent = createServerFn({ method: "POST" })
       });
       return { ok: true as const, chain: out };
     } catch (e) {
-      if (e instanceof EmergentNotConfiguredError) {
-        return {
-          ok: false as const,
-          code: "EMERGENT_NOT_CONFIGURED",
-          message:
-            "AI service isn't connected yet. Ask a super admin to set it up in Admin → Integrations.",
-        };
-      }
-      throw e;
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        ok: false as const,
+        code:
+          e instanceof EmergentNotConfiguredError
+            ? "EMERGENT_NOT_CONFIGURED"
+            : "EMERGENT_UNAVAILABLE",
+        message:
+          e instanceof EmergentNotConfiguredError
+            ? "AI service isn't connected yet. Ask a super admin to set it up in Admin → Integrations."
+            : `Dependency AI is unavailable right now (${msg.slice(0, 200)}). You can still add dependencies manually.`,
+      };
     }
   });
