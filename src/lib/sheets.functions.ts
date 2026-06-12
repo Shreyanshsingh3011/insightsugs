@@ -661,20 +661,95 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
 
+    // Build context for Lovable AI. We answer directly so Copilot works
+    // regardless of whether the optional Emergent integration is configured.
+    const lovableKey = process.env.LOVABLE_API_KEY;
+
+    // Pull document RAG chunks for selected documents (best-effort).
+    let docChunkBlocks: string[] = [];
+    if (data.documentIds.length > 0) {
+      try {
+        const { embedTexts, toPgVector } = await import("./documents.server");
+        const [qVec] = await embedTexts([data.question]);
+        for (const docId of data.documentIds) {
+          const { data: matches } = await supabase.rpc("match_doc_chunks", {
+            _user_id: userId,
+            _query: toPgVector(qVec),
+            _scope_folder: null,
+            _scope_document: docId,
+            _match_count: 6,
+          });
+          for (const m of (matches ?? []) as any[]) {
+            docChunkBlocks.push(
+              `[${m.document_name}${m.page_no ? ` p.${m.page_no}` : ""}]\n${m.content}`,
+            );
+          }
+        }
+      } catch (e) {
+        // RAG is optional; continue with summaries only
+        console.warn("Copilot RAG fallback:", (e as Error).message);
+      }
+    }
+
     let answer: string;
-    try {
-      const out = await callEmergent<{ answer?: string }>("copilot", {
-        question: data.question,
-        aggregates,
-        rows: sampleRows,
-        documents: documentContext,
-        sources,
-      });
-      answer = out?.answer ?? "(no answer)";
-    } catch (e) {
-      if (e instanceof EmergentNotConfiguredError) {
-        answer = EMERGENT_UNCONFIGURED_MSG;
-      } else {
+    if (!lovableKey) {
+      answer = "AI isn't configured for this workspace yet.";
+    } else {
+      const docSummariesBlock = documentContext
+        .map(
+          (d) =>
+            `Document: ${d.name}\nSummary: ${d.summary ?? "(none)"}\nKey points: ${
+              Array.isArray(d.key_points) ? (d.key_points as unknown[]).join("; ") : ""
+            }`,
+        )
+        .join("\n\n");
+
+      const rowsBlock = sampleRows.length
+        ? JSON.stringify(sampleRows.slice(0, 400))
+        : "(no sheet rows in scope)";
+
+      const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
+
+      const chunksBlock = docChunkBlocks.length
+        ? docChunkBlocks.join("\n\n---\n\n")
+        : "(no document excerpts retrieved)";
+
+      const system =
+        "You are a helpful analyst answering questions about the user's sheets and documents. " +
+        "Use ONLY the provided context. If the answer isn't in the context, say you don't know. " +
+        "Cite source names in parentheses. Be concise and use markdown when helpful.";
+
+      const userMsg =
+        `QUESTION: ${data.question}\n\n` +
+        (aggBlock ? `SHEET AGGREGATES:\n${aggBlock}\n\n` : "") +
+        `SHEET ROW SAMPLE (JSON):\n${rowsBlock}\n\n` +
+        (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
+        `DOCUMENT EXCERPTS:\n${chunksBlock}`;
+
+      try {
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Lovable-API-Key": lovableKey,
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: userMsg },
+            ],
+          }),
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          if (res.status === 429) throw new Error("AI rate limit exceeded — please retry shortly.");
+          if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
+          throw new Error(`AI error (${res.status}): ${t.slice(0, 300)}`);
+        }
+        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        answer = j.choices?.[0]?.message?.content?.trim() ?? "(empty response)";
+      } catch (e) {
         throw e;
       }
     }
