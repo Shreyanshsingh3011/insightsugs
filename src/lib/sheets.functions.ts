@@ -176,11 +176,18 @@ async function proposeMapping(
     }
     return result;
   } catch (e) {
-    if (e instanceof EmergentNotConfiguredError) {
-      // Graceful fallback: no AI suggestion, user maps manually.
-      return Object.fromEntries(headers.map((h) => [h, null]));
+    // Emergent is optional — fall back to heuristic name matching so inspect never fails.
+    console.warn("proposeMapping fell back to heuristic:", e instanceof Error ? e.message : e);
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const result: Record<string, string | null> = {};
+    for (const h of headers) {
+      const hn = norm(h);
+      const hit =
+        canonical.find((c) => norm(c) === hn) ??
+        canonical.find((c) => hn.includes(norm(c)) || norm(c).includes(hn));
+      result[h] = hit ?? null;
     }
-    throw e;
+    return result;
   }
 }
 
