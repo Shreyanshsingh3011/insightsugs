@@ -32,18 +32,37 @@ const APPS_SCRIPT_URL = z
  *   { values: [[...], ...] }      // first row treated as headers
  *   [{colA: 1, colB: 2}, ...]      // array of objects
  */
+function arrayOfObjectsToTable(objs: Record<string, unknown>[]): { headers: string[]; rows: string[][] } {
+  const headerSet = new Set<string>();
+  for (const o of objs) Object.keys(o).forEach((k) => headerSet.add(k));
+  const headers = Array.from(headerSet);
+  const rows = objs.map((o) =>
+    headers.map((h) => {
+      const v = o[h];
+      if (v == null) return "";
+      if (typeof v === "object") return JSON.stringify(v);
+      return String(v);
+    }),
+  );
+  return { headers, rows };
+}
+
+// Walks a JSON payload and finds the first useful tabular shape.
 function normalizeAppsScriptPayload(payload: unknown): { headers: string[]; rows: string[][] } {
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object" && payload[0] !== null) {
+    return arrayOfObjectsToTable(payload as Record<string, unknown>[]);
+  }
+  if (payload && typeof payload === "object") {
     const obj = payload as Record<string, unknown>;
     if (Array.isArray(obj.headers) && Array.isArray(obj.rows)) {
       return {
-        headers: obj.headers.map((h) => String(h ?? "").trim()),
+        headers: (obj.headers as unknown[]).map((h) => String(h ?? "").trim()),
         rows: (obj.rows as unknown[][]).map((r) =>
           (Array.isArray(r) ? r : []).map((c) => (c == null ? "" : String(c))),
         ),
       };
     }
-    if (Array.isArray(obj.values) && obj.values.length > 0) {
+    if (Array.isArray(obj.values) && (obj.values as unknown[]).length > 0) {
       const all = obj.values as unknown[][];
       const headers = (all[0] ?? []).map((h) => String(h ?? "").trim());
       const rows = all.slice(1).map((r) =>
@@ -51,37 +70,93 @@ function normalizeAppsScriptPayload(payload: unknown): { headers: string[]; rows
       );
       return { headers, rows };
     }
-  }
-  if (Array.isArray(payload) && payload.length > 0 && typeof payload[0] === "object") {
-    const objs = payload as Record<string, unknown>[];
-    const headerSet = new Set<string>();
-    for (const o of objs) Object.keys(o).forEach((k) => headerSet.add(k));
-    const headers = Array.from(headerSet);
-    const rows = objs.map((o) => headers.map((h) => (o[h] == null ? "" : String(o[h]))));
-    return { headers, rows };
+    // Common keys used by APIs that wrap rows
+    for (const key of ["data", "rows", "records", "items", "results"]) {
+      const v = obj[key];
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0] !== null) {
+        return arrayOfObjectsToTable(v as Record<string, unknown>[]);
+      }
+    }
+    // Fallback: scan for the first array-of-objects anywhere in the object
+    for (const v of Object.values(obj)) {
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object" && v[0] !== null) {
+        return arrayOfObjectsToTable(v as Record<string, unknown>[]);
+      }
+    }
   }
   return { headers: [], rows: [] };
 }
 
+function parseCsv(text: string): { headers: string[]; rows: string[][] } {
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let field = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { cur.push(field); field = ""; }
+    else if (ch === "\n") { cur.push(field); rows.push(cur); cur = []; field = ""; }
+    else if (ch === "\r") { /* skip */ }
+    else field += ch;
+  }
+  if (field.length > 0 || cur.length > 0) { cur.push(field); rows.push(cur); }
+  const headers = (rows.shift() ?? []).map((h) => h.trim());
+  return { headers, rows };
+}
+
+// Convert popular spreadsheet "open" URLs into a fetchable data URL.
+function toFetchableUrl(url: string): string {
+  // Google Sheets: https://docs.google.com/spreadsheets/d/<id>/edit#gid=<gid>
+  const gs = url.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([^/]+)/i);
+  if (gs) {
+    const id = gs[1];
+    const gid = url.match(/[?#&]gid=(\d+)/)?.[1];
+    return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv${gid ? `&gid=${gid}` : ""}`;
+  }
+  // Excel online share links → try to coerce to download
+  if (/^https:\/\/(1drv\.ms|.*\.sharepoint\.com|onedrive\.live\.com)/i.test(url)) {
+    return url.includes("download=1") ? url : url + (url.includes("?") ? "&" : "?") + "download=1";
+  }
+  return url;
+}
+
 async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: string[][] }> {
-  const res = await fetch(url, { redirect: "follow" });
+  const target = toFetchableUrl(url);
+  const res = await fetch(target, { redirect: "follow" });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Apps Script returned ${res.status}: ${text.slice(0, 300)}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Source URL returned ${res.status}: ${text.slice(0, 300)}`);
   }
-  let payload: unknown;
-  try {
-    payload = await res.json();
-  } catch {
-    throw new Error(
-      "Apps Script did not return JSON. Make sure doGet returns ContentService.createTextOutput(JSON.stringify(...)).setMimeType(JSON).",
-    );
+  const ctype = (res.headers.get("content-type") || "").toLowerCase();
+  const body = await res.text();
+
+  // Try JSON first when the server claims JSON or the body looks JSON-y
+  const looksJson = ctype.includes("json") || /^\s*[\[{]/.test(body);
+  if (looksJson) {
+    try {
+      const payload = JSON.parse(body);
+      const normalized = normalizeAppsScriptPayload(payload);
+      if (normalized.headers.length > 0) return normalized;
+    } catch {
+      /* fall through to CSV */
+    }
   }
-  const normalized = normalizeAppsScriptPayload(payload);
-  if (normalized.headers.length === 0) {
-    throw new Error("Couldn't find a header row in the Apps Script response.");
+
+  // CSV fallback (Google Sheets export, Excel CSV, generic CSV)
+  if (ctype.includes("csv") || ctype.includes("text/plain") || /,|\n/.test(body)) {
+    const csv = parseCsv(body);
+    if (csv.headers.length > 0) return csv;
   }
-  return normalized;
+
+  throw new Error(
+    "Couldn't read tabular data from this URL. Provide a JSON endpoint (with rows/headers/values or an array of objects), a Google Sheets share link, or a direct CSV URL.",
+  );
 }
 
 async function proposeMapping(
