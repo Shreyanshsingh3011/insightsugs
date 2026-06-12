@@ -672,7 +672,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         const { embedTexts, toPgVector } = await import("./documents.server");
         const [qVec] = await embedTexts([data.question]);
         for (const docId of data.documentIds) {
-          const { data: matches } = await supabase.rpc("match_doc_chunks", {
+          const { data: matches } = await (supabase as any).rpc("match_doc_chunks", {
             _user_id: userId,
             _query: toPgVector(qVec),
             _scope_folder: null,
