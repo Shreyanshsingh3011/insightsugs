@@ -4,8 +4,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 import { callEmergent, EmergentNotConfiguredError } from "@/lib/emergent-client";
 
-const EMERGENT_UNCONFIGURED_MSG =
-  "AI service isn't connected yet. Ask a super admin to set it up in Admin → Integrations.";
 
 const SHEET_TYPE_ENUM = z.enum([
   "progress",
