@@ -124,15 +124,7 @@ function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; c
 }
 
 function InsightsExternalLink() {
-  const url = "https://delaybridgesugs.vercel.app/view?token=9GliQ2Xi1efsanO7t9LuTyvi21_QR83H";
   return (
-    <button
-      type="button"
-      onClick={() => window.open(url, "_blank", "noopener")}
-      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-    >
-      <BarChart3 className="h-4 w-4" />
-      <span className="truncate">Open Insights</span>
-    </button>
+    <SideLink to="/insights" icon={<BarChart3 className="h-4 w-4" />}>Insights</SideLink>
   );
 }
