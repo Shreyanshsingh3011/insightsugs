@@ -38,16 +38,24 @@ function fmt(v: unknown) {
   return String(v);
 }
 
-function normalizeBase(raw: string): string {
+function normalizeBase(raw: string): { base: string; error?: string } {
   let s = raw.trim();
-  if (!s) return "";
+  if (!s) return { base: "", error: "Please paste a valid API link." };
   // strip query/hash
   s = s.replace(/[?#].*$/, "");
-  // strip trailing /dashboard or /copilot
-  s = s.replace(/\/(dashboard|copilot)\/?$/i, "");
+  // strip trailing known endpoint segments
+  s = s.replace(/\/(dashboard|copilot|export)\/?$/i, "");
   // strip trailing slash
   s = s.replace(/\/+$/, "");
-  return s;
+  if (!/^https?:\/\//i.test(s)) {
+    return { base: "", error: "Link must be a full URL starting with https:// (including the host)." };
+  }
+  try {
+    new URL(s);
+  } catch {
+    return { base: "", error: "That doesn't look like a valid URL." };
+  }
+  return { base: s };
 }
 
 export default function InsightDashboard() {
