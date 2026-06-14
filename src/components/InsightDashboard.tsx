@@ -93,11 +93,12 @@ export default function InsightDashboard() {
   }, [base]);
 
   function load() {
-    const n = normalizeBase(linkInput);
+    const { base: n, error: err } = normalizeBase(linkInput);
     if (!n) {
-      setError("Please paste a valid API link.");
+      setError(err || "Please paste a valid API link.");
       return;
     }
+    setError(null);
     setBase(n);
   }
 
