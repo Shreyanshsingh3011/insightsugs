@@ -284,7 +284,7 @@ function CardSkeleton({ h = 24 }: { h?: number }) {
     <Card className="rounded-2xl">
       <CardContent className="space-y-3 p-4">
         <Skeleton className="h-3 w-24" />
-        <Skeleton className={`h-${h} w-full`} />
+        <Skeleton className="w-full" style={{ height: `${h * 4}px` }} />
       </CardContent>
     </Card>
   );
