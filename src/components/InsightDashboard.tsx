@@ -1,56 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { formatDistanceToNow, parseISO, isValid as isValidDate } from "date-fns";
+import {
+  Card, CardContent, CardHeader, CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
+} from "@/components/ui/dialog";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from "@/components/ui/select";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+  Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
-import { ChevronDown, Send, Sparkles } from "lucide-react";
+import {
+  LayoutDashboard, Sheet as SheetIcon, MessageSquareWarning, Bell, Sparkles,
+  Wand2, Send, ChevronDown, AlertTriangle, RefreshCcw, Link as LinkIcon,
+  TrendingUp, Activity, CheckCircle2, Circle, CircleDot, Plus, ArrowRight,
+} from "lucide-react";
 
-/* ------------------------------- Types ------------------------------- */
-
-type Column = { name: string; type?: string; distinct?: number };
+/* ============================== Types ============================== */
+type Column = { name: string; type?: string };
 type KPI = { label: string; value: number | string };
-type Chart = {
-  type?: string;
-  title: string;
-  x?: string;
-  y?: string;
-  data: { name: string; value: number }[];
-};
+type ChartDef = { type?: string; title: string; x?: string; y?: string; data: { name: string; value: number }[] };
 type Sheet = {
-  label: string;
-  name?: string;
-  color?: string;
-  row_count?: number;
-  columns?: Column[];
-  kpis?: KPI[];
-  charts?: Chart[];
+  label: string; name?: string; type?: string; color?: string;
+  row_count?: number; columns?: Column[]; kpis?: KPI[]; charts?: ChartDef[];
   rows?: Record<string, unknown>[];
 };
 type Flag = { message?: string; title?: string; severity?: string };
@@ -60,89 +51,55 @@ type Analysis = {
   status_breakdown?: Record<string, number>;
   flags?: Flag[];
   mode_badge?: string;
-  copilot_enabled?: boolean;
   risk_score?: number | Record<string, unknown>;
-  top_delay_reasons?: unknown[];
-  person_ranking?: unknown[];
-  department_ranking?: unknown[];
-  tat_performance?: unknown[];
-  correlation_matrix?: unknown;
-  timeline_correlation?: unknown;
-  dependency_chains?: unknown;
-  variance?: unknown;
   [k: string]: unknown;
 };
 type Modules = {
   data_quality?: { score?: number; issues?: unknown[] };
-  pivot?: unknown;
-  anomalies?: unknown;
-  forecast?: unknown;
-  trends?: unknown;
-  whatif?: unknown;
   digest?: string | { text?: string };
   recommendations?: (string | { title?: string; detail?: string })[];
   [k: string]: unknown;
 };
 type DashboardData = {
-  enabled?: boolean;
   project?: string;
   enabled_fields?: string[];
-  data_dashboard_enabled?: boolean;
+  multi_copilot?: boolean;
   sheets?: Sheet[];
   analysis?: Analysis;
   modules?: Modules;
   [k: string]: unknown;
 };
+type Concern = {
+  id: string; title?: string; detail?: string;
+  severity?: "low" | "medium" | "high" | string;
+  status?: "open" | "ack" | "acknowledged" | "resolved" | string;
+  raised_by?: string; target_department?: string; target_person?: string;
+  activity_ref?: string; created_at?: string;
+};
+type ConcernsData = {
+  concerns?: Concern[];
+  by_department?: Record<string, Record<string, number>>;
+};
+type Reminder = {
+  id: string; subject?: string; recipient?: string;
+  status?: "pending" | "sent" | "failed" | string;
+  schedule_at?: string; last_sent_at?: string; recurrence?: string;
+  concern_id?: string;
+};
+type HarmonizeRow = { sheet?: string; current: string; suggested: string; reason?: string };
 
-type ChatMsg = { role: "user" | "assistant"; text: string };
-
-const STARTERS = [
-  "Summarize this sheet in 3 points",
-  "Which category has the highest total?",
-  "Any data-quality issues?",
-];
-
-const HANDLED_TOP_KEYS = new Set([
-  "enabled",
-  "project",
-  "enabled_fields",
-  "data_dashboard_enabled",
-  "sheets",
-  "analysis",
-  "modules",
-]);
-const HANDLED_ANALYSIS_KEYS = new Set([
-  "summary",
-  "totals",
-  "status_breakdown",
-  "flags",
-  "mode_badge",
-  "copilot_enabled",
-  "risk_score",
-  "top_delay_reasons",
-  "person_ranking",
-  "department_ranking",
-  "tat_performance",
-  "correlation_matrix",
-  "timeline_correlation",
-  "dependency_chains",
-  "variance",
-]);
-const HANDLED_MODULES_KEYS = new Set([
-  "data_quality",
-  "pivot",
-  "anomalies",
-  "forecast",
-  "trends",
-  "whatif",
-  "digest",
-  "recommendations",
-]);
-
-/* ------------------------------ Helpers ------------------------------ */
+/* ============================ Helpers ============================ */
+const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+const STATUS_COLOR: Record<string, string> = {
+  open: "var(--chart-4)", pending: "var(--chart-3)", in_progress: "var(--chart-1)",
+  ack: "var(--chart-3)", acknowledged: "var(--chart-3)",
+  done: "var(--chart-2)", complete: "var(--chart-2)", completed: "var(--chart-2)", resolved: "var(--chart-2)",
+  blocked: "var(--chart-4)", failed: "var(--chart-4)",
+};
 
 function fmtNum(v: unknown) {
   if (typeof v === "number" && Number.isFinite(v)) return v.toLocaleString();
+  if (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))) return Number(v).toLocaleString();
   return String(v ?? "");
 }
 function fmtCell(v: unknown) {
@@ -155,33 +112,90 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 function isEmpty(v: unknown): boolean {
-  if (v === null || v === undefined) return true;
+  if (v == null) return true;
   if (Array.isArray(v)) return v.length === 0;
   if (isPlainObject(v)) return Object.keys(v).length === 0;
   if (typeof v === "string") return v.trim() === "";
   return false;
 }
-
 function normalizeBase(raw: string): { base: string; error?: string } {
-  let s = raw.trim();
+  let s = (raw || "").trim();
   if (!s) return { base: "", error: "Enter a full URL starting with https://" };
   s = s.replace(/[?#].*$/, "");
-  s = s.replace(/\/(dashboard|copilot|export)\/?$/i, "");
+  s = s.replace(/\/(dashboard|copilot|export|concerns|reminders|harmonize|column-map)\/?$/i, "");
   s = s.replace(/\/+$/, "");
-  if (!/^https:\/\//i.test(s)) {
-    return { base: "", error: "Enter a full URL starting with https://" };
-  }
-  try {
-    const u = new URL(s);
-    if (!u.host) throw new Error("no host");
-  } catch {
-    return { base: "", error: "Enter a full URL starting with https://" };
+  if (!/^https:\/\//i.test(s)) return { base: "", error: "Enter a full URL starting with https://" };
+  try { const u = new URL(s); if (!u.host) throw new Error(); } catch {
+    return { base: "", error: "Enter a valid URL" };
   }
   return { base: s };
 }
+function relTime(iso?: string) {
+  if (!iso) return "";
+  const d = parseISO(iso);
+  if (!isValidDate(d)) return iso;
+  try { return formatDistanceToNow(d, { addSuffix: true }); } catch { return iso; }
+}
+function exactTime(iso?: string) {
+  if (!iso) return "";
+  const d = parseISO(iso);
+  if (!isValidDate(d)) return iso;
+  return d.toLocaleString();
+}
+function sevColor(sev?: string): "destructive" | "secondary" | "outline" | "default" {
+  const s = (sev || "").toLowerCase();
+  if (s === "high" || s === "critical") return "destructive";
+  if (s === "medium" || s === "warn" || s === "warning") return "default";
+  return "secondary";
+}
 
-/* --------------------------- Generic renderers ----------------------- */
+/** Fetch helper. Throws NotFoundError on 404; throws Error on other failures. */
+class NotFoundError extends Error {}
+async function apiGet<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const r = await fetch(url, { credentials: "omit", signal });
+  if (r.status === 404) throw new NotFoundError("404");
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()) as T;
+}
+async function apiSend<T>(url: string, method: string, body?: unknown): Promise<T> {
+  const r = await fetch(url, {
+    method, credentials: "omit",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (r.status === 404) throw new NotFoundError("404");
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const ct = r.headers.get("content-type") || "";
+  return ct.includes("application/json") ? ((await r.json()) as T) : (undefined as T);
+}
 
+/* ============================ Local URL state ============================ */
+function useLinkInput() {
+  const [raw, setRaw] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link") || "";
+  });
+  const [active, setActive] = useState<string>(() => {
+    const r = (typeof window !== "undefined" && (new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link"))) || "";
+    return normalizeBase(r).base;
+  });
+  const [error, setError] = useState<string | undefined>();
+  const apply = (val: string) => {
+    const { base, error } = normalizeBase(val);
+    if (error) { setError(error); setActive(""); return; }
+    setError(undefined);
+    setActive(base);
+    try { localStorage.setItem("insight:link", val); } catch { /* ignore */ }
+    if (typeof window !== "undefined") {
+      const u = new URL(window.location.href);
+      u.searchParams.set("link", val);
+      window.history.replaceState({}, "", u.toString());
+    }
+  };
+  return { raw, setRaw, active, error, apply };
+}
+
+/* ============================ Generic renderers ============================ */
 function KVList({ obj }: { obj: Record<string, unknown> }) {
   const entries = Object.entries(obj);
   if (!entries.length) return null;
@@ -191,198 +205,33 @@ function KVList({ obj }: { obj: Record<string, unknown> }) {
         <div key={k} className="grid grid-cols-3 gap-3 py-1.5">
           <dt className="col-span-1 text-muted-foreground">{k}</dt>
           <dd className="col-span-2 break-words">
-            {v === null || v === undefined ? (
-              <span className="text-muted-foreground">—</span>
-            ) : typeof v === "object" ? (
-              <pre className="overflow-x-auto rounded bg-muted/40 p-2 text-xs">
-                {JSON.stringify(v, null, 2)}
-              </pre>
-            ) : (
-              fmtCell(v)
-            )}
+            {v == null ? <span className="text-muted-foreground">—</span>
+              : typeof v === "object"
+                ? <pre className="overflow-x-auto rounded bg-muted/40 p-2 text-xs">{JSON.stringify(v, null, 2)}</pre>
+                : fmtCell(v)}
           </dd>
         </div>
       ))}
     </dl>
   );
 }
-
-function ObjectArrayTable({
-  rows,
-  maxRows = 200,
-}: {
-  rows: Record<string, unknown>[];
-  maxRows?: number;
-}) {
+function ObjectArrayTable({ rows, maxRows = 200 }: { rows: Record<string, unknown>[]; maxRows?: number }) {
   const cols = useMemo(() => {
     const set = new Set<string>();
-    rows.forEach((r) => Object.keys(r || {}).forEach((k) => set.add(k)));
+    rows.forEach(r => Object.keys(r || {}).forEach(k => set.add(k)));
     return Array.from(set);
   }, [rows]);
   return (
     <ScrollArea className="max-h-96 w-full">
       <Table>
-        <TableHeader>
-          <TableRow>
-            {cols.map((c) => (
-              <TableHead key={c}>{c}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
+        <TableHeader><TableRow>{cols.map(c => <TableHead key={c}>{c}</TableHead>)}</TableRow></TableHeader>
         <TableBody>
           {rows.slice(0, maxRows).map((r, i) => (
             <TableRow key={i}>
-              {cols.map((c) => (
-                <TableCell key={c} className="whitespace-nowrap">
-                  {fmtCell(r?.[c])}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </ScrollArea>
-  );
-}
-
-function ChipList({ items }: { items: unknown[] }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {items.map((v, i) => (
-        <Badge key={i} variant="secondary" className="font-normal">
-          {fmtCell(v)}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function GenericValue({ value }: { value: unknown }) {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return <div className="text-sm">{fmtCell(value)}</div>;
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return <div className="text-sm text-muted-foreground">Empty</div>;
-    if (value.every((v) => isPlainObject(v))) {
-      return <ObjectArrayTable rows={value as Record<string, unknown>[]} />;
-    }
-    if (value.every((v) => typeof v !== "object" || v === null)) {
-      return <ChipList items={value} />;
-    }
-    return (
-      <pre className="overflow-x-auto rounded bg-muted/40 p-2 text-xs">
-        {JSON.stringify(value, null, 2)}
-      </pre>
-    );
-  }
-  if (isPlainObject(value)) {
-    return <KVList obj={value} />;
-  }
-  return null;
-}
-
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  );
-}
-
-/* ------------------------ Specialized renderers ---------------------- */
-
-function KPICardSmall({ label, value }: { label: string; value: unknown }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{fmtNum(value)}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function RankedTable({ data }: { data: unknown[] }) {
-  if (!Array.isArray(data) || data.length === 0) return null;
-  if (!data.every(isPlainObject)) return <GenericValue value={data} />;
-  const rows = data as Record<string, unknown>[];
-  // pick the first numeric column as sort key
-  const numericKey = (() => {
-    for (const k of Object.keys(rows[0])) {
-      if (typeof rows[0][k] === "number") return k;
-    }
-    return null;
-  })();
-  const sorted = numericKey
-    ? [...rows].sort((a, b) => Number(b[numericKey]) - Number(a[numericKey]))
-    : rows;
-  return <ObjectArrayTable rows={sorted} />;
-}
-
-function CorrelationMatrix({ data }: { data: unknown }) {
-  // Accept shape: { labels: string[], matrix: number[][] } OR { [row]: { [col]: number } }
-  let labels: string[] = [];
-  let matrix: number[][] = [];
-  if (isPlainObject(data) && Array.isArray((data as any).labels) && Array.isArray((data as any).matrix)) {
-    labels = (data as any).labels as string[];
-    matrix = (data as any).matrix as number[][];
-  } else if (isPlainObject(data)) {
-    const rowKeys = Object.keys(data);
-    const colSet = new Set<string>();
-    rowKeys.forEach((rk) => {
-      const r = (data as any)[rk];
-      if (isPlainObject(r)) Object.keys(r).forEach((c) => colSet.add(c));
-    });
-    labels = Array.from(new Set([...rowKeys, ...colSet]));
-    matrix = rowKeys.map((rk) =>
-      labels.map((c) => {
-        const r = (data as any)[rk];
-        const v = isPlainObject(r) ? r[c] : undefined;
-        return typeof v === "number" ? v : NaN;
-      }),
-    );
-  } else {
-    return <GenericValue value={data} />;
-  }
-
-  return (
-    <ScrollArea className="max-h-96 w-full">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead></TableHead>
-            {labels.map((l) => (
-              <TableHead key={l}>{l}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {matrix.map((row, i) => (
-            <TableRow key={i}>
-              <TableCell className="font-medium">{labels[i] ?? `r${i}`}</TableCell>
-              {row.map((v, j) => {
-                const ok = Number.isFinite(v);
-                const intensity = ok ? Math.min(1, Math.abs(v)) : 0;
-                const bg = ok
-                  ? v >= 0
-                    ? `hsl(var(--primary) / ${intensity * 0.35})`
-                    : `hsl(var(--destructive) / ${intensity * 0.35})`
-                  : undefined;
-                return (
-                  <TableCell key={j} style={{ backgroundColor: bg }} className="tabular-nums">
-                    {ok ? v.toFixed(2) : "—"}
-                  </TableCell>
-                );
+              {cols.map(c => {
+                const v = r?.[c];
+                const isNum = typeof v === "number";
+                return <TableCell key={c} className={`whitespace-nowrap ${isNum ? "tabular-nums text-right" : ""}`}>{fmtCell(v)}</TableCell>;
               })}
             </TableRow>
           ))}
@@ -391,771 +240,866 @@ function CorrelationMatrix({ data }: { data: unknown }) {
     </ScrollArea>
   );
 }
-
-function SeriesData(val: unknown): { name: string; value: number }[] | null {
-  if (Array.isArray(val) && val.length && val.every(isPlainObject)) {
-    const rows = val as Record<string, unknown>[];
-    const keys = Object.keys(rows[0]);
-    const nameKey = keys.find((k) => typeof rows[0][k] === "string") || keys[0];
-    const valKey = keys.find((k) => k !== nameKey && typeof rows[0][k] === "number");
-    if (nameKey && valKey) {
-      return rows.map((r) => ({
-        name: String(r[nameKey]),
-        value: Number(r[valKey]) || 0,
-      }));
-    }
+function GenericValue({ value }: { value: unknown }) {
+  if (value == null) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    return <div className="text-sm">{fmtCell(value)}</div>;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <div className="text-sm text-muted-foreground">Empty</div>;
+    if (value.every(isPlainObject)) return <ObjectArrayTable rows={value as Record<string, unknown>[]} />;
+    return (
+      <div className="flex flex-wrap gap-2">
+        {value.map((v, i) => <Badge key={i} variant="secondary" className="font-normal">{fmtCell(v)}</Badge>)}
+      </div>
+    );
   }
-  if (isPlainObject(val)) {
-    // try { series: [...] } or { data: [...] }
-    const inner = (val as any).series ?? (val as any).data ?? (val as any).points;
-    if (inner) return SeriesData(inner);
-  }
+  if (isPlainObject(value)) return <KVList obj={value} />;
   return null;
 }
 
-function LineSeries({ data }: { data: { name: string; value: number }[] }) {
+/* ============================ Pieces ============================ */
+function SectionEmpty({ icon: Icon = Circle, label }: { icon?: any; label: string }) {
   return (
-    <div className="h-64">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-          <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="hsl(var(--primary))"
-            strokeWidth={2}
-            dot={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+      <Icon className="h-6 w-6 opacity-50" />
+      <div className="text-sm">{label}</div>
     </div>
   );
 }
-
-function BarSeries({ data }: { data: { name: string; value: number }[] }) {
+function SectionError({ message }: { message: string }) {
   return (
-    <div className="h-64">
+    <Card className="rounded-2xl border-destructive/30">
+      <CardContent className="flex items-start gap-3 p-4 text-sm">
+        <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
+        <div>
+          <div className="font-medium">Couldn't load this section</div>
+          <div className="text-muted-foreground">{message}. The source API may be unreachable or protected.</div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+function CardSkeleton({ h = 24 }: { h?: number }) {
+  return (
+    <Card className="rounded-2xl">
+      <CardContent className="space-y-3 p-4">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className={`h-${h} w-full`} />
+      </CardContent>
+    </Card>
+  );
+}
+function HeroKpi({ label, value, color }: { label: string; value: unknown; color: string }) {
+  return (
+    <Card className="relative overflow-hidden rounded-2xl shadow-sm">
+      <div className="absolute inset-x-0 top-0 h-1" style={{ background: color }} />
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
+        <div className="mt-2 text-3xl font-semibold tabular-nums">{fmtNum(value)}</div>
+      </CardContent>
+    </Card>
+  );
+}
+function StackedBar({ data }: { data: Record<string, number> }) {
+  const entries = Object.entries(data).filter(([, v]) => Number(v) > 0);
+  const total = entries.reduce((s, [, v]) => s + Number(v), 0) || 1;
+  return (
+    <div className="space-y-3">
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+        {entries.map(([k, v], i) => (
+          <div key={k} style={{ width: `${(Number(v) / total) * 100}%`, background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length] }} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {entries.map(([k, v], i) => (
+          <Badge key={k} variant="outline" className="gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length] }} />
+            <span>{k}</span><span className="tabular-nums text-muted-foreground">{fmtNum(v)}</span>
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
+}
+function MiniBarChart({ data, color = "var(--chart-1)" }: { data: { name: string; value: number }[]; color?: string }) {
+  return (
+    <div className="h-56">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data}>
+        <BarChart data={data} margin={{ left: 0, right: 0, top: 8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+          <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={data.length > 6 ? -25 : 0} textAnchor={data.length > 6 ? "end" : "middle"} height={data.length > 6 ? 50 : 30} />
           <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip />
-          <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+          <Tooltip cursor={{ fill: "hsl(var(--muted))" }} contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
+          <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+            {data.map((_, i) => <Cell key={i} fill={color} />)}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
-
-function RiskScore({ value }: { value: unknown }) {
-  let score: number | null = null;
-  if (typeof value === "number") score = value;
-  else if (isPlainObject(value) && typeof (value as any).score === "number")
-    score = (value as any).score;
-  if (score === null) return <GenericValue value={value} />;
-  const pct = Math.max(0, Math.min(100, score));
+function Gauge({ value, max = 100, label }: { value: number; max?: number; label: string }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  const hue = pct < 33 ? "var(--chart-2)" : pct < 66 ? "var(--chart-3)" : "var(--chart-4)";
   return (
-    <div className="flex items-center gap-6">
+    <div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <div className="text-3xl font-semibold tabular-nums">{fmtNum(value)}</div>
+        <div className="text-xs text-muted-foreground">/ {max}</div>
+      </div>
+      <div className="mt-2 h-2 w-full overflow-hidden rounded bg-muted">
+        <div className="h-full transition-all" style={{ width: `${pct}%`, background: hue }} />
+      </div>
+    </div>
+  );
+}
+function Ring({ value, label }: { value: number; label: string }) {
+  const pct = Math.max(0, Math.min(100, value));
+  const r = 28, c = 2 * Math.PI * r;
+  const off = c - (pct / 100) * c;
+  return (
+    <div className="flex items-center gap-3">
+      <svg viewBox="0 0 80 80" className="h-20 w-20">
+        <circle cx="40" cy="40" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="8" />
+        <circle cx="40" cy="40" r={r} fill="none" stroke="var(--chart-2)" strokeWidth="8" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} transform="rotate(-90 40 40)" />
+        <text x="40" y="45" textAnchor="middle" className="fill-foreground" style={{ fontSize: 14, fontWeight: 600 }}>{Math.round(pct)}</text>
+      </svg>
       <div>
-        <div className="text-4xl font-semibold tabular-nums">{score}</div>
-        <div className="text-xs text-muted-foreground">Risk score</div>
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className="text-sm">Quality score</div>
       </div>
-      <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
-        <div
-          className="h-full bg-primary"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      {isPlainObject(value) && (
-        <div className="text-xs text-muted-foreground">
-          <KVList obj={value as Record<string, unknown>} />
-        </div>
-      )}
     </div>
   );
 }
 
-function DependencyChains({ data }: { data: unknown }) {
-  const render = (v: unknown, depth = 0): React.ReactNode => {
-    if (Array.isArray(v)) {
-      return (
-        <ul className="ml-4 list-disc space-y-1">
-          {v.map((x, i) => (
-            <li key={i}>{render(x, depth + 1)}</li>
+/* ============================ Sections ============================ */
+
+function OverviewSection({ data }: { data: DashboardData }) {
+  const a = data.analysis || {};
+  const m = data.modules || {};
+  const totals = a.totals || {};
+  const sb = a.status_breakdown || {};
+  const flags = (a.flags || []).filter(Boolean);
+
+  const extraAnalysis = Object.entries(a).filter(([k, v]) =>
+    !["summary", "totals", "status_breakdown", "flags", "mode_badge"].includes(k) && !isEmpty(v));
+  const extraModules = Object.entries(m).filter(([k, v]) =>
+    !["data_quality", "digest", "recommendations", "risk_score"].includes(k) && !isEmpty(v));
+
+  return (
+    <div className="space-y-6">
+      {/* KPI tiles */}
+      {!isEmpty(totals) && (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          {Object.entries(totals).map(([k, v], i) => (
+            <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} />
           ))}
-        </ul>
-      );
-    }
-    if (isPlainObject(v)) {
-      const entries = Object.entries(v);
-      return (
-        <ul className="ml-4 list-disc space-y-1">
-          {entries.map(([k, val]) => (
-            <li key={k}>
-              <span className="font-medium">{k}</span>
-              {typeof val === "object" && val !== null ? render(val, depth + 1) : (
-                <>: <span>{fmtCell(val)}</span></>
+        </div>
+      )}
+
+      {/* Summary callout */}
+      {!isEmpty(a.summary) && (
+        <Card className="rounded-2xl border-l-4 shadow-sm" style={{ borderLeftColor: "var(--chart-1)" }}>
+          <CardContent className="flex gap-3 p-4 text-sm leading-relaxed">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p>{a.summary}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Status breakdown */}
+        {!isEmpty(sb) && (
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Status breakdown</CardTitle></CardHeader>
+            <CardContent><StackedBar data={sb as Record<string, number>} /></CardContent>
+          </Card>
+        )}
+        {/* Flags */}
+        {flags.length > 0 && (
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Flags</CardTitle></CardHeader>
+            <CardContent>
+              <ul className="space-y-2 text-sm">
+                {flags.map((f, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <Badge variant={sevColor(f.severity)} className="shrink-0 capitalize">{f.severity || "info"}</Badge>
+                    <span>{f.message || f.title || ""}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Modules grid */}
+      {(m.digest || m.recommendations || a.risk_score != null || m.data_quality) && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {a.risk_score != null && (
+            <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+              <Gauge label="Risk score" value={typeof a.risk_score === "number" ? a.risk_score : Number((a.risk_score as any)?.score) || 0} />
+            </CardContent></Card>
+          )}
+          {m.data_quality?.score != null && (
+            <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+              <Ring label="Data quality" value={Number(m.data_quality.score)} />
+              {!!m.data_quality.issues?.length && (
+                <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
               )}
-            </li>
-          ))}
-        </ul>
-      );
-    }
-    return <span>{fmtCell(v)}</span>;
-  };
-  return <div className="text-sm">{render(data)}</div>;
-}
-
-function Recommendations({ items }: { items: Modules["recommendations"] }) {
-  if (!items?.length) return null;
-  return (
-    <ul className="list-disc space-y-1 pl-5 text-sm">
-      {items.map((it, i) => {
-        if (typeof it === "string") return <li key={i}>{it}</li>;
-        return (
-          <li key={i}>
-            {it.title && <span className="font-medium">{it.title}</span>}
-            {it.title && it.detail ? " — " : ""}
-            {it.detail}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function DataQuality({ dq }: { dq: NonNullable<Modules["data_quality"]> }) {
-  return (
-    <div className="space-y-3">
-      {typeof dq.score === "number" && (
-        <div className="flex items-baseline gap-2">
-          <div className="text-3xl font-semibold tabular-nums">{dq.score}</div>
-          <div className="text-xs text-muted-foreground">quality score</div>
+            </CardContent></Card>
+          )}
+          {m.digest && (
+            <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
+              </CardContent>
+            </Card>
+          )}
+          {!!m.recommendations?.length && (
+            <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="space-y-1.5 text-sm">
+                  {m.recommendations.map((r, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                      <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
-      {Array.isArray(dq.issues) && dq.issues.length > 0 && (
-        <GenericValue value={dq.issues} />
+
+      {(extraAnalysis.length > 0 || extraModules.length > 0) && (
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground"><ChevronDown className="h-4 w-4" /> More analytics</Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3 space-y-4">
+            {extraAnalysis.map(([k, v]) => (
+              <Card key={`a-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
+            ))}
+            {extraModules.map(([k, v]) => (
+              <Card key={`m-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </div>
   );
 }
 
-function ForecastOrTrend({ data, label }: { data: unknown; label: string }) {
-  const series = SeriesData(data);
-  if (series) return <LineSeries data={series} />;
-  if (isPlainObject(data) && typeof (data as any).message === "string") {
-    return <div className="text-sm text-muted-foreground">{(data as any).message}</div>;
-  }
-  return <GenericValue value={data} />;
-}
-
-function Anomalies({ data }: { data: unknown }) {
-  if (Array.isArray(data) && data.every(isPlainObject)) {
-    return <ObjectArrayTable rows={data as Record<string, unknown>[]} />;
-  }
-  return <GenericValue value={data} />;
-}
-
-function WhatIf({ data }: { data: unknown }) {
-  const series = SeriesData(data);
-  if (series) return <BarSeries data={series} />;
-  return <GenericValue value={data} />;
-}
-
-function Pivot({ data }: { data: unknown }) {
-  const series = SeriesData(data);
-  if (series) return <BarSeries data={series} />;
-  if (Array.isArray(data) && data.every(isPlainObject)) {
-    return <ObjectArrayTable rows={data as Record<string, unknown>[]} />;
-  }
-  if (isPlainObject(data) && Array.isArray((data as any).rows)) {
-    return <ObjectArrayTable rows={(data as any).rows as Record<string, unknown>[]} />;
-  }
-  return <GenericValue value={data} />;
-}
-
-function Digest({ data }: { data: Modules["digest"] }) {
-  if (!data) return null;
-  if (typeof data === "string") return <p className="text-sm whitespace-pre-wrap">{data}</p>;
-  if (typeof data === "object" && typeof (data as any).text === "string") {
-    return <p className="text-sm whitespace-pre-wrap">{(data as any).text}</p>;
-  }
-  return <GenericValue value={data} />;
-}
-
-function TimelineCorrelation({ data }: { data: unknown }) {
-  const series = SeriesData(data);
-  if (series) return <LineSeries data={series} />;
-  return <GenericValue value={data} />;
-}
-
-/* ------------------------------ Sheet view --------------------------- */
-
-function SheetView({ sheet }: { sheet: Sheet }) {
-  const cols = sheet.columns ?? [];
+function SheetsSection({ sheets }: { sheets: Sheet[] }) {
+  const [active, setActive] = useState(sheets[0]?.label || "");
+  useEffect(() => { if (!sheets.find(s => s.label === active)) setActive(sheets[0]?.label || ""); }, [sheets, active]);
+  if (!sheets.length) return <SectionEmpty icon={SheetIcon} label="No sheets returned." />;
+  const sheet = sheets.find(s => s.label === active) || sheets[0];
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <div className="overflow-x-auto">
+        <div className="flex flex-wrap gap-2">
+          {sheets.map(s => (
+            <button key={s.label} onClick={() => setActive(s.label)}
+              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${active === s.label ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-accent"}`}>
+              <span className="font-medium">{s.label}</span>
+              {s.type && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{s.type}</Badge>}
+              {s.row_count != null && <span className="tabular-nums opacity-70">{fmtNum(s.row_count)}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {!!sheet.kpis?.length && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           {sheet.kpis.map((k, i) => (
-            <KPICardSmall key={i} label={k.label} value={k.value} />
+            <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} />
           ))}
         </div>
       )}
+
       {!!sheet.charts?.length && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {sheet.charts.map((c, i) => (
-            <Card key={i}>
-              <CardHeader>
-                <CardTitle className="text-sm">{c.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={c.data}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
+            <Card key={i} className="rounded-2xl shadow-sm">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
+              <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">
-            {sheet.label}
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {sheet.row_count?.toLocaleString?.() ?? sheet.rows?.length ?? 0} rows
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-96 w-full">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {cols.map((c) => (
-                    <TableHead key={c.name}>
-                      <div className="flex items-center gap-1.5">
-                        <span>{c.name}</span>
-                        {c.type && (
-                          <Badge variant="secondary" className="text-[10px] font-normal">
-                            {c.type}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sheet.rows?.slice(0, 200).map((row, ri) => (
-                  <TableRow key={ri}>
-                    {cols.map((c) => (
-                      <TableCell key={c.name} className="whitespace-nowrap">
-                        {fmtCell(row[c.name])}
-                      </TableCell>
-                    ))}
+      {!!sheet.rows?.length && !!sheet.columns?.length && (
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm">{sheet.name || sheet.label}</CardTitle>
+            <span className="text-xs text-muted-foreground">{fmtNum(sheet.rows.length)} rows shown</span>
+          </CardHeader>
+          <CardContent className="p-0">
+            <ScrollArea className="max-h-[28rem] w-full">
+              <Table>
+                <TableHeader className="sticky top-0 bg-card">
+                  <TableRow>
+                    {sheet.columns.map(c => <TableHead key={c.name} className={c.type === "number" ? "text-right" : ""}>{c.name}</TableHead>)}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {sheet.rows.slice(0, 500).map((r, i) => {
+                    const lab = String(r["status"] || r["type"] || "").toLowerCase();
+                    const muted = /total|subtotal|grand/.test(lab) || /total|subtotal|grand/i.test(JSON.stringify(r).slice(0, 100));
+                    return (
+                      <TableRow key={i} className={`${i % 2 ? "bg-muted/30" : ""} ${muted ? "text-muted-foreground italic" : ""}`}>
+                        {sheet.columns!.map(c => {
+                          const v = r[c.name];
+                          const txt = fmtCell(v);
+                          const long = txt.length > 40;
+                          return (
+                            <TableCell key={c.name} className={`whitespace-nowrap ${c.type === "number" ? "tabular-nums text-right" : ""}`}>
+                              {long ? (
+                                <TooltipProvider><UITooltip><TooltipTrigger asChild><span className="cursor-default">{txt.slice(0, 40)}…</span></TooltipTrigger><TooltipContent className="max-w-sm break-words">{txt}</TooltipContent></UITooltip></TooltipProvider>
+                              ) : txt}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-/* ------------------------------ Copilot ------------------------------ */
+function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["concerns", base],
+    queryFn: ({ signal }) => apiGet<ConcernsData>(`${base}/concerns`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  const patchStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiSend(`${base}/concerns/${encodeURIComponent(id)}`, "PATCH", { status }),
+    onMutate: async ({ id, status }) => {
+      await qc.cancelQueries({ queryKey: ["concerns", base] });
+      const prev = qc.getQueryData<ConcernsData>(["concerns", base]);
+      if (prev?.concerns) {
+        qc.setQueryData<ConcernsData>(["concerns", base], {
+          ...prev, concerns: prev.concerns.map(c => c.id === id ? { ...c, status } : c),
+        });
+      }
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(["concerns", base], ctx.prev); },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["concerns", base] }),
+  });
+  const sendReminder = useMutation({
+    mutationFn: (id: string) => apiSend(`${base}/concerns/${encodeURIComponent(id)}/reminder`, "POST", {}),
+  });
 
-function CopilotCard({ base, sheetLabel }: { base: string; sheetLabel: string }) {
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [input, setInput] = useState("");
-  const [thinking, setThinking] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  if (q.isPending) return <div className="grid gap-3 md:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} h={32} />)}</div>;
+  if (q.error instanceof NotFoundError) return null;
+  if (q.error) return <SectionError message={(q.error as Error).message} />;
 
-  useEffect(() => {
-    setMessages([]);
-    setErr(null);
-  }, [sheetLabel, base]);
+  const data = q.data || {};
+  const concerns = data.concerns || [];
+  const byDept = data.by_department || {};
+  const depts = Object.keys(byDept).length
+    ? Object.keys(byDept)
+    : Array.from(new Set(concerns.map(c => c.target_department).filter(Boolean) as string[]));
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, thinking]);
-
-  async function send(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || thinking) return;
-    setErr(null);
-    setMessages((m) => [...m, { role: "user", text: trimmed }]);
-    setInput("");
-    setThinking(true);
-    try {
-      const url = `${base}/copilot?sheet=${encodeURIComponent(sheetLabel)}`;
-      const r = await fetch(url, {
-        method: "POST",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { answer?: string };
-      setMessages((m) => [...m, { role: "assistant", text: j.answer || "(no answer)" }]);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Request failed");
-    } finally {
-      setThinking(false);
-    }
+  if (!depts.length && !concerns.length) {
+    return (
+      <div className="space-y-4">
+        <RaiseConcernButton base={base} sheets={sheets} />
+        <SectionEmpty icon={MessageSquareWarning} label="No concerns yet." />
+      </div>
+    );
   }
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{concerns.length} concern(s) across {depts.length} department(s)</p>
+        <RaiseConcernButton base={base} sheets={sheets} />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {depts.map(dept => {
+          const counts = byDept[dept] || {};
+          const items = concerns.filter(c => c.target_department === dept);
+          return (
+            <Card key={dept} className="rounded-2xl shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
+                  <span>{dept}</span>
+                  {Object.entries(counts).map(([k, v]) => (
+                    <Badge key={k} variant="outline" className="font-normal capitalize">{k}: <span className="ml-1 tabular-nums">{v as number}</span></Badge>
+                  ))}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {items.length === 0 && <div className="text-xs text-muted-foreground">No items</div>}
+                {items.map(c => (
+                  <div key={c.id} className="rounded-xl border border-border bg-card p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-medium leading-snug">{c.title || "(untitled)"}</div>
+                      <Badge variant={sevColor(c.severity)} className="capitalize">{c.severity || "low"}</Badge>
+                    </div>
+                    {c.detail && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{c.detail}</p>}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                      {c.raised_by && <Badge variant="secondary" className="font-normal">{c.raised_by}</Badge>}
+                      {c.target_department && <ArrowRight className="h-3 w-3" />}
+                      {c.target_department && <Badge variant="secondary" className="font-normal">{c.target_department}</Badge>}
+                      {c.activity_ref && <span className="ml-auto truncate">ref: {c.activity_ref}</span>}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <UITimeAgo iso={c.created_at} />
+                      <div className="flex gap-1.5">
+                        {c.status !== "ack" && c.status !== "acknowledged" && c.status !== "resolved" && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => patchStatus.mutate({ id: c.id, status: "ack" })}>Ack</Button>
+                        )}
+                        {c.status !== "resolved" && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => patchStatus.mutate({ id: c.id, status: "resolved" })}>Resolve</Button>
+                        )}
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => sendReminder.mutate(c.id)}>Remind</Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function UITimeAgo({ iso }: { iso?: string }) {
+  if (!iso) return <span className="text-[11px] text-muted-foreground">—</span>;
+  return (
+    <TooltipProvider><UITooltip>
+      <TooltipTrigger asChild><span className="cursor-default text-[11px] text-muted-foreground">{relTime(iso)}</span></TooltipTrigger>
+      <TooltipContent>{exactTime(iso)}</TooltipContent>
+    </UITooltip></TooltipProvider>
+  );
+}
+
+function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: Sheet[]; prefill?: Partial<Concern> }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [department, setDepartment] = useState(prefill?.target_department || "");
+  const [person, setPerson] = useState(prefill?.target_person || "");
+  const [title, setTitle] = useState(prefill?.title || "");
+  const [detail, setDetail] = useState(prefill?.detail || "");
+  const [severity, setSeverity] = useState<string>(prefill?.severity || "medium");
+  const [activityRef, setActivityRef] = useState(prefill?.activity_ref || "");
+
+  const colMap = useQuery({
+    queryKey: ["column-map", base], enabled: open,
+    queryFn: ({ signal }) => apiGet<any>(`${base}/column-map`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+
+  const departments: string[] = useMemo(() => {
+    const fromMap = colMap.data?.departments;
+    if (Array.isArray(fromMap)) return fromMap;
+    const set = new Set<string>();
+    sheets.forEach(s => s.rows?.forEach(r => {
+      const v = r["department"] || r["target_department"] || r["dept"];
+      if (typeof v === "string") set.add(v);
+    }));
+    return Array.from(set);
+  }, [colMap.data, sheets]);
+
+  const people: string[] = useMemo(() => {
+    const fromMap = colMap.data?.people;
+    if (Array.isArray(fromMap)) return fromMap;
+    const set = new Set<string>();
+    sheets.forEach(s => s.rows?.forEach(r => {
+      const v = r["owner"] || r["person"] || r["assignee"] || r["target_person"];
+      if (typeof v === "string") set.add(v);
+    }));
+    return Array.from(set);
+  }, [colMap.data, sheets]);
+
+  const create = useMutation({
+    mutationFn: (payload: Partial<Concern>) => apiSend<Concern>(`${base}/concerns`, "POST", payload),
+    onSuccess: (created) => {
+      qc.setQueryData<ConcernsData>(["concerns", base], (prev) => {
+        const opt: Concern = created || { id: `tmp-${Date.now()}`, title, detail, severity, target_department: department, target_person: person, activity_ref: activityRef, status: "open", created_at: new Date().toISOString() };
+        const concerns = [opt, ...(prev?.concerns || [])];
+        return { ...(prev || {}), concerns };
+      });
+      qc.invalidateQueries({ queryKey: ["concerns", base] });
+      setOpen(false);
+      setTitle(""); setDetail(""); setActivityRef("");
+    },
+  });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Sparkles className="h-4 w-4 text-primary" />
-          Copilot — {sheetLabel}
-        </CardTitle>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="gap-1.5"><Plus className="h-4 w-4" /> Raise concern</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Raise a concern</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Department</label>
+              <Select value={department} onValueChange={setDepartment}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                  {departments.length === 0 && <SelectItem value="general">General</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Person</label>
+              <Select value={person} onValueChange={setPerson}>
+                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+                <SelectContent>
+                  {people.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  {people.length === 0 && <SelectItem value="-">No people detected</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Title</label>
+            <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Short summary" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Detail</label>
+            <Textarea value={detail} onChange={e => setDetail(e.target.value)} placeholder="What's happening?" rows={3} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Severity</label>
+              <Select value={severity} onValueChange={setSeverity}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Activity ref (optional)</label>
+              <Input value={activityRef} onChange={e => setActivityRef(e.target.value)} placeholder="row id / ref" />
+            </div>
+          </div>
+          {create.error && <p className="text-xs text-destructive">Failed: {(create.error as Error).message}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button disabled={!title || !department || create.isPending}
+            onClick={() => create.mutate({ title, detail, severity, target_department: department, target_person: person || undefined, activity_ref: activityRef || undefined })}>
+            {create.isPending ? "Submitting…" : "Submit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RemindersSection({ base }: { base: string }) {
+  const q = useQuery({
+    queryKey: ["reminders", base],
+    queryFn: ({ signal }) => apiGet<{ reminders?: Reminder[] }>(`${base}/reminders`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  if (q.isPending) return <CardSkeleton h={40} />;
+  if (q.error instanceof NotFoundError) return null;
+  if (q.error) return <SectionError message={(q.error as Error).message} />;
+
+  const list = q.data?.reminders || [];
+  if (!list.length) return <SectionEmpty icon={Bell} label="No reminders configured." />;
+  const groups = { pending: [] as Reminder[], sent: [] as Reminder[], failed: [] as Reminder[] };
+  list.forEach(r => {
+    const k = (r.status || "pending").toLowerCase() as keyof typeof groups;
+    (groups[k] || groups.pending).push(r);
+  });
+  return (
+    <div className="space-y-4">
+      <p className="text-xs italic text-muted-foreground">Sent automatically by the server.</p>
+      {(["pending", "sent", "failed"] as const).map(k => groups[k].length > 0 && (
+        <Card key={k} className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm capitalize flex items-center gap-2">
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[k] || "var(--chart-1)" }} />
+            {k} <span className="text-muted-foreground tabular-nums">({groups[k].length})</span>
+          </CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader><TableRow><TableHead>Recipient</TableHead><TableHead>Subject</TableHead><TableHead>Schedule</TableHead><TableHead>Recurrence</TableHead><TableHead>Last sent</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {groups[k].map(r => (
+                  <TableRow key={r.id}>
+                    <TableCell>{r.recipient || "—"}</TableCell>
+                    <TableCell className="max-w-xs truncate">{r.subject || "—"}</TableCell>
+                    <TableCell><UITimeAgo iso={r.schedule_at} /></TableCell>
+                    <TableCell>{r.recurrence ? <Badge variant="outline">{r.recurrence}</Badge> : "—"}</TableCell>
+                    <TableCell><UITimeAgo iso={r.last_sent_at} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]; multi: boolean }) {
+  const [selected, setSelected] = useState(sheets[0]?.label || "");
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; used_sheets?: string[] }[]>([]);
+  const [input, setInput] = useState("");
+  const sessionId = useRef<string>(crypto.randomUUID?.() || `s-${Date.now()}`);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setMessages([]); sessionId.current = crypto.randomUUID?.() || `s-${Date.now()}`; }, [base, selected, multi]);
+  useEffect(() => { scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
+
+  const ask = useMutation({
+    mutationFn: async (question: string) => {
+      const body: any = { question, session_id: sessionId.current };
+      if (multi) body.sheets = sheets.map(s => s.label);
+      else body.sheet = selected;
+      return apiSend<any>(`${base}/copilot`, "POST", body);
+    },
+    onSuccess: (resp) => {
+      const text = resp?.answer || resp?.text || resp?.message || (typeof resp === "string" ? resp : JSON.stringify(resp));
+      const used = resp?.used_sheets || resp?.sheets_used;
+      setMessages(m => [...m, { role: "assistant", text, used_sheets: used }]);
+    },
+    onError: (e) => setMessages(m => [...m, { role: "assistant", text: `Error: ${(e as Error).message}` }]),
+  });
+
+  const send = (q: string) => {
+    const text = q.trim();
+    if (!text) return;
+    setMessages(m => [...m, { role: "user", text }]);
+    setInput("");
+    ask.mutate(text);
+  };
+
+  const chips = ["Where are we slipping?", "Top concerns by department", "Cross-sheet summary", "Items missing owners"];
+
+  return (
+    <Card className="rounded-2xl shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-primary" /> Copilot</CardTitle>
+        {!multi && sheets.length > 1 && (
+          <Select value={selected} onValueChange={setSelected}>
+            <SelectTrigger className="h-8 w-48"><SelectValue placeholder="Select sheet" /></SelectTrigger>
+            <SelectContent>{sheets.map(s => <SelectItem key={s.label} value={s.label}>{s.label}</SelectItem>)}</SelectContent>
+          </Select>
+        )}
+        {multi && <Badge variant="outline">multi-sheet</Badge>}
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div
-          ref={scrollRef}
-          className="h-80 space-y-3 overflow-y-auto rounded-md border border-border bg-muted/30 p-3"
-        >
-          {messages.length === 0 && !thinking && (
-            <p className="text-sm text-muted-foreground">Ask anything about this sheet.</p>
+      <CardContent>
+        <div ref={scrollerRef} className="mb-3 max-h-[28rem] min-h-[14rem] space-y-3 overflow-y-auto rounded-xl bg-muted/30 p-3">
+          {messages.length === 0 && (
+            <div className="text-center text-xs text-muted-foreground">Ask anything about your data.</div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
-                  m.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "border border-border bg-background"
-                }`}
-              >
-                {m.text}
+              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card"}`}>
+                <div className="whitespace-pre-wrap">{m.text}</div>
+                {!!m.used_sheets?.length && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">{m.used_sheets.map(s => <Badge key={s} variant="secondary" className="text-[10px] font-normal">{s}</Badge>)}</div>
+                )}
               </div>
             </div>
           ))}
-          {thinking && (
-            <div className="flex justify-start">
-              <div className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted-foreground">
-                Thinking…
-              </div>
-            </div>
+          {ask.isPending && (
+            <div className="flex justify-start"><div className="rounded-2xl bg-card px-3 py-2 text-sm shadow-sm text-muted-foreground">Thinking<span className="inline-block w-6 animate-pulse">…</span></div></div>
           )}
         </div>
-
-        {messages.length === 0 && (
-          <div className="flex flex-wrap gap-2">
-            {STARTERS.map((s) => (
-              <Button key={s} size="sm" variant="outline" onClick={() => send(s)} disabled={thinking}>
-                {s}
-              </Button>
-            ))}
-          </div>
-        )}
-
-        {err && <p className="text-xs text-destructive">{err}</p>}
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-          className="flex gap-2"
-        >
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about this sheet…"
-            disabled={thinking}
-          />
-          <Button type="submit" disabled={thinking || !input.trim()}>
-            <Send className="h-4 w-4" />
-          </Button>
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {chips.map(c => (
+            <button key={c} onClick={() => send(c)} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground" disabled={ask.isPending}>{c}</button>
+          ))}
+        </div>
+        <form onSubmit={e => { e.preventDefault(); send(input); }} className="flex gap-2">
+          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask the copilot…" disabled={ask.isPending} />
+          <Button type="submit" disabled={ask.isPending || !input.trim()}><Send className="h-4 w-4" /></Button>
         </form>
       </CardContent>
     </Card>
   );
 }
 
-/* ------------------------------- Main -------------------------------- */
+function HygieneSection({ base }: { base: string }) {
+  const q = useQuery({
+    queryKey: ["harmonize", base],
+    queryFn: ({ signal }) => apiGet<{ suggestions?: HarmonizeRow[] } | HarmonizeRow[]>(`${base}/harmonize`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  if (q.isPending) return <CardSkeleton h={40} />;
+  if (q.error instanceof NotFoundError) return null;
+  if (q.error) return <SectionError message={(q.error as Error).message} />;
+  const data = q.data as any;
+  const rows: HarmonizeRow[] = Array.isArray(data) ? data : (data?.suggestions || []);
+  if (!rows.length) return <SectionEmpty icon={Wand2} label="No hygiene suggestions." />;
+  const bySheet = rows.reduce<Record<string, HarmonizeRow[]>>((acc, r) => {
+    const k = r.sheet || "default"; (acc[k] ||= []).push(r); return acc;
+  }, {});
+  return (
+    <div className="space-y-4">
+      {Object.entries(bySheet).map(([sheet, list]) => (
+        <Card key={sheet} className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-sm">{sheet}</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader><TableRow><TableHead>Current</TableHead><TableHead></TableHead><TableHead>Suggested</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {list.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono text-xs">
+                      {r.current}
+                      {r.reason && <div className="mt-0.5 text-[11px] font-sans italic text-muted-foreground">{r.reason}</div>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground"><ArrowRight className="h-4 w-4" /></TableCell>
+                    <TableCell className="font-mono text-xs">{r.suggested}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/* ============================ Root component ============================ */
+
+const TABS = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "sheets", label: "Sheets", icon: SheetIcon },
+  { id: "concerns", label: "Concerns", icon: MessageSquareWarning },
+  { id: "reminders", label: "Reminders", icon: Bell },
+  { id: "copilot", label: "Copilot", icon: Sparkles },
+  { id: "hygiene", label: "Data Hygiene", icon: Wand2 },
+] as const;
 
 export default function InsightDashboard() {
-  const [linkInput, setLinkInput] = useState("");
-  const [base, setBase] = useState("");
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const { raw, setRaw, active, error, apply } = useLinkInput();
+  const [tab, setTab] = useState<typeof TABS[number]["id"]>("overview");
 
-  // Pre-fill from ?link= and auto-load
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const link = params.get("link");
-    if (link) {
-      setLinkInput(link);
-      const { base: n, error: err } = normalizeBase(link);
-      if (n) setBase(n);
-      else setError(err || null);
-    }
-  }, []);
+  const dq = useQuery({
+    queryKey: ["dashboard", active], enabled: !!active,
+    queryFn: ({ signal }) => apiGet<DashboardData>(`${active}/dashboard`, signal),
+    placeholderData: keepPreviousData,
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
 
-  useEffect(() => {
-    if (!base) return;
-    let cancel = false;
-    setLoading(true);
-    setError(null);
-    setData(null);
-    fetch(`${base}/dashboard`, { credentials: "omit" })
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((j: DashboardData) => {
-        if (cancel) return;
-        setData(j);
-        const first = j?.sheets?.[0]?.label ?? null;
-        setSelectedSheet(first);
-      })
-      .catch((e) => {
-        if (cancel) return;
-        const msg = e?.message || "Failed to load";
-        setError(
-          msg === "Failed to fetch"
-            ? 'Failed to fetch — the source app likely still has Deployment Protection on.'
-            : msg,
-        );
-      })
-      .finally(() => !cancel && setLoading(false));
-    return () => {
-      cancel = true;
-    };
-  }, [base]);
+  const data = dq.data || {};
+  const sheets = data.sheets || [];
+  const project = data.project || "Insights";
+  const modeBadge = data.analysis?.mode_badge;
+  const multiCopilot = !!data.multi_copilot;
 
-  function load() {
-    const { base: n, error: err } = normalizeBase(linkInput);
-    if (!n) {
-      setError(err || "Enter a full URL starting with https://");
-      return;
-    }
-    setError(null);
-    setBase(n);
-  }
-
-  const analysis = data?.analysis ?? {};
-  const modules = data?.modules ?? {};
-  const sheets = data?.sheets ?? [];
-  const currentSheet =
-    sheets.find((s) => s.label === selectedSheet) ?? sheets[0] ?? null;
-
-  // Catch-all keys
-  const extraTopKeys = data
-    ? Object.keys(data).filter((k) => !HANDLED_TOP_KEYS.has(k))
-    : [];
-  const extraAnalysisKeys = Object.keys(analysis).filter(
-    (k) => !HANDLED_ANALYSIS_KEYS.has(k),
-  );
-  const extraModuleKeys = Object.keys(modules).filter(
-    (k) => !HANDLED_MODULES_KEYS.has(k),
-  );
-  const hasExtras =
-    extraTopKeys.length > 0 || extraAnalysisKeys.length > 0 || extraModuleKeys.length > 0;
+  const reloadAll = () => dq.refetch();
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Insights</h1>
-        <p className="text-sm text-muted-foreground">
-          Paste any public API link to render its live dashboard.
-        </p>
-      </div>
-
-      <Card>
-        <CardContent className="p-4">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              load();
-            }}
-            className="flex flex-col gap-2 sm:flex-row"
-          >
-            <Input
-              value={linkInput}
-              onChange={(e) => setLinkInput(e.target.value)}
-              placeholder="https://example.com/api/public/<token>"
-              aria-label="API link"
-            />
-            <Button type="submit">Load</Button>
+    <div className="space-y-4">
+      {/* Sticky header */}
+      <Card className="rounded-2xl border-border/60 shadow-sm">
+        <CardContent className="flex flex-col gap-3 p-3 md:flex-row md:items-center">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary/10 text-primary"><Activity className="h-4 w-4" /></div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">{project}</div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {modeBadge && <Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">{modeBadge}</Badge>}
+                <span className="truncate">{active || "no link"}</span>
+              </div>
+            </div>
+          </div>
+          <form onSubmit={e => { e.preventDefault(); apply(raw); }} className="flex flex-1 items-center gap-2 md:max-w-2xl md:ml-auto">
+            <div className="relative flex-1">
+              <LinkIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={raw} onChange={e => setRaw(e.target.value)} placeholder="https://host/api/public/<token>" className="pl-8" />
+            </div>
+            <Button type="submit" size="sm">Load</Button>
+            <Button type="button" size="sm" variant="outline" onClick={reloadAll} disabled={!active || dq.isFetching}>
+              <RefreshCcw className={`h-4 w-4 ${dq.isFetching ? "animate-spin" : ""}`} />
+            </Button>
           </form>
-          {base && (
-            <p className="mt-2 break-all text-xs text-muted-foreground">Base: {base}</p>
-          )}
         </CardContent>
       </Card>
 
-      {loading && (
-        <div className="space-y-4">
-          <Skeleton className="h-10 w-72" />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-24" />
-            ))}
-          </div>
-          <Skeleton className="h-72" />
-        </div>
+      {error && <SectionError message={error} />}
+
+      {!active && !error && (
+        <Card className="rounded-2xl"><CardContent className="p-10 text-center text-sm text-muted-foreground">
+          Paste a DelayBridge link above to load your insights.
+        </CardContent></Card>
       )}
 
-      {!loading && error && (
-        <Card>
-          <CardContent className="p-6 text-destructive">{error}</CardContent>
-        </Card>
-      )}
-
-      {!loading && data && data.enabled === false && (
-        <Card>
-          <CardContent className="p-6 text-muted-foreground">
-            Insights are disabled for this link.
-          </CardContent>
-        </Card>
-      )}
-
-      {!loading && data && data.enabled !== false && (
+      {active && (
         <>
-          {/* 1. Header */}
-          <div className="flex flex-wrap items-center gap-3">
-            {data.project && (
-              <h2 className="text-lg font-medium">{data.project}</h2>
-            )}
-            {analysis.mode_badge && (
-              <Badge variant="secondary" className="font-normal">
-                {analysis.mode_badge}
-              </Badge>
-            )}
+          {dq.error instanceof NotFoundError && <SectionError message="Dashboard endpoint not found at this URL" />}
+          {dq.error && !(dq.error instanceof NotFoundError) && <SectionError message={(dq.error as Error).message} />}
+
+          {/* Mobile select */}
+          <div className="md:hidden">
+            <Select value={tab} onValueChange={(v) => setTab(v as any)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TABS.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* 2. Summary */}
-          {!isEmpty(analysis.summary) && (
-            <SectionCard title="Summary">
-              <p className="whitespace-pre-wrap text-sm">{analysis.summary}</p>
-            </SectionCard>
-          )}
+          <div className="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
+            {/* Tab rail */}
+            <aside className="hidden md:block">
+              <nav className="space-y-1 rounded-2xl border border-border bg-card p-2">
+                {TABS.map(t => {
+                  const Icon = t.icon;
+                  const isActive = tab === t.id;
+                  return (
+                    <button key={t.id} onClick={() => setTab(t.id)}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${isActive ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}>
+                      <Icon className="h-4 w-4" /> {t.label}
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
 
-          {/* 3. Totals */}
-          {!isEmpty(analysis.totals) && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {Object.entries(analysis.totals!).map(([k, v]) => (
-                <KPICardSmall key={k} label={k} value={v} />
-              ))}
-            </div>
-          )}
-
-          {/* 4. Status breakdown */}
-          {!isEmpty(analysis.status_breakdown) && (
-            <SectionCard title="Status breakdown">
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(analysis.status_breakdown!).map(([k, v]) => (
-                  <Badge key={k} variant="secondary" className="font-normal">
-                    {k}: {fmtNum(v)}
-                  </Badge>
-                ))}
-              </div>
-            </SectionCard>
-          )}
-
-          {/* 5. Flags */}
-          {Array.isArray(analysis.flags) && analysis.flags.length > 0 && (
-            <SectionCard title={`Flags (${analysis.flags.length})`}>
-              <ul className="space-y-2 text-sm">
-                {analysis.flags.map((f, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    {f.severity && (
-                      <Badge variant="outline" className="mt-0.5 text-[10px]">
-                        {f.severity}
-                      </Badge>
-                    )}
-                    <span>{f.message || f.title || JSON.stringify(f)}</span>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-          )}
-
-          {/* 6. Sheets dashboard */}
-          {sheets.length > 0 && (
-            <div className="space-y-4">
-              {sheets.length > 1 ? (
-                <Tabs
-                  value={currentSheet?.label}
-                  onValueChange={(v) => setSelectedSheet(v)}
-                >
-                  <TabsList className="flex flex-wrap">
-                    {sheets.map((s) => (
-                      <TabsTrigger key={s.label} value={s.label}>
-                        {s.label}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  {sheets.map((s) => (
-                    <TabsContent key={s.label} value={s.label} className="mt-4">
-                      <SheetView sheet={s} />
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              ) : (
-                currentSheet && <SheetView sheet={currentSheet} />
+            {/* Content */}
+            <div className="min-w-0 space-y-4">
+              {dq.isPending && (
+                <div className="grid gap-3 md:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
+                </div>
               )}
+
+              {!dq.isPending && tab === "overview" && <OverviewSection data={data} />}
+              {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
+              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} />}
+              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} />}
+              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} multi={multiCopilot} />}
+              {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
-          )}
-
-          {/* 7. Extended analysis */}
-          {analysis.risk_score !== undefined && !isEmpty(analysis.risk_score) && (
-            <SectionCard title="Risk score">
-              <RiskScore value={analysis.risk_score} />
-            </SectionCard>
-          )}
-          {Array.isArray(analysis.top_delay_reasons) && analysis.top_delay_reasons.length > 0 && (
-            <SectionCard title="Top delay reasons">
-              <RankedTable data={analysis.top_delay_reasons} />
-            </SectionCard>
-          )}
-          {Array.isArray(analysis.person_ranking) && analysis.person_ranking.length > 0 && (
-            <SectionCard title="Person ranking">
-              <RankedTable data={analysis.person_ranking} />
-            </SectionCard>
-          )}
-          {Array.isArray(analysis.department_ranking) && analysis.department_ranking.length > 0 && (
-            <SectionCard title="Department ranking">
-              <RankedTable data={analysis.department_ranking} />
-            </SectionCard>
-          )}
-          {Array.isArray(analysis.tat_performance) && analysis.tat_performance.length > 0 && (
-            <SectionCard title="TAT performance">
-              <RankedTable data={analysis.tat_performance} />
-            </SectionCard>
-          )}
-          {!isEmpty(analysis.correlation_matrix) && (
-            <SectionCard title="Correlation matrix">
-              <CorrelationMatrix data={analysis.correlation_matrix} />
-            </SectionCard>
-          )}
-          {!isEmpty(analysis.timeline_correlation) && (
-            <SectionCard title="Timeline correlation">
-              <TimelineCorrelation data={analysis.timeline_correlation} />
-            </SectionCard>
-          )}
-          {!isEmpty(analysis.dependency_chains) && (
-            <SectionCard title="Dependency chains">
-              <DependencyChains data={analysis.dependency_chains} />
-            </SectionCard>
-          )}
-          {!isEmpty(analysis.variance) && (
-            <SectionCard title="Variance">
-              <GenericValue value={analysis.variance} />
-            </SectionCard>
-          )}
-
-          {/* 8. Modules */}
-          {!isEmpty(modules.digest) && (
-            <SectionCard title="Digest">
-              <Digest data={modules.digest} />
-            </SectionCard>
-          )}
-          {Array.isArray(modules.recommendations) && modules.recommendations.length > 0 && (
-            <SectionCard title="Recommendations">
-              <Recommendations items={modules.recommendations} />
-            </SectionCard>
-          )}
-          {!isEmpty(modules.data_quality) && (
-            <SectionCard title="Data quality">
-              <DataQuality dq={modules.data_quality!} />
-            </SectionCard>
-          )}
-          {!isEmpty(modules.pivot) && (
-            <SectionCard title="Pivot">
-              <Pivot data={modules.pivot} />
-            </SectionCard>
-          )}
-          {!isEmpty(modules.anomalies) && (
-            <SectionCard title="Anomalies">
-              <Anomalies data={modules.anomalies} />
-            </SectionCard>
-          )}
-          {!isEmpty(modules.forecast) && (
-            <SectionCard title="Forecast">
-              <ForecastOrTrend data={modules.forecast} label="forecast" />
-            </SectionCard>
-          )}
-          {!isEmpty(modules.trends) && (
-            <SectionCard title="Trends">
-              <ForecastOrTrend data={modules.trends} label="trends" />
-            </SectionCard>
-          )}
-          {!isEmpty(modules.whatif) && (
-            <SectionCard title="What-if">
-              <WhatIf data={modules.whatif} />
-            </SectionCard>
-          )}
-
-          {/* 9. Copilot */}
-          {analysis.copilot_enabled && currentSheet && (
-            <CopilotCard base={base} sheetLabel={currentSheet.label} />
-          )}
-
-          {/* Catch-all */}
-          {hasExtras && (
-            <Card>
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <button className="flex w-full items-center justify-between p-6 text-left">
-                    <span className="text-sm font-semibold">Additional data</span>
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <CardContent className="space-y-4 pt-0">
-                    {extraTopKeys.map((k) => (
-                      <div key={k} className="space-y-2">
-                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          {k}
-                        </div>
-                        <GenericValue value={(data as any)[k]} />
-                      </div>
-                    ))}
-                    {extraAnalysisKeys.map((k) => (
-                      <div key={`a-${k}`} className="space-y-2">
-                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          analysis.{k}
-                        </div>
-                        <GenericValue value={(analysis as any)[k]} />
-                      </div>
-                    ))}
-                    {extraModuleKeys.map((k) => (
-                      <div key={`m-${k}`} className="space-y-2">
-                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          modules.{k}
-                        </div>
-                        <GenericValue value={(modules as any)[k]} />
-                      </div>
-                    ))}
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
-            </Card>
-          )}
+          </div>
         </>
       )}
     </div>
