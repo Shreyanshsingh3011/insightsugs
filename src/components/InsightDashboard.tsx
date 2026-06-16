@@ -587,7 +587,7 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
   );
 }
 
-function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
+function ConcernsSection({ base, sheets, onRemind }: { base: string; sheets: Sheet[]; onRemind: (c: Concern) => void }) {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["concerns", base],
@@ -610,15 +610,13 @@ function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
     onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(["concerns", base], ctx.prev); },
     onSettled: () => qc.invalidateQueries({ queryKey: ["concerns", base] }),
   });
-  const sendReminder = useMutation({
-    mutationFn: (id: string) => apiSend(`${base}/concerns/${encodeURIComponent(id)}/reminder`, "POST", {}),
-  });
 
   if (q.isPending) return <div className="grid gap-3 md:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} h={32} />)}</div>;
   if (q.error instanceof NotFoundError) return null;
   if (q.error) return <SectionError message={(q.error as Error).message} />;
 
   const data = q.data || {};
+  if (data.enabled === false) return null;
   const concerns = data.concerns || [];
   const byDept = data.by_department || {};
   const depts = Object.keys(byDept).length
@@ -655,33 +653,49 @@ function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
               </CardHeader>
               <CardContent className="space-y-3">
                 {items.length === 0 && <div className="text-xs text-muted-foreground">No items</div>}
-                {items.map(c => (
-                  <div key={c.id} className="rounded-xl border border-border bg-card p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-sm font-medium leading-snug">{c.title || "(untitled)"}</div>
-                      <Badge variant={sevColor(c.severity)} className="capitalize">{c.severity || "low"}</Badge>
-                    </div>
-                    {c.detail && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{c.detail}</p>}
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      {c.raised_by && <Badge variant="secondary" className="font-normal">{c.raised_by}</Badge>}
-                      {c.target_department && <ArrowRight className="h-3 w-3" />}
-                      {c.target_department && <Badge variant="secondary" className="font-normal">{c.target_department}</Badge>}
-                      {c.activity_ref && <span className="ml-auto truncate">ref: {c.activity_ref}</span>}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <UITimeAgo iso={c.created_at} />
-                      <div className="flex gap-1.5">
-                        {c.status !== "ack" && c.status !== "acknowledged" && c.status !== "resolved" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => patchStatus.mutate({ id: c.id, status: "ack" })}>Ack</Button>
-                        )}
-                        {c.status !== "resolved" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => patchStatus.mutate({ id: c.id, status: "resolved" })}>Resolve</Button>
-                        )}
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => sendReminder.mutate(c.id)}>Remind</Button>
+                {items.map((c, idx) => {
+                  const key = c.id || `${dept}-${c.activity_ref || ""}-${c.created_at || idx}`;
+                  const editable = !!c.id;
+                  return (
+                    <div key={key} className="rounded-xl border border-border bg-card p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-sm font-medium leading-snug">{c.title || "(untitled)"}</div>
+                        <Badge variant={sevColor(c.severity)} className="capitalize">{c.severity || "low"}</Badge>
+                      </div>
+                      {c.detail && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{c.detail}</p>}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                        {c.raised_by && <Badge variant="secondary" className="font-normal">{c.raised_by}</Badge>}
+                        {c.target_department && <ArrowRight className="h-3 w-3" />}
+                        {c.target_department && <Badge variant="secondary" className="font-normal">{c.target_department}</Badge>}
+                        {c.activity_ref && <span className="ml-auto truncate">ref: {c.activity_ref}</span>}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <UITimeAgo iso={c.created_at} />
+                        <div className="flex gap-1.5">
+                          <TooltipProvider>
+                            {c.status !== "ack" && c.status !== "acknowledged" && c.status !== "resolved" && (
+                              <UITooltip>
+                                <TooltipTrigger asChild>
+                                  <span><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!editable} onClick={() => editable && patchStatus.mutate({ id: c.id!, status: "ack" })}>Ack</Button></span>
+                                </TooltipTrigger>
+                                {!editable && <TooltipContent>Read-only demo item</TooltipContent>}
+                              </UITooltip>
+                            )}
+                            {c.status !== "resolved" && (
+                              <UITooltip>
+                                <TooltipTrigger asChild>
+                                  <span><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!editable} onClick={() => editable && patchStatus.mutate({ id: c.id!, status: "resolved" })}>Resolve</Button></span>
+                                </TooltipTrigger>
+                                {!editable && <TooltipContent>Read-only demo item</TooltipContent>}
+                              </UITooltip>
+                            )}
+                          </TooltipProvider>
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onRemind(c)}>Remind</Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           );
