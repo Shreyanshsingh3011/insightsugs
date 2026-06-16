@@ -70,23 +70,30 @@ type DashboardData = {
   [k: string]: unknown;
 };
 type Concern = {
-  id: string; title?: string; detail?: string;
+  id?: string; title?: string; detail?: string;
   severity?: "low" | "medium" | "high" | string;
   status?: "open" | "ack" | "acknowledged" | "resolved" | string;
-  raised_by?: string; target_department?: string; target_person?: string;
-  activity_ref?: string; created_at?: string;
+  raised_by?: string; raised_by_department?: string;
+  target_department?: string; target_person?: string;
+  sheet_label?: string; activity_ref?: string; created_at?: string;
 };
 type ConcernsData = {
+  enabled?: boolean;
   concerns?: Concern[];
   by_department?: Record<string, Record<string, number>>;
+  message?: string;
 };
 type Reminder = {
-  id: string; subject?: string; recipient?: string;
+  subject?: string; body?: string;
+  recipient_email?: string;
   status?: "pending" | "sent" | "failed" | string;
-  schedule_at?: string; last_sent_at?: string; recurrence?: string;
-  concern_id?: string;
+  schedule_at?: string; recurrence?: "none" | "daily" | "weekly" | string;
+  related_id?: string; related_type?: string;
 };
-type HarmonizeRow = { sheet?: string; current: string; suggested: string; reason?: string };
+type HarmonizeRow = {
+  sheet_label?: string; column?: string; issue?: string;
+  current: string; suggested: string;
+};
 
 /* ============================ Helpers ============================ */
 const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
