@@ -70,23 +70,30 @@ type DashboardData = {
   [k: string]: unknown;
 };
 type Concern = {
-  id: string; title?: string; detail?: string;
+  id?: string; title?: string; detail?: string;
   severity?: "low" | "medium" | "high" | string;
   status?: "open" | "ack" | "acknowledged" | "resolved" | string;
-  raised_by?: string; target_department?: string; target_person?: string;
-  activity_ref?: string; created_at?: string;
+  raised_by?: string; raised_by_department?: string;
+  target_department?: string; target_person?: string;
+  sheet_label?: string; activity_ref?: string; created_at?: string;
 };
 type ConcernsData = {
+  enabled?: boolean;
   concerns?: Concern[];
   by_department?: Record<string, Record<string, number>>;
+  message?: string;
 };
 type Reminder = {
-  id: string; subject?: string; recipient?: string;
+  subject?: string; body?: string;
+  recipient_email?: string;
   status?: "pending" | "sent" | "failed" | string;
-  schedule_at?: string; last_sent_at?: string; recurrence?: string;
-  concern_id?: string;
+  schedule_at?: string; recurrence?: "none" | "daily" | "weekly" | string;
+  related_id?: string; related_type?: string;
 };
-type HarmonizeRow = { sheet?: string; current: string; suggested: string; reason?: string };
+type HarmonizeRow = {
+  sheet_label?: string; column?: string; issue?: string;
+  current: string; suggested: string;
+};
 
 /* ============================ Helpers ============================ */
 const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
@@ -103,7 +110,7 @@ function fmtNum(v: unknown) {
   return String(v ?? "");
 }
 function fmtCell(v: unknown) {
-  if (v === null || v === undefined) return "";
+  if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "number") return v.toLocaleString();
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
@@ -580,7 +587,7 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
   );
 }
 
-function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
+function ConcernsSection({ base, sheets, onRemind }: { base: string; sheets: Sheet[]; onRemind: (c: Concern) => void }) {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["concerns", base],
@@ -603,15 +610,13 @@ function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
     onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(["concerns", base], ctx.prev); },
     onSettled: () => qc.invalidateQueries({ queryKey: ["concerns", base] }),
   });
-  const sendReminder = useMutation({
-    mutationFn: (id: string) => apiSend(`${base}/concerns/${encodeURIComponent(id)}/reminder`, "POST", {}),
-  });
 
   if (q.isPending) return <div className="grid gap-3 md:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} h={32} />)}</div>;
   if (q.error instanceof NotFoundError) return null;
   if (q.error) return <SectionError message={(q.error as Error).message} />;
 
   const data = q.data || {};
+  if (data.enabled === false) return null;
   const concerns = data.concerns || [];
   const byDept = data.by_department || {};
   const depts = Object.keys(byDept).length
@@ -648,33 +653,49 @@ function ConcernsSection({ base, sheets }: { base: string; sheets: Sheet[] }) {
               </CardHeader>
               <CardContent className="space-y-3">
                 {items.length === 0 && <div className="text-xs text-muted-foreground">No items</div>}
-                {items.map(c => (
-                  <div key={c.id} className="rounded-xl border border-border bg-card p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-sm font-medium leading-snug">{c.title || "(untitled)"}</div>
-                      <Badge variant={sevColor(c.severity)} className="capitalize">{c.severity || "low"}</Badge>
-                    </div>
-                    {c.detail && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{c.detail}</p>}
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                      {c.raised_by && <Badge variant="secondary" className="font-normal">{c.raised_by}</Badge>}
-                      {c.target_department && <ArrowRight className="h-3 w-3" />}
-                      {c.target_department && <Badge variant="secondary" className="font-normal">{c.target_department}</Badge>}
-                      {c.activity_ref && <span className="ml-auto truncate">ref: {c.activity_ref}</span>}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <UITimeAgo iso={c.created_at} />
-                      <div className="flex gap-1.5">
-                        {c.status !== "ack" && c.status !== "acknowledged" && c.status !== "resolved" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => patchStatus.mutate({ id: c.id, status: "ack" })}>Ack</Button>
-                        )}
-                        {c.status !== "resolved" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => patchStatus.mutate({ id: c.id, status: "resolved" })}>Resolve</Button>
-                        )}
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => sendReminder.mutate(c.id)}>Remind</Button>
+                {items.map((c, idx) => {
+                  const key = c.id || `${dept}-${c.activity_ref || ""}-${c.created_at || idx}`;
+                  const editable = !!c.id;
+                  return (
+                    <div key={key} className="rounded-xl border border-border bg-card p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-sm font-medium leading-snug">{c.title || "(untitled)"}</div>
+                        <Badge variant={sevColor(c.severity)} className="capitalize">{c.severity || "low"}</Badge>
+                      </div>
+                      {c.detail && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{c.detail}</p>}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                        {c.raised_by && <Badge variant="secondary" className="font-normal">{c.raised_by}</Badge>}
+                        {c.target_department && <ArrowRight className="h-3 w-3" />}
+                        {c.target_department && <Badge variant="secondary" className="font-normal">{c.target_department}</Badge>}
+                        {c.activity_ref && <span className="ml-auto truncate">ref: {c.activity_ref}</span>}
+                      </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <UITimeAgo iso={c.created_at} />
+                        <div className="flex gap-1.5">
+                          <TooltipProvider>
+                            {c.status !== "ack" && c.status !== "acknowledged" && c.status !== "resolved" && (
+                              <UITooltip>
+                                <TooltipTrigger asChild>
+                                  <span><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!editable} onClick={() => editable && patchStatus.mutate({ id: c.id!, status: "ack" })}>Ack</Button></span>
+                                </TooltipTrigger>
+                                {!editable && <TooltipContent>Read-only demo item</TooltipContent>}
+                              </UITooltip>
+                            )}
+                            {c.status !== "resolved" && (
+                              <UITooltip>
+                                <TooltipTrigger asChild>
+                                  <span><Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!editable} onClick={() => editable && patchStatus.mutate({ id: c.id!, status: "resolved" })}>Resolve</Button></span>
+                                </TooltipTrigger>
+                                {!editable && <TooltipContent>Read-only demo item</TooltipContent>}
+                              </UITooltip>
+                            )}
+                          </TooltipProvider>
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onRemind(c)}>Remind</Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           );
@@ -694,52 +715,79 @@ function UITimeAgo({ iso }: { iso?: string }) {
   );
 }
 
+type ColumnMap = Record<string, { owner?: string | null; dept?: string | null; email?: string | null; status?: string | null; date?: string | null } | unknown>;
+
+function useColumnMap(base: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["column-map", base], enabled,
+    queryFn: ({ signal }) => apiGet<ColumnMap & { enabled?: boolean }>(`${base}/column-map`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+}
+
+function deptValuesForSheet(cm: ColumnMap | undefined, sheet?: Sheet): string[] {
+  if (!sheet) return [];
+  const m = cm?.[sheet.label] as { dept?: string | null } | undefined;
+  const col = m?.dept;
+  const set = new Set<string>();
+  if (col && sheet.rows) {
+    sheet.rows.forEach(r => {
+      const v = r[col]; if (typeof v === "string" && v.trim()) set.add(v.trim());
+    });
+  }
+  if (set.size === 0 && sheet.rows) sheet.rows.forEach(r => {
+    const v = r["department"] || r["Department"] || r["dept"];
+    if (typeof v === "string" && v.trim()) set.add(v.trim());
+  });
+  return Array.from(set);
+}
+
+function emailForDept(cm: ColumnMap | undefined, sheet: Sheet | undefined, dept: string): string | undefined {
+  if (!sheet || !dept) return undefined;
+  const m = cm?.[sheet.label] as { dept?: string | null; email?: string | null } | undefined;
+  const deptCol = m?.dept; const emailCol = m?.email;
+  if (!deptCol || !emailCol || !sheet.rows) return undefined;
+  const row = sheet.rows.find(r => String(r[deptCol] || "").trim() === dept);
+  const v = row?.[emailCol];
+  return typeof v === "string" ? v : undefined;
+}
+
 function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: Sheet[]; prefill?: Partial<Concern> }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [department, setDepartment] = useState(prefill?.target_department || "");
-  const [person, setPerson] = useState(prefill?.target_person || "");
+  const [sheetLabel, setSheetLabel] = useState(prefill?.sheet_label || sheets[0]?.label || "");
+  const [targetDept, setTargetDept] = useState(prefill?.target_department || "");
+  const [raisedBy, setRaisedBy] = useState(prefill?.raised_by || "");
+  const [raisedByDept, setRaisedByDept] = useState(prefill?.raised_by_department || "");
   const [title, setTitle] = useState(prefill?.title || "");
   const [detail, setDetail] = useState(prefill?.detail || "");
   const [severity, setSeverity] = useState<string>(prefill?.severity || "medium");
   const [activityRef, setActivityRef] = useState(prefill?.activity_ref || "");
 
-  const colMap = useQuery({
-    queryKey: ["column-map", base], enabled: open,
-    queryFn: ({ signal }) => apiGet<any>(`${base}/column-map`, signal),
-    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
-  });
-
-  const departments: string[] = useMemo(() => {
-    const fromMap = colMap.data?.departments;
-    if (Array.isArray(fromMap)) return fromMap;
+  const colMap = useColumnMap(base, open);
+  const currentSheet = sheets.find(s => s.label === sheetLabel);
+  const deptOptions = useMemo(() => {
     const set = new Set<string>();
-    sheets.forEach(s => s.rows?.forEach(r => {
-      const v = r["department"] || r["target_department"] || r["dept"];
-      if (typeof v === "string") set.add(v);
-    }));
+    sheets.forEach(s => deptValuesForSheet(colMap.data, s).forEach(v => set.add(v)));
     return Array.from(set);
   }, [colMap.data, sheets]);
 
-  const people: string[] = useMemo(() => {
-    const fromMap = colMap.data?.people;
-    if (Array.isArray(fromMap)) return fromMap;
-    const set = new Set<string>();
-    sheets.forEach(s => s.rows?.forEach(r => {
-      const v = r["owner"] || r["person"] || r["assignee"] || r["target_person"];
-      if (typeof v === "string") set.add(v);
-    }));
-    return Array.from(set);
-  }, [colMap.data, sheets]);
+  const activityOptions = useMemo(() => {
+    if (!currentSheet?.rows) return [] as { value: string; label: string }[];
+    const cols = (currentSheet.columns || []).map(c => c.name);
+    const schKey = cols.find(c => /sch\s*code|^sch$|activity\s*ref/i.test(c));
+    const descKey = cols.find(c => /description|desc|activity/i.test(c));
+    if (!schKey) return [];
+    return currentSheet.rows.slice(0, 500).map(r => {
+      const v = String(r[schKey] ?? "");
+      const d = descKey ? String(r[descKey] ?? "") : "";
+      return { value: v, label: d ? `${v} — ${d.slice(0, 60)}` : v };
+    }).filter(o => o.value);
+  }, [currentSheet]);
 
   const create = useMutation({
     mutationFn: (payload: Partial<Concern>) => apiSend<Concern>(`${base}/concerns`, "POST", payload),
-    onSuccess: (created) => {
-      qc.setQueryData<ConcernsData>(["concerns", base], (prev) => {
-        const opt: Concern = created || { id: `tmp-${Date.now()}`, title, detail, severity, target_department: department, target_person: person, activity_ref: activityRef, status: "open", created_at: new Date().toISOString() };
-        const concerns = [opt, ...(prev?.concerns || [])];
-        return { ...(prev || {}), concerns };
-      });
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["concerns", base] });
       setOpen(false);
       setTitle(""); setDetail(""); setActivityRef("");
@@ -756,24 +804,32 @@ function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: S
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Department</label>
-              <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                  {departments.length === 0 && <SelectItem value="general">General</SelectItem>}
-                </SelectContent>
+              <label className="mb-1 block text-xs text-muted-foreground">Sheet</label>
+              <Select value={sheetLabel} onValueChange={setSheetLabel}>
+                <SelectTrigger><SelectValue placeholder="Sheet" /></SelectTrigger>
+                <SelectContent>{sheets.map(s => <SelectItem key={s.label} value={s.label}>{s.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Person</label>
-              <Select value={person} onValueChange={setPerson}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  {people.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  {people.length === 0 && <SelectItem value="-">No people detected</SelectItem>}
-                </SelectContent>
-              </Select>
+              <label className="mb-1 block text-xs text-muted-foreground">Target department</label>
+              {deptOptions.length ? (
+                <Select value={targetDept} onValueChange={setTargetDept}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>{deptOptions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : (
+                <Input value={targetDept} onChange={e => setTargetDept(e.target.value)} placeholder="e.g. Cabling" />
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Raised by</label>
+              <Input value={raisedBy} onChange={e => setRaisedBy(e.target.value)} placeholder="Your name" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Raised by dept</label>
+              <Input value={raisedByDept} onChange={e => setRaisedByDept(e.target.value)} placeholder="Your dept" />
             </div>
           </div>
           <div>
@@ -797,16 +853,30 @@ function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: S
               </Select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Activity ref (optional)</label>
-              <Input value={activityRef} onChange={e => setActivityRef(e.target.value)} placeholder="row id / ref" />
+              <label className="mb-1 block text-xs text-muted-foreground">Activity ref</label>
+              {activityOptions.length ? (
+                <Select value={activityRef} onValueChange={setActivityRef}>
+                  <SelectTrigger><SelectValue placeholder="Pick activity" /></SelectTrigger>
+                  <SelectContent>{activityOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : (
+                <Input value={activityRef} onChange={e => setActivityRef(e.target.value)} placeholder="row ref (optional)" />
+              )}
             </div>
           </div>
           {create.error && <p className="text-xs text-destructive">Failed: {(create.error as Error).message}</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button disabled={!title || !department || create.isPending}
-            onClick={() => create.mutate({ title, detail, severity, target_department: department, target_person: person || undefined, activity_ref: activityRef || undefined })}>
+          <Button disabled={!title || !targetDept || create.isPending}
+            onClick={() => create.mutate({
+              raised_by: raisedBy || undefined,
+              raised_by_department: raisedByDept || undefined,
+              target_department: targetDept,
+              sheet_label: sheetLabel || undefined,
+              activity_ref: activityRef || undefined,
+              title, detail, severity,
+            })}>
             {create.isPending ? "Submitting…" : "Submit"}
           </Button>
         </DialogFooter>
@@ -815,18 +885,102 @@ function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: S
   );
 }
 
-function RemindersSection({ base }: { base: string }) {
+function ReminderDialog({ open, onOpenChange, base, prefill }: {
+  open: boolean; onOpenChange: (o: boolean) => void; base: string;
+  prefill?: { related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string };
+}) {
+  const qc = useQueryClient();
+  const [recipient, setRecipient] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [recurrence, setRecurrence] = useState<string>("none");
+  const [scheduleAt, setScheduleAt] = useState<string>("");
+  const [relatedId, setRelatedId] = useState<string>("");
+
+  useEffect(() => {
+    if (!open) return;
+    setRecipient(prefill?.recipient_email || "");
+    setSubject(prefill?.subject || "");
+    setBody(prefill?.body || "");
+    setRecurrence(prefill?.recurrence || "none");
+    setScheduleAt("");
+    setRelatedId(prefill?.related_id || "");
+  }, [open, prefill]);
+
+  const create = useMutation({
+    mutationFn: () => apiSend(`${base}/reminders`, "POST", {
+      related_type: "concern",
+      related_id: relatedId || undefined,
+      recipient_email: recipient,
+      subject, body,
+      schedule_at: scheduleAt ? new Date(scheduleAt).toISOString() : undefined,
+      recurrence,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reminders", base] });
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{prefill?.related_id ? "Send reminder" : "New reminder"}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Recipient email</label>
+            <Input type="email" value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="name@example.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Subject</label>
+            <Input value={subject} onChange={e => setSubject(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Body</label>
+            <Textarea value={body} onChange={e => setBody(e.target.value)} rows={4} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Recurrence</label>
+              <Select value={recurrence} onValueChange={setRecurrence}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Schedule (optional)</label>
+              <Input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} />
+            </div>
+          </div>
+          {create.error && <p className="text-xs text-destructive">Failed: {(create.error as Error).message}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={!recipient || !subject || create.isPending} onClick={() => create.mutate()}>
+            {create.isPending ? "Sending…" : "Send"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RemindersSection({ base, onNew }: { base: string; onNew: () => void }) {
   const q = useQuery({
     queryKey: ["reminders", base],
-    queryFn: ({ signal }) => apiGet<{ reminders?: Reminder[] }>(`${base}/reminders`, signal),
+    queryFn: ({ signal }) => apiGet<{ enabled?: boolean; reminders?: Reminder[] }>(`${base}/reminders`, signal),
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
   if (q.isPending) return <CardSkeleton h={40} />;
   if (q.error instanceof NotFoundError) return null;
   if (q.error) return <SectionError message={(q.error as Error).message} />;
+  if (q.data?.enabled === false) return null;
 
   const list = q.data?.reminders || [];
-  if (!list.length) return <SectionEmpty icon={Bell} label="No reminders configured." />;
   const groups = { pending: [] as Reminder[], sent: [] as Reminder[], failed: [] as Reminder[] };
   list.forEach(r => {
     const k = (r.status || "pending").toLowerCase() as keyof typeof groups;
@@ -834,7 +988,11 @@ function RemindersSection({ base }: { base: string }) {
   });
   return (
     <div className="space-y-4">
-      <p className="text-xs italic text-muted-foreground">Sent automatically by the server.</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs italic text-muted-foreground">Emails are sent automatically by the server.</p>
+        <Button size="sm" className="gap-1.5" onClick={onNew}><Plus className="h-4 w-4" /> New reminder</Button>
+      </div>
+      {list.length === 0 && <SectionEmpty icon={Bell} label="No reminders configured." />}
       {(["pending", "sent", "failed"] as const).map(k => groups[k].length > 0 && (
         <Card key={k} className="rounded-2xl shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-sm capitalize flex items-center gap-2">
@@ -843,15 +1001,14 @@ function RemindersSection({ base }: { base: string }) {
           </CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Recipient</TableHead><TableHead>Subject</TableHead><TableHead>Schedule</TableHead><TableHead>Recurrence</TableHead><TableHead>Last sent</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Recipient</TableHead><TableHead>Subject</TableHead><TableHead>Schedule</TableHead><TableHead>Recurrence</TableHead></TableRow></TableHeader>
               <TableBody>
-                {groups[k].map(r => (
-                  <TableRow key={r.id}>
-                    <TableCell>{r.recipient || "—"}</TableCell>
+                {groups[k].map((r, i) => (
+                  <TableRow key={`${r.related_id || ""}-${r.recipient_email || ""}-${i}`}>
+                    <TableCell className="text-sm">{r.recipient_email || "—"}</TableCell>
                     <TableCell className="max-w-xs truncate">{r.subject || "—"}</TableCell>
                     <TableCell><UITimeAgo iso={r.schedule_at} /></TableCell>
-                    <TableCell>{r.recurrence ? <Badge variant="outline">{r.recurrence}</Badge> : "—"}</TableCell>
-                    <TableCell><UITimeAgo iso={r.last_sent_at} /></TableCell>
+                    <TableCell>{r.recurrence && r.recurrence !== "none" ? <Badge variant="outline" className="capitalize">{r.recurrence}</Badge> : "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -865,25 +1022,26 @@ function RemindersSection({ base }: { base: string }) {
 
 function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]; multi: boolean }) {
   const [selected, setSelected] = useState(sheets[0]?.label || "");
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; used_sheets?: string[] }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; generated_by?: string }[]>([]);
   const [input, setInput] = useState("");
-  const sessionId = useRef<string>(crypto.randomUUID?.() || `s-${Date.now()}`);
+  const sessionId = useRef<string | undefined>(undefined);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setMessages([]); sessionId.current = crypto.randomUUID?.() || `s-${Date.now()}`; }, [base, selected, multi]);
+  useEffect(() => { setMessages([]); sessionId.current = undefined; }, [base, selected, multi]);
   useEffect(() => { scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
   const ask = useMutation({
-    mutationFn: async (question: string) => {
-      const body: any = { question, session_id: sessionId.current };
+    mutationFn: async (message: string) => {
+      const body: any = { message };
+      if (sessionId.current) body.session_id = sessionId.current;
       if (multi) body.sheets = sheets.map(s => s.label);
-      else body.sheet = selected;
-      return apiSend<any>(`${base}/copilot`, "POST", body);
+      const url = multi ? `${base}/copilot` : `${base}/copilot?sheet=${encodeURIComponent(selected)}`;
+      return apiSend<any>(url, "POST", body);
     },
     onSuccess: (resp) => {
-      const text = resp?.answer || resp?.text || resp?.message || (typeof resp === "string" ? resp : JSON.stringify(resp));
-      const used = resp?.used_sheets || resp?.sheets_used;
-      setMessages(m => [...m, { role: "assistant", text, used_sheets: used }]);
+      if (resp?.session_id) sessionId.current = resp.session_id;
+      const text = resp?.answer || (typeof resp === "string" ? resp : JSON.stringify(resp));
+      setMessages(m => [...m, { role: "assistant", text, generated_by: resp?.generated_by }]);
     },
     onError: (e) => setMessages(m => [...m, { role: "assistant", text: `Error: ${(e as Error).message}` }]),
   });
@@ -896,7 +1054,7 @@ function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]
     ask.mutate(text);
   };
 
-  const chips = ["Where are we slipping?", "Top concerns by department", "Cross-sheet summary", "Items missing owners"];
+  const chips = ["Where are we slipping?", "Top concerns by department", "Cross-sheet summary", "Which items are missing owners?"];
 
   return (
     <Card className="rounded-2xl shadow-sm">
@@ -919,8 +1077,8 @@ function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card"}`}>
                 <div className="whitespace-pre-wrap">{m.text}</div>
-                {!!m.used_sheets?.length && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">{m.used_sheets.map(s => <Badge key={s} variant="secondary" className="text-[10px] font-normal">{s}</Badge>)}</div>
+                {m.generated_by && (
+                  <div className="mt-1.5"><Badge variant="secondary" className="text-[10px] font-normal capitalize">{m.generated_by}</Badge></div>
                 )}
               </div>
             </div>
@@ -946,17 +1104,30 @@ function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]
 function HygieneSection({ base }: { base: string }) {
   const q = useQuery({
     queryKey: ["harmonize", base],
-    queryFn: ({ signal }) => apiGet<{ suggestions?: HarmonizeRow[] } | HarmonizeRow[]>(`${base}/harmonize`, signal),
+    queryFn: ({ signal }) => apiGet<{ enabled?: boolean; suggestions?: HarmonizeRow[]; message?: string } | HarmonizeRow[]>(`${base}/harmonize`, signal),
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
   if (q.isPending) return <CardSkeleton h={40} />;
   if (q.error instanceof NotFoundError) return null;
   if (q.error) return <SectionError message={(q.error as Error).message} />;
   const data = q.data as any;
+  if (data?.enabled === false) return null;
   const rows: HarmonizeRow[] = Array.isArray(data) ? data : (data?.suggestions || []);
-  if (!rows.length) return <SectionEmpty icon={Wand2} label="No hygiene suggestions." />;
+  const message: string | undefined = !Array.isArray(data) ? data?.message : undefined;
+
+  if (!rows.length) {
+    return (
+      <Card className="rounded-2xl">
+        <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+          <Wand2 className="h-6 w-6 opacity-50" />
+          <div className="text-sm">{message || "No hygiene suggestions."}</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const bySheet = rows.reduce<Record<string, HarmonizeRow[]>>((acc, r) => {
-    const k = r.sheet || "default"; (acc[k] ||= []).push(r); return acc;
+    const k = r.sheet_label || "default"; (acc[k] ||= []).push(r); return acc;
   }, {});
   return (
     <div className="space-y-4">
@@ -965,13 +1136,14 @@ function HygieneSection({ base }: { base: string }) {
           <CardHeader className="pb-2"><CardTitle className="text-sm">{sheet}</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Current</TableHead><TableHead></TableHead><TableHead>Suggested</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Column</TableHead><TableHead>Current</TableHead><TableHead></TableHead><TableHead>Suggested</TableHead></TableRow></TableHeader>
               <TableBody>
                 {list.map((r, i) => (
                   <TableRow key={i}>
+                    <TableCell className="text-xs text-muted-foreground">{r.column || "—"}</TableCell>
                     <TableCell className="font-mono text-xs">
                       {r.current}
-                      {r.reason && <div className="mt-0.5 text-[11px] font-sans italic text-muted-foreground">{r.reason}</div>}
+                      {r.issue && <div className="mt-0.5 text-[11px] font-sans italic text-muted-foreground">{r.issue}</div>}
                     </TableCell>
                     <TableCell className="text-muted-foreground"><ArrowRight className="h-4 w-4" /></TableCell>
                     <TableCell className="font-mono text-xs">{r.suggested}</TableCell>
@@ -1000,6 +1172,8 @@ const TABS = [
 export default function InsightDashboard() {
   const { raw, setRaw, active, error, apply } = useLinkInput();
   const [tab, setTab] = useState<typeof TABS[number]["id"]>("overview");
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderPrefill, setReminderPrefill] = useState<{ related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string } | undefined>();
 
   const dq = useQuery({
     queryKey: ["dashboard", active], enabled: !!active,
@@ -1012,7 +1186,27 @@ export default function InsightDashboard() {
   const sheets = data.sheets || [];
   const project = data.project || "Insights";
   const modeBadge = data.analysis?.mode_badge;
-  const multiCopilot = !!data.multi_copilot;
+  const enabledFields = data.enabled_fields || [];
+  const multiCopilot = enabledFields.includes("multi_copilot") || !!data.multi_copilot;
+
+  const colMapQ = useQuery({
+    queryKey: ["column-map", active], enabled: !!active,
+    queryFn: ({ signal }) => apiGet<ColumnMap>(`${active}/column-map`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+
+  const openRemind = (c: Concern) => {
+    const sheet = sheets.find(s => s.label === c.sheet_label);
+    const recipient = c.target_department ? emailForDept(colMapQ.data, sheet, c.target_department) : undefined;
+    setReminderPrefill({
+      related_id: c.id,
+      subject: c.title ? `Action needed: ${c.title}` : "Reminder",
+      body: c.detail || "",
+      recipient_email: recipient,
+      recurrence: "none",
+    });
+    setReminderOpen(true);
+  };
 
   const reloadAll = () => dq.refetch();
 
@@ -1094,12 +1288,14 @@ export default function InsightDashboard() {
 
               {!dq.isPending && tab === "overview" && <OverviewSection data={data} />}
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
-              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} />}
-              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} />}
+              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
+              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
               {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} multi={multiCopilot} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
           </div>
+
+          <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} base={active} prefill={reminderPrefill} />
         </>
       )}
     </div>
