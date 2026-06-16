@@ -1022,25 +1022,26 @@ function RemindersSection({ base, onNew }: { base: string; onNew: () => void }) 
 
 function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]; multi: boolean }) {
   const [selected, setSelected] = useState(sheets[0]?.label || "");
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; used_sheets?: string[] }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; generated_by?: string }[]>([]);
   const [input, setInput] = useState("");
-  const sessionId = useRef<string>(crypto.randomUUID?.() || `s-${Date.now()}`);
+  const sessionId = useRef<string | undefined>(undefined);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setMessages([]); sessionId.current = crypto.randomUUID?.() || `s-${Date.now()}`; }, [base, selected, multi]);
+  useEffect(() => { setMessages([]); sessionId.current = undefined; }, [base, selected, multi]);
   useEffect(() => { scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
   const ask = useMutation({
-    mutationFn: async (question: string) => {
-      const body: any = { question, session_id: sessionId.current };
+    mutationFn: async (message: string) => {
+      const body: any = { message };
+      if (sessionId.current) body.session_id = sessionId.current;
       if (multi) body.sheets = sheets.map(s => s.label);
-      else body.sheet = selected;
-      return apiSend<any>(`${base}/copilot`, "POST", body);
+      const url = multi ? `${base}/copilot` : `${base}/copilot?sheet=${encodeURIComponent(selected)}`;
+      return apiSend<any>(url, "POST", body);
     },
     onSuccess: (resp) => {
-      const text = resp?.answer || resp?.text || resp?.message || (typeof resp === "string" ? resp : JSON.stringify(resp));
-      const used = resp?.used_sheets || resp?.sheets_used;
-      setMessages(m => [...m, { role: "assistant", text, used_sheets: used }]);
+      if (resp?.session_id) sessionId.current = resp.session_id;
+      const text = resp?.answer || (typeof resp === "string" ? resp : JSON.stringify(resp));
+      setMessages(m => [...m, { role: "assistant", text, generated_by: resp?.generated_by }]);
     },
     onError: (e) => setMessages(m => [...m, { role: "assistant", text: `Error: ${(e as Error).message}` }]),
   });
@@ -1053,7 +1054,7 @@ function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]
     ask.mutate(text);
   };
 
-  const chips = ["Where are we slipping?", "Top concerns by department", "Cross-sheet summary", "Items missing owners"];
+  const chips = ["Where are we slipping?", "Top concerns by department", "Cross-sheet summary", "Which items are missing owners?"];
 
   return (
     <Card className="rounded-2xl shadow-sm">
@@ -1076,8 +1077,8 @@ function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card"}`}>
                 <div className="whitespace-pre-wrap">{m.text}</div>
-                {!!m.used_sheets?.length && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">{m.used_sheets.map(s => <Badge key={s} variant="secondary" className="text-[10px] font-normal">{s}</Badge>)}</div>
+                {m.generated_by && (
+                  <div className="mt-1.5"><Badge variant="secondary" className="text-[10px] font-normal capitalize">{m.generated_by}</Badge></div>
                 )}
               </div>
             </div>
@@ -1103,17 +1104,30 @@ function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]
 function HygieneSection({ base }: { base: string }) {
   const q = useQuery({
     queryKey: ["harmonize", base],
-    queryFn: ({ signal }) => apiGet<{ suggestions?: HarmonizeRow[] } | HarmonizeRow[]>(`${base}/harmonize`, signal),
+    queryFn: ({ signal }) => apiGet<{ enabled?: boolean; suggestions?: HarmonizeRow[]; message?: string } | HarmonizeRow[]>(`${base}/harmonize`, signal),
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
   if (q.isPending) return <CardSkeleton h={40} />;
   if (q.error instanceof NotFoundError) return null;
   if (q.error) return <SectionError message={(q.error as Error).message} />;
   const data = q.data as any;
+  if (data?.enabled === false) return null;
   const rows: HarmonizeRow[] = Array.isArray(data) ? data : (data?.suggestions || []);
-  if (!rows.length) return <SectionEmpty icon={Wand2} label="No hygiene suggestions." />;
+  const message: string | undefined = !Array.isArray(data) ? data?.message : undefined;
+
+  if (!rows.length) {
+    return (
+      <Card className="rounded-2xl">
+        <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+          <Wand2 className="h-6 w-6 opacity-50" />
+          <div className="text-sm">{message || "No hygiene suggestions."}</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const bySheet = rows.reduce<Record<string, HarmonizeRow[]>>((acc, r) => {
-    const k = r.sheet || "default"; (acc[k] ||= []).push(r); return acc;
+    const k = r.sheet_label || "default"; (acc[k] ||= []).push(r); return acc;
   }, {});
   return (
     <div className="space-y-4">
@@ -1122,13 +1136,14 @@ function HygieneSection({ base }: { base: string }) {
           <CardHeader className="pb-2"><CardTitle className="text-sm">{sheet}</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Current</TableHead><TableHead></TableHead><TableHead>Suggested</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Column</TableHead><TableHead>Current</TableHead><TableHead></TableHead><TableHead>Suggested</TableHead></TableRow></TableHeader>
               <TableBody>
                 {list.map((r, i) => (
                   <TableRow key={i}>
+                    <TableCell className="text-xs text-muted-foreground">{r.column || "—"}</TableCell>
                     <TableCell className="font-mono text-xs">
                       {r.current}
-                      {r.reason && <div className="mt-0.5 text-[11px] font-sans italic text-muted-foreground">{r.reason}</div>}
+                      {r.issue && <div className="mt-0.5 text-[11px] font-sans italic text-muted-foreground">{r.issue}</div>}
                     </TableCell>
                     <TableCell className="text-muted-foreground"><ArrowRight className="h-4 w-4" /></TableCell>
                     <TableCell className="font-mono text-xs">{r.suggested}</TableCell>
