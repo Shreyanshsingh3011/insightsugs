@@ -1172,6 +1172,8 @@ const TABS = [
 export default function InsightDashboard() {
   const { raw, setRaw, active, error, apply } = useLinkInput();
   const [tab, setTab] = useState<typeof TABS[number]["id"]>("overview");
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderPrefill, setReminderPrefill] = useState<{ related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string } | undefined>();
 
   const dq = useQuery({
     queryKey: ["dashboard", active], enabled: !!active,
@@ -1184,7 +1186,27 @@ export default function InsightDashboard() {
   const sheets = data.sheets || [];
   const project = data.project || "Insights";
   const modeBadge = data.analysis?.mode_badge;
-  const multiCopilot = !!data.multi_copilot;
+  const enabledFields = data.enabled_fields || [];
+  const multiCopilot = enabledFields.includes("multi_copilot") || !!data.multi_copilot;
+
+  const colMapQ = useQuery({
+    queryKey: ["column-map", active], enabled: !!active,
+    queryFn: ({ signal }) => apiGet<ColumnMap>(`${active}/column-map`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+
+  const openRemind = (c: Concern) => {
+    const sheet = sheets.find(s => s.label === c.sheet_label);
+    const recipient = c.target_department ? emailForDept(colMapQ.data, sheet, c.target_department) : undefined;
+    setReminderPrefill({
+      related_id: c.id,
+      subject: c.title ? `Action needed: ${c.title}` : "Reminder",
+      body: c.detail || "",
+      recipient_email: recipient,
+      recurrence: "none",
+    });
+    setReminderOpen(true);
+  };
 
   const reloadAll = () => dq.refetch();
 
@@ -1266,12 +1288,14 @@ export default function InsightDashboard() {
 
               {!dq.isPending && tab === "overview" && <OverviewSection data={data} />}
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
-              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} />}
-              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} />}
+              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
+              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
               {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} multi={multiCopilot} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
           </div>
+
+          <ReminderDialog open={reminderOpen} onOpenChange={setReminderOpen} base={active} prefill={reminderPrefill} />
         </>
       )}
     </div>
