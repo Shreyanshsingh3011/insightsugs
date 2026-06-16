@@ -969,18 +969,18 @@ function ReminderDialog({ open, onOpenChange, base, prefill }: {
   );
 }
 
-function RemindersSection({ base }: { base: string }) {
+function RemindersSection({ base, onNew }: { base: string; onNew: () => void }) {
   const q = useQuery({
     queryKey: ["reminders", base],
-    queryFn: ({ signal }) => apiGet<{ reminders?: Reminder[] }>(`${base}/reminders`, signal),
+    queryFn: ({ signal }) => apiGet<{ enabled?: boolean; reminders?: Reminder[] }>(`${base}/reminders`, signal),
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
   if (q.isPending) return <CardSkeleton h={40} />;
   if (q.error instanceof NotFoundError) return null;
   if (q.error) return <SectionError message={(q.error as Error).message} />;
+  if (q.data?.enabled === false) return null;
 
   const list = q.data?.reminders || [];
-  if (!list.length) return <SectionEmpty icon={Bell} label="No reminders configured." />;
   const groups = { pending: [] as Reminder[], sent: [] as Reminder[], failed: [] as Reminder[] };
   list.forEach(r => {
     const k = (r.status || "pending").toLowerCase() as keyof typeof groups;
@@ -988,7 +988,11 @@ function RemindersSection({ base }: { base: string }) {
   });
   return (
     <div className="space-y-4">
-      <p className="text-xs italic text-muted-foreground">Sent automatically by the server.</p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs italic text-muted-foreground">Emails are sent automatically by the server.</p>
+        <Button size="sm" className="gap-1.5" onClick={onNew}><Plus className="h-4 w-4" /> New reminder</Button>
+      </div>
+      {list.length === 0 && <SectionEmpty icon={Bell} label="No reminders configured." />}
       {(["pending", "sent", "failed"] as const).map(k => groups[k].length > 0 && (
         <Card key={k} className="rounded-2xl shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-sm capitalize flex items-center gap-2">
@@ -997,15 +1001,14 @@ function RemindersSection({ base }: { base: string }) {
           </CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Recipient</TableHead><TableHead>Subject</TableHead><TableHead>Schedule</TableHead><TableHead>Recurrence</TableHead><TableHead>Last sent</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Recipient</TableHead><TableHead>Subject</TableHead><TableHead>Schedule</TableHead><TableHead>Recurrence</TableHead></TableRow></TableHeader>
               <TableBody>
-                {groups[k].map(r => (
-                  <TableRow key={r.id}>
-                    <TableCell>{r.recipient || "—"}</TableCell>
+                {groups[k].map((r, i) => (
+                  <TableRow key={`${r.related_id || ""}-${r.recipient_email || ""}-${i}`}>
+                    <TableCell className="text-sm">{r.recipient_email || "—"}</TableCell>
                     <TableCell className="max-w-xs truncate">{r.subject || "—"}</TableCell>
                     <TableCell><UITimeAgo iso={r.schedule_at} /></TableCell>
-                    <TableCell>{r.recurrence ? <Badge variant="outline">{r.recurrence}</Badge> : "—"}</TableCell>
-                    <TableCell><UITimeAgo iso={r.last_sent_at} /></TableCell>
+                    <TableCell>{r.recurrence && r.recurrence !== "none" ? <Badge variant="outline" className="capitalize">{r.recurrence}</Badge> : "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
