@@ -715,52 +715,79 @@ function UITimeAgo({ iso }: { iso?: string }) {
   );
 }
 
+type ColumnMap = Record<string, { owner?: string | null; dept?: string | null; email?: string | null; status?: string | null; date?: string | null } | unknown>;
+
+function useColumnMap(base: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["column-map", base], enabled,
+    queryFn: ({ signal }) => apiGet<ColumnMap & { enabled?: boolean }>(`${base}/column-map`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+}
+
+function deptValuesForSheet(cm: ColumnMap | undefined, sheet?: Sheet): string[] {
+  if (!sheet) return [];
+  const m = cm?.[sheet.label] as { dept?: string | null } | undefined;
+  const col = m?.dept;
+  const set = new Set<string>();
+  if (col && sheet.rows) {
+    sheet.rows.forEach(r => {
+      const v = r[col]; if (typeof v === "string" && v.trim()) set.add(v.trim());
+    });
+  }
+  if (set.size === 0 && sheet.rows) sheet.rows.forEach(r => {
+    const v = r["department"] || r["Department"] || r["dept"];
+    if (typeof v === "string" && v.trim()) set.add(v.trim());
+  });
+  return Array.from(set);
+}
+
+function emailForDept(cm: ColumnMap | undefined, sheet: Sheet | undefined, dept: string): string | undefined {
+  if (!sheet || !dept) return undefined;
+  const m = cm?.[sheet.label] as { dept?: string | null; email?: string | null } | undefined;
+  const deptCol = m?.dept; const emailCol = m?.email;
+  if (!deptCol || !emailCol || !sheet.rows) return undefined;
+  const row = sheet.rows.find(r => String(r[deptCol] || "").trim() === dept);
+  const v = row?.[emailCol];
+  return typeof v === "string" ? v : undefined;
+}
+
 function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: Sheet[]; prefill?: Partial<Concern> }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [department, setDepartment] = useState(prefill?.target_department || "");
-  const [person, setPerson] = useState(prefill?.target_person || "");
+  const [sheetLabel, setSheetLabel] = useState(prefill?.sheet_label || sheets[0]?.label || "");
+  const [targetDept, setTargetDept] = useState(prefill?.target_department || "");
+  const [raisedBy, setRaisedBy] = useState(prefill?.raised_by || "");
+  const [raisedByDept, setRaisedByDept] = useState(prefill?.raised_by_department || "");
   const [title, setTitle] = useState(prefill?.title || "");
   const [detail, setDetail] = useState(prefill?.detail || "");
   const [severity, setSeverity] = useState<string>(prefill?.severity || "medium");
   const [activityRef, setActivityRef] = useState(prefill?.activity_ref || "");
 
-  const colMap = useQuery({
-    queryKey: ["column-map", base], enabled: open,
-    queryFn: ({ signal }) => apiGet<any>(`${base}/column-map`, signal),
-    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
-  });
-
-  const departments: string[] = useMemo(() => {
-    const fromMap = colMap.data?.departments;
-    if (Array.isArray(fromMap)) return fromMap;
+  const colMap = useColumnMap(base, open);
+  const currentSheet = sheets.find(s => s.label === sheetLabel);
+  const deptOptions = useMemo(() => {
     const set = new Set<string>();
-    sheets.forEach(s => s.rows?.forEach(r => {
-      const v = r["department"] || r["target_department"] || r["dept"];
-      if (typeof v === "string") set.add(v);
-    }));
+    sheets.forEach(s => deptValuesForSheet(colMap.data, s).forEach(v => set.add(v)));
     return Array.from(set);
   }, [colMap.data, sheets]);
 
-  const people: string[] = useMemo(() => {
-    const fromMap = colMap.data?.people;
-    if (Array.isArray(fromMap)) return fromMap;
-    const set = new Set<string>();
-    sheets.forEach(s => s.rows?.forEach(r => {
-      const v = r["owner"] || r["person"] || r["assignee"] || r["target_person"];
-      if (typeof v === "string") set.add(v);
-    }));
-    return Array.from(set);
-  }, [colMap.data, sheets]);
+  const activityOptions = useMemo(() => {
+    if (!currentSheet?.rows) return [] as { value: string; label: string }[];
+    const cols = (currentSheet.columns || []).map(c => c.name);
+    const schKey = cols.find(c => /sch\s*code|^sch$|activity\s*ref/i.test(c));
+    const descKey = cols.find(c => /description|desc|activity/i.test(c));
+    if (!schKey) return [];
+    return currentSheet.rows.slice(0, 500).map(r => {
+      const v = String(r[schKey] ?? "");
+      const d = descKey ? String(r[descKey] ?? "") : "";
+      return { value: v, label: d ? `${v} — ${d.slice(0, 60)}` : v };
+    }).filter(o => o.value);
+  }, [currentSheet]);
 
   const create = useMutation({
     mutationFn: (payload: Partial<Concern>) => apiSend<Concern>(`${base}/concerns`, "POST", payload),
-    onSuccess: (created) => {
-      qc.setQueryData<ConcernsData>(["concerns", base], (prev) => {
-        const opt: Concern = created || { id: `tmp-${Date.now()}`, title, detail, severity, target_department: department, target_person: person, activity_ref: activityRef, status: "open", created_at: new Date().toISOString() };
-        const concerns = [opt, ...(prev?.concerns || [])];
-        return { ...(prev || {}), concerns };
-      });
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["concerns", base] });
       setOpen(false);
       setTitle(""); setDetail(""); setActivityRef("");
@@ -777,24 +804,32 @@ function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: S
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Department</label>
-              <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  {departments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                  {departments.length === 0 && <SelectItem value="general">General</SelectItem>}
-                </SelectContent>
+              <label className="mb-1 block text-xs text-muted-foreground">Sheet</label>
+              <Select value={sheetLabel} onValueChange={setSheetLabel}>
+                <SelectTrigger><SelectValue placeholder="Sheet" /></SelectTrigger>
+                <SelectContent>{sheets.map(s => <SelectItem key={s.label} value={s.label}>{s.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Person</label>
-              <Select value={person} onValueChange={setPerson}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  {people.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  {people.length === 0 && <SelectItem value="-">No people detected</SelectItem>}
-                </SelectContent>
-              </Select>
+              <label className="mb-1 block text-xs text-muted-foreground">Target department</label>
+              {deptOptions.length ? (
+                <Select value={targetDept} onValueChange={setTargetDept}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>{deptOptions.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : (
+                <Input value={targetDept} onChange={e => setTargetDept(e.target.value)} placeholder="e.g. Cabling" />
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Raised by</label>
+              <Input value={raisedBy} onChange={e => setRaisedBy(e.target.value)} placeholder="Your name" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Raised by dept</label>
+              <Input value={raisedByDept} onChange={e => setRaisedByDept(e.target.value)} placeholder="Your dept" />
             </div>
           </div>
           <div>
@@ -818,17 +853,115 @@ function RaiseConcernButton({ base, sheets, prefill }: { base: string; sheets: S
               </Select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-muted-foreground">Activity ref (optional)</label>
-              <Input value={activityRef} onChange={e => setActivityRef(e.target.value)} placeholder="row id / ref" />
+              <label className="mb-1 block text-xs text-muted-foreground">Activity ref</label>
+              {activityOptions.length ? (
+                <Select value={activityRef} onValueChange={setActivityRef}>
+                  <SelectTrigger><SelectValue placeholder="Pick activity" /></SelectTrigger>
+                  <SelectContent>{activityOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                </Select>
+              ) : (
+                <Input value={activityRef} onChange={e => setActivityRef(e.target.value)} placeholder="row ref (optional)" />
+              )}
             </div>
           </div>
           {create.error && <p className="text-xs text-destructive">Failed: {(create.error as Error).message}</p>}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button disabled={!title || !department || create.isPending}
-            onClick={() => create.mutate({ title, detail, severity, target_department: department, target_person: person || undefined, activity_ref: activityRef || undefined })}>
+          <Button disabled={!title || !targetDept || create.isPending}
+            onClick={() => create.mutate({
+              raised_by: raisedBy || undefined,
+              raised_by_department: raisedByDept || undefined,
+              target_department: targetDept,
+              sheet_label: sheetLabel || undefined,
+              activity_ref: activityRef || undefined,
+              title, detail, severity,
+            })}>
             {create.isPending ? "Submitting…" : "Submit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReminderDialog({ open, onOpenChange, base, prefill }: {
+  open: boolean; onOpenChange: (o: boolean) => void; base: string;
+  prefill?: { related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string };
+}) {
+  const qc = useQueryClient();
+  const [recipient, setRecipient] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [recurrence, setRecurrence] = useState<string>("none");
+  const [scheduleAt, setScheduleAt] = useState<string>("");
+  const [relatedId, setRelatedId] = useState<string>("");
+
+  useEffect(() => {
+    if (!open) return;
+    setRecipient(prefill?.recipient_email || "");
+    setSubject(prefill?.subject || "");
+    setBody(prefill?.body || "");
+    setRecurrence(prefill?.recurrence || "none");
+    setScheduleAt("");
+    setRelatedId(prefill?.related_id || "");
+  }, [open, prefill]);
+
+  const create = useMutation({
+    mutationFn: () => apiSend(`${base}/reminders`, "POST", {
+      related_type: "concern",
+      related_id: relatedId || undefined,
+      recipient_email: recipient,
+      subject, body,
+      schedule_at: scheduleAt ? new Date(scheduleAt).toISOString() : undefined,
+      recurrence,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reminders", base] });
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{prefill?.related_id ? "Send reminder" : "New reminder"}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Recipient email</label>
+            <Input type="email" value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="name@example.com" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Subject</label>
+            <Input value={subject} onChange={e => setSubject(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">Body</label>
+            <Textarea value={body} onChange={e => setBody(e.target.value)} rows={4} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Recurrence</label>
+              <Select value={recurrence} onValueChange={setRecurrence}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Schedule (optional)</label>
+              <Input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} />
+            </div>
+          </div>
+          {create.error && <p className="text-xs text-destructive">Failed: {(create.error as Error).message}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={!recipient || !subject || create.isPending} onClick={() => create.mutate()}>
+            {create.isPending ? "Sending…" : "Send"}
           </Button>
         </DialogFooter>
       </DialogContent>
