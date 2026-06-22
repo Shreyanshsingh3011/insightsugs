@@ -519,7 +519,15 @@ export const getMyDependentActivities = createServerFn({ method: "GET" })
 
 export const getSheetDetail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ registryId: z.string().uuid() }).parse(input))
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        registryId: z.string().uuid(),
+        offset: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(2000).default(500),
+      })
+      .parse(input),
+  )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { data: reg, error: regErr } = await supabase
@@ -539,14 +547,26 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .eq("sheet_registry_id", data.registryId)
       .order("position", { ascending: true });
 
+    const { count } = await supabase
+      .from("sheet_rows")
+      .select("row_index", { count: "exact", head: true })
+      .eq("sheet_registry_id", data.registryId);
+
     const { data: rows } = await supabase
       .from("sheet_rows")
       .select("row_index, canonical, extras")
       .eq("sheet_registry_id", data.registryId)
       .order("row_index", { ascending: true })
-      .limit(500);
+      .range(data.offset, data.offset + data.limit - 1);
 
-    return { registry: reg, mappings: maps ?? [], rows: rows ?? [] };
+    return {
+      registry: reg,
+      mappings: maps ?? [],
+      rows: rows ?? [],
+      totalRows: count ?? 0,
+      offset: data.offset,
+      limit: data.limit,
+    };
   });
 
 export const deleteSheet = createServerFn({ method: "POST" })
