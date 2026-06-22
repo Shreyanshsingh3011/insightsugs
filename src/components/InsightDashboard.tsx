@@ -1159,7 +1159,43 @@ function HygieneSection({ base }: { base: string }) {
   );
 }
 
-/* ============================ Root component ============================ */
+/* ============================ Notebook Co-pilot tab wrapper ============================ */
+function NotebookCopilotTab({ base, sheets, setTab }: { base: string; sheets: Sheet[]; setTab: (t: typeof TABS[number]["id"]) => void }) {
+  const cq = useQuery({
+    queryKey: ["concerns", base],
+    queryFn: ({ signal }) => apiGet<ConcernsData>(`${base}/concerns`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  const rq = useQuery({
+    queryKey: ["reminders", base],
+    queryFn: ({ signal }) => apiGet<{ enabled?: boolean; reminders?: Reminder[] }>(`${base}/reminders`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  const concerns = (cq.data?.enabled !== false ? cq.data?.concerns : []) ?? [];
+  const reminders = (rq.data?.enabled !== false ? rq.data?.reminders : []) ?? [];
+  return (
+    <NotebookCopilot
+      base={base}
+      sheets={sheets}
+      concerns={concerns}
+      reminders={reminders.map((r, i) => ({ ...r, id: (r as { id?: string }).id ?? `idx${i}` }))}
+      onJumpToSheetRow={(sheet, row) => {
+        setTab("sheets");
+        setTimeout(() => {
+          const el = document.querySelector(`[data-sheet="${CSS.escape(sheet)}"][data-row="${row}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add("ring-2", "ring-primary");
+            setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2500);
+          }
+        }, 200);
+      }}
+      onOpenConcern={() => setTab("concerns")}
+    />
+  );
+}
+
+
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
