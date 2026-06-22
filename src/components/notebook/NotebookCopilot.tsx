@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sparkles, Send, RefreshCcw, FileText, MessageSquareWarning, Bell, Sheet as SheetIcon, Calculator, Bot, AlertCircle } from "lucide-react";
-import { toast } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import type { SheetSource } from "@/lib/notebook/compute";
 import { classify, parseQuestion } from "@/lib/notebook/router";
 import { evaluate } from "@/lib/notebook/compute";
