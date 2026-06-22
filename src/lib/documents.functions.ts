@@ -148,8 +148,17 @@ export const registerAndProcessDocument = createServerFn({ method: "POST" })
         return { id: docId, status: "ready" };
       }
 
-      const embeddings = await embedTexts(chunks.map((c) => c.content));
-      const rows = chunks.map((c, i) => ({
+      // For very large documents, cap chunk count to keep processing within
+      // edge-function time limits. We still summarise from the full text.
+      const MAX_CHUNKS = 1500;
+      let toEmbed = chunks;
+      if (chunks.length > MAX_CHUNKS) {
+        const stride = chunks.length / MAX_CHUNKS;
+        toEmbed = Array.from({ length: MAX_CHUNKS }, (_, i) => chunks[Math.floor(i * stride)]);
+      }
+
+      const embeddings = await embedTexts(toEmbed.map((c) => c.content));
+      const rows = toEmbed.map((c, i) => ({
         document_id: docId,
         owner_id: userId,
         chunk_index: c.index,
@@ -158,11 +167,12 @@ export const registerAndProcessDocument = createServerFn({ method: "POST" })
         token_count: Math.ceil(c.content.length / 4),
         embedding: toPgVector(embeddings[i] ?? []),
       }));
-      // insert in batches
-      for (let i = 0; i < rows.length; i += 50) {
+      // Bigger batches make large-doc inserts dramatically faster.
+      const INSERT_BATCH = 250;
+      for (let i = 0; i < rows.length; i += INSERT_BATCH) {
         const { error: cerr } = await admin
           .from("document_chunks")
-          .insert(rows.slice(i, i + 50));
+          .insert(rows.slice(i, i + INSERT_BATCH));
         if (cerr) throw new Error(cerr.message);
       }
 
