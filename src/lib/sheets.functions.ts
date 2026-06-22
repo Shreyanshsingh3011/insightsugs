@@ -666,9 +666,40 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
 
-    // Build context for Lovable AI. We answer directly so Copilot works
-    // regardless of whether the optional Emergent integration is configured.
-    const lovableKey = process.env.LOVABLE_API_KEY;
+    // ---- Precomputed FACTS per selected sheet (authoritative; JS-only math) ----
+    const { inferColumnStats, fmtNumber } = await import("./notebook/compute");
+    const factsBlocks: string[] = [];
+    const sheetGroups = new Map<string, { label: string; type: string; rows: Record<string, unknown>[] }>();
+    for (const sr of sampleRows) {
+      const key = sr.sheet;
+      if (!sheetGroups.has(key)) sheetGroups.set(key, { label: sr.sheet, type: sr.type, rows: [] });
+      sheetGroups.get(key)!.rows.push(sr.data);
+    }
+    for (const grp of sheetGroups.values()) {
+      const columns = Array.from(
+        grp.rows.reduce((s, r) => {
+          Object.keys(r).forEach((k) => s.add(k));
+          return s;
+        }, new Set<string>()),
+      );
+      const stats = inferColumnStats({ label: grp.label, columns, rows: grp.rows });
+      const lines: string[] = [`Sheet "${grp.label}" (${grp.type}) — ${grp.rows.length} rows`];
+      for (const st of stats) {
+        if (st.type === "number") {
+          lines.push(
+            `  • ${st.column} [number] sum=${fmtNumber(st.sum ?? 0)} avg=${fmtNumber(st.avg ?? 0)} min=${fmtNumber(st.min ?? 0)} max=${fmtNumber(st.max ?? 0)} nonEmpty=${st.nonEmpty}`,
+          );
+        } else if (st.type === "categorical" && st.topValues?.length) {
+          const top = st.topValues.map((v) => `${v.value}=${v.count}`).join(", ");
+          lines.push(`  • ${st.column} [categorical] distinct=${st.distinct} {${top}}`);
+        } else if (st.type === "date") {
+          lines.push(`  • ${st.column} [date] nonEmpty=${st.nonEmpty}`);
+        } else {
+          lines.push(`  • ${st.column} [text] nonEmpty=${st.nonEmpty}`);
+        }
+      }
+      factsBlocks.push(lines.join("\n"));
+    }
 
     // Pull document RAG chunks for selected documents (best-effort).
     let docChunkBlocks: string[] = [];
@@ -682,7 +713,7 @@ export const askCopilot = createServerFn({ method: "POST" })
             _query: toPgVector(qVec),
             _scope_folder: null,
             _scope_document: docId,
-            _match_count: 6,
+            _match_count: 10,
           });
           for (const m of (matches ?? []) as any[]) {
             docChunkBlocks.push(
@@ -691,13 +722,15 @@ export const askCopilot = createServerFn({ method: "POST" })
           }
         }
       } catch (e) {
-        // RAG is optional; continue with summaries only
         console.warn("Copilot RAG fallback:", (e as Error).message);
       }
     }
 
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const lovableKey = process.env.LOVABLE_API_KEY;
+
     let answer: string;
-    if (!lovableKey) {
+    if (!geminiKey && !lovableKey) {
       answer = "AI isn't configured for this workspace yet.";
     } else {
       const docSummariesBlock = documentContext
@@ -709,35 +742,59 @@ export const askCopilot = createServerFn({ method: "POST" })
         )
         .join("\n\n");
 
+      const factsText = factsBlocks.length ? factsBlocks.join("\n\n") : "(no sheets in scope)";
       const rowsBlock = sampleRows.length
-        ? JSON.stringify(sampleRows.slice(0, 400))
+        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 60000)
         : "(no sheet rows in scope)";
-
       const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
-
       const chunksBlock = docChunkBlocks.length
-        ? docChunkBlocks.join("\n\n---\n\n")
+        ? docChunkBlocks.join("\n\n---\n\n").slice(0, 60000)
         : "(no document excerpts retrieved)";
 
       const system =
-        "You are a helpful analyst answering questions about the user's sheets and documents. " +
-        "Use ONLY the provided context. If the answer isn't in the context, say you don't know. " +
-        "Cite source names in parentheses. Be concise and use markdown when helpful.";
+        "You are a precise document- and data-grounded analyst. " +
+        "RULES:\n" +
+        "1) NUMBERS are authoritative: ANY count, sum, average, min, max, or distribution MUST be quoted VERBATIM from the FACTS block. NEVER calculate, estimate, or invent numbers.\n" +
+        "2) If a number the user asks for is not present in FACTS or AGGREGATES, say you don't have it — do NOT compute it from the row sample.\n" +
+        "3) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases where useful and cite the document name (and page when shown).\n" +
+        "4) If the answer isn't in the provided context, say you don't know.\n" +
+        "5) Cite source names in parentheses, e.g. (Sheet A) or (contract.pdf p.4). Be concise and use markdown.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
-        (aggBlock ? `SHEET AGGREGATES:\n${aggBlock}\n\n` : "") +
-        `SHEET ROW SAMPLE (JSON):\n${rowsBlock}\n\n` +
+        `FACTS (authoritative, precomputed):\n${factsText}\n\n` +
+        (aggBlock ? `AGGREGATES:\n${aggBlock}\n\n` : "") +
+        `SHEET ROW SAMPLE (JSON, for qualitative context only — do NOT use for math):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
         `DOCUMENT EXCERPTS:\n${chunksBlock}`;
 
-      try {
+      if (geminiKey) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: system }] },
+              contents: [{ role: "user", parts: [{ text: userMsg }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+            }),
+          },
+        );
+        if (!res.ok) {
+          const t = await res.text().catch(() => "");
+          throw new Error(`Gemini error (${res.status}): ${t.slice(0, 300)}`);
+        }
+        const j = (await res.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+        };
+        answer =
+          j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ||
+          "(empty response)";
+      } else {
         const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Lovable-API-Key": lovableKey,
-          },
+          headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKey! },
           body: JSON.stringify({
             model: "google/gemini-2.5-flash",
             messages: [
@@ -754,8 +811,6 @@ export const askCopilot = createServerFn({ method: "POST" })
         }
         const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
         answer = j.choices?.[0]?.message?.content?.trim() ?? "(empty response)";
-      } catch (e) {
-        throw e;
       }
     }
 
