@@ -2,18 +2,17 @@
 import type { SheetSource, ParsedAgg, FilterSpec } from "./compute";
 import { matchColumn, normKey } from "./compute";
 
-const Q_INTENT = /\b(how\s+many|how\s+much|count|number\s+of|total|sum|average|avg|mean|median|max(?:imum)?|min(?:imum)?|highest|lowest|most|least|largest|smallest|top|bottom|per\s+\w+|group\s+by|percent|percentage|%\s*of|compare)\b/i;
+const Q_INTENT = /\b(how\s+many|how\s+much|count|number\s+of|total|sum|average|avg|mean|median|max(?:imum)?|min(?:imum)?|highest|lowest|most|least|largest|smallest|top|bottom|per\s+\w+|by\s+\w+|group\s+by|break\s*down|breakdown|distribution|share\s+of|rank|list\s+\w+\s+by|percent|percentage|%\s*of|compare)\b/i;
 
 export function classify(q: string): "quantitative" | "qualitative" {
   return Q_INTENT.test(q) ? "quantitative" : "qualitative";
 }
 
-// Try to parse a quantitative intent. Returns null if we can't confidently produce one.
 export function parseQuestion(q: string, sheets: SheetSource[]): ParsedAgg | null {
   if (sheets.length === 0) return null;
   const lower = q.toLowerCase();
 
-  // "which X has the most/least Y" or "which X has the most items/rows"
+  // "which X has the most/least Y"
   const whichMost = /\bwhich\s+([\w ]+?)\s+(?:has|have)\s+(?:the\s+)?(most|least|highest|lowest|fewest)(?:\s+(?:number\s+of\s+|count\s+of\s+|line\s+items?|items?|rows?))?/i.exec(q);
   if (whichMost) {
     const grpToken = whichMost[1].trim();
@@ -28,20 +27,38 @@ export function parseQuestion(q: string, sheets: SheetSource[]): ParsedAgg | nul
     }
   }
 
-  // "per X" / "by X" / "for each X" — group by
-  const perBy = /\b(?:per|by|for each|group(?:ed)?\s+by)\s+([\w ]+?)(?:[\?\.,]|$)/i.exec(q);
+  // top/bottom N <column>
+  const topN = /\b(top|bottom)\s+(\d+)\s+([\w ]+?)(?:[\?\.,]|\bby\b|\bin\b|$)/i.exec(q);
+  if (topN) {
+    const col = matchColumn(sheets, topN[3].trim());
+    if (col) {
+      return {
+        kind: topN[1].toLowerCase() === "bottom" ? "bottomN" : "topN",
+        n: Math.max(1, Math.min(50, parseInt(topN[2], 10))),
+        groupBy: col.column,
+        sheet: col.sheet.label,
+      };
+    }
+  }
 
-  // Aggregation keywords
+  // distribution / breakdown of X (by Y)?
+  const dist = /\b(?:distribution|breakdown|break\s*down|share)\s+(?:of\s+)?([\w ]+?)(?:\s+by\s+([\w ]+?))?(?:[\?\.,]|$)/i.exec(q);
+  if (dist) {
+    const target = matchColumn(sheets, (dist[2] ?? dist[1]).trim());
+    if (target) return { kind: "distribution", groupBy: target.column, sheet: target.sheet.label };
+  }
+
+  // "per X" / "by X" / "for each X" / "list ... by X" — group by
+  const perBy = /\b(?:per|by|for each|grouped\s+by|group\s+by|list(?:ed)?\s+by)\s+([\w ]+?)(?:[\?\.,]|$)/i.exec(q);
+
   let kind: "sum" | "avg" | "min" | "max" | "count" | null = null;
-  if (/\b(total|sum)\b/i.test(lower)) kind = "sum";
+  if (/\b(total|sum|sum\s+of)\b/i.test(lower)) kind = "sum";
   else if (/\b(average|avg|mean)\b/i.test(lower)) kind = "avg";
-  else if (/\b(max|maximum|highest|largest|top)\b/i.test(lower)) kind = "max";
-  else if (/\b(min|minimum|lowest|smallest|bottom)\b/i.test(lower)) kind = "min";
-  else if (/\b(how\s+many|count|number\s+of)\b/i.test(lower)) kind = "count";
+  else if (/\b(max|maximum|highest|largest)\b/i.test(lower)) kind = "max";
+  else if (/\b(min|minimum|lowest|smallest)\b/i.test(lower)) kind = "min";
+  else if (/\b(how\s+many|count\s+of|number\s+of|^count\b)\b/i.test(lower)) kind = "count";
 
-  if (!kind) return null;
-
-  // Optional filter: "in <sheet>" / "for <value>"
+  // Sheet hint
   let sheet: string | undefined;
   const inSheet = /\bin\s+([\w][\w \-]{1,40})/i.exec(q);
   if (inSheet) {
@@ -50,12 +67,11 @@ export function parseQuestion(q: string, sheets: SheetSource[]): ParsedAgg | nul
     if (s) sheet = s.label;
   }
 
-  // Filter "where X is Y" or "with X = Y" or quoted value
+  // Filter "where/with/for X = Y" or quoted value
   let filter: FilterSpec | undefined;
   const quoted = /["']([^"']{2,60})["']/.exec(q);
   if (quoted) {
     const val = quoted[1].toLowerCase();
-    // Find column containing that value across all rows
     const candidate = findColumnContaining(sheets, val);
     if (candidate) filter = { column: candidate, equalsLower: val };
   }
@@ -68,27 +84,24 @@ export function parseQuestion(q: string, sheets: SheetSource[]): ParsedAgg | nul
   if (perBy) {
     const gb = matchColumn(sheets, perBy[1].trim());
     if (gb) {
-      if (kind === "count") return { kind: "groupCount", groupBy: gb.column, sheet: sheet ?? gb.sheet.label };
+      if (kind === "count" || !kind) return { kind: "groupCount", groupBy: gb.column, sheet: sheet ?? gb.sheet.label, filter };
       if (kind === "sum") {
-        // We still need a target column; try to find one earlier in question
         const target = findValueColumn(q, sheets);
-        if (target) return { kind: "groupSum", groupBy: gb.column, column: target.column, sheet: sheet ?? gb.sheet.label };
+        if (target) return { kind: "groupSum", groupBy: gb.column, column: target.column, sheet: sheet ?? gb.sheet.label, filter };
       }
     }
   }
 
-  if (kind === "count") {
-    return { kind: "count", sheet, filter };
-  }
+  if (!kind) return null;
 
-  // sum/avg/min/max need a column. Look for it in the question.
+  if (kind === "count") return { kind: "count", sheet, filter };
+
   const target = findValueColumn(q, sheets);
   if (!target) return null;
   return { kind, column: target.column, sheet: sheet ?? target.sheet.label, filter };
 }
 
 function findValueColumn(q: string, sheets: SheetSource[]) {
-  // Try to find a column name token in the question
   const tokens = q.replace(/[?\.,]/g, " ").split(/\s+/).filter((t) => t.length > 2);
   let best: { sheet: SheetSource; column: string; score: number } | null = null;
   for (const tok of tokens) {
@@ -98,7 +111,6 @@ function findValueColumn(q: string, sheets: SheetSource[]) {
       if (!best || score > best.score) best = { sheet: m.sheet, column: m.column, score };
     }
   }
-  // Multi-word column phrases
   for (let i = 0; i < tokens.length - 1; i++) {
     const phrase = `${tokens[i]} ${tokens[i + 1]}`;
     const m = matchColumn(sheets, phrase);

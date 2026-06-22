@@ -29,7 +29,7 @@ export function toNumber(v: unknown): number | null {
   return null;
 }
 
-function fmtNumber(n: number): string {
+export function fmtNumber(n: number): string {
   if (!Number.isFinite(n)) return String(n);
   if (Number.isInteger(n)) return n.toLocaleString();
   return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -44,13 +44,16 @@ export function normKey(s: string): string {
 export function matchColumn(sheets: SheetSource[], token: string): { sheet: SheetSource; column: string } | null {
   const t = normKey(token);
   if (!t) return null;
+  // Strip trailing 's' for crude plural tolerance
+  const tSingular = t.endsWith("s") && t.length > 3 ? t.slice(0, -1) : t;
   let best: { sheet: SheetSource; column: string; score: number } | null = null;
   for (const s of sheets) {
     for (const c of s.columns) {
       const nc = normKey(c);
+      const ncSingular = nc.endsWith("s") && nc.length > 3 ? nc.slice(0, -1) : nc;
       let score = 0;
-      if (nc === t) score = 100;
-      else if (nc.includes(t) || t.includes(nc)) score = 60;
+      if (nc === t || ncSingular === tSingular) score = 100;
+      else if (nc.includes(t) || t.includes(nc) || ncSingular.includes(tSingular) || tSingular.includes(ncSingular)) score = 60;
       else {
         const tParts = t.split(" ");
         const cParts = new Set(nc.split(" "));
@@ -63,17 +66,81 @@ export function matchColumn(sheets: SheetSource[], token: string): { sheet: Shee
   return best ? { sheet: best.sheet, column: best.column } : null;
 }
 
+export type ColumnType = "number" | "date" | "categorical" | "text";
+
+export type ColumnStats = {
+  column: string;
+  type: ColumnType;
+  nonEmpty: number;
+  // numeric
+  sum?: number;
+  avg?: number;
+  min?: number;
+  max?: number;
+  // categorical
+  distinct?: number;
+  topValues?: { value: string; count: number }[];
+};
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2})?|^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/;
+
+export function inferColumnStats(sheet: SheetSource): ColumnStats[] {
+  const rows = sheet.rows.filter((r) => !isTotalRow(r, sheet.columns));
+  return sheet.columns.map((col): ColumnStats => {
+    let nonEmpty = 0;
+    const nums: number[] = [];
+    const dateLike: number[] = [];
+    const valueCounts = new Map<string, number>();
+    for (const r of rows) {
+      const v = r[col];
+      if (v === null || v === undefined || v === "") continue;
+      nonEmpty++;
+      const n = toNumber(v);
+      if (n !== null) nums.push(n);
+      const s = String(v).trim();
+      if (DATE_RE.test(s)) dateLike.push(1);
+      valueCounts.set(s, (valueCounts.get(s) ?? 0) + 1);
+    }
+    if (nonEmpty === 0) return { column: col, type: "text", nonEmpty: 0 };
+    const numericRatio = nums.length / nonEmpty;
+    if (numericRatio >= 0.8) {
+      const sum = nums.reduce((a, b) => a + b, 0);
+      return {
+        column: col,
+        type: "number",
+        nonEmpty,
+        sum,
+        avg: sum / nums.length,
+        min: Math.min(...nums),
+        max: Math.max(...nums),
+      };
+    }
+    const dateRatio = dateLike.length / nonEmpty;
+    if (dateRatio >= 0.8) return { column: col, type: "date", nonEmpty };
+    const distinct = valueCounts.size;
+    if (distinct > 0 && distinct <= 25) {
+      const top = [...valueCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([value, count]) => ({ value, count }));
+      return { column: col, type: "categorical", nonEmpty, distinct, topValues: top };
+    }
+    return { column: col, type: "text", nonEmpty, distinct };
+  });
+}
+
 export type ParsedAgg =
   | { kind: "sum" | "avg" | "min" | "max"; column: string; sheet?: string; filter?: FilterSpec }
   | { kind: "count"; sheet?: string; filter?: FilterSpec }
-  | { kind: "groupCount" | "groupSum"; groupBy: string; column?: string; sheet?: string }
-  | { kind: "argmaxCount" | "argminCount"; groupBy: string; sheet?: string };
+  | { kind: "groupCount" | "groupSum"; groupBy: string; column?: string; sheet?: string; filter?: FilterSpec }
+  | { kind: "distribution"; groupBy: string; sheet?: string; filter?: FilterSpec }
+  | { kind: "topN" | "bottomN"; n: number; groupBy: string; sheet?: string; filter?: FilterSpec }
+  | { kind: "argmaxCount" | "argminCount"; groupBy: string; sheet?: string; filter?: FilterSpec };
 
 export type FilterSpec = { column: string; equalsLower: string };
 
 /** Evaluate a parsed aggregation over the given sheets. Returns null if no rows match. */
 export function evaluate(parsed: ParsedAgg, sheets: SheetSource[]): ComputedResult | null {
-  // Filter to specific sheet if asked.
   const useSheets = parsed.sheet
     ? sheets.filter((s) => normKey(s.label) === normKey(parsed.sheet!) || normKey(s.label).includes(normKey(parsed.sheet!)))
     : sheets;
@@ -88,7 +155,6 @@ export function evaluate(parsed: ParsedAgg, sheets: SheetSource[]): ComputedResu
     });
   }
 
-  // Optional filter
   let filtered = allRows;
   if ("filter" in parsed && parsed.filter) {
     const f = parsed.filter;
@@ -135,27 +201,45 @@ export function evaluate(parsed: ParsedAgg, sheets: SheetSource[]): ComputedResu
       };
     }
     case "groupCount":
-    case "groupSum": {
+    case "groupSum":
+    case "distribution":
+    case "topN":
+    case "bottomN": {
       const buckets = new Map<string, { value: number; refs: RowRef[] }>();
+      const isSum = parsed.kind === "groupSum";
+      const targetCol = isSum ? parsed.column : undefined;
       for (const r of filtered) {
         const keyRaw = r.rec[parsed.groupBy];
         const key = keyRaw == null || keyRaw === "" ? "(blank)" : String(keyRaw);
         let b = buckets.get(key);
         if (!b) { b = { value: 0, refs: [] }; buckets.set(key, b); }
-        if (parsed.kind === "groupCount") b.value += 1;
-        else {
-          const n = parsed.column ? toNumber(r.rec[parsed.column]) : null;
+        if (isSum && targetCol) {
+          const n = toNumber(r.rec[targetCol]);
           if (n !== null) b.value += n;
+        } else {
+          b.value += 1;
         }
         b.refs.push(r);
       }
       if (buckets.size === 0) return null;
-      const entries = [...buckets.entries()].sort((a, b) => b[1].value - a[1].value);
-      const lines = entries.slice(0, 12).map(([k, v]) => `${k}: ${fmtNumber(v.value)}`);
-      const contributing = entries.flatMap(([, v]) => v.refs).slice(0, 50).map((r) => ({ sheet: r.sheet, row: r.row }));
+      const sorted = [...buckets.entries()].sort((a, b) => b[1].value - a[1].value);
+      const slice = parsed.kind === "bottomN"
+        ? sorted.slice(-parsed.n).reverse()
+        : parsed.kind === "topN"
+          ? sorted.slice(0, parsed.n)
+          : sorted.slice(0, 25);
+      const total = sorted.reduce((a, [, v]) => a + v.value, 0);
+      const lines = ["| " + parsed.groupBy + " | " + (isSum ? `Sum ${parsed.column}` : "Count") + " | Share |",
+                     "|---|---:|---:|"];
+      for (const [k, v] of slice) {
+        const share = total > 0 ? `${((v.value / total) * 100).toFixed(1)}%` : "—";
+        lines.push(`| ${k} | ${fmtNumber(v.value)} | ${share} |`);
+      }
+      const contributing = sorted.flatMap(([, v]) => v.refs).slice(0, 50).map((r) => ({ sheet: r.sheet, row: r.row }));
+      const labelKind = isSum ? `Sum of ${parsed.column}` : "Count";
       return {
         formatted: lines.join("\n"),
-        explanation: `${parsed.kind === "groupCount" ? "Count" : `Sum of ${parsed.column}`} grouped by ${parsed.groupBy}.`,
+        explanation: `${labelKind} grouped by ${parsed.groupBy} (${sorted.length} groups, ${fmtNumber(total)} total).`,
         contributingRows: contributing,
       };
     }

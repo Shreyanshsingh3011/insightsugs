@@ -46,7 +46,7 @@ async function callGemini(apiKey: string, system: string, userText: string): Pro
   const body = {
     systemInstruction: { role: "system", parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: userText }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
   };
   const r = await fetch(url, {
     method: "POST",
