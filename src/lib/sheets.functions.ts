@@ -604,38 +604,54 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
 
-    // 2) Row sample for row-level questions. Cap and report the cap honestly.
-    const PER_SHEET_SAMPLE = 1000;
+    // 2) Pull FULL row sets per sheet (paginated) so FACTS are accurate
+    //    even for very large sheets. Derive a smaller, evenly-strided sample
+    //    for the LLM's qualitative context.
+    const FULL_FETCH_CAP = 50000;
+    const PAGE = 1000;
+    const QUAL_SAMPLE_PER_SHEET = 200;
     const sources: { id: string; name: string; type: string; rowsTotal: number; rowsUsed: number; truncated: boolean }[] = [];
     const sampleRows: Array<{ sheet: string; type: string; row_index: number; data: Record<string, unknown> }> = [];
+    const fullRowsBySheet = new Map<string, { label: string; type: string; rows: Record<string, unknown>[] }>();
 
     for (const r of regs) {
       const { count } = await supabase
         .from("sheet_rows")
         .select("row_index", { count: "exact", head: true })
         .eq("sheet_registry_id", r.id);
-      const { data: rows } = await supabase
-        .from("sheet_rows")
-        .select("row_index, canonical, extras")
-        .eq("sheet_registry_id", r.id)
-        .order("row_index", { ascending: true })
-        .limit(PER_SHEET_SAMPLE);
-      const slice = rows ?? [];
-      const total = count ?? slice.length;
+      const total = count ?? 0;
+      const fetchTarget = Math.min(total, FULL_FETCH_CAP);
+      const allRows: { row_index: number; canonical: any; extras: any }[] = [];
+      for (let offset = 0; offset < fetchTarget; offset += PAGE) {
+        const { data: pageRows } = await supabase
+          .from("sheet_rows")
+          .select("row_index, canonical, extras")
+          .eq("sheet_registry_id", r.id)
+          .order("row_index", { ascending: true })
+          .range(offset, Math.min(offset + PAGE - 1, fetchTarget - 1));
+        if (!pageRows?.length) break;
+        allRows.push(...pageRows);
+      }
       sources.push({
         id: r.id,
         name: r.display_name,
         type: r.sheet_type,
         rowsTotal: total,
-        rowsUsed: slice.length,
-        truncated: total > slice.length,
+        rowsUsed: allRows.length,
+        truncated: total > allRows.length,
       });
-      for (const row of slice) {
+      const merged = allRows.map((row) => ({
+        ...((row.canonical as Record<string, unknown>) ?? {}),
+        ...((row.extras as Record<string, unknown>) ?? {}),
+      }));
+      fullRowsBySheet.set(r.id, { label: r.display_name, type: r.sheet_type, rows: merged });
+      const stride = Math.max(1, Math.floor(allRows.length / QUAL_SAMPLE_PER_SHEET));
+      for (let i = 0; i < allRows.length; i += stride) {
         sampleRows.push({
           sheet: r.display_name,
           type: r.sheet_type,
-          row_index: row.row_index,
-          data: { ...((row.canonical as Record<string, unknown>) ?? {}), ...((row.extras as Record<string, unknown>) ?? {}) },
+          row_index: allRows[i].row_index,
+          data: merged[i],
         });
       }
     }
@@ -666,16 +682,10 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
 
-    // ---- Precomputed FACTS per selected sheet (authoritative; JS-only math) ----
+    // ---- Precomputed FACTS per selected sheet (authoritative; over FULL rows) ----
     const { inferColumnStats, fmtNumber } = await import("./notebook/compute");
     const factsBlocks: string[] = [];
-    const sheetGroups = new Map<string, { label: string; type: string; rows: Record<string, unknown>[] }>();
-    for (const sr of sampleRows) {
-      const key = sr.sheet;
-      if (!sheetGroups.has(key)) sheetGroups.set(key, { label: sr.sheet, type: sr.type, rows: [] });
-      sheetGroups.get(key)!.rows.push(sr.data);
-    }
-    for (const grp of sheetGroups.values()) {
+    for (const grp of fullRowsBySheet.values()) {
       const columns = Array.from(
         grp.rows.reduce((s, r) => {
           Object.keys(r).forEach((k) => s.add(k));
@@ -683,7 +693,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         }, new Set<string>()),
       );
       const stats = inferColumnStats({ label: grp.label, columns, rows: grp.rows });
-      const lines: string[] = [`Sheet "${grp.label}" (${grp.type}) — ${grp.rows.length} rows`];
+      const lines: string[] = [`Sheet "${grp.label}" (${grp.type}) — ${grp.rows.length} rows (FULL DATASET)`];
       for (const st of stats) {
         if (st.type === "number") {
           lines.push(
