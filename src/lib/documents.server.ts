@@ -194,10 +194,11 @@ export function chunkText(
 
 export async function embedTexts(inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  // Batch in groups of 32 to keep payloads small.
+  // Larger batches reduce HTTP round-trips for big documents.
+  const BATCH = 96;
   const out: number[][] = [];
-  for (let i = 0; i < inputs.length; i += 32) {
-    const batch = inputs.slice(i, i + 32);
+  for (let i = 0; i < inputs.length; i += BATCH) {
+    const batch = inputs.slice(i, i + BATCH);
     const res = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
       method: "POST",
       headers: {
