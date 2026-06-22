@@ -19,6 +19,7 @@ export function verifyCitations(opts: {
     } else if (c.type === "reminder") {
       if (opts.reminders.some((x, i) => x.id === c.id || `idx${i}` === c.id)) verified.push(c);
     }
+    // Schema / Facts / Note tags are intentionally dropped — they aren't user-clickable rows.
   }
   return verified;
 }

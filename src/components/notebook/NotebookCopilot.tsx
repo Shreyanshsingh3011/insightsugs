@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -325,7 +327,13 @@ function MessageBubble({ msg, onCitationClick }: { msg: ChatMessage; onCitationC
             <Badge variant="outline" className="h-4 gap-1 px-1 text-[9px]"><BadgeIcon className="h-2.5 w-2.5" /> {badge}</Badge>
           </div>
         )}
-        <div className="whitespace-pre-wrap">{msg.content}</div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{msg.content}</div>
+        ) : (
+          <div className="prose prose-sm max-w-none dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-table:my-2 prose-headings:my-1">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+          </div>
+        )}
         {!isUser && (msg.citations?.length ?? 0) > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {msg.citations!.map((c, i) => (
