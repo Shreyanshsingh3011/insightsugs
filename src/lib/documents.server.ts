@@ -86,11 +86,9 @@ export async function extractText(
   if (mime === "application/pdf" || lower.endsWith(".pdf")) {
     const result = await extractPdf(buffer);
     const total = result.pages.reduce((n, p) => n + p.text.trim().length, 0);
-    if (total < 200) {
-      // Likely a scanned PDF — fall back to per-page OCR via image render is not
-      // available without a rasterizer in the worker runtime. Send the entire PDF
-      // bytes to Gemini as an image-like input; for typed PDFs it works directly,
-      // for scanned PDFs ask the model to OCR using the file embed.
+    // OCR fallback only when we extracted very little text AND the file is
+    // small enough to send to Gemini in one shot (~10 MB).
+    if (total < 200 && buffer.byteLength < 10 * 1024 * 1024) {
       const b64 = Buffer.from(buffer).toString("base64");
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
