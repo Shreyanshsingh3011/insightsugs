@@ -179,10 +179,12 @@ Deno.serve(async (req) => {
       }
 
       if (offline) {
-        // Extractive fallback: top items joined.
-        const top = items.slice(0, 5).map((i) => `• ${i.text}`).join("\n");
-        const text = `Based on the selected sources:\n${top}`;
-        const cites = items.slice(0, 5).map((i) => parseCitations(i.tag).citations[0]).filter(Boolean);
+        // Extractive fallback: include schema/facts items first (they cover most questions), then top rows.
+        const priority = (i: ContextItem) => i.tag.startsWith("[[Facts:") ? 0 : i.tag.startsWith("[[Schema:") ? 1 : i.tag.startsWith("[[Concern:") || i.tag.startsWith("[[Reminder:") ? 2 : 3;
+        const sorted = [...items].sort((a, b) => priority(a) - priority(b));
+        const pick = sorted.slice(0, 12);
+        const text = `**Based on the selected sources:**\n\n${pick.map((i) => i.text).join("\n\n")}`;
+        const cites = pick.map((i) => parseCitations(i.tag).citations[0]).filter(Boolean);
         await persistMessages(token, [
           { role: "user", content: question },
           { role: "assistant", content: text, citations: cites, generated_by: "computed" },
@@ -191,13 +193,16 @@ Deno.serve(async (req) => {
       }
 
       const sys =
-        "You are a careful notebook assistant. Answer using ONLY the provided context items. " +
-        "Broad requests like 'summary', 'overview', or 'what is this' SHOULD be answered by summarizing the SHEET schema items and any concerns/reminders present — list each source briefly. " +
-        "After each specific factual claim, append the matching tag exactly as given, e.g. [[Sheet:Cabling|row:14]] or [[Concern:abc]]. " +
-        "If the user asks for a precise count, total, average, max, or min that is NOT already present in the context, reply: That requires a computation — please ask using the words 'how many' or 'total'. " +
-        "If the answer is genuinely not in the context, reply exactly: That isn't in the selected sources. " +
-        "Never invent numbers. Keep replies under 6 sentences.";
-      const ctxText = items.map((i) => `${i.tag} ${i.text}`).join("\n");
+        "You are a careful notebook assistant grounded in the user's data. Answer using ONLY the provided context items. " +
+        "Context blocks include: SCHEMA (one per sheet), FACTS (precomputed totals/averages/min/max/distributions per sheet — these are the SOURCE OF TRUTH for any number), CONCERN, REMINDER, and SHEET rows. " +
+        "Rules:\n" +
+        "1. ANSWER every question that is supported by the context. Broad requests like 'summary' or 'overview' should be answered by summarizing the schemas, facts, and concerns/reminders.\n" +
+        "2. For any number (count, total, average, min, max, percentage, distribution) QUOTE the value VERBATIM from the FACTS block. NEVER compute, round, or estimate a number yourself.\n" +
+        "3. After every specific factual claim append the matching tag from the context, exactly as written. For numeric claims cite the relevant [[Facts:Sheet]] tag. For row-level claims cite [[Sheet:label|row:N]]. For concerns/reminders cite [[Concern:id]] / [[Reminder:id]].\n" +
+        "4. Use markdown — bullet lists, **bold**, and tables when comparing values.\n" +
+        "5. If the answer truly is not in the context, reply: 'That isn't in the selected sources.' and suggest which source to enable.\n" +
+        "Keep replies under 250 words unless the user asks for more detail.";
+      const ctxText = items.map((i) => `${i.tag}\n${i.text}`).join("\n\n");
       const hist = (history ?? []).slice(-6).map((h) => `${h.role}: ${h.content}`).join("\n");
       const usr = `Context items:\n${ctxText}\n\nConversation so far:\n${hist}\n\nUser question: ${question}`;
 
