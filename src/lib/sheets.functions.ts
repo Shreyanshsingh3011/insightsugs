@@ -787,7 +787,7 @@ export const askCopilot = createServerFn({ method: "POST" })
             body: JSON.stringify({
               systemInstruction: { parts: [{ text: system }] },
               contents: [{ role: "user", parts: [{ text: userMsg }] }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+              generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
             }),
           },
         );
