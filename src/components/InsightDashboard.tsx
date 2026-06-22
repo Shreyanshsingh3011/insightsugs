@@ -562,7 +562,7 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
                     const lab = String(r["status"] || r["type"] || "").toLowerCase();
                     const muted = /total|subtotal|grand/.test(lab) || /total|subtotal|grand/i.test(JSON.stringify(r).slice(0, 100));
                     return (
-                      <TableRow key={i} className={`${i % 2 ? "bg-muted/30" : ""} ${muted ? "text-muted-foreground italic" : ""}`}>
+                      <TableRow key={i} data-sheet={sheet.label} data-row={i} className={`${i % 2 ? "bg-muted/30" : ""} ${muted ? "text-muted-foreground italic" : ""}`}>
                         {sheet.columns!.map(c => {
                           const v = r[c.name];
                           const txt = fmtCell(v);
