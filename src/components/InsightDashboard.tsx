@@ -34,6 +34,7 @@ import {
   Wand2, Send, ChevronDown, AlertTriangle, RefreshCcw, Link as LinkIcon,
   TrendingUp, Activity, CheckCircle2, Circle, CircleDot, Plus, ArrowRight,
 } from "lucide-react";
+import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string };
