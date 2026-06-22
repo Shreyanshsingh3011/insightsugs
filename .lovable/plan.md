@@ -1,110 +1,75 @@
-# Co-pilot Notebook — Source-Grounded, Verified-Accuracy
+# Co-pilot accuracy overhaul
 
-A new Co-pilot experience inside the Insights page that replaces the current chat tab. Math is done in JS (authoritative). Gemini (`gemini-flash-latest`, free tier) only narrates qualitative answers or rephrases computed numbers. All chat state lives in **our** Supabase, not DelayBridge.
+Today the Co-pilot fails on many valid questions because (a) the quantitative parser only matches a narrow set of phrasings, (b) the qualitative retriever sends a tiny keyword-filtered slice of rows so the LLM literally doesn't see the answer, and (c) the system prompt rejects anything it can't tag. Fix all three so every question is answered from the data, and numbers stay exact.
 
----
+## What changes for the user
 
-## 1. Backend (Supabase)
+- Any question about the selected sources gets a real answer, not "That isn't in the selected sources."
+- Numeric answers (counts, totals, averages, min/max, group-bys, "which X has the most Y") remain exact — still computed in JS, never by the LLM.
+- Narrative answers cite specific rows / concerns / reminders that actually exist.
+- If a question genuinely has no answer in the data, Co-pilot says so and suggests what to enable.
 
-### Migration — two new tables
-- `notebook_sources(id, token, type ∈ {sheet,concerns,reminders}, label, enabled bool default true, summary text, summary_generated_at, row_count int, unique(token,type,label))`
-- `notebook_messages(id, token, role, content, citations jsonb default '[]', generated_by, created_at)`
-- RLS enabled; permissive policy for `anon` + `authenticated` (access is gated by the opaque DelayBridge token in app logic).
-- GRANTs for `anon`, `authenticated`, `service_role`.
+## How it works
 
-### Secret
-- Request `GEMINI_API_KEY` via `add_secret`.
+### 1. Always give the LLM the full picture (within budget)
 
-### Edge function `copilot-notebook` (Deno, `verify_jwt=false`)
-Reads `GEMINI_API_KEY` from env. Three modes via `{ mode }` in body:
+Rewrite `src/lib/notebook/retrieve.ts` to build a structured context, not a keyword-filtered list:
 
-- **`chat`** — `{ token, question, mode_hint, computed_result?, context_items?, history }`
-  - If `computed_result` present → prompt Gemini to **only phrase** that exact value; never alter numbers. `generated_by:"computed"` (or `"computed+ai"` when phrased).
-  - Else (qualitative) → strict system prompt: *"Answer ONLY from the provided context items. Append `[[…]]` tag after each factual claim. If absent, say 'That isn't in the selected sources.' Never invent figures."* Send `context_items + history + question` to `gemini-flash-latest:generateContent`.
-  - Server parses `[[…]]` tags → `citations[]`, strips tags from text, persists user + assistant rows to `notebook_messages`, returns `{ text, citations, generated_by }`.
-  - On Gemini failure → return extractive fallback (top context items concatenated) with `generated_by:"computed"` and never 500.
-- **`summarize_source`** — `{ token, type, label, sample }` → 2–3 sentence factual summary; upsert into `notebook_sources` with `row_count`, `summary_generated_at`.
-- **`suggest_questions`** — `{ token, enabled_sources, schema_info }` → 4–6 starter questions grounded in actual column names.
+- **Schema block** per enabled sheet: label, row count, every column name, and the inferred type (number / date / text / categorical) based on a scan of the column's values.
+- **Precomputed facts block** per sheet (computed in JS, sent as ground truth the LLM must quote verbatim):
+  - total rows (excluding Total / Sub Total rows)
+  - for every numeric column: sum, avg, min, max, count of non-empty values
+  - for every low-cardinality text column (≤25 distinct values): value → count map
+- **Rows block**: the actual data as a compact pipe-delimited table with a row-index column, capped by character budget (~60 KB total). If a sheet is larger than the budget, keep the top-scored rows for the question plus a uniform sample so totals/distributions stay representative, and note "showing N of M rows".
+- **Concerns / Reminders blocks**: full list when enabled (they're small).
+- Each row / concern / reminder still carries its `[[Sheet:label|row:N]]` / `[[Concern:id]]` tag for citation.
 
----
+### 2. Broaden and harden the quantitative parser
 
-## 2. Client — Question Router (pure JS, no LLM)
+In `src/lib/notebook/router.ts` and `compute.ts`:
 
-New `src/lib/notebook/router.ts`:
-- **Classify** by regex on intent verbs: how many, count, number of, total, sum, average/mean, max/min, highest/lowest, most/least, per X, group by, "% of", compare. → `quantitative` vs `qualitative`.
-- **Parse** quantitative into `{ agg: sum|count|avg|min|max|argmax|groupCount, column?, filter?, groupBy? }` by fuzzy-matching tokens against the union of column names across enabled sheets + `concerns`/`reminders` field names.
-- **Compute** in `src/lib/notebook/compute.ts` over enabled sources' full row arrays:
-  - Skip rows whose first-column value matches `/^(grand\s*total|sub\s*total|total)$/i`.
-  - Numeric coercion: strip commas/currency, `parseFloat`, ignore `NaN`/empty.
-  - Returns `{ value, formatted, contributingRows: [{sheetLabel,rowIndex}, …] }`.
-- If parsing fails → treat as qualitative.
+- Accept more phrasings: "tell me the total ...", "what's the average ...", "list ... by ...", "break down ... by ...", "distribution of ...", "share of ...", "show ... per ...", "rank ... by ...", bare "count of ...".
+- Add `distribution` / `topN` / `bottomN` / `share` aggregations on top of existing sum/avg/min/max/count/groupCount/groupSum/argmax/argmin.
+- Column / sheet matching: tolerate plurals, spaces, hyphens, and partial matches; pick the best column across all enabled sheets when the question doesn't name a sheet.
+- Filter parsing: support multiple `where X = Y and Z in (a, b)`, plus implicit filters like "open concerns" → `status=open` on the Concerns source.
+- When parsing succeeds, evaluate in JS, then send Gemini the computed result plus a 1-line phrasing instruction (existing path, unchanged guarantee that the LLM cannot alter the number).
+- When parsing fails but the question is clearly numeric, fall through to qualitative with the precomputed-facts block — the LLM will read the exact figure from the facts table instead of doing math.
 
-## 3. Client — Retrieval (qualitative path)
+### 3. Relax the qualitative prompt so it actually answers
 
-`src/lib/notebook/retrieve.ts`:
-- Tokenize question (lowercase, strip stopwords).
-- Score each row: `Σ overlap(token, cellValue|columnName)` with small boost for exact phrase.
-- Always include **all** concerns + reminders when those sources are enabled.
-- Cap at 40 items; tag each:
-  - Sheet row → `[[Sheet:<label>|row:<i>]] col=val; …`
-  - Concern → `[[Concern:<id>]] title=…; status=…; target_department=…; detail=…`
-  - Reminder → `[[Reminder:<id>]] subject=…; status=…; recipient=…; schedule_at=…`
+Edge function `supabase/functions/copilot-notebook/index.ts`:
 
-## 4. Client — Citation Verification
+- New system prompt: "Answer using only the provided context. Quote any number directly from the Precomputed Facts block — never compute one yourself. For each specific claim append the matching `[[…]]` tag. Use markdown for lists / tables. If the answer truly isn't in the context, say so and suggest which source to enable."
+- Drop the blanket "if asked for a count, refuse" rule — the facts block already has the counts.
+- Raise `maxOutputTokens` to 4096 so longer summaries / breakdowns aren't truncated.
+- Offline fallback (no `GEMINI_API_KEY`): render the precomputed facts + top matching rows as a markdown answer instead of three bullet points; quantitative path keeps working unchanged.
 
-`src/lib/notebook/verify.ts`: for each returned citation, confirm the referenced sheet row / concern / reminder exists in current enabled data and that any numeric/string value mentioned in the sentence appears in that record. Unverified citations are dropped (or rendered greyed-out).
+### 4. Verify citations against live data
 
-## 5. Frontend — Co-pilot Tab Rewrite
+`src/lib/notebook/verify.ts`: keep current behavior (drop citations whose row/concern/reminder doesn't exist) and additionally surface a small "unverifiable claim" note if the LLM returned zero valid citations for a non-empty answer — so users see when to double-check.
 
-Replace the existing Copilot section inside `src/components/InsightDashboard.tsx` with a new `<NotebookCopilot/>` component (`src/components/notebook/NotebookCopilot.tsx`) wired into the existing tab.
+### 5. UI polish in `NotebookCopilot.tsx`
 
-Layout (two-column on desktop, stacked on mobile):
+- Render assistant messages with `react-markdown` (tables, lists, bold) — currently they're plain `whitespace-pre-wrap`.
+- Replace the "No sources selected" copy path with an inline CTA that re-enables all sources in one click.
+- Keep the Computed / AI badge; add a tiny "facts used" disclosure under numeric answers showing which precomputed fact was quoted.
 
-```text
-┌──────────── Sources ─────────────┬──────────────── Chat ────────────────┐
-│ [x] Sheet: Cabling   (124 rows) │ Suggested: [chip][chip][chip][chip]   │
-│     summary…  [Regenerate]      │ ─────────────────────────────────────  │
-│ [x] Sheet: Poles     ( 88 rows) │  user: …                              │
-│     summary…                    │  assistant [Computed]  total = 1,000…  │
-│ [x] Concerns         (  2)      │     ↳ [Sheet:Cabling row 14] chip      │
-│ [ ] Reminders        (  1)      │  assistant [AI] explanation…           │
-│                                 │     ↳ [Concern #abc] chip              │
-│                                 │  [textarea] [Send]                     │
-└─────────────────────────────────┴───────────────────────────────────────┘
-```
+## Technical notes
 
-Behavior:
-- Sources list built from `dashboard.sheets[]` + `concerns` + `reminders` returned by DelayBridge link. Toggle persists to `notebook_sources.enabled` (upsert).
-- "Generate summary" calls edge fn `summarize_source` (cached; regenerate only on click or `row_count` change).
-- Suggested-question chips loaded from `suggest_questions`; refresh when enabled set changes.
-- On send:
-  1. Router classifies.
-  2. If quantitative → compute locally → POST `chat` with `computed_result` + `contributingRows` → render with **Computed** badge.
-  3. If qualitative → build context_items → POST `chat` → verify citations → render with **AI** badge.
-- Citation chips clickable: sheet-row → switch to Sheets tab, scroll & flash row; concern → open the existing concern card / dialog.
-- History loaded from `notebook_messages` on mount (filtered by token).
-- If `GEMINI_API_KEY` missing, edge fn returns `offline:true` → banner: *"Running in offline mode — numeric answers are exact; set GEMINI_API_KEY for full AI explanations."*
+- All math stays in `compute.ts` (JS). The LLM only phrases numbers it is handed.
+- Context budget enforced by character count before send; rows are sampled deterministically (top-scored first, then every Nth) so re-asking the same question is stable.
+- Type inference for columns is a one-pass scan over up to 200 sampled values; cached per `(token, sheet)` in component memo.
+- No schema changes. No new tables. No new secrets.
+- Files touched: `src/lib/notebook/retrieve.ts`, `src/lib/notebook/router.ts`, `src/lib/notebook/compute.ts`, `src/lib/notebook/verify.ts`, `src/components/notebook/NotebookCopilot.tsx`, `supabase/functions/copilot-notebook/index.ts`. `react-markdown` is already a project dependency.
 
-## 6. Files
+## Acceptance
 
-New:
-- `supabase/migrations/<ts>_notebook.sql`
-- `supabase/functions/copilot-notebook/index.ts`
-- `src/lib/notebook/{router,compute,retrieve,verify,client}.ts`
-- `src/components/notebook/{NotebookCopilot,SourcesPanel,ChatPanel,CitationChip}.tsx`
+Using the seeded DelayBridge link:
 
-Edited:
-- `src/components/InsightDashboard.tsx` — swap Copilot tab content for `<NotebookCopilot/>`; expose imperative "jump to sheet row" handle.
-
-## 7. Secrets / setup actions needed from user
-- Approve the migration.
-- Provide `GEMINI_API_KEY` (free key from Google AI Studio) via secure secret form.
-
-## 8. Acceptance checks (manual)
-1. `total Quantity` → exact JS sum + Computed badge + row citations.
-2. `how many in Service Group X` → exact count.
-3. `which Sch has most line items` → exact argmax.
-4. Toggle Concerns off/on → answer source changes accordingly.
-5. Out-of-source question → "That isn't in the selected sources."
-6. Unset key → questions 1–3 still exact; banner shows.
-7. Every citation chip resolves to a matching row/concern.
+1. "summary" / "overview" → markdown summary of every enabled source with row counts and key columns.
+2. "how many concerns are open" → exact count, Computed badge.
+3. "total <numeric column> in <sheet>" and "average …", "max …", "min …" → exact, Computed badge.
+4. "which <column> has the most line items" / "break down by <column>" / "distribution of <column>" → exact group-by table, Computed badge.
+5. "what's blocking cabling" with Concerns enabled → narrative cites the seeded concern; with Concerns disabled → narrative cites sheet rows only.
+6. Question with no answer in the data → "That isn't in the selected sources" plus a suggestion of which source to enable.
+7. `GEMINI_API_KEY` unset → numeric questions still exact; narrative questions return a markdown extract of facts + top rows instead of failing.
