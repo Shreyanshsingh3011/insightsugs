@@ -287,7 +287,7 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
                 )}
               </div>
             )}
-          </ScrollArea>
+          </div>
 
           {/* Input */}
           <form
