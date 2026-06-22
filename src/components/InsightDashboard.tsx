@@ -34,6 +34,7 @@ import {
   Wand2, Send, ChevronDown, AlertTriangle, RefreshCcw, Link as LinkIcon,
   TrendingUp, Activity, CheckCircle2, Circle, CircleDot, Plus, ArrowRight,
 } from "lucide-react";
+import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string };
@@ -561,7 +562,7 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
                     const lab = String(r["status"] || r["type"] || "").toLowerCase();
                     const muted = /total|subtotal|grand/.test(lab) || /total|subtotal|grand/i.test(JSON.stringify(r).slice(0, 100));
                     return (
-                      <TableRow key={i} className={`${i % 2 ? "bg-muted/30" : ""} ${muted ? "text-muted-foreground italic" : ""}`}>
+                      <TableRow key={i} data-sheet={sheet.label} data-row={i} className={`${i % 2 ? "bg-muted/30" : ""} ${muted ? "text-muted-foreground italic" : ""}`}>
                         {sheet.columns!.map(c => {
                           const v = r[c.name];
                           const txt = fmtCell(v);
@@ -1158,7 +1159,43 @@ function HygieneSection({ base }: { base: string }) {
   );
 }
 
-/* ============================ Root component ============================ */
+/* ============================ Notebook Co-pilot tab wrapper ============================ */
+function NotebookCopilotTab({ base, sheets, setTab }: { base: string; sheets: Sheet[]; setTab: (t: typeof TABS[number]["id"]) => void }) {
+  const cq = useQuery({
+    queryKey: ["concerns", base],
+    queryFn: ({ signal }) => apiGet<ConcernsData>(`${base}/concerns`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  const rq = useQuery({
+    queryKey: ["reminders", base],
+    queryFn: ({ signal }) => apiGet<{ enabled?: boolean; reminders?: Reminder[] }>(`${base}/reminders`, signal),
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  const concerns = (cq.data?.enabled !== false ? cq.data?.concerns : []) ?? [];
+  const reminders = (rq.data?.enabled !== false ? rq.data?.reminders : []) ?? [];
+  return (
+    <NotebookCopilot
+      base={base}
+      sheets={sheets}
+      concerns={concerns}
+      reminders={reminders.map((r, i) => ({ ...r, id: (r as { id?: string }).id ?? `idx${i}` }))}
+      onJumpToSheetRow={(sheet, row) => {
+        setTab("sheets");
+        setTimeout(() => {
+          const el = document.querySelector(`[data-sheet="${CSS.escape(sheet)}"][data-row="${row}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add("ring-2", "ring-primary");
+            setTimeout(() => el.classList.remove("ring-2", "ring-primary"), 2500);
+          }
+        }, 200);
+      }}
+      onOpenConcern={() => setTab("concerns")}
+    />
+  );
+}
+
+
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -1290,7 +1327,7 @@ export default function InsightDashboard() {
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
               {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
               {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
-              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} multi={multiCopilot} />}
+              {!dq.isPending && tab === "copilot" && active && <NotebookCopilotTab base={active} sheets={sheets} setTab={setTab} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
           </div>
