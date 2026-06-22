@@ -781,6 +781,75 @@ export type Database = {
         }
         Relationships: []
       }
+      notebook_messages: {
+        Row: {
+          citations: Json
+          content: string
+          created_at: string
+          generated_by: string | null
+          id: string
+          role: string
+          token: string
+        }
+        Insert: {
+          citations?: Json
+          content?: string
+          created_at?: string
+          generated_by?: string | null
+          id?: string
+          role: string
+          token: string
+        }
+        Update: {
+          citations?: Json
+          content?: string
+          created_at?: string
+          generated_by?: string | null
+          id?: string
+          role?: string
+          token?: string
+        }
+        Relationships: []
+      }
+      notebook_sources: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          label: string
+          row_count: number | null
+          summary: string | null
+          summary_generated_at: string | null
+          token: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label?: string
+          row_count?: number | null
+          summary?: string | null
+          summary_generated_at?: string | null
+          token: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          label?: string
+          row_count?: number | null
+          summary?: string | null
+          summary_generated_at?: string | null
+          token?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           activity_id: string | null
