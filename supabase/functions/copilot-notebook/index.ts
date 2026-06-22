@@ -170,7 +170,7 @@ Deno.serve(async (req) => {
       // 2) Qualitative path — answer strictly from context.
       const items = context_items ?? [];
       if (items.length === 0) {
-        const text = "That isn't in the selected sources.";
+        const text = "No sources are selected. Enable at least one source on the left to ask questions.";
         await persistMessages(token, [
           { role: "user", content: question },
           { role: "assistant", content: text, citations: [], generated_by: "computed" },
@@ -179,10 +179,10 @@ Deno.serve(async (req) => {
       }
 
       if (offline) {
-        // Extractive fallback: top 3 items joined.
-        const top = items.slice(0, 3).map((i) => `• ${i.text}`).join("\n");
+        // Extractive fallback: top items joined.
+        const top = items.slice(0, 5).map((i) => `• ${i.text}`).join("\n");
         const text = `Based on the selected sources:\n${top}`;
-        const cites = items.slice(0, 3).map((i) => parseCitations(i.tag).citations[0]).filter(Boolean);
+        const cites = items.slice(0, 5).map((i) => parseCitations(i.tag).citations[0]).filter(Boolean);
         await persistMessages(token, [
           { role: "user", content: question },
           { role: "assistant", content: text, citations: cites, generated_by: "computed" },
@@ -191,11 +191,12 @@ Deno.serve(async (req) => {
       }
 
       const sys =
-        "You are a careful notebook assistant. Answer ONLY using the provided context items. " +
+        "You are a careful notebook assistant. Answer using ONLY the provided context items. " +
+        "Broad requests like 'summary', 'overview', or 'what is this' SHOULD be answered by summarizing the SHEET schema items and any concerns/reminders present — list each source briefly. " +
         "After each specific factual claim, append the matching tag exactly as given, e.g. [[Sheet:Cabling|row:14]] or [[Concern:abc]]. " +
-        "If the answer is not in the context, reply exactly: That isn't in the selected sources. " +
-        "Never invent numbers. If the user asks for a count, total, average, max, or min, reply: That requires a computation — please ask using the words 'how many' or 'total'. " +
-        "Keep replies under 6 sentences.";
+        "If the user asks for a precise count, total, average, max, or min that is NOT already present in the context, reply: That requires a computation — please ask using the words 'how many' or 'total'. " +
+        "If the answer is genuinely not in the context, reply exactly: That isn't in the selected sources. " +
+        "Never invent numbers. Keep replies under 6 sentences.";
       const ctxText = items.map((i) => `${i.tag} ${i.text}`).join("\n");
       const hist = (history ?? []).slice(-6).map((h) => `${h.role}: ${h.content}`).join("\n");
       const usr = `Context items:\n${ctxText}\n\nConversation so far:\n${hist}\n\nUser question: ${question}`;
