@@ -33,17 +33,23 @@ export function buildContext(opts: {
   const tokens = tokenize(opts.question);
   const items: { score: number; item: ContextItem }[] = [];
 
-  // Sheet rows — scored
+  // Sheet schema items — always include one per sheet so the LLM knows what's available
+  const schemaItems: ContextItem[] = opts.sheets.map((s) => ({
+    tag: `[[Sheet:${s.label}|row:0]]`,
+    text: `SHEET "${s.label}" — ${s.rows.length} rows. Columns: ${s.columns.join(", ")}.`,
+  }));
+
+  // Sheet rows — scored (keep all rows; broad questions still get a sample)
   for (const s of opts.sheets) {
     s.rows.forEach((rec, idx) => {
       if (isTotalRow(rec, s.columns)) return;
       const joined = `${s.columns.join(" ")} ${Object.values(rec).map(String).join(" ")}`.toLowerCase();
       let score = 0;
       for (const t of tokens) if (joined.includes(t)) score += 1;
-      if (score === 0 && tokens.length > 0) return;
       const parts = s.columns.slice(0, 8).map((c) => `${c}=${String(rec[c] ?? "").slice(0, 80)}`);
+      // Use idx as a tiny tiebreaker so unmatched rows still produce a stable sample
       items.push({
-        score,
+        score: score * 1000 - idx,
         item: { tag: `[[Sheet:${s.label}|row:${idx}]]`, text: parts.join("; ") },
       });
     });
@@ -62,6 +68,7 @@ export function buildContext(opts: {
   }));
 
   items.sort((a, b) => b.score - a.score);
-  const sheetSlice = items.slice(0, Math.max(0, cap - concernItems.length - reminderItems.length)).map((x) => x.item);
-  return [...sheetSlice, ...concernItems, ...reminderItems];
+  const reserved = schemaItems.length + concernItems.length + reminderItems.length;
+  const sheetSlice = items.slice(0, Math.max(0, cap - reserved)).map((x) => x.item);
+  return [...schemaItems, ...sheetSlice, ...concernItems, ...reminderItems];
 }
