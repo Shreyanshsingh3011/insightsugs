@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { getSheetDetail, refreshSheet } from "@/lib/sheets.functions";
 import { SHEET_TYPE_LABELS, CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 
@@ -13,15 +14,22 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
   component: SheetDetailPage,
 });
 
+const PAGE_SIZES = [100, 500, 1000, 2000];
+
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
   const qc = useQueryClient();
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
 
+  const [pageSize, setPageSize] = useState(500);
+  const [offset, setOffset] = useState(0);
+
   const detail = useQuery({
-    queryKey: ["sheet-detail", sheetId],
-    queryFn: () => fetchDetail({ data: { registryId: sheetId } }),
+    queryKey: ["sheet-detail", sheetId, offset, pageSize],
+    queryFn: () =>
+      fetchDetail({ data: { registryId: sheetId, offset, limit: pageSize } }),
+    placeholderData: (prev) => prev,
   });
 
   const refreshMut = useMutation({
@@ -33,7 +41,7 @@ function SheetDetailPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Refresh failed"),
   });
 
-  if (detail.isLoading) {
+  if (detail.isLoading && !detail.data) {
     return (
       <div className="flex justify-center p-8 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
@@ -54,6 +62,8 @@ function SheetDetailPage() {
   const extraCols = Array.from(
     new Set(detail.data.rows.flatMap((r: any) => Object.keys(r.extras ?? {}))),
   );
+  const total = detail.data.totalRows ?? 0;
+  const end = Math.min(offset + pageSize, total);
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 md:p-6">
@@ -68,7 +78,7 @@ function SheetDetailPage() {
           <h1 className="text-2xl font-semibold tracking-tight">{reg.display_name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">{SHEET_TYPE_LABELS[type]}</Badge>
-            <span>{reg.row_count} rows</span>
+            <span>{total.toLocaleString()} rows</span>
             <span>·</span>
             <span>
               {reg.last_refreshed_at
@@ -82,7 +92,6 @@ function SheetDetailPage() {
           Refresh
         </Button>
       </div>
-
 
       <Card className="overflow-hidden">
         <div className="max-h-[70vh] overflow-auto">
@@ -123,9 +132,45 @@ function SheetDetailPage() {
         </div>
       </Card>
 
-      {detail.data.rows.length >= 500 && (
-        <p className="mt-2 text-xs text-muted-foreground">Showing first 500 rows.</p>
-      )}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span>Rows per page:</span>
+          <select
+            className="rounded-md border border-border bg-background px-2 py-1"
+            value={pageSize}
+            onChange={(e) => {
+              setOffset(0);
+              setPageSize(Number(e.target.value));
+            }}
+          >
+            {PAGE_SIZES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          {detail.isFetching && <Loader2 className="h-3 w-3 animate-spin" />}
+        </div>
+        <div className="flex items-center gap-2">
+          <span>
+            {total === 0 ? "0" : `${(offset + 1).toLocaleString()}–${end.toLocaleString()}`} of {total.toLocaleString()}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - pageSize))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={end >= total}
+            onClick={() => setOffset(offset + pageSize)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
