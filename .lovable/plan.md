@@ -1,50 +1,110 @@
-# Show active environment data on the dashboard
+# Co-pilot Notebook — Source-Grounded, Verified-Accuracy
 
-Add a new dashboard card that surfaces the **currently active Emergent environment** and its live data, so everyone (not just super admins) can see which integration the app is running against and whether it is healthy.
+A new Co-pilot experience inside the Insights page that replaces the current chat tab. Math is done in JS (authoritative). Gemini (`gemini-flash-latest`, free tier) only narrates qualitative answers or rephrases computed numbers. All chat state lives in **our** Supabase, not DelayBridge.
 
-## What the card shows
+---
 
-- **Active environment name** (e.g. "Production") + short ID badge (e.g. `prod`)
-- **Live status**: green "Connected" / red "Down" pill from a fresh `/health` ping
-- **Base URL host** (host only — e.g. `connector-flow-1.preview.emergentagent.com`), no API key
-- **Last checked** timestamp + a "Refresh" button
-- **Super admin only**: a "Manage" link to `/admin/integrations`
-- If no environment is configured yet: a friendly empty state ("No live integration configured")
+## 1. Backend (Supabase)
 
-## Where it goes
+### Migration — two new tables
+- `notebook_sources(id, token, type ∈ {sheet,concerns,reminders}, label, enabled bool default true, summary text, summary_generated_at, row_count int, unique(token,type,label))`
+- `notebook_messages(id, token, role, content, citations jsonb default '[]', generated_by, created_at)`
+- RLS enabled; permissive policy for `anon` + `authenticated` (access is gated by the opaque DelayBridge token in app logic).
+- GRANTs for `anon`, `authenticated`, `service_role`.
 
-- New widget on `src/routes/_authenticated/dashboard.tsx`, rendered at the top of the dashboard grid (above the existing widgets) so it's the first thing users see.
-- It is a normal widget, visible to everyone — no role gating on visibility (only the "Manage" action is super-admin-only).
+### Secret
+- Request `GEMINI_API_KEY` via `add_secret`.
 
-## How the data is fetched (technical)
+### Edge function `copilot-notebook` (Deno, `verify_jwt=false`)
+Reads `GEMINI_API_KEY` from env. Three modes via `{ mode }` in body:
 
-1. **New public-safe server fn** `getActiveIntegrationStatus` in `src/lib/integrations.functions.ts`:
-   - Uses `requireSupabaseAuth` (any signed-in user).
-   - Loads the active env via the existing `loadRow` / `normalizeEnvs` helpers.
-   - Calls the existing `pingEmergent()` (which already hits `/health`).
-   - Returns a **safe DTO** only — no api_key, no full record:
-     ```ts
-     {
-       configured: boolean,
-       env: { id, name, base_url_host } | null,
-       status: { ok, status, message, checkedAt } | null
-     }
-     ```
-   - The host is extracted with `new URL(base_url).host` so we never leak query strings or paths.
+- **`chat`** — `{ token, question, mode_hint, computed_result?, context_items?, history }`
+  - If `computed_result` present → prompt Gemini to **only phrase** that exact value; never alter numbers. `generated_by:"computed"` (or `"computed+ai"` when phrased).
+  - Else (qualitative) → strict system prompt: *"Answer ONLY from the provided context items. Append `[[…]]` tag after each factual claim. If absent, say 'That isn't in the selected sources.' Never invent figures."* Send `context_items + history + question` to `gemini-flash-latest:generateContent`.
+  - Server parses `[[…]]` tags → `citations[]`, strips tags from text, persists user + assistant rows to `notebook_messages`, returns `{ text, citations, generated_by }`.
+  - On Gemini failure → return extractive fallback (top context items concatenated) with `generated_by:"computed"` and never 500.
+- **`summarize_source`** — `{ token, type, label, sample }` → 2–3 sentence factual summary; upsert into `notebook_sources` with `row_count`, `summary_generated_at`.
+- **`suggest_questions`** — `{ token, enabled_sources, schema_info }` → 4–6 starter questions grounded in actual column names.
 
-2. **New component** `src/components/ActiveIntegrationCard.tsx`:
-   - `useQuery` against the new server fn with `refetchInterval: 60_000` (auto-refresh every minute) and a manual Refresh button that calls `refetch()`.
-   - Status pill driven by `status.ok` + `status.status`.
-   - Uses `useRoles()` to conditionally show the "Manage" link.
+---
 
-3. **Dashboard wiring**: add an `"integration-status"` widget id in the dashboard's widget registry/grid so it renders at the top. No changes to user widget preferences are required — it's always-on like the existing header cards.
+## 2. Client — Question Router (pure JS, no LLM)
 
-## Files touched
+New `src/lib/notebook/router.ts`:
+- **Classify** by regex on intent verbs: how many, count, number of, total, sum, average/mean, max/min, highest/lowest, most/least, per X, group by, "% of", compare. → `quantitative` vs `qualitative`.
+- **Parse** quantitative into `{ agg: sum|count|avg|min|max|argmax|groupCount, column?, filter?, groupBy? }` by fuzzy-matching tokens against the union of column names across enabled sheets + `concerns`/`reminders` field names.
+- **Compute** in `src/lib/notebook/compute.ts` over enabled sources' full row arrays:
+  - Skip rows whose first-column value matches `/^(grand\s*total|sub\s*total|total)$/i`.
+  - Numeric coercion: strip commas/currency, `parseFloat`, ignore `NaN`/empty.
+  - Returns `{ value, formatted, contributingRows: [{sheetLabel,rowIndex}, …] }`.
+- If parsing fails → treat as qualitative.
 
-- `src/lib/integrations.functions.ts` — add `getActiveIntegrationStatus` (read-only, safe DTO).
-- `src/components/ActiveIntegrationCard.tsx` — new component.
-- `src/routes/_authenticated/dashboard.tsx` — render the new card.
+## 3. Client — Retrieval (qualitative path)
 
-## Out of scope (call out and confirm if needed)
+`src/lib/notebook/retrieve.ts`:
+- Tokenize question (lowercase, strip stopwords).
+- Score each row: `Σ overlap(token, cellValue|columnName)` with small boost for exact phrase.
+- Always include **all** concerns + reminders when those sources are enabled.
+- Cap at 40 items; tag each:
+  - Sheet row → `[[Sheet:<label>|row:<i>]] col=val; …`
+  - Concern → `[[Concern:<id>]] title=…; status=…; target_department=…; detail=…`
+  - Reminder → `[[Reminder:<id>]] subject=…; status=…; recipient=…; schedule_at=…`
 
-- Rendering the **sheet data** from the active environment on the dashboard. That's a separate, larger change (pick a sheet, fetch via the active env, render as a table). If you also want that, say the word and I'll fold it in — otherwise this plan only surfaces the integration's own status/identity.
+## 4. Client — Citation Verification
+
+`src/lib/notebook/verify.ts`: for each returned citation, confirm the referenced sheet row / concern / reminder exists in current enabled data and that any numeric/string value mentioned in the sentence appears in that record. Unverified citations are dropped (or rendered greyed-out).
+
+## 5. Frontend — Co-pilot Tab Rewrite
+
+Replace the existing Copilot section inside `src/components/InsightDashboard.tsx` with a new `<NotebookCopilot/>` component (`src/components/notebook/NotebookCopilot.tsx`) wired into the existing tab.
+
+Layout (two-column on desktop, stacked on mobile):
+
+```text
+┌──────────── Sources ─────────────┬──────────────── Chat ────────────────┐
+│ [x] Sheet: Cabling   (124 rows) │ Suggested: [chip][chip][chip][chip]   │
+│     summary…  [Regenerate]      │ ─────────────────────────────────────  │
+│ [x] Sheet: Poles     ( 88 rows) │  user: …                              │
+│     summary…                    │  assistant [Computed]  total = 1,000…  │
+│ [x] Concerns         (  2)      │     ↳ [Sheet:Cabling row 14] chip      │
+│ [ ] Reminders        (  1)      │  assistant [AI] explanation…           │
+│                                 │     ↳ [Concern #abc] chip              │
+│                                 │  [textarea] [Send]                     │
+└─────────────────────────────────┴───────────────────────────────────────┘
+```
+
+Behavior:
+- Sources list built from `dashboard.sheets[]` + `concerns` + `reminders` returned by DelayBridge link. Toggle persists to `notebook_sources.enabled` (upsert).
+- "Generate summary" calls edge fn `summarize_source` (cached; regenerate only on click or `row_count` change).
+- Suggested-question chips loaded from `suggest_questions`; refresh when enabled set changes.
+- On send:
+  1. Router classifies.
+  2. If quantitative → compute locally → POST `chat` with `computed_result` + `contributingRows` → render with **Computed** badge.
+  3. If qualitative → build context_items → POST `chat` → verify citations → render with **AI** badge.
+- Citation chips clickable: sheet-row → switch to Sheets tab, scroll & flash row; concern → open the existing concern card / dialog.
+- History loaded from `notebook_messages` on mount (filtered by token).
+- If `GEMINI_API_KEY` missing, edge fn returns `offline:true` → banner: *"Running in offline mode — numeric answers are exact; set GEMINI_API_KEY for full AI explanations."*
+
+## 6. Files
+
+New:
+- `supabase/migrations/<ts>_notebook.sql`
+- `supabase/functions/copilot-notebook/index.ts`
+- `src/lib/notebook/{router,compute,retrieve,verify,client}.ts`
+- `src/components/notebook/{NotebookCopilot,SourcesPanel,ChatPanel,CitationChip}.tsx`
+
+Edited:
+- `src/components/InsightDashboard.tsx` — swap Copilot tab content for `<NotebookCopilot/>`; expose imperative "jump to sheet row" handle.
+
+## 7. Secrets / setup actions needed from user
+- Approve the migration.
+- Provide `GEMINI_API_KEY` (free key from Google AI Studio) via secure secret form.
+
+## 8. Acceptance checks (manual)
+1. `total Quantity` → exact JS sum + Computed badge + row citations.
+2. `how many in Service Group X` → exact count.
+3. `which Sch has most line items` → exact argmax.
+4. Toggle Concerns off/on → answer source changes accordingly.
+5. Out-of-source question → "That isn't in the selected sources."
+6. Unset key → questions 1–3 still exact; banner shows.
+7. Every citation chip resolves to a matching row/concern.
