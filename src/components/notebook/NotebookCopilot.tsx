@@ -263,7 +263,7 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
           )}
 
           {/* History */}
-          <ScrollArea className="flex-1 rounded-lg border bg-muted/20 p-3" ref={scrollRef as never}>
+          <div className="flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-3" ref={scrollRef}>
             {loadingHist ? (
               <div className="space-y-2"><Skeleton className="h-12 w-2/3" /><Skeleton className="h-12 w-1/2 ml-auto" /></div>
             ) : messages.length === 0 ? (
