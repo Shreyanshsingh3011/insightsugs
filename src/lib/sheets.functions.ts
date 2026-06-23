@@ -629,10 +629,22 @@ export const askCopilot = createServerFn({ method: "POST" })
     //    for the LLM's qualitative context.
     const FULL_FETCH_CAP = 50000;
     const PAGE = 1000;
-    const QUAL_SAMPLE_PER_SHEET = 200;
+    const QUAL_SAMPLE_PER_SHEET = 220;
     const sources: { id: string; name: string; type: string; rowsTotal: number; rowsUsed: number; truncated: boolean }[] = [];
     const sampleRows: Array<{ sheet: string; type: string; row_index: number; data: Record<string, unknown> }> = [];
     const fullRowsBySheet = new Map<string, { label: string; type: string; rows: Record<string, unknown>[] }>();
+
+    // Tokenize the question for relevance scoring
+    const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","how","many","what","which","show","list","give","me","total","count","sum","avg","average","min","max","please","do","does","you","this","that"]);
+    const qTokens = Array.from(
+      new Set(
+        data.question
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .filter((t) => t.length >= 2 && !STOP.has(t)),
+      ),
+    );
 
     for (const r of regs) {
       const { count } = await supabase
@@ -665,14 +677,74 @@ export const askCopilot = createServerFn({ method: "POST" })
         ...((row.extras as Record<string, unknown>) ?? {}),
       }));
       fullRowsBySheet.set(r.id, { label: r.display_name, type: r.sheet_type, rows: merged });
-      const stride = Math.max(1, Math.floor(allRows.length / QUAL_SAMPLE_PER_SHEET));
-      for (let i = 0; i < allRows.length; i += stride) {
+
+      // Question-relevant sampling: score each row by how many question tokens
+      // appear in its values. Keep top-N. Falls back to even-stride if zero hits.
+      type Scored = { idx: number; score: number };
+      const scored: Scored[] = [];
+      if (qTokens.length > 0) {
+        for (let i = 0; i < allRows.length; i++) {
+          const hay = JSON.stringify(merged[i]).toLowerCase();
+          let s = 0;
+          for (const t of qTokens) if (hay.includes(t)) s++;
+          if (s > 0) scored.push({ idx: i, score: s });
+        }
+        scored.sort((a, b) => b.score - a.score);
+      }
+      const picked = new Set<number>();
+      for (const s of scored.slice(0, QUAL_SAMPLE_PER_SHEET)) picked.add(s.idx);
+      // top-up with stride samples for breadth
+      if (picked.size < QUAL_SAMPLE_PER_SHEET && allRows.length > 0) {
+        const need = QUAL_SAMPLE_PER_SHEET - picked.size;
+        const stride = Math.max(1, Math.floor(allRows.length / Math.max(1, need)));
+        for (let i = 0; i < allRows.length && picked.size < QUAL_SAMPLE_PER_SHEET; i += stride) picked.add(i);
+      }
+      for (const i of Array.from(picked).sort((a, b) => a - b)) {
         sampleRows.push({
           sheet: r.display_name,
           type: r.sheet_type,
           row_index: allRows[i].row_index,
           data: merged[i],
         });
+      }
+    }
+
+    // ---- Question-relevant FILTERED FACTS over FULL rows ----
+    // For each sheet, find columns whose values contain any question token,
+    // then compute exact counts per matching value. These are authoritative.
+    const filteredFactsBlocks: string[] = [];
+    if (qTokens.length > 0) {
+      for (const grp of fullRowsBySheet.values()) {
+        const hits: string[] = [];
+        const columns = Array.from(
+          grp.rows.reduce((s, r) => {
+            Object.keys(r).forEach((k) => s.add(k));
+            return s;
+          }, new Set<string>()),
+        );
+        for (const col of columns) {
+          // For each question token, count rows where col value contains the token.
+          const perToken = new Map<string, number>();
+          for (const row of grp.rows) {
+            const v = row[col];
+            if (v == null) continue;
+            const sv = String(v).toLowerCase();
+            if (!sv) continue;
+            for (const t of qTokens) {
+              if (sv.includes(t)) perToken.set(t, (perToken.get(t) ?? 0) + 1);
+            }
+          }
+          for (const [t, n] of perToken) {
+            if (n > 0) hits.push(`  • ${col} contains "${t}" → ${n} row${n === 1 ? "" : "s"}`);
+          }
+        }
+        if (hits.length > 0) {
+          // Cap to avoid prompt bloat
+          filteredFactsBlocks.push(
+            `Sheet "${grp.label}" — question-token row counts (FULL DATASET):\n` +
+              hits.slice(0, 60).join("\n"),
+          );
+        }
       }
     }
 
@@ -743,7 +815,7 @@ export const askCopilot = createServerFn({ method: "POST" })
             _query: toPgVector(qVec),
             _scope_folder: null,
             _scope_document: docId,
-            _match_count: 10,
+            _match_count: 16,
           });
           for (const m of (matches ?? []) as any[]) {
             docChunkBlocks.push(
@@ -773,30 +845,33 @@ export const askCopilot = createServerFn({ method: "POST" })
         .join("\n\n");
 
       const factsText = factsBlocks.length ? factsBlocks.join("\n\n") : "(no sheets in scope)";
+      const filteredFactsText = filteredFactsBlocks.length ? filteredFactsBlocks.join("\n\n") : "";
       const rowsBlock = sampleRows.length
-        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 60000)
+        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
         : "(no sheet rows in scope)";
       const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
       const chunksBlock = docChunkBlocks.length
-        ? docChunkBlocks.join("\n\n---\n\n").slice(0, 60000)
+        ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
         : "(no document excerpts retrieved)";
 
       const system =
         "You are a precise document- and data-grounded analyst. " +
         "RULES:\n" +
-        "1) NUMBERS are authoritative: ANY count, sum, average, min, max, or distribution MUST be quoted VERBATIM from the FACTS block. NEVER calculate, estimate, or invent numbers.\n" +
-        "2) If a number the user asks for is not present in FACTS or AGGREGATES, say you don't have it — do NOT compute it from the row sample.\n" +
-        "3) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases where useful and cite the document name (and page when shown).\n" +
-        "4) If the answer isn't in the provided context, say you don't know.\n" +
-        "5) Cite source names in parentheses, e.g. (Sheet A) or (contract.pdf p.4). Be concise and use markdown.";
+        "1) NUMBERS are authoritative: ANY count, sum, average, min, max, or distribution MUST be quoted VERBATIM from the FACTS or QUERY-RELEVANT FACTS blocks. NEVER calculate, estimate, or invent numbers.\n" +
+        "2) If a number the user asks for is not present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY count rows in the ROW SAMPLE only if the sample is marked complete; otherwise say you don't have it.\n" +
+        "3) The ROW SAMPLE is chosen to maximise relevance to the question — use it to identify specific items, owners, dates, statuses, and to enumerate examples; cite row_index and sheet name.\n" +
+        "4) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases where useful and cite the document name (and page when shown).\n" +
+        "5) If the answer isn't in the provided context, say you don't know.\n" +
+        "6) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, bold key numbers.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
-        `FACTS (authoritative, precomputed):\n${factsText}\n\n` +
+        `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
+        (filteredFactsText ? `QUERY-RELEVANT FACTS (FULL rows, exact):\n${filteredFactsText}\n\n` : "") +
         (aggBlock ? `AGGREGATES:\n${aggBlock}\n\n` : "") +
-        `SHEET ROW SAMPLE (JSON, for qualitative context only — do NOT use for math):\n${rowsBlock}\n\n` +
+        `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
-        `DOCUMENT EXCERPTS:\n${chunksBlock}`;
+        `DOCUMENT EXCERPTS (top-matched chunks for this question):\n${chunksBlock}`;
 
       if (geminiKey) {
         const res = await fetch(
