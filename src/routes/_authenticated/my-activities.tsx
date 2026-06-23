@@ -159,6 +159,37 @@ function MyActivitiesPage() {
         ))}
       </div>
 
+      {sheetData?.rows && sheetData.rows.length > 0 && (
+        <div className="mt-10">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <FileSpreadsheet className="h-5 w-5" /> From your sheets
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Rows from registered sheets where you appear as owner / assignee (matched by name or email).
+          </p>
+          <div className="mt-4 space-y-2">
+            {sheetData.rows.map((r, i) => (
+              <Card key={`${r.sheet_id}-${r.row_index}-${i}`} className="p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{r.activity}</span>
+                      {r.status && <Badge variant="outline">{r.status}</Badge>}
+                      <Badge variant="secondary" className="text-[10px]">via {r.matched_via}</Badge>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground truncate">
+                      {r.sheet_name} · row {r.row_index}
+                      {r.predecessor ? ` · depends on: ${r.predecessor}` : ""}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+
       <Dialog open={!!delayDialog} onOpenChange={(o) => !o && setDelayDialog(null)}>
         <DialogContent>
           <DialogHeader>
