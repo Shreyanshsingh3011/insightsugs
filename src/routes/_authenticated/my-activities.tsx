@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
@@ -10,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { CheckCircle2, Clock, Play, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { getMyDependentActivities } from "@/lib/sheets.functions";
+
 
 export const Route = createFileRoute("/_authenticated/my-activities")({
   head: () => ({ meta: [{ title: "My Activities — DelayLens" }] }),
