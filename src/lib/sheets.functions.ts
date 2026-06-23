@@ -845,30 +845,33 @@ export const askCopilot = createServerFn({ method: "POST" })
         .join("\n\n");
 
       const factsText = factsBlocks.length ? factsBlocks.join("\n\n") : "(no sheets in scope)";
+      const filteredFactsText = filteredFactsBlocks.length ? filteredFactsBlocks.join("\n\n") : "";
       const rowsBlock = sampleRows.length
-        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 60000)
+        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
         : "(no sheet rows in scope)";
       const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
       const chunksBlock = docChunkBlocks.length
-        ? docChunkBlocks.join("\n\n---\n\n").slice(0, 60000)
+        ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
         : "(no document excerpts retrieved)";
 
       const system =
         "You are a precise document- and data-grounded analyst. " +
         "RULES:\n" +
-        "1) NUMBERS are authoritative: ANY count, sum, average, min, max, or distribution MUST be quoted VERBATIM from the FACTS block. NEVER calculate, estimate, or invent numbers.\n" +
-        "2) If a number the user asks for is not present in FACTS or AGGREGATES, say you don't have it — do NOT compute it from the row sample.\n" +
-        "3) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases where useful and cite the document name (and page when shown).\n" +
-        "4) If the answer isn't in the provided context, say you don't know.\n" +
-        "5) Cite source names in parentheses, e.g. (Sheet A) or (contract.pdf p.4). Be concise and use markdown.";
+        "1) NUMBERS are authoritative: ANY count, sum, average, min, max, or distribution MUST be quoted VERBATIM from the FACTS or QUERY-RELEVANT FACTS blocks. NEVER calculate, estimate, or invent numbers.\n" +
+        "2) If a number the user asks for is not present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY count rows in the ROW SAMPLE only if the sample is marked complete; otherwise say you don't have it.\n" +
+        "3) The ROW SAMPLE is chosen to maximise relevance to the question — use it to identify specific items, owners, dates, statuses, and to enumerate examples; cite row_index and sheet name.\n" +
+        "4) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases where useful and cite the document name (and page when shown).\n" +
+        "5) If the answer isn't in the provided context, say you don't know.\n" +
+        "6) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, bold key numbers.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
-        `FACTS (authoritative, precomputed):\n${factsText}\n\n` +
+        `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
+        (filteredFactsText ? `QUERY-RELEVANT FACTS (FULL rows, exact):\n${filteredFactsText}\n\n` : "") +
         (aggBlock ? `AGGREGATES:\n${aggBlock}\n\n` : "") +
-        `SHEET ROW SAMPLE (JSON, for qualitative context only — do NOT use for math):\n${rowsBlock}\n\n` +
+        `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
-        `DOCUMENT EXCERPTS:\n${chunksBlock}`;
+        `DOCUMENT EXCERPTS (top-matched chunks for this question):\n${chunksBlock}`;
 
       if (geminiKey) {
         const res = await fetch(
