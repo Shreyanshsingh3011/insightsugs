@@ -815,7 +815,7 @@ export const askCopilot = createServerFn({ method: "POST" })
             _query: toPgVector(qVec),
             _scope_folder: null,
             _scope_document: docId,
-            _match_count: 10,
+            _match_count: 16,
           });
           for (const m of (matches ?? []) as any[]) {
             docChunkBlocks.push(
