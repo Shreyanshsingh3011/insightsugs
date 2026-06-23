@@ -440,21 +440,24 @@ export const getMyDependentActivities = createServerFn({ method: "GET" })
     const myEmail = (profile?.email ?? "").toLowerCase().trim();
     const myName = (profile?.full_name ?? "").toLowerCase().trim();
 
-    // sheets owned by the user (registry is per-owner)
-    const { data: regs } = await supabase
+    // Match across ALL registered sheets (not just user's own) — we identify the
+    // user inside each row by email/name columns. Use admin client to bypass RLS
+    // (which scopes sheet_rows to the registry owner).
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: regs } = await supabaseAdmin
       .from("sheet_registry")
-      .select("id, display_name")
-      .eq("user_id", userId);
+      .select("id, display_name");
     const regIds = (regs ?? []).map((r) => r.id as string);
     if (regIds.length === 0) return { rows: [] };
 
     const regName = new Map((regs ?? []).map((r) => [r.id as string, r.display_name as string]));
 
-    const { data: rows } = await supabase
+    const { data: rows } = await supabaseAdmin
       .from("sheet_rows")
       .select("sheet_registry_id, row_index, canonical, extras")
       .in("sheet_registry_id", regIds)
-      .limit(10000);
+      .limit(20000);
+
 
     const EMAIL_KEYS = [
       "email", "Email", "EMAIL",

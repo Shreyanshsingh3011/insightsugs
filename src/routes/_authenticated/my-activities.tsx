@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
@@ -10,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { CheckCircle2, Clock, Play, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { getMyDependentActivities } from "@/lib/sheets.functions";
+
 
 export const Route = createFileRoute("/_authenticated/my-activities")({
   head: () => ({ meta: [{ title: "My Activities — DelayLens" }] }),
@@ -53,6 +56,13 @@ function MyActivitiesPage() {
       return data as Activity[];
     },
   });
+  const fetchSheetActs = useServerFn(getMyDependentActivities);
+  const { data: sheetData } = useQuery({
+    queryKey: ["my-sheet-activities", userId],
+    enabled: !!userId,
+    queryFn: () => fetchSheetActs(),
+  });
+
 
   const { data: reasons } = useQuery({
     queryKey: ["delay_reasons"],
@@ -148,6 +158,37 @@ function MyActivitiesPage() {
           </Card>
         ))}
       </div>
+
+      {sheetData?.rows && sheetData.rows.length > 0 && (
+        <div className="mt-10">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
+            <FileSpreadsheet className="h-5 w-5" /> From your sheets
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Rows from registered sheets where you appear as owner / assignee (matched by name or email).
+          </p>
+          <div className="mt-4 space-y-2">
+            {sheetData.rows.map((r, i) => (
+              <Card key={`${r.sheet_id}-${r.row_index}-${i}`} className="p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{r.activity}</span>
+                      {r.status && <Badge variant="outline">{r.status}</Badge>}
+                      <Badge variant="secondary" className="text-[10px]">via {r.matched_via}</Badge>
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground truncate">
+                      {r.sheet_name} · row {r.row_index}
+                      {r.predecessor ? ` · depends on: ${r.predecessor}` : ""}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
 
       <Dialog open={!!delayDialog} onOpenChange={(o) => !o && setDelayDialog(null)}>
         <DialogContent>
