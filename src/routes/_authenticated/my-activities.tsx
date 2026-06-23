@@ -56,6 +56,13 @@ function MyActivitiesPage() {
       return data as Activity[];
     },
   });
+  const fetchSheetActs = useServerFn(getMyDependentActivities);
+  const { data: sheetData } = useQuery({
+    queryKey: ["my-sheet-activities", userId],
+    enabled: !!userId,
+    queryFn: () => fetchSheetActs(),
+  });
+
 
   const { data: reasons } = useQuery({
     queryKey: ["delay_reasons"],
