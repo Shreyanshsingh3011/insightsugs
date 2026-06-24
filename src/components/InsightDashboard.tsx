@@ -1613,7 +1613,7 @@ export default function InsightDashboard() {
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
               {!dq.isPending && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
               {!dq.isPending && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
-              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} multi={multiCopilot} />}
+              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} data={data} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
           </div>
