@@ -1496,10 +1496,10 @@ export default function InsightDashboard() {
                 </div>
               )}
 
-              {!dq.isPending && tab === "overview" && <OverviewSection data={data} />}
+              {!dq.isPending && tab === "overview" && <OverviewSection data={data} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
-              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
-              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
+              {!dq.isPending && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
+              {!dq.isPending && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
               {!dq.isPending && tab === "copilot" && active && <NotebookCopilotTab base={active} sheets={sheets} setTab={setTab} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
