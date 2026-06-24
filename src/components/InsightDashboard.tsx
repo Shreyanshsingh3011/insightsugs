@@ -398,11 +398,40 @@ function Ring({ value, label }: { value: number; label: string }) {
 
 /* ============================ Sections ============================ */
 
-function OverviewSection({ data }: { data: DashboardData }) {
+function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
+  const t = (sheet.type || "").toLowerCase();
+  if (t.includes("progress") || t.includes("delay")) return true;
+  if (analysisIfBasis) {
+    const totals = analysisIfBasis.totals || {};
+    if (["delayed", "blocked", "at_risk"].some(k => Number((totals as any)[k]) > 0)) return true;
+    const sb = analysisIfBasis.status_breakdown || {};
+    if (Object.keys(sb).some(k => k.toLowerCase() !== "unknown")) return true;
+    const mode = (analysisIfBasis as any).mode;
+    if (mode && mode !== "generic") return true;
+  }
+  return false;
+}
+
+function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void }) {
+  const sheets = data.sheets || [];
+  const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "");
+  useEffect(() => {
+    if (!sheets.find(s => s.label === activeLabel)) setActiveLabel(sheets[0]?.label || "");
+  }, [sheets, activeLabel]);
+
+  const selected = sheets.find(s => s.label === activeLabel) || sheets[0];
+  const isBasis = !!selected && selected.label === sheets[0]?.label;
+  const delay = !!selected && isDelaySheet(selected, isBasis ? data.analysis : undefined);
+
+  useEffect(() => {
+    onSelectedChange?.(selected, delay);
+  }, [selected?.label, delay]);
+
   const a = data.analysis || {};
   const m = data.modules || {};
   const totals = a.totals || {};
   const sb = a.status_breakdown || {};
+
   const flags = (a.flags || []).filter(Boolean);
 
   const extraAnalysis = Object.entries(a).filter(([k, v]) =>
@@ -410,111 +439,212 @@ function OverviewSection({ data }: { data: DashboardData }) {
   const extraModules = Object.entries(m).filter(([k, v]) =>
     !["data_quality", "digest", "recommendations", "risk_score"].includes(k) && !isEmpty(v));
 
+  const genericModuleKeys = ["pivot", "anomalies", "forecast", "trends", "whatif"] as const;
+
   return (
     <div className="space-y-6">
-      {/* KPI tiles */}
-      {!isEmpty(totals) && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {Object.entries(totals).map(([k, v], i) => (
-            <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} />
-          ))}
+      {/* Sheet selector */}
+      {sheets.length > 0 && (
+        <div className="overflow-x-auto">
+          <div className="flex flex-wrap gap-2">
+            {sheets.map(s => (
+              <button key={s.label} onClick={() => setActiveLabel(s.label)}
+                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${activeLabel === s.label ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-accent"}`}>
+                <span className="font-medium">{s.label}</span>
+                {s.type && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{s.type}</Badge>}
+                {s.row_count != null && <span className="tabular-nums opacity-70">{fmtNum(s.row_count)}</span>}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Summary callout */}
-      {!isEmpty(a.summary) && (
-        <Card className="rounded-2xl border-l-4 shadow-sm" style={{ borderLeftColor: "var(--chart-1)" }}>
-          <CardContent className="flex gap-3 p-4 text-sm leading-relaxed">
-            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <p>{a.summary}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Status breakdown */}
-        {!isEmpty(sb) && (
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Status breakdown</CardTitle></CardHeader>
-            <CardContent><StackedBar data={sb as Record<string, number>} /></CardContent>
-          </Card>
-        )}
-        {/* Flags */}
-        {flags.length > 0 && (
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="pb-2"><CardTitle className="text-sm">Flags</CardTitle></CardHeader>
-            <CardContent>
-              <ul className="space-y-2 text-sm">
-                {flags.map((f, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <Badge variant={sevColor(f.severity)} className="shrink-0 capitalize">{f.severity || "info"}</Badge>
-                    <span>{f.message || f.title || ""}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Modules grid */}
-      {(m.digest || m.recommendations || a.risk_score != null || m.data_quality) && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {a.risk_score != null && (
-            <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
-              <Gauge label="Risk score" value={typeof a.risk_score === "number" ? a.risk_score : Number((a.risk_score as any)?.score) || 0} />
-            </CardContent></Card>
+      {selected && !delay && (
+        <>
+          {/* Generic sheet: KPI hero tiles */}
+          {!!selected.kpis?.length && (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+              {selected.kpis.map((k, i) => (
+                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} />
+              ))}
+            </div>
           )}
-          {m.data_quality?.score != null && (
-            <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
-              <Ring label="Data quality" value={Number(m.data_quality.score)} />
-              {!!m.data_quality.issues?.length && (
-                <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
+
+          {/* Generic sheet: charts */}
+          {!!selected.charts?.length && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {selected.charts.map((c, i) => (
+                <Card key={i} className="rounded-2xl shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
+                  <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* Generic modules */}
+          {(m.data_quality || m.digest || m.recommendations) && (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {m.data_quality?.score != null && (
+                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                  <Ring label="Data quality" value={Number(m.data_quality.score)} />
+                  {!!m.data_quality.issues?.length && (
+                    <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
+                  )}
+                </CardContent></Card>
               )}
-            </CardContent></Card>
+              {m.digest && (
+                <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">
+                    {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
+                  </CardContent>
+                </Card>
+              )}
+              {!!m.recommendations?.length && (
+                <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
+                  <CardContent>
+                    <ul className="space-y-1.5 text-sm">
+                      {m.recommendations.map((r, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                          <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
-          {m.digest && (
-            <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
-              </CardContent>
-            </Card>
+
+          {/* Extra generic modules: pivot/anomalies/forecast/trends/whatif */}
+          {genericModuleKeys.some(k => !isEmpty((m as any)[k])) && (
+            <div className="grid gap-4 md:grid-cols-2">
+              {genericModuleKeys.map(k => {
+                const v = (m as any)[k];
+                if (isEmpty(v)) return null;
+                return (
+                  <Card key={k} className="rounded-2xl shadow-sm">
+                    <CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k}</CardTitle></CardHeader>
+                    <CardContent><GenericValue value={v} /></CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           )}
-          {!!m.recommendations?.length && (
-            <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
-              <CardContent>
-                <ul className="space-y-1.5 text-sm">
-                  {m.recommendations.map((r, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                      <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        </>
       )}
 
-      {(extraAnalysis.length > 0 || extraModules.length > 0) && (
-        <Collapsible>
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground"><ChevronDown className="h-4 w-4" /> More analytics</Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-3 space-y-4">
-            {extraAnalysis.map(([k, v]) => (
-              <Card key={`a-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
-            ))}
-            {extraModules.map(([k, v]) => (
-              <Card key={`m-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
-            ))}
-          </CollapsibleContent>
-        </Collapsible>
+      {selected && delay && (
+        <>
+          {/* KPI tiles */}
+          {!isEmpty(totals) && (
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+              {Object.entries(totals).map(([k, v], i) => (
+                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} />
+              ))}
+            </div>
+          )}
+
+          {/* Summary callout */}
+          {!isEmpty(a.summary) && (
+            <Card className="rounded-2xl border-l-4 shadow-sm" style={{ borderLeftColor: "var(--chart-1)" }}>
+              <CardContent className="flex gap-3 p-4 text-sm leading-relaxed">
+                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <p>{a.summary}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Status breakdown */}
+            {!isEmpty(sb) && (
+              <Card className="rounded-2xl shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Status breakdown</CardTitle></CardHeader>
+                <CardContent><StackedBar data={sb as Record<string, number>} /></CardContent>
+              </Card>
+            )}
+            {/* Flags */}
+            {flags.length > 0 && (
+              <Card className="rounded-2xl shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Flags</CardTitle></CardHeader>
+                <CardContent>
+                  <ul className="space-y-2 text-sm">
+                    {flags.map((f, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <Badge variant={sevColor(f.severity)} className="shrink-0 capitalize">{f.severity || "info"}</Badge>
+                        <span>{f.message || f.title || ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {/* Modules grid */}
+          {(m.digest || m.recommendations || a.risk_score != null || m.data_quality) && (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {a.risk_score != null && (
+                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                  <Gauge label="Risk score" value={typeof a.risk_score === "number" ? a.risk_score : Number((a.risk_score as any)?.score) || 0} />
+                </CardContent></Card>
+              )}
+              {m.data_quality?.score != null && (
+                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                  <Ring label="Data quality" value={Number(m.data_quality.score)} />
+                  {!!m.data_quality.issues?.length && (
+                    <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
+                  )}
+                </CardContent></Card>
+              )}
+              {m.digest && (
+                <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">
+                    {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
+                  </CardContent>
+                </Card>
+              )}
+              {!!m.recommendations?.length && (
+                <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
+                  <CardContent>
+                    <ul className="space-y-1.5 text-sm">
+                      {m.recommendations.map((r, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                          <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {(extraAnalysis.length > 0 || extraModules.length > 0) && (
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground"><ChevronDown className="h-4 w-4" /> More analytics</Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3 space-y-4">
+                {extraAnalysis.map(([k, v]) => (
+                  <Card key={`a-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
+                ))}
+                {extraModules.map(([k, v]) => (
+                  <Card key={`m-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </>
       )}
+
+      {!selected && <SectionEmpty icon={LayoutDashboard} label="No sheets returned." />}
     </div>
   );
 }
+
 
 function SheetsSection({ sheets }: { sheets: Sheet[] }) {
   const [active, setActive] = useState(sheets[0]?.label || "");
@@ -1238,6 +1368,21 @@ export default function InsightDashboard() {
   const enabledFields = data.enabled_fields || [];
   const multiCopilot = enabledFields.includes("multi_copilot") || !!data.multi_copilot;
 
+  const [overviewSelected, setOverviewSelected] = useState<{ sheet?: Sheet; isDelay: boolean }>({ isDelay: false });
+
+  const hasAnyDelaySheet = useMemo(
+    () => sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined)),
+    [sheets, data.analysis]
+  );
+  const visibleTabs = useMemo(
+    () => TABS.filter(t => (t.id === "concerns" || t.id === "reminders") ? hasAnyDelaySheet : true),
+    [hasAnyDelaySheet]
+  );
+  useEffect(() => {
+    if (!visibleTabs.find(t => t.id === tab)) setTab("overview");
+  }, [visibleTabs, tab]);
+
+
   const colMapQ = useQuery({
     queryKey: ["column-map", active], enabled: !!active,
     queryFn: ({ signal }) => apiGet<ColumnMap>(`${active}/column-map`, signal),
@@ -1269,7 +1414,12 @@ export default function InsightDashboard() {
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">{project}</div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {modeBadge && <Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">{modeBadge}</Badge>}
+                {overviewSelected.isDelay && modeBadge
+                  ? <Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">{modeBadge}</Badge>
+                  : overviewSelected.sheet
+                    ? <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{overviewSelected.sheet.type || overviewSelected.sheet.label}</Badge>
+                    : null}
+
                 <span className="truncate">{active || "no link"}</span>
               </div>
             </div>
@@ -1316,7 +1466,7 @@ export default function InsightDashboard() {
             <Select value={tab} onValueChange={(v) => setTab(v as any)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {TABS.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+                {visibleTabs.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -1325,7 +1475,7 @@ export default function InsightDashboard() {
             {/* Tab rail */}
             <aside className="hidden md:block">
               <nav className="space-y-1 rounded-2xl border border-border bg-card p-2">
-                {TABS.map(t => {
+                {visibleTabs.map(t => {
                   const Icon = t.icon;
                   const isActive = tab === t.id;
                   return (
@@ -1346,10 +1496,10 @@ export default function InsightDashboard() {
                 </div>
               )}
 
-              {!dq.isPending && tab === "overview" && <OverviewSection data={data} />}
+              {!dq.isPending && tab === "overview" && <OverviewSection data={data} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
-              {!dq.isPending && tab === "concerns" && active && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
-              {!dq.isPending && tab === "reminders" && active && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
+              {!dq.isPending && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
+              {!dq.isPending && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
               {!dq.isPending && tab === "copilot" && active && <NotebookCopilotTab base={active} sheets={sheets} setTab={setTab} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
