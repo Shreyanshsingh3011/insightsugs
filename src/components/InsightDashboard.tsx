@@ -1466,7 +1466,7 @@ export default function InsightDashboard() {
             <Select value={tab} onValueChange={(v) => setTab(v as any)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {TABS.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+                {visibleTabs.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
