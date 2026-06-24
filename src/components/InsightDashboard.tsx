@@ -1475,7 +1475,7 @@ export default function InsightDashboard() {
             {/* Tab rail */}
             <aside className="hidden md:block">
               <nav className="space-y-1 rounded-2xl border border-border bg-card p-2">
-                {TABS.map(t => {
+                {visibleTabs.map(t => {
                   const Icon = t.icon;
                   const isActive = tab === t.id;
                   return (
