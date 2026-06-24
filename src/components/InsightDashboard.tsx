@@ -224,10 +224,11 @@ function KVList({ obj }: { obj: Record<string, unknown> }) {
       {entries.map(([k, v]) => (
         <div key={k} className="grid grid-cols-3 gap-3 py-1.5">
           <dt className="col-span-1 text-muted-foreground">{k}</dt>
-          <dd className="col-span-2 break-words">
-            {v == null ? <span className="text-muted-foreground">—</span>
+          <dd className="col-span-2 min-w-0 break-words">
+            {v == null
+              ? <span className="text-muted-foreground">—</span>
               : typeof v === "object"
-                ? <pre className="overflow-x-auto rounded bg-muted/40 p-2 text-xs">{JSON.stringify(v, null, 2)}</pre>
+                ? <GenericValue value={v} />
                 : fmtCell(v)}
           </dd>
         </div>
