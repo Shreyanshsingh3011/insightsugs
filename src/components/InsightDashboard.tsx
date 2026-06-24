@@ -1414,7 +1414,12 @@ export default function InsightDashboard() {
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold">{project}</div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {modeBadge && <Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">{modeBadge}</Badge>}
+                {overviewSelected.isDelay && modeBadge
+                  ? <Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">{modeBadge}</Badge>
+                  : overviewSelected.sheet
+                    ? <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{overviewSelected.sheet.type || overviewSelected.sheet.label}</Badge>
+                    : null}
+
                 <span className="truncate">{active || "no link"}</span>
               </div>
             </div>
