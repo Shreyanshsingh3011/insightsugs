@@ -200,8 +200,20 @@ function useLinkInput() {
       window.history.replaceState({}, "", u.toString());
     }
   };
-  return { raw, setRaw, active, error, apply };
+  const clear = () => {
+    setRaw("");
+    setActive("");
+    setError(undefined);
+    try { localStorage.removeItem("insight:link"); } catch { /* ignore */ }
+    if (typeof window !== "undefined") {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("link");
+      window.history.replaceState({}, "", u.toString());
+    }
+  };
+  return { raw, setRaw, active, error, apply, clear };
 }
+
 
 /* ============================ Generic renderers ============================ */
 function KVList({ obj }: { obj: Record<string, unknown> }) {
