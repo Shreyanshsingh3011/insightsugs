@@ -1219,7 +1219,7 @@ const TABS = [
 ] as const;
 
 export default function InsightDashboard() {
-  const { raw, setRaw, active, error, apply } = useLinkInput();
+  const { raw, setRaw, active, error, apply, clear } = useLinkInput();
   const [tab, setTab] = useState<typeof TABS[number]["id"]>("overview");
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderPrefill, setReminderPrefill] = useState<{ related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string } | undefined>();
