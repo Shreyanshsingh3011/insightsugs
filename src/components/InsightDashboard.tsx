@@ -1280,6 +1280,17 @@ export default function InsightDashboard() {
               <Input value={raw} onChange={e => setRaw(e.target.value)} placeholder="https://host/api/public/<token>" className="pl-8" />
             </div>
             <Button type="submit" size="sm">Load</Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={clear}
+              disabled={!raw && !active}
+              title="Clear link"
+            >
+              Clear
+            </Button>
+
             <Button type="button" size="sm" variant="outline" onClick={reloadAll} disabled={!active || dq.isFetching}>
               <RefreshCcw className={`h-4 w-4 ${dq.isFetching ? "animate-spin" : ""}`} />
             </Button>
