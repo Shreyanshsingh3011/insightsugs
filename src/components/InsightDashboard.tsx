@@ -1368,6 +1368,21 @@ export default function InsightDashboard() {
   const enabledFields = data.enabled_fields || [];
   const multiCopilot = enabledFields.includes("multi_copilot") || !!data.multi_copilot;
 
+  const [overviewSelected, setOverviewSelected] = useState<{ sheet?: Sheet; isDelay: boolean }>({ isDelay: false });
+
+  const hasAnyDelaySheet = useMemo(
+    () => sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined)),
+    [sheets, data.analysis]
+  );
+  const visibleTabs = useMemo(
+    () => TABS.filter(t => (t.id === "concerns" || t.id === "reminders") ? hasAnyDelaySheet : true),
+    [hasAnyDelaySheet]
+  );
+  useEffect(() => {
+    if (!visibleTabs.find(t => t.id === tab)) setTab("overview");
+  }, [visibleTabs, tab]);
+
+
   const colMapQ = useQuery({
     queryKey: ["column-map", active], enabled: !!active,
     queryFn: ({ signal }) => apiGet<ColumnMap>(`${active}/column-map`, signal),
