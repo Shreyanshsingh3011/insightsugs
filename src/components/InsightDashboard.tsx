@@ -398,11 +398,40 @@ function Ring({ value, label }: { value: number; label: string }) {
 
 /* ============================ Sections ============================ */
 
-function OverviewSection({ data }: { data: DashboardData }) {
+function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
+  const t = (sheet.type || "").toLowerCase();
+  if (t.includes("progress") || t.includes("delay")) return true;
+  if (analysisIfBasis) {
+    const totals = analysisIfBasis.totals || {};
+    if (["delayed", "blocked", "at_risk"].some(k => Number((totals as any)[k]) > 0)) return true;
+    const sb = analysisIfBasis.status_breakdown || {};
+    if (Object.keys(sb).some(k => k.toLowerCase() !== "unknown")) return true;
+    const mode = (analysisIfBasis as any).mode;
+    if (mode && mode !== "generic") return true;
+  }
+  return false;
+}
+
+function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void }) {
+  const sheets = data.sheets || [];
+  const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "");
+  useEffect(() => {
+    if (!sheets.find(s => s.label === activeLabel)) setActiveLabel(sheets[0]?.label || "");
+  }, [sheets, activeLabel]);
+
+  const selected = sheets.find(s => s.label === activeLabel) || sheets[0];
+  const isBasis = !!selected && selected.label === sheets[0]?.label;
+  const delay = !!selected && isDelaySheet(selected, isBasis ? data.analysis : undefined);
+
+  useEffect(() => {
+    onSelectedChange?.(selected, delay);
+  }, [selected?.label, delay]);
+
   const a = data.analysis || {};
   const m = data.modules || {};
   const totals = a.totals || {};
   const sb = a.status_breakdown || {};
+
   const flags = (a.flags || []).filter(Boolean);
 
   const extraAnalysis = Object.entries(a).filter(([k, v]) =>
