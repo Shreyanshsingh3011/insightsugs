@@ -1,77 +1,53 @@
-## Scope
+# Generic Gemini-routed Copilot for Insights
 
-Single file: `src/components/InsightDashboard.tsx`. No other files touched.
+Scope: only `CopilotSection` in `src/components/InsightDashboard.tsx` + one new server function. No other section, no delay-sheet behavior change.
 
-## 1. Add `isDelaySheet` helper (top of file, near other helpers)
+## New server function
 
-```ts
-function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
-  const t = (sheet.type || "").toLowerCase();
-  if (t.includes("progress") || t.includes("delay")) return true;
-  if (analysisIfBasis) {
-    const totals = analysisIfBasis.totals || {};
-    const delayKeys = ["delayed", "blocked", "at_risk"];
-    if (delayKeys.some(k => Number(totals[k]) > 0)) return true;
-    const sb = analysisIfBasis.status_breakdown || {};
-    if (Object.keys(sb).some(k => k.toLowerCase() !== "unknown")) return true;
-    if (analysisIfBasis.mode && analysisIfBasis.mode !== "generic") return true;
-  }
-  return false;
-}
-```
+Create `src/lib/insights-copilot.functions.ts` with two `createServerFn` endpoints (both `requireSupabaseAuth`, both call Lovable AI Gateway with `google/gemini-3-flash-preview`, low max tokens):
 
-Heuristic for "is this sheet the basis of `analysis`": treat the first sheet as the analysis basis (current behavior — `analysis` is workspace-level and effectively describes the primary sheet). Pass `data.analysis` to `isDelaySheet` only for that sheet.
+1. `routeInsightQuestion({ question, sheets })`
+   - Input: question string + per-sheet `{ label, type, row_count, columns:[{name,type}], available_dimensions, available_measures }`.
+   - System prompt: "You are a router. Choose ONE endpoint and params from the catalog. Use ONLY column names from the provided list. Return JSON ONLY, no prose, no numbers."
+   - Endpoint catalog passed in prompt: `dashboard`, `pivot{dimension,measure,agg:sum|avg|count,sheet}`, `anomalies{sheet}`, `quality{sheet}`, `whatif{sheet}`, `forecast{sheet}`, `trends{sheet}`, plus `none`.
+   - Uses AI SDK `Output.object` with a tiny Zod schema `{ endpoint, params?, sheet?, reason? }`. Returns parsed object.
 
-## 2. Refactor `OverviewSection({ data })`
+2. `phraseInsightAnswer({ question, endpoint, params, payload })`
+   - System prompt: "Write a brief answer to the user's question using ONLY the numbers in `payload`. Quote numbers verbatim — never round, recompute, sum, average, or invent values. If payload lacks the answer, say so."
+   - Payload is trimmed JSON (cap size, e.g. top 50 rows of a pivot table).
+   - Returns `{ text }`.
 
-Add internal state and selector:
+Both read `process.env.LOVABLE_API_KEY`. No data math server-side; pure routing + phrasing.
 
-- Compute `sheets = data.sheets || []`. If empty, render existing analysis-only view (back-compat) or `SectionEmpty`.
-- `const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "")`.
-- `useEffect`: if active label not in sheets, reset to first.
-- Resolve `selected = sheets.find(s => s.label === activeLabel) || sheets[0]`.
-- `const isBasis = selected.label === sheets[0]?.label;`
-- `const delay = isDelaySheet(selected, isBasis ? data.analysis : undefined);`
+## Frontend rewrite of `CopilotSection`
 
-Render at top: the pill-row selector copied from `SheetsSection` (lines 526–537) — same markup, type + row_count badges, same active-state classes.
+Replace the current `${base}/copilot` mutation with this flow:
 
-Then branch:
+1. Build runtime catalog from the dashboard data already in scope:
+   - Pass `sheets` (already has `label`, `type`, `row_count`, `columns`) plus `available_dimensions` / `available_measures` from `data.modules.pivot` keyed per-sheet when present. Lift `data` into props (extend `CopilotSection` props to accept the loaded `DashboardData`).
+2. On send:
+   a. Short-circuit: if question matches a trivial total/avg/count of a single measure (regex on "total/average/count of X"), call `${base}/pivot` directly (or use `data.kpis`), skip Gemini routing.
+   b. Otherwise call `routeInsightQuestion` → get `{endpoint, params, sheet}`.
+   c. Validate chosen columns exist on that sheet's column list. If invalid → show honest "No matching column on <sheet>" message. Optional fallback: `${base}/copilot`.
+   d. Call the chosen `${base}/<endpoint>` with params (GET with query string for pivot/anomalies/etc.; existing `apiGet`/`apiSend` helpers).
+   e. If endpoint returns `{message: "..."}` / not-ready / 404, relay verbatim, do not fabricate.
+   f. Call `phraseInsightAnswer` with question + raw payload (trimmed). Render returned text. Show small chip with endpoint + sheet used.
+3. Session cache: `Map<string, {text, endpoint}>` keyed by `${active}|${sheet}|${normalizedQuestion}`. Reuse on repeat.
+4. Remove hardcoded chips that assume delay/concerns vocab; replace with generic chips derived from columns: "Top {firstDimension} by {firstMeasure}", "Summarize this sheet", "Anomalies", "Data quality". Generated at render time from runtime catalog.
 
-### Branch A — delay sheet
-Render existing Overview JSX unchanged (totals tiles, summary, status_breakdown, flags, risk_score, data_quality, digest, recommendations, extra collapsible). Keep the existing `data.analysis`/`data.modules` source.
+## Guardrails
 
-### Branch B — generic sheet
-- Hero tiles: `selected.kpis` via `HeroKpi` (same grid as SheetsSection lines 539–545).
-- Charts grid: `selected.charts` via `MiniBarChart` (same as SheetsSection lines 547–556).
-- Then generic module cards from `data.modules` (workspace-level, not per-sheet, but per spec "modules that apply"):
-  - `m.data_quality` → Ring card.
-  - `m.digest` → Digest card.
-  - `m.recommendations` → Recommendations card.
-  - Brief views for `m.pivot`, `m.anomalies`, `m.forecast`, `m.trends`, `m.whatif` if present — each rendered as a small `<Card>` with `<GenericValue value={…} />` body and a title from the key.
-- Do NOT render: `analysis.totals` tiles, `analysis.summary` callout, `status_breakdown`, `flags`, `risk_score`, `mode_badge`.
+- Gemini never sees raw rows for routing — only column metadata.
+- Phrasing call receives numbers only via `payload`; system prompt forbids transformation.
+- `max_tokens` ~256 routing, ~400 phrasing.
+- All keys server-side via `createServerFn`; browser never sees `LOVABLE_API_KEY`.
+- No changes to other sections, OverviewSection, delay rendering, or other tabs.
 
-Expose the selected label upward via a callback prop `onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void` so the header badge can react. Call it from a `useEffect` on `[selected?.label, delay]`.
+## Files touched
 
-## 3. Tabs gating in `InsightDashboard`
-
-- Compute `hasAnyDelaySheet = sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined))` via `useMemo` on `[sheets, data.analysis]`.
-- Replace static `TABS` usage with `visibleTabs = TABS.filter(t => (t.id === "concerns" || t.id === "reminders") ? hasAnyDelaySheet : true)`.
-- Use `visibleTabs` in both the mobile `<Select>` and the desktop rail.
-- `useEffect`: if `!visibleTabs.find(t => t.id === tab)` → `setTab("overview")`.
-- Guard rendering: `tab === "concerns"` and `tab === "reminders"` blocks only render when `hasAnyDelaySheet`.
-
-## 4. Header badge
-
-Lift Overview's selected sheet into parent state:
-
-- `const [overviewSelected, setOverviewSelected] = useState<{ sheet?: Sheet; isDelay: boolean }>({ isDelay: false });`
-- Pass `onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })}` to `<OverviewSection>`.
-- In header (line ~1272): replace the `modeBadge` chip with:
-  - If `overviewSelected.isDelay && modeBadge` → show existing mode badge.
-  - Else if `overviewSelected.sheet` → show `<Badge variant="outline">{overviewSelected.sheet.type || overviewSelected.sheet.label}</Badge>`.
-  - Else nothing.
+- `src/lib/insights-copilot.functions.ts` (new)
+- `src/components/InsightDashboard.tsx` — rewrite `CopilotSection` body, pass `data` into it from the parent render call at the existing tab switch.
 
 ## Out of scope
 
-- `SheetsSection`, `ConcernsSection`, `RemindersSection`, `CopilotSection`, `HygieneSection`, server functions, types, other routes — all untouched.
-- Delay-sheet Overview rendering is byte-identical to today.
+Anything outside `CopilotSection`. Delay-sheet UI, Overview, Concerns, Reminders, Hygiene, Sheets tabs untouched.

@@ -1164,81 +1164,193 @@ function RemindersSection({ base, onNew }: { base: string; onNew: () => void }) 
   );
 }
 
-function CopilotSection({ base, sheets, multi }: { base: string; sheets: Sheet[]; multi: boolean }) {
+function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[]; data: DashboardData }) {
   const [selected, setSelected] = useState(sheets[0]?.label || "");
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; generated_by?: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; meta?: string }[]>([]);
   const [input, setInput] = useState("");
-  const sessionId = useRef<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const cacheRef = useRef<Map<string, { text: string; meta?: string }>>(new Map());
 
-  useEffect(() => { setMessages([]); sessionId.current = undefined; }, [base, selected, multi]);
+  useEffect(() => { setMessages([]); cacheRef.current.clear(); }, [base, selected]);
   useEffect(() => { scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 
-  const ask = useMutation({
-    mutationFn: async (message: string) => {
-      const body: any = { message };
-      if (sessionId.current) body.session_id = sessionId.current;
-      if (multi) body.sheets = sheets.map(s => s.label);
-      const url = multi ? `${base}/copilot` : `${base}/copilot?sheet=${encodeURIComponent(selected)}`;
-      return apiSend<any>(url, "POST", body);
-    },
-    onSuccess: (resp) => {
-      if (resp?.session_id) sessionId.current = resp.session_id;
-      const text = resp?.answer || (typeof resp === "string" ? resp : JSON.stringify(resp));
-      setMessages(m => [...m, { role: "assistant", text, generated_by: resp?.generated_by }]);
-    },
-    onError: (e) => setMessages(m => [...m, { role: "assistant", text: `Error: ${(e as Error).message}` }]),
-  });
+  // Build runtime catalog from currently loaded data (no hardcoded names).
+  const catalog = useMemo(() => {
+    const pivotMod = (data?.modules as Record<string, unknown> | undefined)?.pivot as
+      | { available_dimensions?: string[]; available_measures?: string[]; per_sheet?: Record<string, { available_dimensions?: string[]; available_measures?: string[] }> }
+      | undefined;
+    return sheets.map(s => {
+      const perSheet = pivotMod?.per_sheet?.[s.label];
+      return {
+        label: s.label,
+        type: s.type,
+        row_count: s.row_count,
+        columns: (s.columns || []).map(c => ({ name: c.name, type: c.type })),
+        available_dimensions: perSheet?.available_dimensions || pivotMod?.available_dimensions || [],
+        available_measures: perSheet?.available_measures || pivotMod?.available_measures || [],
+      };
+    });
+  }, [sheets, data]);
+
+  const activeSheet = useMemo(() => sheets.find(s => s.label === selected) || sheets[0], [sheets, selected]);
+  const colNames = useMemo(
+    () => new Set((activeSheet?.columns || []).map(c => c.name)),
+    [activeSheet]
+  );
+
+  // Generic chips derived from catalog — no domain assumptions.
+  const chips = useMemo(() => {
+    const cat = catalog.find(c => c.label === activeSheet?.label) || catalog[0];
+    const dim = cat?.available_dimensions?.[0] || cat?.columns?.find(c => (c.type || "").match(/string|text|cat/i))?.name;
+    const meas = cat?.available_measures?.[0] || cat?.columns?.find(c => (c.type || "").match(/num|int|float|decimal/i))?.name;
+    const out: string[] = ["Summarize this sheet"];
+    if (dim && meas) out.push(`Top ${dim} by ${meas}`);
+    if (dim) out.push(`Count by ${dim}`);
+    out.push("Any anomalies?");
+    out.push("Data quality issues");
+    return out;
+  }, [catalog, activeSheet]);
+
+  async function callEndpoint(endpoint: string, params: Record<string, string> | undefined, sheet?: string) {
+    const qp = new URLSearchParams();
+    if (sheet) qp.set("sheet", sheet);
+    if (params) for (const [k, v] of Object.entries(params)) if (v != null && v !== "") qp.set(k, String(v));
+    const qs = qp.toString();
+    const url = `${base}/${endpoint}${qs ? `?${qs}` : ""}`;
+    return apiGet<unknown>(url);
+  }
+
+  async function answer(question: string) {
+    const sheetLabel = activeSheet?.label || "";
+    const cacheKey = `${base}|${sheetLabel}|${question.toLowerCase().trim()}`;
+    const hit = cacheRef.current.get(cacheKey);
+    if (hit) {
+      setMessages(m => [...m, { role: "assistant", text: hit.text, meta: hit.meta }]);
+      return;
+    }
+    setBusy(true);
+    try {
+      const { routeInsightQuestion, phraseInsightAnswer } = await import("@/lib/insights-copilot.functions");
+      const route = await routeInsightQuestion({ data: { question, sheets: catalog } });
+
+      if (!route || route.endpoint === "none") {
+        const text = `I can't answer that from the current sheet's columns. ${route?.reason || ""}`.trim();
+        setMessages(m => [...m, { role: "assistant", text }]);
+        return;
+      }
+
+      const chosenSheet = route.sheet || sheetLabel;
+      const sheetMeta = catalog.find(c => c.label === chosenSheet) || catalog[0];
+      const sheetCols = new Set((sheetMeta?.columns || []).map(c => c.name));
+
+      // Validate column refs against runtime list (Gemini may hallucinate).
+      if (route.endpoint === "pivot") {
+        const p = route.params || {};
+        const dim = String(p.dimension || "");
+        const meas = String(p.measure || "");
+        if (!sheetCols.has(dim) || !sheetCols.has(meas)) {
+          setMessages(m => [...m, {
+            role: "assistant",
+            text: `No matching column on "${chosenSheet}". Available: ${[...sheetCols].slice(0, 12).join(", ")}${sheetCols.size > 12 ? "…" : ""}`,
+          }]);
+          return;
+        }
+      }
+
+      let payload: unknown;
+      try {
+        payload = await callEndpoint(route.endpoint, route.params, chosenSheet);
+      } catch (e) {
+        // Fallback: try the link's own /copilot endpoint if available.
+        if (route.endpoint !== "copilot") {
+          try {
+            const fb = await apiSend<{ answer?: string }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question });
+            const text = fb?.answer || `No data available (${(e as Error).message}).`;
+            const meta = `via /copilot`;
+            cacheRef.current.set(cacheKey, { text, meta });
+            setMessages(m => [...m, { role: "assistant", text, meta }]);
+            return;
+          } catch { /* fallthrough */ }
+        }
+        setMessages(m => [...m, { role: "assistant", text: `Backend error: ${(e as Error).message}` }]);
+        return;
+      }
+
+      // Honest relay of "not ready" messages.
+      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+        const obj = payload as Record<string, unknown>;
+        if (obj.enabled === false && typeof obj.message === "string") {
+          setMessages(m => [...m, { role: "assistant", text: String(obj.message), meta: `via /${route.endpoint}` }]);
+          return;
+        }
+      }
+
+      const phr = await phraseInsightAnswer({
+        data: { question, endpoint: route.endpoint, params: route.params, sheet: chosenSheet, payload },
+      });
+      const meta = `via /${route.endpoint}${chosenSheet ? ` · ${chosenSheet}` : ""}`;
+      cacheRef.current.set(cacheKey, { text: phr.text, meta });
+      setMessages(m => [...m, { role: "assistant", text: phr.text, meta }]);
+    } catch (e) {
+      setMessages(m => [...m, { role: "assistant", text: `Error: ${(e as Error).message}` }]);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const send = (q: string) => {
     const text = q.trim();
-    if (!text) return;
+    if (!text || busy) return;
     setMessages(m => [...m, { role: "user", text }]);
     setInput("");
-    ask.mutate(text);
+    void answer(text);
   };
-
-  const chips = ["Where are we slipping?", "Top concerns by department", "Cross-sheet summary", "Which items are missing owners?"];
 
   return (
     <Card className="rounded-2xl shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
         <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-primary" /> Copilot</CardTitle>
-        {!multi && sheets.length > 1 && (
-          <Select value={selected} onValueChange={setSelected}>
-            <SelectTrigger className="h-8 w-48"><SelectValue placeholder="Select sheet" /></SelectTrigger>
-            <SelectContent>{sheets.map(s => <SelectItem key={s.label} value={s.label}>{s.label}</SelectItem>)}</SelectContent>
-          </Select>
-        )}
-        {multi && <Badge variant="outline">multi-sheet</Badge>}
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[10px]">Lovable + Gemini</Badge>
+          {sheets.length > 1 && (
+            <Select value={selected} onValueChange={setSelected}>
+              <SelectTrigger className="h-8 w-48"><SelectValue placeholder="Select sheet" /></SelectTrigger>
+              <SelectContent>{sheets.map(s => <SelectItem key={s.label} value={s.label}>{s.label}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <div ref={scrollerRef} className="mb-3 max-h-[28rem] min-h-[14rem] space-y-3 overflow-y-auto rounded-xl bg-muted/30 p-3">
           {messages.length === 0 && (
-            <div className="text-center text-xs text-muted-foreground">Ask anything about your data.</div>
+            <div className="text-center text-xs text-muted-foreground">
+              Ask anything about {activeSheet?.label || "your data"}. Numbers come straight from the backend; AI only phrases them.
+              {colNames.size > 0 && (
+                <div className="mt-1 opacity-70">Columns: {[...colNames].slice(0, 8).join(", ")}{colNames.size > 8 ? "…" : ""}</div>
+              )}
+            </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card"}`}>
                 <div className="whitespace-pre-wrap">{m.text}</div>
-                {m.generated_by && (
-                  <div className="mt-1.5"><Badge variant="secondary" className="text-[10px] font-normal capitalize">{m.generated_by}</Badge></div>
-                )}
+                {m.meta && <div className="mt-1.5"><Badge variant="secondary" className="text-[10px] font-normal">{m.meta}</Badge></div>}
               </div>
             </div>
           ))}
-          {ask.isPending && (
+          {busy && (
             <div className="flex justify-start"><div className="rounded-2xl bg-card px-3 py-2 text-sm shadow-sm text-muted-foreground">Thinking<span className="inline-block w-6 animate-pulse">…</span></div></div>
           )}
         </div>
         <div className="mb-2 flex flex-wrap gap-1.5">
           {chips.map(c => (
-            <button key={c} onClick={() => send(c)} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground" disabled={ask.isPending}>{c}</button>
+            <button key={c} onClick={() => send(c)} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground" disabled={busy}>{c}</button>
           ))}
         </div>
         <form onSubmit={e => { e.preventDefault(); send(input); }} className="flex gap-2">
-          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask the copilot…" disabled={ask.isPending} />
-          <Button type="submit" disabled={ask.isPending || !input.trim()}><Send className="h-4 w-4" /></Button>
+          <Input value={input} onChange={e => setInput(e.target.value)} placeholder="Ask the copilot…" disabled={busy} />
+          <Button type="submit" disabled={busy || !input.trim()}><Send className="h-4 w-4" /></Button>
         </form>
       </CardContent>
     </Card>
@@ -1501,7 +1613,7 @@ export default function InsightDashboard() {
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
               {!dq.isPending && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
               {!dq.isPending && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
-              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} multi={multiCopilot} />}
+              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} data={data} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
           </div>
