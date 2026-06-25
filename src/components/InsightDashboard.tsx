@@ -1706,7 +1706,7 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
         <div ref={scrollerRef} className="mb-3 max-h-[28rem] min-h-[14rem] space-y-3 overflow-y-auto rounded-xl bg-muted/30 p-3">
           {messages.length === 0 && (
             <div className="text-center text-xs text-muted-foreground">
-              Ask anything about {activeSheet?.label || "your data"}. Numbers come straight from the backend; AI only phrases them.
+              Scoped to <span className="font-medium text-foreground">{activeSheet?.label || "—"}</span>. I'll only answer from this sheet's data and cite the exact fields I used.
               {colNames.size > 0 && (
                 <div className="mt-1 opacity-70">Columns: {[...colNames].slice(0, 8).join(", ")}{colNames.size > 8 ? "…" : ""}</div>
               )}
@@ -1716,7 +1716,16 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-card"}`}>
                 <div className="whitespace-pre-wrap">{m.text}</div>
-                {m.meta && <div className="mt-1.5"><Badge variant="secondary" className="text-[10px] font-normal">{m.meta}</Badge></div>}
+                {(m.meta || (m.cites && m.cites.length > 0)) && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {m.meta && <Badge variant="secondary" className="text-[10px] font-normal">{m.meta}</Badge>}
+                    {m.cites?.map(f => (
+                      <Badge key={f} variant="outline" className="text-[10px] font-normal" title={`Field from "${activeSheet?.label}"`}>
+                        <span className="opacity-60 mr-0.5">field:</span>{f}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ))}
