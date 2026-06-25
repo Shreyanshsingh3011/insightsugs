@@ -33,6 +33,7 @@ import {
   LayoutDashboard, Sheet as SheetIcon, MessageSquareWarning, Bell, Sparkles,
   Wand2, Send, ChevronDown, AlertTriangle, RefreshCcw, Link as LinkIcon,
   TrendingUp, Activity, CheckCircle2, Circle, CircleDot, Plus, ArrowRight,
+  Download, Filter as FilterIcon, X as XIcon, Search as SearchIcon,
 } from "lucide-react";
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 
