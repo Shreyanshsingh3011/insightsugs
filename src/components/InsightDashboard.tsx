@@ -37,7 +37,7 @@ import {
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 
 /* ============================== Types ============================== */
-type Column = { name: string; type?: string };
+type Column = { name: string; type?: string; distinct?: number };
 type KPI = { label: string; value: number | string };
 type ChartDef = { type?: string; title: string; x?: string; y?: string; data: { name: string; value: number }[] };
 type Sheet = {
@@ -471,17 +471,63 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
             </div>
           )}
 
-          {/* Generic sheet: charts */}
-          {!!selected.charts?.length && (
-            <div className="grid gap-4 md:grid-cols-2">
-              {selected.charts.map((c, i) => (
-                <Card key={i} className="rounded-2xl shadow-sm">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
-                  <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          {/* Generic sheet: charts (from API + auto-derived from rows for any column missed) */}
+          {(() => {
+            const apiCharts = selected.charts || [];
+            const chartedCols = new Set<string>();
+            apiCharts.forEach(c => {
+              const m = /^(?:Count|Σ|Sum|Avg|Average)\s+(?:of\s+)?(.+?)(?:\s+by\s+(.+))?$/i.exec(c.title || "");
+              if (m) { if (m[1]) chartedCols.add(m[1].trim()); if (m[2]) chartedCols.add(m[2].trim()); }
+            });
+            const cols = selected.columns || [];
+            const rows = selected.rows || [];
+            const numericCols = cols.filter(c => c.type === "number").map(c => c.name);
+            const primaryNumeric = numericCols[0];
+            const derived: ChartDef[] = [];
+            cols.forEach(col => {
+              if (chartedCols.has(col.name)) return;
+              if (col.type === "number") return;
+              if (!rows.length) return;
+              const distinct = col.distinct ?? 0;
+              if (distinct === 0 || distinct > 500) return;
+              // Count aggregation
+              const counts = new Map<string, number>();
+              const sums = new Map<string, number>();
+              rows.forEach(r => {
+                const k = String(r[col.name] ?? "").trim();
+                if (!k) return;
+                counts.set(k, (counts.get(k) || 0) + 1);
+                if (primaryNumeric) {
+                  const n = Number(r[primaryNumeric]);
+                  if (Number.isFinite(n)) sums.set(k, (sums.get(k) || 0) + n);
+                }
+              });
+              const toTop = (m: Map<string, number>) => {
+                const arr = [...m.entries()].sort((a, b) => b[1] - a[1]);
+                const top = arr.slice(0, 8).map(([name, value]) => ({ name, value }));
+                const rest = arr.slice(8).reduce((s, [, v]) => s + v, 0);
+                if (rest > 0) top.push({ name: "Other", value: rest });
+                return top;
+              };
+              derived.push({ type: "bar", title: `Count by ${col.name}`, x: "name", y: "value", data: toTop(counts) });
+              if (primaryNumeric && sums.size) {
+                derived.push({ type: "bar", title: `${primaryNumeric} by ${col.name}`, x: "name", y: "value", data: toTop(sums) });
+              }
+            });
+            const all = [...apiCharts, ...derived];
+            if (!all.length) return null;
+            return (
+              <div className="grid gap-4 md:grid-cols-2">
+                {all.map((c, i) => (
+                  <Card key={i} className="rounded-2xl shadow-sm">
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
+                    <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
+                  </Card>
+                ))}
+              </div>
+            );
+          })()}
+
 
           {/* Generic modules */}
           {(m.data_quality || m.digest || m.recommendations) && (
