@@ -1480,7 +1480,7 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
   const [localSelected, setLocalSelected] = useState(sheets[0]?.label || "");
   const selected = selectedLabel ?? localSelected;
   const setSelected = (l: string) => { setLocalSelected(l); onSelectedLabelChange?.(l); };
-  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; meta?: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; meta?: string; cites?: string[] }[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
