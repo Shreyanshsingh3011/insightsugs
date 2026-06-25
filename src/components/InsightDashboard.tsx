@@ -827,24 +827,30 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
             <Download className="h-3.5 w-3.5" /> CSV
           </Button>
         </div>
-        {showFilters && Object.keys(distinctByCol).length > 0 && (
+        {showFilters && filterCols.length > 0 && (
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4 border-t pt-3">
-            {Object.entries(distinctByCol).map(([col, vals]) => (
-              <div key={col} className="space-y-1">
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground">{col}</label>
-                <Select value={filters[col] || "__all__"} onValueChange={v => {
-                  setFilters(f => ({ ...f, [col]: v === "__all__" ? "" : v })); setPage(1);
-                }}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All</SelectItem>
-                    {vals.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            {filterCols.map(fc => (
+              <div key={fc.name} className="space-y-1">
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground">{fc.name}</label>
+                {fc.kind === "enum" ? (
+                  <Select value={filters[fc.name] || "__all__"} onValueChange={v => {
+                    setFilters(f => ({ ...f, [fc.name]: v === "__all__" ? "" : v })); setPage(1);
+                  }}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All</SelectItem>
+                      {fc.values!.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input value={filters[fc.name] || ""} placeholder="contains…" className="h-8 text-xs"
+                    onChange={e => { setFilters(f => ({ ...f, [fc.name]: e.target.value })); setPage(1); }} />
+                )}
               </div>
             ))}
           </div>
         )}
+
       </CardHeader>
       <CardContent className="p-0">
         <ScrollArea className="max-h-[32rem] w-full">
