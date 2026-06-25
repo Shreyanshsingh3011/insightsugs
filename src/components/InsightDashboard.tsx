@@ -503,25 +503,6 @@ function AIInsightsCard({ data, selected, isBasis }: { data: DashboardData; sele
   );
 }
 
-function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void }) {
-  const sheets = data.sheets || [];
-  const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "");
-  useEffect(() => {
-    if (!sheets.find(s => s.label === activeLabel)) setActiveLabel(sheets[0]?.label || "");
-  }, [sheets, activeLabel]);
-
-  const selected = sheets.find(s => s.label === activeLabel) || sheets[0];
-  const isBasis = !!selected && selected.label === sheets[0]?.label;
-  const delay = !!selected && isDelaySheet(selected, isBasis ? data.analysis : undefined);
-
-  useEffect(() => {
-    onSelectedChange?.(selected, delay);
-  }, [selected?.label, delay]);
-
-  const a = data.analysis || {};
-  const m = data.modules || {};
-  const totals = a.totals || {};
-  const sb = a.status_breakdown || {};
 
 function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabelChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
   const sheets = data.sheets || [];
