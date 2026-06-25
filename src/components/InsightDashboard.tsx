@@ -36,6 +36,7 @@ import {
   Download, Filter as FilterIcon, X as XIcon, Search as SearchIcon,
 } from "lucide-react";
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
+import { generateGemini, hasGemini, GROUNDING_RULES } from "@/lib/gemini-client";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string; distinct?: number };
