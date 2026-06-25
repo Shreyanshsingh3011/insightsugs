@@ -694,6 +694,197 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
 }
 
 
+function csvEscape(v: unknown): string {
+  if (v == null) return "";
+  const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function downloadCSV(filename: string, columns: string[], rows: Record<string, unknown>[]) {
+  const header = columns.map(csvEscape).join(",");
+  const body = rows.map(r => columns.map(c => csvEscape(r[c])).join(",")).join("\n");
+  const blob = new Blob([header + "\n" + body], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function SheetTable({ sheet }: { sheet: Sheet }) {
+  const rows = sheet.rows || [];
+  const columns = sheet.columns || [];
+  const [q, setQ] = useState("");
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Reset state when sheet changes
+  useEffect(() => { setQ(""); setFilters({}); setPage(1); setSortCol(null); }, [sheet.label]);
+
+  // Per-column distinct values (cap for large sets)
+  const distinctByCol = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const c of columns) {
+      if (c.type === "number") continue;
+      const set = new Set<string>();
+      for (const r of rows) {
+        const v = r[c.name];
+        if (v == null || v === "") continue;
+        set.add(String(v));
+        if (set.size > 200) break;
+      }
+      if (set.size > 1 && set.size <= 50) out[c.name] = Array.from(set).sort();
+    }
+    return out;
+  }, [rows, columns]);
+
+  const filtered = useMemo(() => {
+    const ql = q.trim().toLowerCase();
+    let out = rows.filter(r => {
+      for (const [col, val] of Object.entries(filters)) {
+        if (!val) continue;
+        if (String(r[col] ?? "") !== val) return false;
+      }
+      if (!ql) return true;
+      for (const c of columns) {
+        const v = r[c.name];
+        if (v != null && String(v).toLowerCase().includes(ql)) return true;
+      }
+      return false;
+    });
+    if (sortCol) {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const col = columns.find(c => c.name === sortCol);
+      const numeric = col?.type === "number";
+      out = [...out].sort((a, b) => {
+        const av = a[sortCol]; const bv = b[sortCol];
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1; if (bv == null) return -1;
+        if (numeric) return (Number(av) - Number(bv)) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
+    return out;
+  }, [rows, columns, q, filters, sortCol, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+
+  const toggleSort = (name: string) => {
+    if (sortCol === name) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(name); setSortDir("asc"); }
+  };
+
+  return (
+    <Card className="rounded-2xl shadow-sm">
+      <CardHeader className="pb-3 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm">{sheet.name || sheet.label}</CardTitle>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {fmtNum(filtered.length)} of {fmtNum(rows.length)} rows
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input value={q} onChange={e => { setQ(e.target.value); setPage(1); }}
+              placeholder="Search all columns…" className="pl-7 h-8 text-xs" />
+          </div>
+          <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setShowFilters(s => !s)}>
+            <FilterIcon className="h-3.5 w-3.5" />
+            Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
+          </Button>
+          {activeFilterCount > 0 && (
+            <Button variant="ghost" size="sm" className="h-8 gap-1" onClick={() => { setFilters({}); setPage(1); }}>
+              <XIcon className="h-3.5 w-3.5" /> Clear
+            </Button>
+          )}
+          <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(1); }}>
+            <SelectTrigger className="h-8 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[50, 100, 250, 500, 1000].map(n => <SelectItem key={n} value={String(n)}>{n} / page</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" className="h-8 gap-1"
+            onClick={() => downloadCSV(`${sheet.label}.csv`, columns.map(c => c.name), filtered)}>
+            <Download className="h-3.5 w-3.5" /> CSV
+          </Button>
+        </div>
+        {showFilters && Object.keys(distinctByCol).length > 0 && (
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4 border-t pt-3">
+            {Object.entries(distinctByCol).map(([col, vals]) => (
+              <div key={col} className="space-y-1">
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground">{col}</label>
+                <Select value={filters[col] || "__all__"} onValueChange={v => {
+                  setFilters(f => ({ ...f, [col]: v === "__all__" ? "" : v })); setPage(1);
+                }}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All</SelectItem>
+                    {vals.map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="p-0">
+        <ScrollArea className="max-h-[32rem] w-full">
+          <Table>
+            <TableHeader className="sticky top-0 bg-card z-10">
+              <TableRow>
+                {columns.map(c => (
+                  <TableHead key={c.name}
+                    onClick={() => toggleSort(c.name)}
+                    className={`cursor-pointer select-none whitespace-nowrap ${c.type === "number" ? "text-right" : ""}`}>
+                    {c.name}{sortCol === c.name ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {paged.map((r, i) => (
+                <TableRow key={(safePage - 1) * pageSize + i} className={i % 2 ? "bg-muted/30" : ""}>
+                  {columns.map(c => {
+                    const v = r[c.name];
+                    const txt = fmtCell(v);
+                    const long = txt.length > 60;
+                    return (
+                      <TableCell key={c.name} className={`whitespace-nowrap ${c.type === "number" ? "tabular-nums text-right" : ""}`}>
+                        {long ? (
+                          <TooltipProvider><UITooltip><TooltipTrigger asChild><span className="cursor-default">{txt.slice(0, 60)}…</span></TooltipTrigger><TooltipContent className="max-w-md break-words">{txt}</TooltipContent></UITooltip></TooltipProvider>
+                        ) : txt}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              ))}
+              {paged.length === 0 && (
+                <TableRow><TableCell colSpan={columns.length} className="text-center text-xs text-muted-foreground py-6">No rows match.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </ScrollArea>
+        <div className="flex items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground">
+          <span>Page {safePage} of {totalPages}</span>
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" className="h-7" disabled={safePage <= 1} onClick={() => setPage(1)}>First</Button>
+            <Button variant="outline" size="sm" className="h-7" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Prev</Button>
+            <Button variant="outline" size="sm" className="h-7" disabled={safePage >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Button>
+            <Button variant="outline" size="sm" className="h-7" disabled={safePage >= totalPages} onClick={() => setPage(totalPages)}>Last</Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SheetsSection({ sheets }: { sheets: Sheet[] }) {
   const [active, setActive] = useState(sheets[0]?.label || "");
   useEffect(() => { if (!sheets.find(s => s.label === active)) setActive(sheets[0]?.label || ""); }, [sheets, active]);
@@ -733,50 +924,11 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
         </div>
       )}
 
-      {!!sheet.rows?.length && !!sheet.columns?.length && (
-        <Card className="rounded-2xl shadow-sm">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm">{sheet.name || sheet.label}</CardTitle>
-            <span className="text-xs text-muted-foreground">{fmtNum(sheet.rows.length)} rows shown</span>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="max-h-[28rem] w-full">
-              <Table>
-                <TableHeader className="sticky top-0 bg-card">
-                  <TableRow>
-                    {sheet.columns.map(c => <TableHead key={c.name} className={c.type === "number" ? "text-right" : ""}>{c.name}</TableHead>)}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sheet.rows.slice(0, 500).map((r, i) => {
-                    const lab = String(r["status"] || r["type"] || "").toLowerCase();
-                    const muted = /total|subtotal|grand/.test(lab) || /total|subtotal|grand/i.test(JSON.stringify(r).slice(0, 100));
-                    return (
-                      <TableRow key={i} data-sheet={sheet.label} data-row={i} className={`${i % 2 ? "bg-muted/30" : ""} ${muted ? "text-muted-foreground italic" : ""}`}>
-                        {sheet.columns!.map(c => {
-                          const v = r[c.name];
-                          const txt = fmtCell(v);
-                          const long = txt.length > 40;
-                          return (
-                            <TableCell key={c.name} className={`whitespace-nowrap ${c.type === "number" ? "tabular-nums text-right" : ""}`}>
-                              {long ? (
-                                <TooltipProvider><UITooltip><TooltipTrigger asChild><span className="cursor-default">{txt.slice(0, 40)}…</span></TooltipTrigger><TooltipContent className="max-w-sm break-words">{txt}</TooltipContent></UITooltip></TooltipProvider>
-                              ) : txt}
-                            </TableCell>
-                          );
-                        })}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
+      {!!sheet.rows?.length && !!sheet.columns?.length && <SheetTable sheet={sheet} />}
     </div>
   );
 }
+
 
 function ConcernsSection({ base, sheets, onRemind }: { base: string; sheets: Sheet[]; onRemind: (c: Concern) => void }) {
   const qc = useQueryClient();
