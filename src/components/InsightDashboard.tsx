@@ -1572,6 +1572,33 @@ function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[];
         }
       }
 
+      // If backend returned a computed (no-AI) answer and we have a Gemini key,
+      // phrase it client-side with full modules context as grounding.
+      const payloadObj = (payload && typeof payload === "object" && !Array.isArray(payload))
+        ? (payload as Record<string, unknown>) : null;
+      const isComputed = payloadObj?.generated_by === "computed";
+      if (isComputed && hasGemini()) {
+        try {
+          const ctx = JSON.stringify({
+            sheet: chosenSheet,
+            modules: data.modules || {},
+            backend_answer: payloadObj?.answer ?? payloadObj,
+          }, null, 2);
+          const out = await generateGemini({
+            system: GROUNDING_RULES + "\nYou are a data copilot. Phrase the answer naturally using only the provided numbers and facts.",
+            prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
+            temperature: 0.3,
+          });
+          const text = out.trim() || String(payloadObj?.answer ?? "");
+          const meta = `via /${route.endpoint} · Gemini`;
+          cacheRef.current.set(cacheKey, { text, meta });
+          setMessages(m => [...m, { role: "assistant", text, meta }]);
+          return;
+        } catch {
+          // fall through to server phrasing
+        }
+      }
+
       const phr = await phraseInsightAnswer({
         data: { question, endpoint: route.endpoint, params: route.params, sheet: chosenSheet, payload },
       });
