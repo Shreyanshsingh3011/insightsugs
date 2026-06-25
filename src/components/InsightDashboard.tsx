@@ -1834,6 +1834,11 @@ export default function InsightDashboard() {
   const multiCopilot = enabledFields.includes("multi_copilot") || !!data.multi_copilot;
 
   const [overviewSelected, setOverviewSelected] = useState<{ sheet?: Sheet; isDelay: boolean }>({ isDelay: false });
+  const [sharedSheetLabel, setSharedSheetLabel] = useState<string>("");
+  useEffect(() => {
+    if (!sharedSheetLabel && sheets[0]?.label) setSharedSheetLabel(sheets[0].label);
+    if (sharedSheetLabel && !sheets.find(s => s.label === sharedSheetLabel)) setSharedSheetLabel(sheets[0]?.label || "");
+  }, [sheets, sharedSheetLabel]);
 
   const hasAnyDelaySheet = useMemo(
     () => sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined)),
