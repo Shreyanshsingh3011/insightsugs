@@ -1551,9 +1551,20 @@ function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[];
         // Fallback: try the link's own /copilot endpoint if available.
         if (route.endpoint !== "copilot") {
           try {
-            const fb = await apiSend<{ answer?: string }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question });
-            const text = fb?.answer || `No data available (${(e as Error).message}).`;
-            const meta = `via /copilot`;
+            const fb = await apiSend<{ answer?: string; generated_by?: string }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question });
+            let text = fb?.answer || `No data available (${(e as Error).message}).`;
+            let meta = `via /copilot`;
+            if (fb?.generated_by === "computed" && hasGemini() && fb?.answer) {
+              try {
+                const ctx = JSON.stringify({ sheet: chosenSheet, modules: data.modules || {}, backend_answer: fb.answer }, null, 2);
+                const out = await generateGemini({
+                  system: GROUNDING_RULES + "\nYou are a data copilot. Phrase the answer naturally using only provided numbers.",
+                  prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
+                  temperature: 0.3,
+                });
+                if (out.trim()) { text = out.trim(); meta = `via /copilot · Gemini`; }
+              } catch { /* keep raw */ }
+            }
             cacheRef.current.set(cacheKey, { text, meta });
             setMessages(m => [...m, { role: "assistant", text, meta }]);
             return;
