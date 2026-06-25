@@ -513,6 +513,7 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
 
   return (
     <div className="space-y-6">
+      <AIInsightsCard data={data} />
       {/* Sheet selector */}
       {sheets.length > 0 && (
         <div className="overflow-x-auto">
