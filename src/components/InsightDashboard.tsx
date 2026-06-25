@@ -417,6 +417,71 @@ function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
   return false;
 }
 
+function AIInsightsCard({ data }: { data: DashboardData }) {
+  const raw = (typeof data.ai_summary === "string" ? data.ai_summary : "").trim();
+  const m = (data.modules || {}) as Record<string, any>;
+  const digestFacts = (() => {
+    const d = m.digest;
+    if (!d) return null;
+    if (typeof d === "object" && Array.isArray(d.facts)) return d.facts;
+    return null;
+  })();
+  const recs = Array.isArray(m.recommendations) ? m.recommendations.slice(0, 3) : [];
+  const dqScore = m.data_quality?.score;
+
+  const canEnhance = hasGemini() && !!raw && (digestFacts || recs.length || dqScore != null);
+  const [text, setText] = useState<string>(raw);
+  const [loading, setLoading] = useState(false);
+  const [enhanced, setEnhanced] = useState(false);
+
+  useEffect(() => {
+    setText(raw);
+    setEnhanced(false);
+    if (!canEnhance) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const ctx = JSON.stringify({
+          digest_facts: digestFacts,
+          top_recommendations: recs,
+          data_quality_score: dqScore,
+          backend_summary: raw,
+        }, null, 2);
+        const out = await generateGemini({
+          system: GROUNDING_RULES + "\nYou write concise executive insights for a data dashboard.",
+          prompt: [
+            "Write a 4-6 sentence narrative describing what the data shows and what to act on.",
+            "Use ONLY the provided facts. Do not invent numbers. Mark advice as 'Suggestion:'.",
+            "Context (JSON):",
+            ctx,
+          ].join("\n\n"),
+          temperature: 0.4,
+        });
+        if (!cancelled && out.trim()) { setText(out.trim()); setEnhanced(true); }
+      } catch {
+        /* keep backend text */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [raw, canEnhance]);
+
+  if (!raw && !loading) return null;
+  return (
+    <Card className="rounded-2xl shadow-sm border-primary/30">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-primary" /> AI Insights</CardTitle>
+        {enhanced && <Badge variant="outline" className="text-[10px]">Gemini</Badge>}
+      </CardHeader>
+      <CardContent className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        {loading && !text ? "Generating insights…" : text}
+      </CardContent>
+    </Card>
+  );
+}
+
 function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void }) {
   const sheets = data.sheets || [];
   const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "");
