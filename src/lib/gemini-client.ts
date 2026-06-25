@@ -1,29 +1,16 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateGeminiFn } from "@/lib/gemini.functions";
 
-export const GEMINI_API_KEY = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) || "";
-export const hasGemini = () => !!GEMINI_API_KEY;
-
-let client: GoogleGenerativeAI | null = null;
-function getClient() {
-  if (!GEMINI_API_KEY) return null;
-  if (!client) client = new GoogleGenerativeAI(GEMINI_API_KEY);
-  return client;
-}
+// Key lives server-side (GEMINI_API_KEY). Assume configured; callers will
+// surface errors from the server fn if not.
+export const hasGemini = () => true;
 
 export async function generateGemini(opts: {
   system?: string;
   prompt: string;
   temperature?: number;
 }): Promise<string> {
-  const c = getClient();
-  if (!c) throw new Error("VITE_GEMINI_API_KEY missing");
-  const model = c.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    ...(opts.system ? { systemInstruction: opts.system } : {}),
-    generationConfig: { temperature: opts.temperature ?? 0.4 },
-  });
-  const res = await model.generateContent(opts.prompt);
-  return res.response.text();
+  const res = await generateGeminiFn({ data: opts });
+  return res.text;
 }
 
 export const GROUNDING_RULES = [
