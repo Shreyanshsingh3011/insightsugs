@@ -724,22 +724,26 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
   // Reset state when sheet changes
   useEffect(() => { setQ(""); setFilters({}); setPage(1); setSortCol(null); }, [sheet.label]);
 
-  // Per-column distinct values (cap for large sets)
-  const distinctByCol = useMemo(() => {
-    const out: Record<string, string[]> = {};
+  // Classify each non-numeric column as 'enum' (≤50 distinct → dropdown) or 'text' (high-cardinality → contains)
+  const filterCols = useMemo(() => {
+    const out: { name: string; kind: "enum" | "text"; values?: string[] }[] = [];
     for (const c of columns) {
       if (c.type === "number") continue;
       const set = new Set<string>();
+      let total = 0;
       for (const r of rows) {
         const v = r[c.name];
         if (v == null || v === "") continue;
+        total++;
         set.add(String(v));
-        if (set.size > 200) break;
       }
-      if (set.size > 1 && set.size <= 50) out[c.name] = Array.from(set).sort();
+      if (total === 0 || set.size <= 1) continue;
+      if (set.size <= 50) out.push({ name: c.name, kind: "enum", values: Array.from(set).sort() });
+      else out.push({ name: c.name, kind: "text" });
     }
     return out;
   }, [rows, columns]);
+
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
