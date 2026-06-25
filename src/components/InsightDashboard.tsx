@@ -36,6 +36,7 @@ import {
   Download, Filter as FilterIcon, X as XIcon, Search as SearchIcon,
 } from "lucide-react";
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
+import { generateGemini, hasGemini, GROUNDING_RULES } from "@/lib/gemini-client";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string; distinct?: number };
@@ -69,6 +70,8 @@ type DashboardData = {
   sheets?: Sheet[];
   analysis?: Analysis;
   modules?: Modules;
+  ai_summary?: string;
+  ai_summary_generated_by?: string;
   [k: string]: unknown;
 };
 type Concern = {
@@ -414,6 +417,71 @@ function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
   return false;
 }
 
+function AIInsightsCard({ data }: { data: DashboardData }) {
+  const raw = (typeof data.ai_summary === "string" ? data.ai_summary : "").trim();
+  const m = (data.modules || {}) as Record<string, any>;
+  const digestFacts = (() => {
+    const d = m.digest;
+    if (!d) return null;
+    if (typeof d === "object" && Array.isArray(d.facts)) return d.facts;
+    return null;
+  })();
+  const recs = Array.isArray(m.recommendations) ? m.recommendations.slice(0, 3) : [];
+  const dqScore = m.data_quality?.score;
+
+  const canEnhance = hasGemini() && !!raw && (digestFacts || recs.length || dqScore != null);
+  const [text, setText] = useState<string>(raw);
+  const [loading, setLoading] = useState(false);
+  const [enhanced, setEnhanced] = useState(false);
+
+  useEffect(() => {
+    setText(raw);
+    setEnhanced(false);
+    if (!canEnhance) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const ctx = JSON.stringify({
+          digest_facts: digestFacts,
+          top_recommendations: recs,
+          data_quality_score: dqScore,
+          backend_summary: raw,
+        }, null, 2);
+        const out = await generateGemini({
+          system: GROUNDING_RULES + "\nYou write concise executive insights for a data dashboard.",
+          prompt: [
+            "Write a 4-6 sentence narrative describing what the data shows and what to act on.",
+            "Use ONLY the provided facts. Do not invent numbers. Mark advice as 'Suggestion:'.",
+            "Context (JSON):",
+            ctx,
+          ].join("\n\n"),
+          temperature: 0.4,
+        });
+        if (!cancelled && out.trim()) { setText(out.trim()); setEnhanced(true); }
+      } catch {
+        /* keep backend text */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [raw, canEnhance]);
+
+  if (!raw && !loading) return null;
+  return (
+    <Card className="rounded-2xl shadow-sm border-primary/30">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-primary" /> AI Insights</CardTitle>
+        {enhanced && <Badge variant="outline" className="text-[10px]">Gemini</Badge>}
+      </CardHeader>
+      <CardContent className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+        {loading && !text ? "Generating insights…" : text}
+      </CardContent>
+    </Card>
+  );
+}
+
 function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void }) {
   const sheets = data.sheets || [];
   const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "");
@@ -445,6 +513,7 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
 
   return (
     <div className="space-y-6">
+      <AIInsightsCard data={data} />
       {/* Sheet selector */}
       {sheets.length > 0 && (
         <div className="overflow-x-auto">
@@ -1482,9 +1551,20 @@ function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[];
         // Fallback: try the link's own /copilot endpoint if available.
         if (route.endpoint !== "copilot") {
           try {
-            const fb = await apiSend<{ answer?: string }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question });
-            const text = fb?.answer || `No data available (${(e as Error).message}).`;
-            const meta = `via /copilot`;
+            const fb = await apiSend<{ answer?: string; generated_by?: string }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question });
+            let text = fb?.answer || `No data available (${(e as Error).message}).`;
+            let meta = `via /copilot`;
+            if (fb?.generated_by === "computed" && hasGemini() && fb?.answer) {
+              try {
+                const ctx = JSON.stringify({ sheet: chosenSheet, modules: data.modules || {}, backend_answer: fb.answer }, null, 2);
+                const out = await generateGemini({
+                  system: GROUNDING_RULES + "\nYou are a data copilot. Phrase the answer naturally using only provided numbers.",
+                  prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
+                  temperature: 0.3,
+                });
+                if (out.trim()) { text = out.trim(); meta = `via /copilot · Gemini`; }
+              } catch { /* keep raw */ }
+            }
             cacheRef.current.set(cacheKey, { text, meta });
             setMessages(m => [...m, { role: "assistant", text, meta }]);
             return;
@@ -1500,6 +1580,33 @@ function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[];
         if (obj.enabled === false && typeof obj.message === "string") {
           setMessages(m => [...m, { role: "assistant", text: String(obj.message), meta: `via /${route.endpoint}` }]);
           return;
+        }
+      }
+
+      // If backend returned a computed (no-AI) answer and we have a Gemini key,
+      // phrase it client-side with full modules context as grounding.
+      const payloadObj = (payload && typeof payload === "object" && !Array.isArray(payload))
+        ? (payload as Record<string, unknown>) : null;
+      const isComputed = payloadObj?.generated_by === "computed";
+      if (isComputed && hasGemini()) {
+        try {
+          const ctx = JSON.stringify({
+            sheet: chosenSheet,
+            modules: data.modules || {},
+            backend_answer: payloadObj?.answer ?? payloadObj,
+          }, null, 2);
+          const out = await generateGemini({
+            system: GROUNDING_RULES + "\nYou are a data copilot. Phrase the answer naturally using only the provided numbers and facts.",
+            prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
+            temperature: 0.3,
+          });
+          const text = out.trim() || String(payloadObj?.answer ?? "");
+          const meta = `via /${route.endpoint} · Gemini`;
+          cacheRef.current.set(cacheKey, { text, meta });
+          setMessages(m => [...m, { role: "assistant", text, meta }]);
+          return;
+        } catch {
+          // fall through to server phrasing
         }
       }
 
