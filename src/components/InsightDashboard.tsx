@@ -1476,8 +1476,10 @@ function RemindersSection({ base, onNew }: { base: string; onNew: () => void }) 
   );
 }
 
-function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[]; data: DashboardData }) {
-  const [selected, setSelected] = useState(sheets[0]?.label || "");
+function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChange }: { base: string; sheets: Sheet[]; data: DashboardData; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
+  const [localSelected, setLocalSelected] = useState(sheets[0]?.label || "");
+  const selected = selectedLabel ?? localSelected;
+  const setSelected = (l: string) => { setLocalSelected(l); onSelectedLabelChange?.(l); };
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; meta?: string }[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
