@@ -750,8 +750,16 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
     let out = rows.filter(r => {
       for (const [col, val] of Object.entries(filters)) {
         if (!val) continue;
-        if (String(r[col] ?? "") !== val) return false;
+        const fc = filterCols.find(f => f.name === col);
+        const cell = r[col];
+        if (cell == null) return false;
+        if (fc?.kind === "text") {
+          if (!String(cell).toLowerCase().includes(val.toLowerCase())) return false;
+        } else {
+          if (String(cell) !== val) return false;
+        }
       }
+
       if (!ql) return true;
       for (const c of columns) {
         const v = r[c.name];
