@@ -523,6 +523,30 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
   const totals = a.totals || {};
   const sb = a.status_breakdown || {};
 
+function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabelChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
+  const sheets = data.sheets || [];
+  const [localLabel, setLocalLabel] = useState(sheets[0]?.label || "");
+  const activeLabel = selectedLabel ?? localLabel;
+  const setActiveLabel = (l: string) => { setLocalLabel(l); onSelectedLabelChange?.(l); };
+  useEffect(() => {
+    if (!sheets.find(s => s.label === activeLabel)) setActiveLabel(sheets[0]?.label || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheets, activeLabel]);
+
+  const selected = sheets.find(s => s.label === activeLabel) || sheets[0];
+  const isBasis = !!selected && selected.label === sheets[0]?.label;
+  const delay = !!selected && isBasis && isDelaySheet(selected, data.analysis);
+
+  useEffect(() => {
+    onSelectedChange?.(selected, delay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.label, delay]);
+
+  const a = data.analysis || {};
+  const m = data.modules || {};
+  const totals = a.totals || {};
+  const sb = a.status_breakdown || {};
+
   const flags = (a.flags || []).filter(Boolean);
 
   const extraAnalysis = Object.entries(a).filter(([k, v]) =>
@@ -534,7 +558,7 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
 
   return (
     <div className="space-y-6">
-      <AIInsightsCard data={data} />
+      <AIInsightsCard data={data} selected={selected} isBasis={isBasis} />
       {/* Sheet selector */}
       {sheets.length > 0 && (
         <div className="overflow-x-auto">
