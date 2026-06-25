@@ -417,84 +417,110 @@ function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
   return false;
 }
 
-function AIInsightsCard({ data }: { data: DashboardData }) {
-  const raw = (typeof data.ai_summary === "string" ? data.ai_summary : "").trim();
+function AIInsightsCard({ data, selected, isBasis }: { data: DashboardData; selected?: Sheet; isBasis?: boolean }) {
   const m = (data.modules || {}) as Record<string, any>;
-  const digestFacts = (() => {
-    const d = m.digest;
-    if (!d) return null;
-    if (typeof d === "object" && Array.isArray(d.facts)) return d.facts;
-    return null;
+  const basisContext = (() => {
+    const digestFacts = (() => {
+      const d = m.digest;
+      if (d && typeof d === "object" && Array.isArray(d.facts)) return d.facts;
+      return null;
+    })();
+    const recs = Array.isArray(m.recommendations) ? m.recommendations.slice(0, 3) : [];
+    const dqScore = m.data_quality?.score;
+    return {
+      backend_summary: (typeof data.ai_summary === "string" ? data.ai_summary : "").trim(),
+      digest_facts: digestFacts,
+      top_recommendations: recs,
+      data_quality_score: dqScore,
+      totals: data.analysis?.totals,
+      status_breakdown: data.analysis?.status_breakdown,
+    };
   })();
-  const recs = Array.isArray(m.recommendations) ? m.recommendations.slice(0, 3) : [];
-  const dqScore = m.data_quality?.score;
+  const sheetContext = selected && !isBasis ? {
+    sheet_label: selected.label,
+    sheet_type: selected.type,
+    row_count: selected.row_count,
+    kpis: selected.kpis,
+    charts: (selected.charts || []).slice(0, 6).map(c => ({ title: c.title, data: (c.data || []).slice(0, 8) })),
+    backend_summary: (typeof data.ai_summary === "string" ? data.ai_summary : "").trim(),
+  } : null;
 
-  const canEnhance = hasGemini() && !!raw && (digestFacts || recs.length || dqScore != null);
-  const [text, setText] = useState<string>(raw);
+  const useSheet = !!sheetContext;
+  const ctxJson = useMemo(
+    () => JSON.stringify(useSheet ? sheetContext : basisContext, null, 2),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [useSheet, selected?.label, data]
+  );
+  const hasAnyContent = useSheet
+    ? !!(sheetContext!.kpis?.length || sheetContext!.charts?.length || sheetContext!.backend_summary)
+    : !!(basisContext.backend_summary || basisContext.digest_facts || (basisContext.top_recommendations?.length) || basisContext.totals);
+
+  const [text, setText] = useState<string>(useSheet ? "" : basisContext.backend_summary);
   const [loading, setLoading] = useState(false);
   const [enhanced, setEnhanced] = useState(false);
 
   useEffect(() => {
-    setText(raw);
     setEnhanced(false);
-    if (!canEnhance) return;
+    setText(useSheet ? "" : basisContext.backend_summary);
+    if (!hasGemini() || !hasAnyContent) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const ctx = JSON.stringify({
-          digest_facts: digestFacts,
-          top_recommendations: recs,
-          data_quality_score: dqScore,
-          backend_summary: raw,
-        }, null, 2);
         const out = await generateGemini({
           system: GROUNDING_RULES + "\nYou write concise executive insights for a data dashboard.",
           prompt: [
             "Write a 4-6 sentence narrative describing what the data shows and what to act on.",
-            "Use ONLY the provided facts. Do not invent numbers. Mark advice as 'Suggestion:'.",
+            "Use ONLY the provided facts and numbers. Do not invent values. Mark advice as 'Suggestion:'.",
+            useSheet ? `Focus strictly on the sheet "${selected!.label}".` : "",
             "Context (JSON):",
-            ctx,
-          ].join("\n\n"),
+            ctxJson,
+          ].filter(Boolean).join("\n\n"),
           temperature: 0.4,
         });
         if (!cancelled && out.trim()) { setText(out.trim()); setEnhanced(true); }
-      } catch {
-        /* keep backend text */
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      } catch { /* keep fallback */ }
+      finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [raw, canEnhance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxJson, useSheet, hasAnyContent]);
 
-  if (!raw && !loading) return null;
+  if (!hasAnyContent && !loading) return null;
   return (
     <Card className="rounded-2xl shadow-sm border-primary/30">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-primary" /> AI Insights</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Sparkles className="h-4 w-4 text-primary" /> AI Insights
+          {useSheet && <Badge variant="outline" className="ml-1 px-1.5 py-0 text-[10px]">{selected!.label}</Badge>}
+        </CardTitle>
         {enhanced && <Badge variant="outline" className="text-[10px]">Gemini</Badge>}
       </CardHeader>
       <CardContent className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
-        {loading && !text ? "Generating insights…" : text}
+        {loading && !text ? "Generating insights…" : (text || "No narrative available for this sheet.")}
       </CardContent>
     </Card>
   );
 }
 
-function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void }) {
+
+function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabelChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
   const sheets = data.sheets || [];
-  const [activeLabel, setActiveLabel] = useState(sheets[0]?.label || "");
+  const [localLabel, setLocalLabel] = useState(sheets[0]?.label || "");
+  const activeLabel = selectedLabel ?? localLabel;
+  const setActiveLabel = (l: string) => { setLocalLabel(l); onSelectedLabelChange?.(l); };
   useEffect(() => {
     if (!sheets.find(s => s.label === activeLabel)) setActiveLabel(sheets[0]?.label || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheets, activeLabel]);
 
   const selected = sheets.find(s => s.label === activeLabel) || sheets[0];
   const isBasis = !!selected && selected.label === sheets[0]?.label;
-  const delay = !!selected && isDelaySheet(selected, isBasis ? data.analysis : undefined);
+  const delay = !!selected && isBasis && isDelaySheet(selected, data.analysis);
 
   useEffect(() => {
     onSelectedChange?.(selected, delay);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.label, delay]);
 
   const a = data.analysis || {};
@@ -513,7 +539,7 @@ function OverviewSection({ data, onSelectedChange }: { data: DashboardData; onSe
 
   return (
     <div className="space-y-6">
-      <AIInsightsCard data={data} />
+      <AIInsightsCard data={data} selected={selected} isBasis={isBasis} />
       {/* Sheet selector */}
       {sheets.length > 0 && (
         <div className="overflow-x-auto">
@@ -1450,8 +1476,10 @@ function RemindersSection({ base, onNew }: { base: string; onNew: () => void }) 
   );
 }
 
-function CopilotSection({ base, sheets, data }: { base: string; sheets: Sheet[]; data: DashboardData }) {
-  const [selected, setSelected] = useState(sheets[0]?.label || "");
+function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChange }: { base: string; sheets: Sheet[]; data: DashboardData; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
+  const [localSelected, setLocalSelected] = useState(sheets[0]?.label || "");
+  const selected = selectedLabel ?? localSelected;
+  const setSelected = (l: string) => { setLocalSelected(l); onSelectedLabelChange?.(l); };
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; text: string; meta?: string }[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1806,6 +1834,11 @@ export default function InsightDashboard() {
   const multiCopilot = enabledFields.includes("multi_copilot") || !!data.multi_copilot;
 
   const [overviewSelected, setOverviewSelected] = useState<{ sheet?: Sheet; isDelay: boolean }>({ isDelay: false });
+  const [sharedSheetLabel, setSharedSheetLabel] = useState<string>("");
+  useEffect(() => {
+    if (!sharedSheetLabel && sheets[0]?.label) setSharedSheetLabel(sheets[0].label);
+    if (sharedSheetLabel && !sheets.find(s => s.label === sharedSheetLabel)) setSharedSheetLabel(sheets[0]?.label || "");
+  }, [sheets, sharedSheetLabel]);
 
   const hasAnyDelaySheet = useMemo(
     () => sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined)),
@@ -1933,11 +1966,11 @@ export default function InsightDashboard() {
                 </div>
               )}
 
-              {!dq.isPending && tab === "overview" && <OverviewSection data={data} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
+              {!dq.isPending && tab === "overview" && <OverviewSection data={data} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
               {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
               {!dq.isPending && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
               {!dq.isPending && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
-              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} data={data} />}
+              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} data={data} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} />}
               {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
             </div>
           </div>
