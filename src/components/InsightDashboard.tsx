@@ -1484,7 +1484,7 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const cacheRef = useRef<Map<string, { text: string; meta?: string }>>(new Map());
+  const cacheRef = useRef<Map<string, { text: string; meta?: string; cites?: string[] }>>(new Map());
 
   useEffect(() => { setMessages([]); cacheRef.current.clear(); }, [base, selected]);
   useEffect(() => { scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
