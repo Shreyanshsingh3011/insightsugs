@@ -1535,27 +1535,53 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
     return apiGet<unknown>(url);
   }
 
+  // Collect referenced field names from route params + payload, intersected with this sheet's columns.
+  function deriveCitations(params: Record<string, unknown> | undefined, payload: unknown, allowed: Set<string>): string[] {
+    const found = new Set<string>();
+    const visit = (v: unknown, depth = 0) => {
+      if (depth > 4 || v == null) return;
+      if (typeof v === "string") { if (allowed.has(v)) found.add(v); return; }
+      if (Array.isArray(v)) { for (const x of v) visit(x, depth + 1); return; }
+      if (typeof v === "object") {
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          if (allowed.has(k)) found.add(k);
+          visit(val, depth + 1);
+        }
+      }
+    };
+    visit(params);
+    visit(payload);
+    return [...found].slice(0, 8);
+  }
+
   async function answer(question: string) {
     const sheetLabel = activeSheet?.label || "";
+    if (!sheetLabel) {
+      setMessages(m => [...m, { role: "assistant", text: "Select a sheet to ask questions about." }]);
+      return;
+    }
     const cacheKey = `${base}|${sheetLabel}|${question.toLowerCase().trim()}`;
     const hit = cacheRef.current.get(cacheKey);
     if (hit) {
-      setMessages(m => [...m, { role: "assistant", text: hit.text, meta: hit.meta }]);
+      setMessages(m => [...m, { role: "assistant", text: hit.text, meta: hit.meta, cites: hit.cites }]);
       return;
     }
     setBusy(true);
     try {
       const { routeInsightQuestion, phraseInsightAnswer } = await import("@/lib/insights-copilot.functions");
-      const route = await routeInsightQuestion({ data: { question, sheets: catalog } });
+      // Only expose the currently selected sheet to the router so it can't pivot elsewhere.
+      const lockedCatalog = catalog.filter(c => c.label === sheetLabel);
+      const route = await routeInsightQuestion({ data: { question, sheets: lockedCatalog } });
 
       if (!route || route.endpoint === "none") {
-        const text = `I can't answer that from the current sheet's columns. ${route?.reason || ""}`.trim();
+        const text = `I can only answer from "${sheetLabel}". ${route?.reason || "That question isn't covered by its columns."}`.trim();
         setMessages(m => [...m, { role: "assistant", text }]);
         return;
       }
 
-      const chosenSheet = route.sheet || sheetLabel;
-      const sheetMeta = catalog.find(c => c.label === chosenSheet) || catalog[0];
+      // Hard-lock the sheet regardless of what the router returned.
+      const chosenSheet = sheetLabel;
+      const sheetMeta = catalog.find(c => c.label === chosenSheet);
       const sheetCols = new Set((sheetMeta?.columns || []).map(c => c.name));
 
       // Validate column refs against runtime list (Gemini may hallucinate).
@@ -1576,25 +1602,27 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
       try {
         payload = await callEndpoint(route.endpoint, route.params, chosenSheet);
       } catch (e) {
-        // Fallback: try the link's own /copilot endpoint if available.
+        // Fallback: try the link's own /copilot endpoint if available, still pinned to this sheet.
         if (route.endpoint !== "copilot") {
           try {
-            const fb = await apiSend<{ answer?: string; generated_by?: string }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question });
+            const fb = await apiSend<{ answer?: string; generated_by?: string; fields_used?: string[] }>(`${base}/copilot?sheet=${encodeURIComponent(chosenSheet)}`, "POST", { message: question, sheet: chosenSheet });
             let text = fb?.answer || `No data available (${(e as Error).message}).`;
-            let meta = `via /copilot`;
+            let meta = `via /copilot · ${chosenSheet}`;
             if (fb?.generated_by === "computed" && hasGemini() && fb?.answer) {
               try {
                 const ctx = JSON.stringify({ sheet: chosenSheet, modules: data.modules || {}, backend_answer: fb.answer }, null, 2);
                 const out = await generateGemini({
-                  system: GROUNDING_RULES + "\nYou are a data copilot. Phrase the answer naturally using only provided numbers.",
+                  system: GROUNDING_RULES + `\nYou are a data copilot restricted to the sheet "${chosenSheet}". Use only provided numbers. If the answer requires data from another sheet, say so.`,
                   prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
                   temperature: 0.3,
                 });
-                if (out.trim()) { text = out.trim(); meta = `via /copilot · Gemini`; }
+                if (out.trim()) { text = out.trim(); meta = `via /copilot · ${chosenSheet} · Gemini`; }
               } catch { /* keep raw */ }
             }
-            cacheRef.current.set(cacheKey, { text, meta });
-            setMessages(m => [...m, { role: "assistant", text, meta }]);
+            const cites = deriveCitations(undefined, fb, sheetCols).concat(fb?.fields_used?.filter(f => sheetCols.has(f)) || []);
+            const uniqueCites = [...new Set(cites)];
+            cacheRef.current.set(cacheKey, { text, meta, cites: uniqueCites });
+            setMessages(m => [...m, { role: "assistant", text, meta, cites: uniqueCites }]);
             return;
           } catch { /* fallthrough */ }
         }
@@ -1611,11 +1639,12 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
         }
       }
 
-      // If backend returned a computed (no-AI) answer and we have a Gemini key,
-      // phrase it client-side with full modules context as grounding.
       const payloadObj = (payload && typeof payload === "object" && !Array.isArray(payload))
         ? (payload as Record<string, unknown>) : null;
       const isComputed = payloadObj?.generated_by === "computed";
+
+      const baseCites = deriveCitations(route.params as Record<string, unknown> | undefined, payload, sheetCols);
+
       if (isComputed && hasGemini()) {
         try {
           const ctx = JSON.stringify({
@@ -1624,14 +1653,14 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
             backend_answer: payloadObj?.answer ?? payloadObj,
           }, null, 2);
           const out = await generateGemini({
-            system: GROUNDING_RULES + "\nYou are a data copilot. Phrase the answer naturally using only the provided numbers and facts.",
+            system: GROUNDING_RULES + `\nYou are a data copilot restricted to the sheet "${chosenSheet}". Use only the provided numbers and facts. If the question needs data outside this sheet, say so.`,
             prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
             temperature: 0.3,
           });
           const text = out.trim() || String(payloadObj?.answer ?? "");
-          const meta = `via /${route.endpoint} · Gemini`;
-          cacheRef.current.set(cacheKey, { text, meta });
-          setMessages(m => [...m, { role: "assistant", text, meta }]);
+          const meta = `via /${route.endpoint} · ${chosenSheet} · Gemini`;
+          cacheRef.current.set(cacheKey, { text, meta, cites: baseCites });
+          setMessages(m => [...m, { role: "assistant", text, meta, cites: baseCites }]);
           return;
         } catch {
           // fall through to server phrasing
@@ -1641,9 +1670,9 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
       const phr = await phraseInsightAnswer({
         data: { question, endpoint: route.endpoint, params: route.params, sheet: chosenSheet, payload },
       });
-      const meta = `via /${route.endpoint}${chosenSheet ? ` · ${chosenSheet}` : ""}`;
-      cacheRef.current.set(cacheKey, { text: phr.text, meta });
-      setMessages(m => [...m, { role: "assistant", text: phr.text, meta }]);
+      const meta = `via /${route.endpoint} · ${chosenSheet}`;
+      cacheRef.current.set(cacheKey, { text: phr.text, meta, cites: baseCites });
+      setMessages(m => [...m, { role: "assistant", text: phr.text, meta, cites: baseCites }]);
     } catch (e) {
       setMessages(m => [...m, { role: "assistant", text: `Error: ${(e as Error).message}` }]);
     } finally {
