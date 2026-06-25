@@ -7,45 +7,44 @@ const InputSchema = z.object({
   temperature: z.number().optional(),
 });
 
+// Routes through Lovable AI Gateway (OpenAI-compatible) to avoid free-tier Gemini quota.
 export const generateGeminiFn = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data }) => {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) throw new Error("GEMINI_API_KEY missing");
-    const body: Record<string, unknown> = {
-      contents: [{ role: "user", parts: [{ text: data.prompt }] }],
-      generationConfig: { temperature: data.temperature ?? 0.4 },
-    };
-    if (data.system) {
-      body.systemInstruction = { role: "system", parts: [{ text: data.system }] };
-    }
-    const models = ["gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash-latest"];
-    let res: Response | null = null;
-    let lastErr = "";
-    for (const model of models) {
-      res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-      );
-      if (res.ok) break;
-      lastErr = await res.text().catch(() => "");
-      if (res.status !== 404) break;
-    }
-    if (!res || !res.ok) {
-      throw new Error(`Gemini ${res?.status ?? "??"}: ${lastErr.slice(0, 200)}`);
-    }
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key) throw new Error("LOVABLE_API_KEY missing");
+
+    const messages: Array<{ role: string; content: string }> = [];
+    if (data.system) messages.push({ role: "system", content: data.system });
+    messages.push({ role: "user", content: data.prompt });
+
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Lovable-API-Key": key,
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages,
+        temperature: data.temperature ?? 0.4,
+      }),
+    });
+
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
-      throw new Error(`Gemini ${res.status}: ${txt.slice(0, 200)}`);
+      if (res.status === 429) {
+        throw new Error("AI rate-limited (429). Please retry shortly.");
+      }
+      if (res.status === 402) {
+        throw new Error("AI credits exhausted (402). Top up in Settings → Plans & credits.");
+      }
+      throw new Error(`AI gateway ${res.status}: ${txt.slice(0, 200)}`);
     }
+
     const json = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      choices?: Array<{ message?: { content?: string } }>;
     };
-    const text =
-      json.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+    const text = json.choices?.[0]?.message?.content ?? "";
     return { text };
   });
