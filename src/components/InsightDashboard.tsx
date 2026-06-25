@@ -69,6 +69,8 @@ type DashboardData = {
   sheets?: Sheet[];
   analysis?: Analysis;
   modules?: Modules;
+  ai_summary?: string;
+  ai_summary_generated_by?: string;
   [k: string]: unknown;
 };
 type Concern = {
