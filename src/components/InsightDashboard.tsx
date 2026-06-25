@@ -37,7 +37,7 @@ import {
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 
 /* ============================== Types ============================== */
-type Column = { name: string; type?: string };
+type Column = { name: string; type?: string; distinct?: number };
 type KPI = { label: string; value: number | string };
 type ChartDef = { type?: string; title: string; x?: string; y?: string; data: { name: string; value: number }[] };
 type Sheet = {
