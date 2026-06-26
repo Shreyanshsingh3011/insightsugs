@@ -1163,7 +1163,8 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
                 <CardContent>
                   <ul className="space-y-2 text-sm">
                     {flags.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2 rounded-xl border border-border/50 bg-card/60 p-2.5">
+                      <li key={i} onClick={() => drillFlag(f)} role="button" tabIndex={0}
+                        className="flex items-start gap-2 rounded-xl border border-border/50 bg-card/60 p-2.5 cursor-pointer transition hover:border-foreground/40 hover:bg-accent/50">
                         <Badge variant={sevColor(f.severity)} className="shrink-0 capitalize">{f.severity || "info"}</Badge>
                         <span>{f.message || f.title || ""}</span>
                       </li>
