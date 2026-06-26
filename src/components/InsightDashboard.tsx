@@ -901,6 +901,51 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
 
   const flags = (a.flags || []).filter(Boolean);
 
+  // Drill-down wiring
+  const drill = useDrill();
+  const drillKpi = useCallback((label: string, value: unknown) => {
+    if (!drill || !selected) return;
+    const { predicate, filterLabel } = inferPredicateFromLabel(selected, label);
+    drill.open({
+      kind: "kpi", title: `${label}: ${fmtNum(value)}`,
+      subtitle: filterLabel ? `Drill into rows where ${filterLabel}` : `All rows in ${selected.label}`,
+      sheet: selected, predicate, filterLabel,
+    });
+  }, [drill, selected]);
+  const drillStatus = useCallback((status: string) => {
+    if (!drill || !selected) return;
+    const col = findColumnForValue(selected, status);
+    const predicate = col ? (r: Record<string, unknown>) => String(r[col] ?? "").toLowerCase() === status.toLowerCase() : undefined;
+    drill.open({
+      kind: "status", title: `${status}`,
+      subtitle: col ? `Rows where ${col} = ${status}` : `Rows tagged ${status}`,
+      sheet: selected, predicate, filterLabel: col ? `${col} = ${status}` : undefined,
+    });
+  }, [drill, selected]);
+  const drillChart = useCallback((chartTitle: string, bucket: string) => {
+    if (!drill || !selected) return;
+    // Title shapes: "Count by COL", "<num> by COL", "Count of X by COL"
+    const m = /by\s+(.+)$/i.exec(chartTitle);
+    const col = m?.[1]?.trim();
+    const predicate = col ? (r: Record<string, unknown>) => String(r[col] ?? "") === String(bucket) : undefined;
+    drill.open({
+      kind: "chart", title: `${chartTitle}: ${bucket}`,
+      subtitle: col ? `Rows where ${col} = ${bucket}` : undefined,
+      sheet: selected, predicate, filterLabel: col ? `${col} = ${bucket}` : undefined,
+    });
+  }, [drill, selected]);
+  const drillFlag = useCallback((f: Flag) => {
+    if (!drill) return;
+    const text = f.message || f.title || "Flag";
+    const inferred = selected ? inferPredicateFromLabel(selected, text) : {};
+    drill.open({
+      kind: "flag", title: f.title || "Flag", subtitle: f.message,
+      sheet: selected, predicate: inferred.predicate, filterLabel: inferred.filterLabel,
+      extra: { severity: f.severity || "info" },
+    });
+  }, [drill, selected]);
+
+
   const extraAnalysis = Object.entries(a).filter(([k, v]) =>
     !["summary", "totals", "status_breakdown", "flags", "mode_badge"].includes(k) && !isEmpty(v));
   const extraModules = Object.entries(m).filter(([k, v]) =>
