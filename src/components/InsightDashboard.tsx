@@ -979,7 +979,7 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
           {!!selected.kpis?.length && (
             <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
               {selected.kpis.map((k, i) => (
-                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
+                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} onClick={() => drillKpi(k.label, k.value)} />
               ))}
             </div>
           )}
