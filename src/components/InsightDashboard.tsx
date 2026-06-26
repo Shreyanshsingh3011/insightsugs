@@ -1460,6 +1460,7 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
 
 function SheetsSection({ sheets }: { sheets: Sheet[] }) {
   const [active, setActive] = useState(sheets[0]?.label || "");
+  const drill = useDrill();
   useEffect(() => { if (!sheets.find(s => s.label === active)) setActive(sheets[0]?.label || ""); }, [sheets, active]);
   if (!sheets.length) return <SectionEmpty icon={SheetIcon} label="No sheets returned." />;
   const sheet = sheets.find(s => s.label === active) || sheets[0];
