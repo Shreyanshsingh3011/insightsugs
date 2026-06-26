@@ -682,11 +682,19 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
             const all = [...apiCharts, ...derived];
             if (!all.length) return null;
             return (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {all.map((c, i) => (
-                  <Card key={i} className="rounded-2xl shadow-sm">
-                    <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
-                    <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
+                  <Card key={i} className={`group overflow-hidden rounded-3xl border-border/60 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${i === 0 ? "md:col-span-2 xl:col-span-2 md:row-span-1" : ""}`}>
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{i === 0 ? "Primary trend" : "Breakdown"}</div>
+                        <CardTitle className="mt-1 text-base font-semibold leading-tight truncate">{c.title}</CardTitle>
+                      </div>
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border/70 bg-muted/40 text-muted-foreground">
+                        <Activity className="h-3.5 w-3.5" />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0"><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
                   </Card>
                 ))}
               </div>
