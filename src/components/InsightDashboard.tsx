@@ -478,7 +478,301 @@ function Ring({ value, label }: { value: number; label: string }) {
   );
 }
 
+/* ========================== Drill-down ========================== */
+
+type DrillPayload = {
+  title: string;
+  subtitle?: string;
+  sheet?: Sheet;
+  /** When omitted, all rows of `sheet` are shown. */
+  predicate?: (row: Record<string, unknown>) => boolean;
+  /** Human description of the filter (e.g. "status = Delayed"). */
+  filterLabel?: string;
+  /** Optional pre-supplied bullet reasons (skips/precedes AI). */
+  reasons?: string[];
+  /** Extra k/v context to display in the modal header. */
+  extra?: Record<string, unknown>;
+  /** Tone tag for the header badge. */
+  kind?: "kpi" | "status" | "flag" | "chart" | "total";
+};
+
+type DrillCtxValue = { open: (p: DrillPayload) => void };
+const DrillCtx = createContext<DrillCtxValue | null>(null);
+function useDrill() { return useContext(DrillCtx); }
+
+/** Infer a row predicate from a free-text label by matching distinct values of categorical columns. */
+function inferPredicateFromLabel(sheet: Sheet | undefined, label: string): { predicate?: (r: Record<string, unknown>) => boolean; filterLabel?: string } {
+  if (!sheet || !sheet.rows?.length) return {};
+  const tokens = label.toLowerCase().replace(/[_\-]+/g, " ").split(/\s+/).filter(Boolean);
+  if (!tokens.length) return {};
+  const cols = sheet.columns || [];
+  // Prefer status-like columns first.
+  const prioritized = [...cols].sort((a, b) => {
+    const score = (n: string) => /status|state|stage|phase|severity|priority|criticality|category/i.test(n) ? -1 : 0;
+    return score(a.name) - score(b.name);
+  });
+  for (const col of prioritized) {
+    if (col.type === "number") continue;
+    const distinct = new Set<string>();
+    for (const r of sheet.rows) {
+      const v = r[col.name];
+      if (v == null || v === "") continue;
+      distinct.add(String(v));
+      if (distinct.size > 100) break;
+    }
+    for (const v of distinct) {
+      const vl = v.toLowerCase();
+      if (tokens.some(t => t.length > 2 && (vl === t || vl.includes(t) || t.includes(vl)))) {
+        return {
+          predicate: (r) => String(r[col.name] ?? "").toLowerCase() === vl,
+          filterLabel: `${col.name} = ${v}`,
+        };
+      }
+    }
+  }
+  return {};
+}
+
+function findColumnForValue(sheet: Sheet | undefined, value: string): string | undefined {
+  if (!sheet?.rows?.length) return undefined;
+  const vl = value.toLowerCase();
+  const cols = sheet.columns || [];
+  const prioritized = [...cols].sort((a, b) => {
+    const score = (n: string) => /status|state|stage|phase|severity|priority/i.test(n) ? -1 : 0;
+    return score(a.name) - score(b.name);
+  });
+  for (const col of prioritized) {
+    if (col.type === "number") continue;
+    for (const r of sheet.rows) {
+      if (String(r[col.name] ?? "").toLowerCase() === vl) return col.name;
+    }
+  }
+  return undefined;
+}
+
+function DrillDownDialog({ payload, onClose }: { payload: DrillPayload | null; onClose: () => void }) {
+  const open = !!payload;
+  const sheet = payload?.sheet;
+  const allRows = sheet?.rows ?? [];
+  const cols = sheet?.columns ?? [];
+
+  const matched = useMemo(() => {
+    if (!payload?.predicate) return allRows;
+    return allRows.filter(payload.predicate);
+  }, [payload, allRows]);
+
+  // Build top-N breakdowns over categorical columns (excluding ones already in the title).
+  const facets = useMemo(() => {
+    if (!matched.length) return [] as { col: string; entries: [string, number][] }[];
+    const candidates = cols
+      .filter(c => c.type !== "number")
+      .map(c => {
+        const counts = new Map<string, number>();
+        for (const r of matched) {
+          const v = r[c.name];
+          if (v == null || v === "") continue;
+          const k = String(v);
+          counts.set(k, (counts.get(k) || 0) + 1);
+        }
+        return { col: c.name, counts };
+      })
+      .filter(f => f.counts.size > 1 && f.counts.size <= 60)
+      .sort((a, b) => b.counts.size - a.counts.size)
+      .slice(0, 4)
+      .map(f => ({
+        col: f.col,
+        entries: [...f.counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6) as [string, number][],
+      }));
+    return candidates;
+  }, [matched, cols]);
+
+  // AI reasons
+  const [reasons, setReasons] = useState<string>("");
+  const [reasonsLoading, setReasonsLoading] = useState(false);
+  const [reasonsError, setReasonsError] = useState<string>("");
+
+  useEffect(() => {
+    if (!open) { setReasons(""); setReasonsError(""); return; }
+    if (payload?.reasons?.length) { setReasons(payload.reasons.map(r => `- ${r}`).join("\n")); return; }
+    if (!matched.length) { setReasons(""); return; }
+    let cancelled = false;
+    setReasonsLoading(true); setReasonsError("");
+    const sample = matched.slice(0, 25);
+    const facetSummary = facets.map(f => `${f.col}: ${f.entries.map(([k, v]) => `${k}=${v}`).join(", ")}`).join("\n");
+    const ctx = [
+      `Selected entity: ${payload?.title}`,
+      payload?.subtitle ? `Subtitle: ${payload.subtitle}` : "",
+      payload?.filterLabel ? `Filter: ${payload.filterLabel}` : "",
+      `Sheet: ${sheet?.name || sheet?.label || "n/a"}`,
+      `Matching row count: ${matched.length} of ${allRows.length}`,
+      `Top breakdowns:\n${facetSummary || "n/a"}`,
+      `Sample rows (JSON, ≤25):\n${JSON.stringify(sample).slice(0, 6000)}`,
+    ].filter(Boolean).join("\n\n");
+    generateGemini({
+      system: GROUNDING_RULES + "\nYou are an analyst. Given the matching rows, explain WHY this metric/segment looks the way it does. Produce 4-6 short bullets. Reference exact column names and values from the data only. No speculation beyond the data.",
+      prompt: ctx,
+      temperature: 0.2,
+    }).then(text => { if (!cancelled) setReasons(text || ""); })
+      .catch(e => { if (!cancelled) setReasonsError(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!cancelled) setReasonsLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, payload, matched, facets, allRows.length, sheet]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            {payload?.kind && <Badge variant="outline" className="capitalize text-[10px]">{payload.kind}</Badge>}
+            {sheet && <Badge variant="secondary" className="text-[10px]">{sheet.name || sheet.label}</Badge>}
+            {payload?.filterLabel && <Badge variant="outline" className="text-[10px]">{payload.filterLabel}</Badge>}
+          </div>
+          <DialogTitle className="text-xl">{payload?.title}</DialogTitle>
+          {payload?.subtitle && <p className="text-sm text-muted-foreground">{payload.subtitle}</p>}
+        </DialogHeader>
+
+        <ScrollArea className="flex-1 -mx-6 px-6">
+          <div className="space-y-5 pb-4">
+            {/* Headline counts */}
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Card className="rounded-2xl"><CardContent className="p-4">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Matching rows</div>
+                <div className="mt-1 text-2xl font-bold tabular-nums">{fmtNum(matched.length)}</div>
+              </CardContent></Card>
+              <Card className="rounded-2xl"><CardContent className="p-4">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Share of sheet</div>
+                <div className="mt-1 text-2xl font-bold tabular-nums">{allRows.length ? Math.round((matched.length / allRows.length) * 100) : 0}%</div>
+              </CardContent></Card>
+              {facets[0] && (
+                <Card className="rounded-2xl"><CardContent className="p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Top {facets[0].col}</div>
+                  <div className="mt-1 truncate text-sm font-semibold">{facets[0].entries[0]?.[0] ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground">{fmtNum(facets[0].entries[0]?.[1] ?? 0)} rows</div>
+                </CardContent></Card>
+              )}
+              {payload?.extra && Object.entries(payload.extra).slice(0, 1).map(([k, v]) => (
+                <Card key={k} className="rounded-2xl"><CardContent className="p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{k.replace(/_/g, " ")}</div>
+                  <div className="mt-1 truncate text-sm font-semibold">{fmtCell(v)}</div>
+                </CardContent></Card>
+              ))}
+            </div>
+
+            {/* AI reasons */}
+            <Card className="rounded-2xl border-primary/30 bg-primary/5">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <CardTitle className="text-sm">Why this looks like it does</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm leading-relaxed">
+                {reasonsLoading && <div className="text-muted-foreground">Analyzing matched rows…</div>}
+                {reasonsError && <div className="text-destructive text-xs">{reasonsError}</div>}
+                {!reasonsLoading && !reasonsError && reasons && (
+                  <div className="whitespace-pre-wrap">{reasons}</div>
+                )}
+                {!reasonsLoading && !reasonsError && !reasons && (
+                  <div className="text-muted-foreground">No matching rows to analyze.</div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Facet breakdowns */}
+            {facets.length > 0 && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {facets.map(f => (
+                  <Card key={f.col} className="rounded-2xl">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Top by {f.col}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-1.5">
+                      {f.entries.map(([k, v]) => {
+                        const max = f.entries[0][1] || 1;
+                        return (
+                          <div key={k} className="flex items-center gap-2 text-xs">
+                            <div className="w-32 truncate" title={k}>{k}</div>
+                            <div className="flex-1 h-2 rounded bg-muted overflow-hidden">
+                              <div className="h-full bg-primary/70" style={{ width: `${(v / max) * 100}%` }} />
+                            </div>
+                            <div className="w-12 text-right tabular-nums text-muted-foreground">{fmtNum(v)}</div>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Matched rows */}
+            {matched.length > 0 && cols.length > 0 && (
+              <Card className="rounded-2xl">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-sm">Matching rows ({fmtNum(matched.length)})</CardTitle>
+                  <Button variant="outline" size="sm" className="h-7 gap-1"
+                    onClick={() => downloadCSV(`${sheet?.label || "drill"}.csv`, cols.map(c => c.name), matched)}>
+                    <Download className="h-3 w-3" /> CSV
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <ScrollArea className="max-h-[24rem]">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-card z-10">
+                        <TableRow>
+                          {cols.map(c => <TableHead key={c.name} className="whitespace-nowrap">{c.name}</TableHead>)}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {matched.slice(0, 500).map((r, i) => (
+                          <TableRow key={i} className={i % 2 ? "bg-muted/30" : ""}>
+                            {cols.map(c => {
+                              const txt = fmtCell(r[c.name]);
+                              const long = txt.length > 60;
+                              return (
+                                <TableCell key={c.name} className={`whitespace-nowrap ${c.type === "number" ? "tabular-nums text-right" : ""}`}>
+                                  {long ? `${txt.slice(0, 60)}…` : txt}
+                                </TableCell>
+                              );
+                            })}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                  {matched.length > 500 && (
+                    <div className="border-t px-4 py-2 text-xs text-muted-foreground">
+                      Showing first 500 of {fmtNum(matched.length)}. Export CSV for the full set.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </ScrollArea>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DrillProvider({ children }: { children: React.ReactNode }) {
+  const [payload, setPayload] = useState<DrillPayload | null>(null);
+  const open = useCallback((p: DrillPayload) => setPayload(p), []);
+  const value = useMemo(() => ({ open }), [open]);
+  return (
+    <DrillCtx.Provider value={value}>
+      {children}
+      <DrillDownDialog payload={payload} onClose={() => setPayload(null)} />
+    </DrillCtx.Provider>
+  );
+}
+
 /* ============================ Sections ============================ */
+
 
 function isDelaySheet(sheet: Sheet, analysisIfBasis?: Analysis): boolean {
   const t = (sheet.type || "").toLowerCase();
