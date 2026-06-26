@@ -28,7 +28,7 @@ function LoginPage() {
 
 
   useEffect(() => {
-    if (session) router.navigate({ to: "/dashboard", replace: true });
+    if (session) router.navigate({ to: "/insights", replace: true });
   }, [session, router]);
 
   const submit = async (e: React.FormEvent) => {
@@ -43,7 +43,7 @@ function LoginPage() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
+            emailRedirectTo: `${window.location.origin}/insights`,
             data: { full_name: fullName, requested_role: requestedRole },
           },
         });
@@ -62,13 +62,13 @@ function LoginPage() {
     try {
       const { lovable } = await import("@/integrations/lovable");
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin + "/dashboard",
+        redirect_uri: window.location.origin + "/insights",
       });
       if (result.error) toast.error("Google sign-in failed");
     } catch {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/dashboard` },
+        options: { redirectTo: `${window.location.origin}/insights` },
       });
       if (error) toast.error(error.message);
     }
