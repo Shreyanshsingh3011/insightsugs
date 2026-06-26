@@ -330,7 +330,7 @@ function HeroKpi({ label, value, color, index = 0, featured = false, onClick }: 
   // Rotate distinctive tile variants for an editorial bento feel.
   const variant = featured ? "featured" : ["soft", "dark", "accent", "soft"][index % 4];
   const clickProps = onClick
-    ? { onClick, role: "button" as const, tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } }
+    ? { onClick, role: "button" as const, tabIndex: 0, onKeyDown: (e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } }
     : {};
   const clickable = onClick ? " cursor-pointer hover:ring-2 hover:ring-primary/40" : "";
 
