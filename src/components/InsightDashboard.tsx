@@ -2327,6 +2327,7 @@ export default function InsightDashboard() {
   const reloadAll = () => dq.refetch();
 
   return (
+    <DrillProvider>
     <div className="space-y-4">
       {/* Sticky header */}
       <Card className="rounded-2xl border-border/60 shadow-sm">
