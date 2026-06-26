@@ -629,9 +629,9 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
         <>
           {/* Generic sheet: KPI hero tiles */}
           {!!selected.kpis?.length && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
               {selected.kpis.map((k, i) => (
-                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} />
+                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
               ))}
             </div>
           )}
