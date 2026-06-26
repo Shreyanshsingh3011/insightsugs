@@ -314,16 +314,85 @@ function CardSkeleton({ h = 24 }: { h?: number }) {
     </Card>
   );
 }
-function HeroKpi({ label, value, color }: { label: string; value: unknown; color: string }) {
+function Sparkline({ tone = "default" }: { tone?: "default" | "light" | "dark" }) {
+  const stroke =
+    tone === "light" ? "rgba(255,255,255,0.85)" :
+    tone === "dark" ? "rgb(129, 140, 248)" :
+    "var(--chart-1)";
   return (
-    <Card className="relative overflow-hidden rounded-2xl shadow-sm">
-      <div className="absolute inset-x-0 top-0 h-1" style={{ background: color }} />
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+    <svg className="h-8 w-full opacity-90" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden>
+      <path d="M0,22 Q15,8 25,18 T50,12 T75,20 T100,6" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function HeroKpi({ label, value, color, index = 0, featured = false }: { label: string; value: unknown; color: string; index?: number; featured?: boolean }) {
+  // Rotate distinctive tile variants for an editorial bento feel.
+  const variant = featured ? "featured" : ["soft", "dark", "accent", "soft"][index % 4];
+
+  if (variant === "featured") {
+    return (
+      <Card className="group relative col-span-2 overflow-hidden rounded-3xl border-border/60 bg-card shadow-sm transition-all duration-500 hover:shadow-xl">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-64 w-64 rounded-full bg-primary/10 blur-3xl transition-colors group-hover:bg-primary/20" />
+        <CardContent className="relative flex h-full flex-col justify-between gap-6 p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{label}</span>
+              <div className="mt-2 text-4xl font-bold tracking-tight tabular-nums">{fmtNum(value)}</div>
+            </div>
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-muted/40 text-muted-foreground">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+          </div>
+          <Sparkline />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (variant === "dark") {
+    return (
+      <Card className="group relative overflow-hidden rounded-3xl border-transparent bg-slate-900 text-slate-100 shadow-sm transition-transform duration-300 hover:-translate-y-0.5 dark:bg-slate-950">
+        <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 animate-pulse rounded-full" style={{ background: "rgb(129,140,248)" }} />
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</span>
+          </div>
+          <div>
+            <div className="text-3xl font-bold tabular-nums">{fmtNum(value)}</div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-2/3 rounded-full" style={{ background: "rgb(129,140,248)" }} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (variant === "accent") {
+    return (
+      <Card className="group relative overflow-hidden rounded-3xl border-transparent text-white shadow-lg transition-transform duration-300 hover:-translate-y-0.5" style={{ background: color }}>
+        <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+          <div className="flex items-start justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-80">{label}</span>
+            <div className="rounded-xl bg-white/20 p-1.5"><TrendingUp className="h-3.5 w-3.5" /></div>
+          </div>
+          <div className="text-4xl font-bold tracking-tight tabular-nums">{fmtNum(value)}</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // soft
+  return (
+    <Card className="group relative overflow-hidden rounded-3xl border-border/70 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-md">
+      <div className="absolute left-0 top-0 h-full w-1" style={{ background: color }} />
+      <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{label}</span>
+        <div className="flex items-end justify-between gap-3">
+          <div className="text-3xl font-bold tracking-tight tabular-nums">{fmtNum(value)}</div>
+          <div className="w-16"><Sparkline /></div>
         </div>
-        <div className="mt-2 text-3xl font-semibold tabular-nums">{fmtNum(value)}</div>
       </CardContent>
     </Card>
   );
@@ -542,14 +611,15 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
       <AIInsightsCard data={data} selected={selected} isBasis={isBasis} />
       {/* Sheet selector */}
       {sheets.length > 0 && (
-        <div className="overflow-x-auto">
-          <div className="flex flex-wrap gap-2">
+        <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl bg-background/80 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Sheet</span>
             {sheets.map(s => (
               <button key={s.label} onClick={() => setActiveLabel(s.label)}
-                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${activeLabel === s.label ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-accent"}`}>
-                <span className="font-medium">{s.label}</span>
-                {s.type && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{s.type}</Badge>}
-                {s.row_count != null && <span className="tabular-nums opacity-70">{fmtNum(s.row_count)}</span>}
+                className={`group flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${activeLabel === s.label ? "border-transparent bg-slate-900 text-slate-50 shadow-md shadow-slate-900/15 dark:bg-slate-100 dark:text-slate-900" : "border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:border-foreground/30 hover:text-foreground"}`}>
+                <span>{s.label}</span>
+                {s.type && <span className={`rounded-full px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider ${activeLabel === s.label ? "bg-white/15 text-slate-50 dark:bg-black/10 dark:text-slate-900" : "bg-muted text-muted-foreground"}`}>{s.type}</span>}
+                {s.row_count != null && <span className="font-mono text-[10px] opacity-70">{fmtNum(s.row_count)}</span>}
               </button>
             ))}
           </div>
@@ -560,9 +630,9 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
         <>
           {/* Generic sheet: KPI hero tiles */}
           {!!selected.kpis?.length && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
               {selected.kpis.map((k, i) => (
-                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} />
+                <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
               ))}
             </div>
           )}
@@ -613,11 +683,19 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
             const all = [...apiCharts, ...derived];
             if (!all.length) return null;
             return (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {all.map((c, i) => (
-                  <Card key={i} className="rounded-2xl shadow-sm">
-                    <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
-                    <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
+                  <Card key={i} className={`group overflow-hidden rounded-3xl border-border/60 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md ${i === 0 ? "md:col-span-2 xl:col-span-2 md:row-span-1" : ""}`}>
+                    <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{i === 0 ? "Primary trend" : "Breakdown"}</div>
+                        <CardTitle className="mt-1 text-base font-semibold leading-tight truncate">{c.title}</CardTitle>
+                      </div>
+                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border/70 bg-muted/40 text-muted-foreground">
+                        <Activity className="h-3.5 w-3.5" />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-0"><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
                   </Card>
                 ))}
               </div>
@@ -629,27 +707,37 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
           {(m.data_quality || m.digest || m.recommendations) && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {m.data_quality?.score != null && (
-                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md"><CardContent className="p-5">
                   <Ring label="Data quality" value={Number(m.data_quality.score)} />
                   {!!m.data_quality.issues?.length && (
-                    <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
+                    <div className="mt-3 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
                   )}
                 </CardContent></Card>
               )}
               {m.digest && (
-                <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
+                <Card className="rounded-3xl border-border/60 shadow-sm md:col-span-2 xl:col-span-3">
+                  <CardHeader className="pb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Editorial</div>
+                    <CardTitle className="text-base font-semibold">Digest</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm leading-relaxed text-foreground/80">
                     {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
                   </CardContent>
                 </Card>
               )}
               {!!m.recommendations?.length && (
-                <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
+                <Card className="rounded-3xl border-border/60 bg-gradient-to-br from-card to-muted/30 shadow-sm md:col-span-2 xl:col-span-4">
+                  <CardHeader className="pb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600">Suggested</div>
+                    <CardTitle className="text-base font-semibold">Recommendations</CardTitle>
+                  </CardHeader>
                   <CardContent>
-                    <ul className="space-y-1.5 text-sm">
+                    <ul className="grid gap-2.5 text-sm md:grid-cols-2">
                       {m.recommendations.map((r, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                        <li key={i} className="flex items-start gap-2.5 rounded-2xl border border-border/50 bg-card/60 p-3">
+                          <div className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </div>
                           <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
                         </li>
                       ))}
@@ -667,8 +755,11 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
                 const v = (m as any)[k];
                 if (isEmpty(v)) return null;
                 return (
-                  <Card key={k} className="rounded-2xl shadow-sm">
-                    <CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k}</CardTitle></CardHeader>
+                  <Card key={k} className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md">
+                    <CardHeader className="pb-2">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Module</div>
+                      <CardTitle className="text-base font-semibold capitalize">{k}</CardTitle>
+                    </CardHeader>
                     <CardContent><GenericValue value={v} /></CardContent>
                   </Card>
                 );
@@ -682,39 +773,50 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
         <>
           {/* KPI tiles */}
           {!isEmpty(totals) && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
               {Object.entries(totals).map(([k, v], i) => (
-                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} />
+                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
               ))}
             </div>
           )}
 
           {/* Summary callout */}
           {!isEmpty(a.summary) && (
-            <Card className="rounded-2xl border-l-4 shadow-sm" style={{ borderLeftColor: "var(--chart-1)" }}>
-              <CardContent className="flex gap-3 p-4 text-sm leading-relaxed">
-                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <p>{a.summary}</p>
+            <Card className="overflow-hidden rounded-3xl border-border/60 bg-gradient-to-br from-primary/5 via-card to-card shadow-sm">
+              <CardContent className="flex gap-4 p-5 text-sm leading-relaxed">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Summary</div>
+                  <p className="mt-1 text-foreground/90">{a.summary}</p>
+                </div>
               </CardContent>
             </Card>
           )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-5">
             {/* Status breakdown */}
             {!isEmpty(sb) && (
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Status breakdown</CardTitle></CardHeader>
+              <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md lg:col-span-3">
+                <CardHeader className="pb-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Composition</div>
+                  <CardTitle className="text-base font-semibold">Status breakdown</CardTitle>
+                </CardHeader>
                 <CardContent><StackedBar data={sb as Record<string, number>} /></CardContent>
               </Card>
             )}
             {/* Flags */}
             {flags.length > 0 && (
-              <Card className="rounded-2xl shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Flags</CardTitle></CardHeader>
+              <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md lg:col-span-2">
+                <CardHeader className="pb-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600">Attention</div>
+                  <CardTitle className="text-base font-semibold">Flags</CardTitle>
+                </CardHeader>
                 <CardContent>
                   <ul className="space-y-2 text-sm">
                     {flags.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2">
+                      <li key={i} className="flex items-start gap-2 rounded-xl border border-border/50 bg-card/60 p-2.5">
                         <Badge variant={sevColor(f.severity)} className="shrink-0 capitalize">{f.severity || "info"}</Badge>
                         <span>{f.message || f.title || ""}</span>
                       </li>
@@ -729,32 +831,42 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
           {(m.digest || m.recommendations || a.risk_score != null || m.data_quality) && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {a.risk_score != null && (
-                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md"><CardContent className="p-5">
                   <Gauge label="Risk score" value={typeof a.risk_score === "number" ? a.risk_score : Number((a.risk_score as any)?.score) || 0} />
                 </CardContent></Card>
               )}
               {m.data_quality?.score != null && (
-                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md"><CardContent className="p-5">
                   <Ring label="Data quality" value={Number(m.data_quality.score)} />
                   {!!m.data_quality.issues?.length && (
-                    <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
+                    <div className="mt-3 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
                   )}
                 </CardContent></Card>
               )}
               {m.digest && (
-                <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
+                <Card className="rounded-3xl border-border/60 shadow-sm md:col-span-2">
+                  <CardHeader className="pb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Editorial</div>
+                    <CardTitle className="text-base font-semibold">Digest</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm leading-relaxed text-foreground/80">
                     {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
                   </CardContent>
                 </Card>
               )}
               {!!m.recommendations?.length && (
-                <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
+                <Card className="rounded-3xl border-border/60 bg-gradient-to-br from-card to-muted/30 shadow-sm md:col-span-2 xl:col-span-4">
+                  <CardHeader className="pb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600">Suggested</div>
+                    <CardTitle className="text-base font-semibold">Recommendations</CardTitle>
+                  </CardHeader>
                   <CardContent>
-                    <ul className="space-y-1.5 text-sm">
+                    <ul className="grid gap-2.5 text-sm md:grid-cols-2">
                       {m.recommendations.map((r, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                        <li key={i} className="flex items-start gap-2.5 rounded-2xl border border-border/50 bg-card/60 p-3">
+                          <div className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </div>
                           <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
                         </li>
                       ))}
