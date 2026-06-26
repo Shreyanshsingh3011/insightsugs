@@ -759,7 +759,7 @@ function DrillDownDialog({ payload, onClose }: { payload: DrillPayload | null; o
   );
 }
 
-function DrillProvider({ children }: { children: React.ReactNode }) {
+function DrillProvider({ children }: { children: ReactNode }) {
   const [payload, setPayload] = useState<DrillPayload | null>(null);
   const open = useCallback((p: DrillPayload) => setPayload(p), []);
   const value = useMemo(() => ({ open }), [open]);
