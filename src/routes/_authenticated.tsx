@@ -6,7 +6,7 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, Activity, FileText, Sparkles, Sheet as SheetIcon,
-  AlertTriangle, Mail, Plug, MessageSquareWarning, BarChart3,
+  AlertTriangle, Mail, MessageSquareWarning,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -53,13 +53,11 @@ function AuthLayout() {
           <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Documents</SideLink>
           <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>My Sheets</SideLink>
           <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
-          <InsightsExternalLink />
 
           {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
           {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Email groups</SideLink>}
           {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
           {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
-          {isSuper && <SideLink to="/admin/integrations" icon={<Plug className="h-4 w-4" />}>Integrations</SideLink>}
           <div className="my-2 h-px bg-border" />
           <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
         </nav>
@@ -79,15 +77,12 @@ function AuthLayout() {
             <SideLink to="/documents" icon={<FileText className="h-4 w-4" />}>Docs</SideLink>
             <SideLink to="/sheets" icon={<SheetIcon className="h-4 w-4" />}>Sheets</SideLink>
             <SideLink to="/copilot" icon={<Sparkles className="h-4 w-4" />}>Co-pilot</SideLink>
-            <InsightsExternalLink />
-
 
             {isAdmin && <SideLink to="/projects" icon={<FolderKanban className="h-4 w-4" />}>Projects</SideLink>}
             
             {isAdmin && <SideLink to="/admin/email-groups" icon={<Mail className="h-4 w-4" />}>Groups</SideLink>}
             {isSuper && <SideLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</SideLink>}
             {isAdmin && <SideLink to="/admin/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SideLink>}
-            {isSuper && <SideLink to="/admin/integrations" icon={<Plug className="h-4 w-4" />}>Integrations</SideLink>}
             <SideLink to="/settings" icon={<Settings className="h-4 w-4" />}>Settings</SideLink>
           </nav>
           <div className="hidden flex-1 md:block" />
@@ -123,8 +118,3 @@ function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; c
   );
 }
 
-function InsightsExternalLink() {
-  return (
-    <SideLink to="/insights" icon={<BarChart3 className="h-4 w-4" />}>Insights</SideLink>
-  );
-}

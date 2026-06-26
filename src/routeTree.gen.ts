@@ -17,7 +17,6 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authenticated/my-activities'
-import { Route as AuthenticatedInsightsRouteImport } from './routes/_authenticated/insights'
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
@@ -27,7 +26,6 @@ import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
-import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin.integrations'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
@@ -76,11 +74,6 @@ const AuthenticatedMyActivitiesRoute =
     path: '/my-activities',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedInsightsRoute = AuthenticatedInsightsRouteImport.update({
-  id: '/insights',
-  path: '/insights',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedDocumentsRoute = AuthenticatedDocumentsRouteImport.update({
   id: '/documents',
   path: '/documents',
@@ -128,12 +121,6 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAdminIntegrationsRoute =
-  AuthenticatedAdminIntegrationsRouteImport.update({
-    id: '/admin/integrations',
-    path: '/admin/integrations',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAdminEmailGroupsRoute =
   AuthenticatedAdminEmailGroupsRouteImport.update({
     id: '/admin/email-groups',
@@ -177,7 +164,6 @@ export interface FileRoutesByFullPath {
   '/copilot': typeof AuthenticatedCopilotRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
-  '/insights': typeof AuthenticatedInsightsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
@@ -185,7 +171,6 @@ export interface FileRoutesByFullPath {
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -202,7 +187,6 @@ export interface FileRoutesByTo {
   '/copilot': typeof AuthenticatedCopilotRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
-  '/insights': typeof AuthenticatedInsightsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
@@ -210,7 +194,6 @@ export interface FileRoutesByTo {
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -230,7 +213,6 @@ export interface FileRoutesById {
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
-  '/_authenticated/insights': typeof AuthenticatedInsightsRoute
   '/_authenticated/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
@@ -238,7 +220,6 @@ export interface FileRoutesById {
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
-  '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -258,7 +239,6 @@ export interface FileRouteTypes {
     | '/copilot'
     | '/dashboard'
     | '/documents'
-    | '/insights'
     | '/my-activities'
     | '/notifications'
     | '/projects'
@@ -266,7 +246,6 @@ export interface FileRouteTypes {
     | '/sheets'
     | '/admin/audit'
     | '/admin/email-groups'
-    | '/admin/integrations'
     | '/admin/users'
     | '/alerts/$id'
     | '/sheets/$sheetId'
@@ -283,7 +262,6 @@ export interface FileRouteTypes {
     | '/copilot'
     | '/dashboard'
     | '/documents'
-    | '/insights'
     | '/my-activities'
     | '/notifications'
     | '/projects'
@@ -291,7 +269,6 @@ export interface FileRouteTypes {
     | '/sheets'
     | '/admin/audit'
     | '/admin/email-groups'
-    | '/admin/integrations'
     | '/admin/users'
     | '/alerts/$id'
     | '/sheets/$sheetId'
@@ -310,7 +287,6 @@ export interface FileRouteTypes {
     | '/_authenticated/copilot'
     | '/_authenticated/dashboard'
     | '/_authenticated/documents'
-    | '/_authenticated/insights'
     | '/_authenticated/my-activities'
     | '/_authenticated/notifications'
     | '/_authenticated/projects'
@@ -318,7 +294,6 @@ export interface FileRouteTypes {
     | '/_authenticated/sheets'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/email-groups'
-    | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/users'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
@@ -397,13 +372,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMyActivitiesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/insights': {
-      id: '/_authenticated/insights'
-      path: '/insights'
-      fullPath: '/insights'
-      preLoaderRoute: typeof AuthenticatedInsightsRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/documents': {
       id: '/_authenticated/documents'
       path: '/documents'
@@ -465,13 +433,6 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations': {
-      id: '/_authenticated/admin/integrations'
-      path: '/admin/integrations'
-      fullPath: '/admin/integrations'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/email-groups': {
@@ -549,7 +510,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
-  AuthenticatedInsightsRoute: typeof AuthenticatedInsightsRoute
   AuthenticatedMyActivitiesRoute: typeof AuthenticatedMyActivitiesRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
@@ -557,7 +517,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
-  AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
 }
 
@@ -567,7 +526,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
-  AuthenticatedInsightsRoute: AuthenticatedInsightsRoute,
   AuthenticatedMyActivitiesRoute: AuthenticatedMyActivitiesRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
@@ -575,7 +533,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
-  AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
 }
 
