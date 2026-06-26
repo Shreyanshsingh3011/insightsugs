@@ -611,14 +611,15 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
       <AIInsightsCard data={data} selected={selected} isBasis={isBasis} />
       {/* Sheet selector */}
       {sheets.length > 0 && (
-        <div className="overflow-x-auto">
-          <div className="flex flex-wrap gap-2">
+        <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl bg-background/80 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Sheet</span>
             {sheets.map(s => (
               <button key={s.label} onClick={() => setActiveLabel(s.label)}
-                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${activeLabel === s.label ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-accent"}`}>
-                <span className="font-medium">{s.label}</span>
-                {s.type && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">{s.type}</Badge>}
-                {s.row_count != null && <span className="tabular-nums opacity-70">{fmtNum(s.row_count)}</span>}
+                className={`group flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${activeLabel === s.label ? "border-transparent bg-slate-900 text-slate-50 shadow-md shadow-slate-900/15 dark:bg-slate-100 dark:text-slate-900" : "border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:border-foreground/30 hover:text-foreground"}`}>
+                <span>{s.label}</span>
+                {s.type && <span className={`rounded-full px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider ${activeLabel === s.label ? "bg-white/15 text-slate-50 dark:bg-black/10 dark:text-slate-900" : "bg-muted text-muted-foreground"}`}>{s.type}</span>}
+                {s.row_count != null && <span className="font-mono text-[10px] opacity-70">{fmtNum(s.row_count)}</span>}
               </button>
             ))}
           </div>
