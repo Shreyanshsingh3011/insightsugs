@@ -1478,24 +1478,42 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
         </div>
       </div>
 
-      {!!sheet.kpis?.length && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {sheet.kpis.map((k, i) => (
-            <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} />
-          ))}
-        </div>
-      )}
-
-      {!!sheet.charts?.length && (
-        <div className="grid gap-4 md:grid-cols-2">
-          {sheet.charts.map((c, i) => (
-            <Card key={i} className="rounded-2xl shadow-sm">
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
-              <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      {(() => {
+        const drill = useDrill();
+        const openKpi = (label: string, value: unknown) => {
+          if (!drill) return;
+          const { predicate, filterLabel } = inferPredicateFromLabel(sheet, label);
+          drill.open({ kind: "kpi", title: `${label}: ${fmtNum(value)}`, subtitle: filterLabel ? `Drill into rows where ${filterLabel}` : `All rows in ${sheet.label}`, sheet, predicate, filterLabel });
+        };
+        const openChart = (title: string, bucket: string) => {
+          if (!drill) return;
+          const m = /by\s+(.+)$/i.exec(title);
+          const col = m?.[1]?.trim();
+          const predicate = col ? (r: Record<string, unknown>) => String(r[col] ?? "") === String(bucket) : undefined;
+          drill.open({ kind: "chart", title: `${title}: ${bucket}`, sheet, predicate, filterLabel: col ? `${col} = ${bucket}` : undefined });
+        };
+        return (
+          <>
+            {!!sheet.kpis?.length && (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                {sheet.kpis.map((k, i) => (
+                  <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} onClick={() => openKpi(k.label, k.value)} />
+                ))}
+              </div>
+            )}
+            {!!sheet.charts?.length && (
+              <div className="grid gap-4 md:grid-cols-2">
+                {sheet.charts.map((c, i) => (
+                  <Card key={i} className="rounded-2xl shadow-sm">
+                    <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
+                    <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} onBarClick={(name) => openChart(c.title, name)} /></CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {!!sheet.rows?.length && !!sheet.columns?.length && <SheetTable sheet={sheet} />}
     </div>
