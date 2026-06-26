@@ -706,27 +706,37 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
           {(m.data_quality || m.digest || m.recommendations) && (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {m.data_quality?.score != null && (
-                <Card className="rounded-2xl shadow-sm"><CardContent className="p-4">
+                <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md"><CardContent className="p-5">
                   <Ring label="Data quality" value={Number(m.data_quality.score)} />
                   {!!m.data_quality.issues?.length && (
-                    <div className="mt-2 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
+                    <div className="mt-3 text-xs text-muted-foreground">{m.data_quality.issues.length} issue(s)</div>
                   )}
                 </CardContent></Card>
               )}
               {m.digest && (
-                <Card className="rounded-2xl shadow-sm md:col-span-2"><CardHeader className="pb-2"><CardTitle className="text-sm">Digest</CardTitle></CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
+                <Card className="rounded-3xl border-border/60 shadow-sm md:col-span-2 xl:col-span-3">
+                  <CardHeader className="pb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Editorial</div>
+                    <CardTitle className="text-base font-semibold">Digest</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm leading-relaxed text-foreground/80">
                     {typeof m.digest === "string" ? m.digest : (m.digest as any).text}
                   </CardContent>
                 </Card>
               )}
               {!!m.recommendations?.length && (
-                <Card className="rounded-2xl shadow-sm md:col-span-2 xl:col-span-4"><CardHeader className="pb-2"><CardTitle className="text-sm">Recommendations</CardTitle></CardHeader>
+                <Card className="rounded-3xl border-border/60 bg-gradient-to-br from-card to-muted/30 shadow-sm md:col-span-2 xl:col-span-4">
+                  <CardHeader className="pb-2">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600">Suggested</div>
+                    <CardTitle className="text-base font-semibold">Recommendations</CardTitle>
+                  </CardHeader>
                   <CardContent>
-                    <ul className="space-y-1.5 text-sm">
+                    <ul className="grid gap-2.5 text-sm md:grid-cols-2">
                       {m.recommendations.map((r, i) => (
-                        <li key={i} className="flex items-start gap-2">
-                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                        <li key={i} className="flex items-start gap-2.5 rounded-2xl border border-border/50 bg-card/60 p-3">
+                          <div className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </div>
                           <span>{typeof r === "string" ? r : (r.title ? <><strong>{r.title}</strong> — {r.detail}</> : r.detail)}</span>
                         </li>
                       ))}
@@ -744,8 +754,11 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
                 const v = (m as any)[k];
                 if (isEmpty(v)) return null;
                 return (
-                  <Card key={k} className="rounded-2xl shadow-sm">
-                    <CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k}</CardTitle></CardHeader>
+                  <Card key={k} className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md">
+                    <CardHeader className="pb-2">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Module</div>
+                      <CardTitle className="text-base font-semibold capitalize">{k}</CardTitle>
+                    </CardHeader>
                     <CardContent><GenericValue value={v} /></CardContent>
                   </Card>
                 );
@@ -759,9 +772,9 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
         <>
           {/* KPI tiles */}
           {!isEmpty(totals) && (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
               {Object.entries(totals).map(([k, v], i) => (
-                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} />
+                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
               ))}
             </div>
           )}
