@@ -782,10 +782,15 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
 
           {/* Summary callout */}
           {!isEmpty(a.summary) && (
-            <Card className="rounded-2xl border-l-4 shadow-sm" style={{ borderLeftColor: "var(--chart-1)" }}>
-              <CardContent className="flex gap-3 p-4 text-sm leading-relaxed">
-                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <p>{a.summary}</p>
+            <Card className="overflow-hidden rounded-3xl border-border/60 bg-gradient-to-br from-primary/5 via-card to-card shadow-sm">
+              <CardContent className="flex gap-4 p-5 text-sm leading-relaxed">
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Summary</div>
+                  <p className="mt-1 text-foreground/90">{a.summary}</p>
+                </div>
               </CardContent>
             </Card>
           )}
