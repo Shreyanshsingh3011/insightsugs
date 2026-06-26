@@ -1042,7 +1042,7 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
                         <Activity className="h-3.5 w-3.5" />
                       </div>
                     </CardHeader>
-                    <CardContent className="pt-0"><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} /></CardContent>
+                    <CardContent className="pt-0"><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} onBarClick={(name) => drillChart(c.title, name)} /></CardContent>
                   </Card>
                 ))}
               </div>
