@@ -19,7 +19,6 @@ import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authen
 import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authenticated/my-activities'
 import { Route as AuthenticatedInsightsRouteImport } from './routes/_authenticated/insights'
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
-import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticated/concerns'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
@@ -27,7 +26,6 @@ import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
-import { Route as AuthenticatedAdminIntegrationsRouteImport } from './routes/_authenticated/admin.integrations'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
@@ -86,11 +84,6 @@ const AuthenticatedDocumentsRoute = AuthenticatedDocumentsRouteImport.update({
   path: '/documents',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedCopilotRoute = AuthenticatedCopilotRouteImport.update({
   id: '/copilot',
   path: '/copilot',
@@ -128,12 +121,6 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAdminIntegrationsRoute =
-  AuthenticatedAdminIntegrationsRouteImport.update({
-    id: '/admin/integrations',
-    path: '/admin/integrations',
-    getParentRoute: () => AuthenticatedRoute,
-  } as any)
 const AuthenticatedAdminEmailGroupsRoute =
   AuthenticatedAdminEmailGroupsRouteImport.update({
     id: '/admin/email-groups',
@@ -175,7 +162,6 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
   '/insights': typeof AuthenticatedInsightsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
@@ -185,7 +171,6 @@ export interface FileRoutesByFullPath {
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -200,7 +185,6 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
-  '/dashboard': typeof AuthenticatedDashboardRoute
   '/documents': typeof AuthenticatedDocumentsRoute
   '/insights': typeof AuthenticatedInsightsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
@@ -210,7 +194,6 @@ export interface FileRoutesByTo {
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
-  '/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -228,7 +211,6 @@ export interface FileRoutesById {
   '/_authenticated/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/_authenticated/concerns': typeof AuthenticatedConcernsRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
-  '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
   '/_authenticated/insights': typeof AuthenticatedInsightsRoute
   '/_authenticated/my-activities': typeof AuthenticatedMyActivitiesRoute
@@ -238,7 +220,6 @@ export interface FileRoutesById {
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
-  '/_authenticated/admin/integrations': typeof AuthenticatedAdminIntegrationsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -256,7 +237,6 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/concerns'
     | '/copilot'
-    | '/dashboard'
     | '/documents'
     | '/insights'
     | '/my-activities'
@@ -266,7 +246,6 @@ export interface FileRouteTypes {
     | '/sheets'
     | '/admin/audit'
     | '/admin/email-groups'
-    | '/admin/integrations'
     | '/admin/users'
     | '/alerts/$id'
     | '/sheets/$sheetId'
@@ -281,7 +260,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/concerns'
     | '/copilot'
-    | '/dashboard'
     | '/documents'
     | '/insights'
     | '/my-activities'
@@ -291,7 +269,6 @@ export interface FileRouteTypes {
     | '/sheets'
     | '/admin/audit'
     | '/admin/email-groups'
-    | '/admin/integrations'
     | '/admin/users'
     | '/alerts/$id'
     | '/sheets/$sheetId'
@@ -308,7 +285,6 @@ export interface FileRouteTypes {
     | '/_authenticated/alerts'
     | '/_authenticated/concerns'
     | '/_authenticated/copilot'
-    | '/_authenticated/dashboard'
     | '/_authenticated/documents'
     | '/_authenticated/insights'
     | '/_authenticated/my-activities'
@@ -318,7 +294,6 @@ export interface FileRouteTypes {
     | '/_authenticated/sheets'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/email-groups'
-    | '/_authenticated/admin/integrations'
     | '/_authenticated/admin/users'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
@@ -411,13 +386,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDocumentsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/copilot': {
       id: '/_authenticated/copilot'
       path: '/copilot'
@@ -465,13 +433,6 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/admin/integrations': {
-      id: '/_authenticated/admin/integrations'
-      path: '/admin/integrations'
-      fullPath: '/admin/integrations'
-      preLoaderRoute: typeof AuthenticatedAdminIntegrationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/admin/email-groups': {
@@ -547,7 +508,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
   AuthenticatedConcernsRoute: typeof AuthenticatedConcernsRoute
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
-  AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
   AuthenticatedInsightsRoute: typeof AuthenticatedInsightsRoute
   AuthenticatedMyActivitiesRoute: typeof AuthenticatedMyActivitiesRoute
@@ -557,7 +517,6 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
-  AuthenticatedAdminIntegrationsRoute: typeof AuthenticatedAdminIntegrationsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
 }
 
@@ -565,7 +524,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAlertsRoute: AuthenticatedAlertsRouteWithChildren,
   AuthenticatedConcernsRoute: AuthenticatedConcernsRoute,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
-  AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
   AuthenticatedInsightsRoute: AuthenticatedInsightsRoute,
   AuthenticatedMyActivitiesRoute: AuthenticatedMyActivitiesRoute,
@@ -575,7 +533,6 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
-  AuthenticatedAdminIntegrationsRoute: AuthenticatedAdminIntegrationsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
 }
 
@@ -595,13 +552,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
