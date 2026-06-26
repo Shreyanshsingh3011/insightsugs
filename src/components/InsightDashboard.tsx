@@ -326,13 +326,17 @@ function Sparkline({ tone = "default" }: { tone?: "default" | "light" | "dark" }
   );
 }
 
-function HeroKpi({ label, value, color, index = 0, featured = false }: { label: string; value: unknown; color: string; index?: number; featured?: boolean }) {
+function HeroKpi({ label, value, color, index = 0, featured = false, onClick }: { label: string; value: unknown; color: string; index?: number; featured?: boolean; onClick?: () => void }) {
   // Rotate distinctive tile variants for an editorial bento feel.
   const variant = featured ? "featured" : ["soft", "dark", "accent", "soft"][index % 4];
+  const clickProps = onClick
+    ? { onClick, role: "button" as const, tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } }
+    : {};
+  const clickable = onClick ? " cursor-pointer hover:ring-2 hover:ring-primary/40" : "";
 
   if (variant === "featured") {
     return (
-      <Card className="group relative col-span-2 overflow-hidden rounded-3xl border-border/60 bg-card shadow-sm transition-all duration-500 hover:shadow-xl">
+      <Card {...clickProps} className={`group relative col-span-2 overflow-hidden rounded-3xl border-border/60 bg-card shadow-sm transition-all duration-500 hover:shadow-xl${clickable}`}>
         <div className="pointer-events-none absolute -right-12 -top-12 h-64 w-64 rounded-full bg-primary/10 blur-3xl transition-colors group-hover:bg-primary/20" />
         <CardContent className="relative flex h-full flex-col justify-between gap-6 p-6">
           <div className="flex items-start justify-between gap-3">
@@ -352,7 +356,7 @@ function HeroKpi({ label, value, color, index = 0, featured = false }: { label: 
 
   if (variant === "dark") {
     return (
-      <Card className="group relative overflow-hidden rounded-3xl border-transparent bg-slate-900 text-slate-100 shadow-sm transition-transform duration-300 hover:-translate-y-0.5 dark:bg-slate-950">
+      <Card {...clickProps} className={`group relative overflow-hidden rounded-3xl border-transparent bg-slate-900 text-slate-100 shadow-sm transition-transform duration-300 hover:-translate-y-0.5 dark:bg-slate-950${clickable}`}>
         <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 animate-pulse rounded-full" style={{ background: "rgb(129,140,248)" }} />
@@ -371,7 +375,7 @@ function HeroKpi({ label, value, color, index = 0, featured = false }: { label: 
 
   if (variant === "accent") {
     return (
-      <Card className="group relative overflow-hidden rounded-3xl border-transparent text-white shadow-lg transition-transform duration-300 hover:-translate-y-0.5" style={{ background: color }}>
+      <Card {...clickProps} className={`group relative overflow-hidden rounded-3xl border-transparent text-white shadow-lg transition-transform duration-300 hover:-translate-y-0.5${clickable}`} style={{ background: color }}>
         <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
           <div className="flex items-start justify-between">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-80">{label}</span>
@@ -385,7 +389,7 @@ function HeroKpi({ label, value, color, index = 0, featured = false }: { label: 
 
   // soft
   return (
-    <Card className="group relative overflow-hidden rounded-3xl border-border/70 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-md">
+    <Card {...clickProps} className={`group relative overflow-hidden rounded-3xl border-border/70 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-md${clickable}`}>
       <div className="absolute left-0 top-0 h-full w-1" style={{ background: color }} />
       <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{label}</span>
