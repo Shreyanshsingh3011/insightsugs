@@ -2432,5 +2432,6 @@ export default function InsightDashboard() {
         </>
       )}
     </div>
+    </DrillProvider>
   );
 }
