@@ -1480,7 +1480,6 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
       </div>
 
       {(() => {
-        const drill = useDrill();
         const openKpi = (label: string, value: unknown) => {
           if (!drill) return;
           const { predicate, filterLabel } = inferPredicateFromLabel(sheet, label);
