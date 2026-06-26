@@ -198,7 +198,7 @@ function AlertDetails() {
         <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/alerts" })} className="-ml-2">
           <ArrowLeft className="mr-1 h-4 w-4" /> Back to alerts
         </Button>
-        <Link to="/dashboard" className="text-xs text-muted-foreground hover:text-foreground">
+        <Link to="/insights" className="text-xs text-muted-foreground hover:text-foreground">
           View dashboard
         </Link>
       </div>
