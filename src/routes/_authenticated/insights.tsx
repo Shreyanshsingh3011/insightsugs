@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import InsightDashboard from "@/components/InsightDashboard";
 
-export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — DelayLens" }] }),
+export const Route = createFileRoute("/_authenticated/insights")({
+  head: () => ({ meta: [{ title: "Insights — DelayLens" }] }),
   component: DashboardPage,
 });
 
