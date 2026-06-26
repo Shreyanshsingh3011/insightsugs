@@ -1122,7 +1122,7 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
           {!isEmpty(totals) && (
             <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
               {Object.entries(totals).map(([k, v], i) => (
-                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
+                <HeroKpi key={k} label={k.replace(/_/g, " ")} value={v} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} onClick={() => drillKpi(k.replace(/_/g, " "), v)} />
               ))}
             </div>
           )}
