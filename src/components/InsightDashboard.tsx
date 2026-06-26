@@ -314,16 +314,85 @@ function CardSkeleton({ h = 24 }: { h?: number }) {
     </Card>
   );
 }
-function HeroKpi({ label, value, color }: { label: string; value: unknown; color: string }) {
+function Sparkline({ tone = "default" }: { tone?: "default" | "light" | "dark" }) {
+  const stroke =
+    tone === "light" ? "rgba(255,255,255,0.85)" :
+    tone === "dark" ? "rgb(129, 140, 248)" :
+    "var(--chart-1)";
   return (
-    <Card className="relative overflow-hidden rounded-2xl shadow-sm">
-      <div className="absolute inset-x-0 top-0 h-1" style={{ background: color }} />
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+    <svg className="h-8 w-full opacity-90" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden>
+      <path d="M0,22 Q15,8 25,18 T50,12 T75,20 T100,6" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function HeroKpi({ label, value, color, index = 0, featured = false }: { label: string; value: unknown; color: string; index?: number; featured?: boolean }) {
+  // Rotate distinctive tile variants for an editorial bento feel.
+  const variant = featured ? "featured" : ["soft", "dark", "accent", "soft"][index % 4];
+
+  if (variant === "featured") {
+    return (
+      <Card className="group relative col-span-2 overflow-hidden rounded-3xl border-border/60 bg-card shadow-sm transition-all duration-500 hover:shadow-xl">
+        <div className="pointer-events-none absolute -right-12 -top-12 h-64 w-64 rounded-full bg-primary/10 blur-3xl transition-colors group-hover:bg-primary/20" />
+        <CardContent className="relative flex h-full flex-col justify-between gap-6 p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">{label}</span>
+              <div className="mt-2 text-4xl font-bold tracking-tight tabular-nums">{fmtNum(value)}</div>
+            </div>
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-muted/40 text-muted-foreground">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+          </div>
+          <Sparkline />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (variant === "dark") {
+    return (
+      <Card className="group relative overflow-hidden rounded-3xl border-transparent bg-slate-900 text-slate-100 shadow-sm transition-transform duration-300 hover:-translate-y-0.5 dark:bg-slate-950">
+        <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 animate-pulse rounded-full" style={{ background: "rgb(129,140,248)" }} />
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{label}</span>
+          </div>
+          <div>
+            <div className="text-3xl font-bold tabular-nums">{fmtNum(value)}</div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-2/3 rounded-full" style={{ background: "rgb(129,140,248)" }} />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (variant === "accent") {
+    return (
+      <Card className="group relative overflow-hidden rounded-3xl border-transparent text-white shadow-lg transition-transform duration-300 hover:-translate-y-0.5" style={{ background: color }}>
+        <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+          <div className="flex items-start justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-80">{label}</span>
+            <div className="rounded-xl bg-white/20 p-1.5"><TrendingUp className="h-3.5 w-3.5" /></div>
+          </div>
+          <div className="text-4xl font-bold tracking-tight tabular-nums">{fmtNum(value)}</div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // soft
+  return (
+    <Card className="group relative overflow-hidden rounded-3xl border-border/70 bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-md">
+      <div className="absolute left-0 top-0 h-full w-1" style={{ background: color }} />
+      <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{label}</span>
+        <div className="flex items-end justify-between gap-3">
+          <div className="text-3xl font-bold tracking-tight tabular-nums">{fmtNum(value)}</div>
+          <div className="w-16"><Sparkline /></div>
         </div>
-        <div className="mt-2 text-3xl font-semibold tabular-nums">{fmtNum(value)}</div>
       </CardContent>
     </Card>
   );
