@@ -1150,7 +1150,7 @@ function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabe
                   <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Composition</div>
                   <CardTitle className="text-base font-semibold">Status breakdown</CardTitle>
                 </CardHeader>
-                <CardContent><StackedBar data={sb as Record<string, number>} /></CardContent>
+                <CardContent><StackedBar data={sb as Record<string, number>} onSelect={drillStatus} /></CardContent>
               </Card>
             )}
             {/* Flags */}
