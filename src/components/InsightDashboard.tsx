@@ -401,28 +401,32 @@ function HeroKpi({ label, value, color, index = 0, featured = false, onClick }: 
     </Card>
   );
 }
-function StackedBar({ data }: { data: Record<string, number> }) {
+function StackedBar({ data, onSelect }: { data: Record<string, number>; onSelect?: (key: string) => void }) {
   const entries = Object.entries(data).filter(([, v]) => Number(v) > 0);
   const total = entries.reduce((s, [, v]) => s + Number(v), 0) || 1;
   return (
     <div className="space-y-3">
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
         {entries.map(([k, v], i) => (
-          <div key={k} style={{ width: `${(Number(v) / total) * 100}%`, background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length] }} />
+          <div key={k} title={`${k}: ${v}`} onClick={onSelect ? () => onSelect(k) : undefined}
+            style={{ width: `${(Number(v) / total) * 100}%`, background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length], cursor: onSelect ? "pointer" : undefined }} />
         ))}
       </div>
       <div className="flex flex-wrap gap-2">
         {entries.map(([k, v], i) => (
-          <Badge key={k} variant="outline" className="gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length] }} />
-            <span>{k}</span><span className="tabular-nums text-muted-foreground">{fmtNum(v)}</span>
-          </Badge>
+          <button key={k} type="button" disabled={!onSelect} onClick={onSelect ? () => onSelect(k) : undefined}
+            className={onSelect ? "transition-transform hover:-translate-y-0.5" : ""}>
+            <Badge variant="outline" className="gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length] }} />
+              <span>{k}</span><span className="tabular-nums text-muted-foreground">{fmtNum(v)}</span>
+            </Badge>
+          </button>
         ))}
       </div>
     </div>
   );
 }
-function MiniBarChart({ data, color = "var(--chart-1)" }: { data: { name: string; value: number }[]; color?: string }) {
+function MiniBarChart({ data, color = "var(--chart-1)", onBarClick }: { data: { name: string; value: number }[]; color?: string; onBarClick?: (name: string, value: number) => void }) {
   return (
     <div className="h-56">
       <ResponsiveContainer width="100%" height="100%">
@@ -431,7 +435,7 @@ function MiniBarChart({ data, color = "var(--chart-1)" }: { data: { name: string
           <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={data.length > 6 ? -25 : 0} textAnchor={data.length > 6 ? "end" : "middle"} height={data.length > 6 ? 50 : 30} />
           <YAxis tick={{ fontSize: 11 }} />
           <Tooltip cursor={{ fill: "hsl(var(--muted))" }} contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
-          <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+          <Bar dataKey="value" radius={[6, 6, 0, 0]} onClick={onBarClick ? (d: any) => onBarClick(d?.name ?? d?.payload?.name, d?.value ?? d?.payload?.value) : undefined} style={onBarClick ? { cursor: "pointer" } : undefined}>
             {data.map((_, i) => <Cell key={i} fill={color} />)}
           </Bar>
         </BarChart>
