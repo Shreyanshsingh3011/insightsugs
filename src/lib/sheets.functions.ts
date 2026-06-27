@@ -154,6 +154,25 @@ async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: 
     );
   }
 
+  // Some spreadsheets (esp. Google Sheets CSV exports) have one or more
+  // preamble rows above the real header (blank rows, totals, banners).
+  // Skip leading rows that don't look like a real header (need ≥2 non-blank
+  // cells) and promote the first usable row as headers.
+  const looksLikeHeader = (row: unknown[]) =>
+    row.filter((c) => String(c ?? "").trim().length > 0).length >= 2;
+  if (!looksLikeHeader(table.headers) && table.rows.length > 0) {
+    let promoted = -1;
+    for (let i = 0; i < Math.min(table.rows.length, 20); i++) {
+      if (looksLikeHeader(table.rows[i])) { promoted = i; break; }
+    }
+    if (promoted >= 0) {
+      table = {
+        headers: table.rows[promoted].map((c) => String(c ?? "").trim()),
+        rows: table.rows.slice(promoted + 1),
+      };
+    }
+  }
+
   // Drop columns whose header is blank or duplicated; rename duplicates with a suffix.
   const seen = new Map<string, number>();
   const keepIdx: number[] = [];
