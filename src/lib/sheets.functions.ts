@@ -24,6 +24,75 @@ const APPS_SCRIPT_URL = z
   .url()
   .refine((u) => /^https:\/\//.test(u), "Must be an https:// URL");
 
+function cellText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value).trim();
+}
+
+function isNumericLike(s: string) {
+  const t = s.trim();
+  if (!t) return false;
+  // Strip common formatted-number characters: Indian/US commas, currency, %, parentheses.
+  const stripped = t.replace(/[,₹$€£%()\s]/g, "");
+  return stripped.length > 0 && /^-?\d+(\.\d+)?$/.test(stripped);
+}
+
+function spreadsheetColumnIndex(label: string): number | null {
+  const s = label.trim().toUpperCase();
+  if (!/^[A-Z]{1,3}$/.test(s)) return null;
+  let n = 0;
+  for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n;
+}
+
+function isSequentialSpreadsheetHeader(row: unknown[]) {
+  const cells = row.map(cellText).filter(Boolean);
+  if (cells.length < 3) return false;
+  const indexes = cells.map(spreadsheetColumnIndex);
+  if (indexes.some((v) => v == null)) return false;
+  for (let i = 1; i < indexes.length; i++) {
+    if ((indexes[i] ?? 0) !== (indexes[i - 1] ?? 0) + 1) return false;
+  }
+  return true;
+}
+
+function looksLikeHeaderRow(row: unknown[]) {
+  const cells = row.map(cellText).filter(Boolean);
+  if (cells.length < 2) return false;
+  if (isSequentialSpreadsheetHeader(cells)) return false;
+  const numericCount = cells.filter(isNumericLike).length;
+  if (numericCount / cells.length >= 0.5) return false;
+  const textLabelCount = cells.filter((c) => /[A-Za-z]/.test(c) && !isNumericLike(c)).length;
+  return textLabelCount >= Math.max(2, Math.ceil(cells.length * 0.35));
+}
+
+function normalizeSearchText(value: unknown): string {
+  return cellText(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function mergedSheetRow(row: { canonical?: unknown; extras?: unknown }): Record<string, unknown> {
+  return {
+    ...(((row.canonical as Record<string, unknown>) ?? {})),
+    ...(((row.extras as Record<string, unknown>) ?? {})),
+  };
+}
+
+function storedRowsLookMisread(rows: { canonical?: unknown; extras?: unknown }[]) {
+  const firstWithData = rows.find((r) => Object.keys(mergedSheetRow(r)).length > 0);
+  if (!firstWithData) return false;
+  const merged = mergedSheetRow(firstWithData);
+  const keys = Object.keys(merged);
+  if (keys.length >= 3) {
+    const numericKeyRatio = keys.filter(isNumericLike).length / keys.length;
+    if (numericKeyRatio >= 0.5) return true;
+    if (isSequentialSpreadsheetHeader(keys)) return true;
+  }
+  // A common API shape stores row 0 as the real header values under A/B/C keys.
+  // If those header-like labels landed as data, refresh with the stricter parser.
+  return looksLikeHeaderRow(Object.values(merged));
+}
+
 /**
  * Apps Script web app response normalizer.
  * Accepts either:
@@ -154,32 +223,21 @@ async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: 
     );
   }
 
-  // Some spreadsheets (esp. Google Sheets CSV exports) have one or more
-  // preamble rows above the real header (blank rows, totals, banners).
-  // Skip leading rows that don't look like a real header (need ≥2 non-blank
-  // cells) and promote the first usable row as headers.
-  const isNumericLike = (s: string) => {
-    const t = s.trim();
-    if (!t) return false;
-    // strip commas, currency, %, parens — what remains should be a pure number
-    const stripped = t.replace(/[,₹$€£%()\s]/g, "");
-    return stripped.length > 0 && /^-?\d+(\.\d+)?$/.test(stripped);
-  };
-  const looksLikeHeader = (row: unknown[]) => {
-    const cells = row.map((c) => String(c ?? "").trim()).filter((c) => c.length > 0);
-    if (cells.length < 2) return false;
-    const numericCount = cells.filter(isNumericLike).length;
-    // header rows are mostly text labels — reject totals/numeric rows
-    return numericCount / cells.length < 0.5;
-  };
-  if (!looksLikeHeader(table.headers) && table.rows.length > 0) {
+  // Some sources have preamble/totals rows, or API rows keyed as A/B/C with
+  // the true headers in row 0. Promote the first real text-label header row.
+  if (!looksLikeHeaderRow(table.headers) && table.rows.length > 0) {
     let promoted = -1;
     for (let i = 0; i < Math.min(table.rows.length, 20); i++) {
-      if (looksLikeHeader(table.rows[i])) { promoted = i; break; }
+      if (looksLikeHeaderRow(table.rows[i])) { promoted = i; break; }
     }
     if (promoted >= 0) {
+      const previousHeaders = table.headers;
       table = {
-        headers: table.rows[promoted].map((c) => String(c ?? "").trim()),
+        headers: table.rows[promoted].map((c, i) => {
+          const promotedHeader = cellText(c);
+          if (promotedHeader) return promotedHeader;
+          return cellText(previousHeaders[i]) || `Column ${i + 1}`;
+        }),
         rows: table.rows.slice(promoted + 1),
       };
     }
