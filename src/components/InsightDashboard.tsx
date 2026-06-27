@@ -2051,10 +2051,69 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
       const lockedCatalog = catalog.filter(c => c.label === sheetLabel);
       const route = await routeInsightQuestion({ data: { question, sheets: lockedCatalog } });
 
+      // If the router can't map the question to a structured endpoint
+      // (e.g. row-level lookups, free-form "what is value 27"),
+      // delegate to the backend /copilot which has full row access,
+      // then optionally re-phrase with Gemini for clarity.
       if (!route || route.endpoint === "none") {
-        const text = `I can only answer from "${sheetLabel}". ${route?.reason || "That question isn't covered by its columns."}`.trim();
-        setMessages(m => [...m, { role: "assistant", text }]);
-        return;
+        const sheetMeta0 = catalog.find(c => c.label === sheetLabel);
+        const sheetFull0 = sheets.find(s => s.label === sheetLabel);
+        const sheetCols0 = new Set((sheetMeta0?.columns || []).map(c => c.name));
+        try {
+          const fb = await apiSend<{ answer?: string; generated_by?: string; fields_used?: string[]; rows?: Record<string, unknown>[] }>(
+            `${base}/copilot?sheet=${encodeURIComponent(sheetLabel)}`,
+            "POST",
+            { message: question, sheet: sheetLabel },
+          );
+          let text = fb?.answer || "";
+          let meta = `via /copilot · ${sheetLabel}`;
+          if (hasGemini()) {
+            try {
+              const ctx = JSON.stringify({
+                sheet: sheetLabel,
+                columns: [...sheetCols0],
+                backend_answer: fb?.answer ?? null,
+                backend_rows: fb?.rows ?? null,
+                sample_rows: sheetFull0?.rows?.slice(0, 200) || [],
+              }, null, 2);
+              const out = await generateGemini({
+                system: GROUNDING_RULES + `\nYou are a data copilot for the sheet "${sheetLabel}". Use the backend_answer and any backend_rows/sample_rows verbatim. For row-level lookups, scan the provided rows and return the exact matching value(s). Never invent data. If no match exists in the provided data, say so plainly.`,
+                prompt: `User question: ${question}\n\nContext (JSON):\n${ctx}`,
+                temperature: 0.2,
+              });
+              if (out.trim()) { text = out.trim(); meta += " · Gemini"; }
+            } catch { /* keep raw */ }
+          }
+          if (!text) text = `No answer available for "${sheetLabel}".`;
+          const cites = [...new Set([...(fb?.fields_used || []).filter(f => sheetCols0.has(f))])];
+          cacheRef.current.set(cacheKey, { text, meta, cites });
+          setMessages(m => [...m, { role: "assistant", text, meta, cites }]);
+          return;
+        } catch (e) {
+          // Final fallback: pure Gemini over the sample rows we already have.
+          if (hasGemini() && (sheetFull0?.rows?.length || 0) > 0) {
+            try {
+              const ctx = JSON.stringify({
+                sheet: sheetLabel,
+                columns: [...sheetCols0],
+                rows: sheetFull0!.rows!.slice(0, 500),
+                row_count_total: sheetFull0!.row_count ?? sheetFull0!.rows!.length,
+              }, null, 2);
+              const out = await generateGemini({
+                system: GROUNDING_RULES + `\nYou are a data copilot for "${sheetLabel}". Only the first slice of rows is available here; answer from them and clearly note if the answer might exist outside the sample.`,
+                prompt: `User question: ${question}\n\nData (JSON):\n${ctx}`,
+                temperature: 0.2,
+              });
+              const text = out.trim() || `I couldn't find that in "${sheetLabel}".`;
+              const meta = `local sample · ${sheetLabel} · Gemini`;
+              cacheRef.current.set(cacheKey, { text, meta, cites: [] });
+              setMessages(m => [...m, { role: "assistant", text, meta, cites: [] }]);
+              return;
+            } catch { /* fallthrough */ }
+          }
+          setMessages(m => [...m, { role: "assistant", text: `Couldn't answer: ${(e as Error).message}` }]);
+          return;
+        }
       }
 
       // Hard-lock the sheet regardless of what the router returned.
