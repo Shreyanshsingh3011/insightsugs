@@ -641,9 +641,13 @@ export const askCopilot = createServerFn({ method: "POST" })
     }
 
     // 1) Computed aggregates across ALL rows (not truncated).
-    //    Re-use buildDashboardFromSheets so Copilot sees the same shape as the UI.
+    //    Only meaningful for delay/progress-style sheets — buildDashboardFromSheets
+    //    is hard-wired to delay semantics (Delayed/Blocked/Completed/At Risk/Risk Score).
+    //    For generic sheets we skip it so the LLM doesn't parrot a zeroed delay template.
+    const DELAY_TYPES = new Set(["progress", "pms", "vendor_billing", "delay"]);
+    const hasDelaySheet = regs.some((r) => DELAY_TYPES.has(r.sheet_type));
     let aggregates: unknown = null;
-    if (data.sheetIds.length > 0) {
+    if (data.sheetIds.length > 0 && hasDelaySheet) {
       const { buildDashboardFromSheets } = await import("./dashboard.functions");
       try {
         aggregates = await (buildDashboardFromSheets as any)({ data: { sheetIds: data.sheetIds } });
@@ -883,14 +887,16 @@ export const askCopilot = createServerFn({ method: "POST" })
         : "(no document excerpts retrieved)";
 
       const system =
-        "You are a precise document- and data-grounded analyst. " +
+        "You are a precise, sheet-aware analyst. Each sheet has its OWN columns and meaning — adapt your answer to what FACTS actually contains.\n" +
         "RULES:\n" +
-        "1) NUMBERS are authoritative: ANY count, sum, average, min, max, or distribution MUST be quoted VERBATIM from the FACTS or QUERY-RELEVANT FACTS blocks. NEVER calculate, estimate, or invent numbers.\n" +
-        "2) If a number the user asks for is not present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY count rows in the ROW SAMPLE only if the sample is marked complete; otherwise say you don't have it.\n" +
-        "3) The ROW SAMPLE is chosen to maximise relevance to the question — use it to identify specific items, owners, dates, statuses, and to enumerate examples; cite row_index and sheet name.\n" +
-        "4) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases where useful and cite the document name (and page when shown).\n" +
-        "5) If the answer isn't in the provided context, say you don't know.\n" +
-        "6) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, bold key numbers.";
+        "1) NUMBERS are authoritative: any count, sum, average, min, max, distribution, or top-value MUST be quoted VERBATIM from FACTS, QUERY-RELEVANT FACTS, or AGGREGATES. NEVER calculate, estimate, or invent numbers.\n" +
+        "2) DO NOT invent fields. Only mention columns/categories that appear in FACTS for the sheet you're answering about. In particular, NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided and those values are non-trivial — those concepts only exist for delay/progress sheets.\n" +
+        "3) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), the list of key columns, the top categorical values per relevant column, and headline numeric stats (sum/avg/min/max) — all taken verbatim from FACTS.\n" +
+        "4) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY count rows in the ROW SAMPLE only if the sample is marked complete; otherwise say you don't have it.\n" +
+        "5) The ROW SAMPLE is prioritised for relevance — use it to surface specific items, owners, dates, statuses, examples; cite row_index and sheet name.\n" +
+        "6) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
+        "7) If the answer isn't in the provided context, say so plainly.\n" +
+        "8) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, bold key numbers.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
