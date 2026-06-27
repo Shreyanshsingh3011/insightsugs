@@ -24,6 +24,86 @@ const APPS_SCRIPT_URL = z
   .url()
   .refine((u) => /^https:\/\//.test(u), "Must be an https:// URL");
 
+function cellText(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value).trim();
+}
+
+function isNumericLike(s: string) {
+  const t = s.trim();
+  if (!t) return false;
+  // Strip common formatted-number characters: Indian/US commas, currency, %, parentheses.
+  const stripped = t.replace(/[,₹$€£%()\s]/g, "");
+  return stripped.length > 0 && /^-?\d+(\.\d+)?$/.test(stripped);
+}
+
+function spreadsheetColumnIndex(label: string): number | null {
+  const s = label.trim().toUpperCase();
+  if (!/^[A-Z]{1,3}$/.test(s)) return null;
+  let n = 0;
+  for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n;
+}
+
+function spreadsheetColumnLabel(index: number): string {
+  let n = index + 1;
+  let out = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+function isSequentialSpreadsheetHeader(row: unknown[]) {
+  const cells = row.map(cellText).filter(Boolean);
+  if (cells.length < 3) return false;
+  const indexes = cells.map(spreadsheetColumnIndex);
+  if (indexes.some((v) => v == null)) return false;
+  for (let i = 1; i < indexes.length; i++) {
+    if ((indexes[i] ?? 0) !== (indexes[i - 1] ?? 0) + 1) return false;
+  }
+  return true;
+}
+
+function looksLikeHeaderRow(row: unknown[]) {
+  const cells = row.map(cellText).filter(Boolean);
+  if (cells.length < 2) return false;
+  if (isSequentialSpreadsheetHeader(cells)) return false;
+  const numericCount = cells.filter(isNumericLike).length;
+  if (numericCount / cells.length >= 0.5) return false;
+  const textLabelCount = cells.filter((c) => /[A-Za-z]/.test(c) && !isNumericLike(c)).length;
+  return textLabelCount >= Math.max(2, Math.ceil(cells.length * 0.35));
+}
+
+function normalizeSearchText(value: unknown): string {
+  return cellText(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function mergedSheetRow(row: { canonical?: unknown; extras?: unknown }): Record<string, unknown> {
+  return {
+    ...(((row.canonical as Record<string, unknown>) ?? {})),
+    ...(((row.extras as Record<string, unknown>) ?? {})),
+  };
+}
+
+function storedRowsLookMisread(rows: { canonical?: unknown; extras?: unknown }[]) {
+  const firstWithData = rows.find((r) => Object.keys(mergedSheetRow(r)).length > 0);
+  if (!firstWithData) return false;
+  const merged = mergedSheetRow(firstWithData);
+  const keys = Object.keys(merged);
+  if (keys.length >= 3) {
+    const numericKeyRatio = keys.filter(isNumericLike).length / keys.length;
+    if (numericKeyRatio >= 0.5) return true;
+    if (isSequentialSpreadsheetHeader(keys)) return true;
+  }
+  // A common API shape stores row 0 as the real header values under A/B/C keys.
+  // If those header-like labels landed as data, refresh with the stricter parser.
+  return looksLikeHeaderRow(Object.values(merged));
+}
+
 /**
  * Apps Script web app response normalizer.
  * Accepts either:
@@ -154,32 +234,21 @@ async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: 
     );
   }
 
-  // Some spreadsheets (esp. Google Sheets CSV exports) have one or more
-  // preamble rows above the real header (blank rows, totals, banners).
-  // Skip leading rows that don't look like a real header (need ≥2 non-blank
-  // cells) and promote the first usable row as headers.
-  const isNumericLike = (s: string) => {
-    const t = s.trim();
-    if (!t) return false;
-    // strip commas, currency, %, parens — what remains should be a pure number
-    const stripped = t.replace(/[,₹$€£%()\s]/g, "");
-    return stripped.length > 0 && /^-?\d+(\.\d+)?$/.test(stripped);
-  };
-  const looksLikeHeader = (row: unknown[]) => {
-    const cells = row.map((c) => String(c ?? "").trim()).filter((c) => c.length > 0);
-    if (cells.length < 2) return false;
-    const numericCount = cells.filter(isNumericLike).length;
-    // header rows are mostly text labels — reject totals/numeric rows
-    return numericCount / cells.length < 0.5;
-  };
-  if (!looksLikeHeader(table.headers) && table.rows.length > 0) {
+  // Some sources have preamble/totals rows, or API rows keyed as A/B/C with
+  // the true headers in row 0. Promote the first real text-label header row.
+  if (!looksLikeHeaderRow(table.headers) && table.rows.length > 0) {
     let promoted = -1;
     for (let i = 0; i < Math.min(table.rows.length, 20); i++) {
-      if (looksLikeHeader(table.rows[i])) { promoted = i; break; }
+      if (looksLikeHeaderRow(table.rows[i])) { promoted = i; break; }
     }
     if (promoted >= 0) {
+      const previousHeaders = table.headers;
       table = {
-        headers: table.rows[promoted].map((c) => String(c ?? "").trim()),
+        headers: table.rows[promoted].map((c, i) => {
+          const promotedHeader = cellText(c);
+          if (promotedHeader) return promotedHeader;
+          return cellText(previousHeaders[i]) || `Column ${i + 1}`;
+        }),
         rows: table.rows.slice(promoted + 1),
       };
     }
@@ -590,7 +659,7 @@ export const getSheetDetail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: reg, error: regErr } = await supabase
+    let { data: reg, error: regErr } = await supabase
       .from("sheet_registry")
       .select(
         "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
@@ -600,6 +669,26 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .maybeSingle();
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found.");
+
+    const { data: probeRows } = await supabase
+      .from("sheet_rows")
+      .select("canonical, extras")
+      .eq("sheet_registry_id", data.registryId)
+      .order("row_index", { ascending: true })
+      .limit(12);
+    if (storedRowsLookMisread(probeRows ?? [])) {
+      await syncRowsInternal(supabase, userId, data.registryId);
+      const refreshed = await supabase
+        .from("sheet_registry")
+        .select(
+          "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
+        )
+        .eq("id", data.registryId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (refreshed.error) throw new Error(refreshed.error.message);
+      reg = refreshed.data ?? reg;
+    }
 
     const { data: maps } = await supabase
       .from("sheet_column_mappings")
@@ -696,7 +785,10 @@ export const askCopilot = createServerFn({ method: "POST" })
     const QUAL_SAMPLE_PER_SHEET = 220;
     const sources: { id: string; name: string; type: string; rowsTotal: number; rowsUsed: number; truncated: boolean }[] = [];
     const sampleRows: Array<{ sheet: string; type: string; row_index: number; data: Record<string, unknown> }> = [];
-    const fullRowsBySheet = new Map<string, { label: string; type: string; rows: Record<string, unknown>[] }>();
+    const fullRowsBySheet = new Map<
+      string,
+      { label: string; type: string; rows: Array<{ row_index: number; data: Record<string, unknown> }> }
+    >();
 
     // Tokenize the question for relevance scoring
     const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","how","many","what","which","show","list","give","me","total","count","sum","avg","average","min","max","please","do","does","you","this","that"]);
@@ -710,24 +802,44 @@ export const askCopilot = createServerFn({ method: "POST" })
       ),
     );
 
-    for (const r of regs) {
-      const { count } = await supabase
-        .from("sheet_rows")
-        .select("row_index", { count: "exact", head: true })
-        .eq("sheet_registry_id", r.id);
-      const total = count ?? 0;
-      const fetchTarget = Math.min(total, FULL_FETCH_CAP);
+    const fetchStoredRows = async (registryId: string, fetchTarget: number) => {
       const allRows: { row_index: number; canonical: any; extras: any }[] = [];
       for (let offset = 0; offset < fetchTarget; offset += PAGE) {
         const { data: pageRows } = await supabase
           .from("sheet_rows")
           .select("row_index, canonical, extras")
-          .eq("sheet_registry_id", r.id)
+          .eq("sheet_registry_id", registryId)
           .order("row_index", { ascending: true })
           .range(offset, Math.min(offset + PAGE - 1, fetchTarget - 1));
         if (!pageRows?.length) break;
         allRows.push(...pageRows);
       }
+      return allRows;
+    };
+
+    for (const r of regs) {
+      let { count } = await supabase
+        .from("sheet_rows")
+        .select("row_index", { count: "exact", head: true })
+        .eq("sheet_registry_id", r.id);
+      let total = count ?? 0;
+      let fetchTarget = Math.min(total, FULL_FETCH_CAP);
+      let allRows = await fetchStoredRows(r.id, fetchTarget);
+
+      // If an older import used numeric totals or A/B/C letters as headers,
+      // repair it on demand before answering so Copilot can see real columns.
+      if (storedRowsLookMisread(allRows.slice(0, 12))) {
+        await syncRowsInternal(supabase, userId, r.id);
+        const recount = await supabase
+          .from("sheet_rows")
+          .select("row_index", { count: "exact", head: true })
+          .eq("sheet_registry_id", r.id);
+        count = recount.count;
+        total = count ?? 0;
+        fetchTarget = Math.min(total, FULL_FETCH_CAP);
+        allRows = await fetchStoredRows(r.id, fetchTarget);
+      }
+
       sources.push({
         id: r.id,
         name: r.display_name,
@@ -736,11 +848,12 @@ export const askCopilot = createServerFn({ method: "POST" })
         rowsUsed: allRows.length,
         truncated: total > allRows.length,
       });
-      const merged = allRows.map((row) => ({
-        ...((row.canonical as Record<string, unknown>) ?? {}),
-        ...((row.extras as Record<string, unknown>) ?? {}),
-      }));
-      fullRowsBySheet.set(r.id, { label: r.display_name, type: r.sheet_type, rows: merged });
+      const merged = allRows.map(mergedSheetRow);
+      fullRowsBySheet.set(r.id, {
+        label: r.display_name,
+        type: r.sheet_type,
+        rows: allRows.map((row, i) => ({ row_index: row.row_index, data: merged[i] })),
+      });
 
       // Question-relevant sampling: score each row by how many question tokens
       // appear in its values. Keep top-N. Falls back to even-stride if zero hits.
@@ -777,12 +890,14 @@ export const askCopilot = createServerFn({ method: "POST" })
     // For each sheet, find columns whose values contain any question token,
     // then compute exact counts per matching value. These are authoritative.
     const filteredFactsBlocks: string[] = [];
+    const relevantRowBlocks: string[] = [];
     if (qTokens.length > 0) {
       for (const grp of fullRowsBySheet.values()) {
         const hits: string[] = [];
+        const relevantRows: Array<{ row_index: number; matched_tokens: string[]; data: Record<string, unknown> }> = [];
         const columns = Array.from(
           grp.rows.reduce((s, r) => {
-            Object.keys(r).forEach((k) => s.add(k));
+            Object.keys(r.data).forEach((k) => s.add(k));
             return s;
           }, new Set<string>()),
         );
@@ -790,7 +905,7 @@ export const askCopilot = createServerFn({ method: "POST" })
           // For each question token, count rows where col value contains the token.
           const perToken = new Map<string, number>();
           for (const row of grp.rows) {
-            const v = row[col];
+            const v = row.data[col];
             if (v == null) continue;
             const sv = String(v).toLowerCase();
             if (!sv) continue;
@@ -807,6 +922,24 @@ export const askCopilot = createServerFn({ method: "POST" })
           filteredFactsBlocks.push(
             `Sheet "${grp.label}" — question-token row counts (FULL DATASET):\n` +
               hits.slice(0, 60).join("\n"),
+          );
+        }
+        for (let i = 0; i < grp.rows.length; i++) {
+          const hay = normalizeSearchText(Object.values(grp.rows[i].data).join(" "));
+          const matched = qTokens.filter((t) => hay.includes(t));
+          if (matched.length > 0) {
+            relevantRows.push({ row_index: grp.rows[i].row_index, matched_tokens: matched, data: grp.rows[i].data });
+          }
+        }
+        relevantRows.sort((a, b) => {
+          const diff = b.matched_tokens.length - a.matched_tokens.length;
+          if (diff !== 0) return diff;
+          return a.row_index - b.row_index;
+        });
+        if (relevantRows.length > 0) {
+          relevantRowBlocks.push(
+            `Sheet "${grp.label}" — top query-matching rows from FULL DATASET:\n` +
+              JSON.stringify(relevantRows.slice(0, 80)),
           );
         }
       }
@@ -844,11 +977,11 @@ export const askCopilot = createServerFn({ method: "POST" })
     for (const grp of fullRowsBySheet.values()) {
       const columns = Array.from(
         grp.rows.reduce((s, r) => {
-          Object.keys(r).forEach((k) => s.add(k));
+            Object.keys(r.data).forEach((k) => s.add(k));
           return s;
         }, new Set<string>()),
       );
-      const stats = inferColumnStats({ label: grp.label, columns, rows: grp.rows });
+      const stats = inferColumnStats({ label: grp.label, columns, rows: grp.rows.map((r) => r.data) });
       const lines: string[] = [`Sheet "${grp.label}" (${grp.type}) — ${grp.rows.length} rows (FULL DATASET)`];
       for (const st of stats) {
         if (st.type === "number") {
@@ -910,6 +1043,7 @@ export const askCopilot = createServerFn({ method: "POST" })
 
       const factsText = factsBlocks.length ? factsBlocks.join("\n\n") : "(no sheets in scope)";
       const filteredFactsText = filteredFactsBlocks.length ? filteredFactsBlocks.join("\n\n") : "";
+      const relevantRowsText = relevantRowBlocks.length ? relevantRowBlocks.join("\n\n").slice(0, 90000) : "";
       const rowsBlock = sampleRows.length
         ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
         : "(no sheet rows in scope)";
@@ -924,16 +1058,18 @@ export const askCopilot = createServerFn({ method: "POST" })
         "1) NUMBERS are authoritative: any count, sum, average, min, max, distribution, or top-value MUST be quoted VERBATIM from FACTS, QUERY-RELEVANT FACTS, or AGGREGATES. NEVER calculate, estimate, or invent numbers.\n" +
         "2) DO NOT invent fields. Only mention columns/categories that appear in FACTS for the sheet you're answering about. In particular, NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided and those values are non-trivial — those concepts only exist for delay/progress sheets.\n" +
         "3) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), the list of key columns, the top categorical values per relevant column, and headline numeric stats (sum/avg/min/max) — all taken verbatim from FACTS.\n" +
-        "4) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY count rows in the ROW SAMPLE only if the sample is marked complete; otherwise say you don't have it.\n" +
-        "5) The ROW SAMPLE is prioritised for relevance — use it to surface specific items, owners, dates, statuses, examples; cite row_index and sheet name.\n" +
-        "6) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
-        "7) If the answer isn't in the provided context, say so plainly.\n" +
-        "8) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, bold key numbers.";
+        "4) For lookup questions about a specific store, item code, project, person, ID, date, status, or any exact value, first use QUERY-MATCHING ROWS. Those rows are selected from the FULL dataset, not only the sample.\n" +
+        "5) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY quote numeric values from QUERY-MATCHING ROWS for the matched rows; otherwise say you don't have it.\n" +
+        "6) The ROW SAMPLE is prioritised for relevance — use it only for extra examples when QUERY-MATCHING ROWS is insufficient; cite row_index and sheet name.\n" +
+        "7) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
+        "8) If the answer isn't in the provided context, say so plainly.\n" +
+        "9) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, **bold key values**.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
         `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
         (filteredFactsText ? `QUERY-RELEVANT FACTS (FULL rows, exact):\n${filteredFactsText}\n\n` : "") +
+        (relevantRowsText ? `QUERY-MATCHING ROWS (FULL rows, exact row data):\n${relevantRowsText}\n\n` : "") +
         (aggBlock ? `AGGREGATES:\n${aggBlock}\n\n` : "") +
         `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
