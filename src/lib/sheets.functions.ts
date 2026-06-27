@@ -164,6 +164,12 @@ async function proposeMapping(
   sampleRows: string[][],
 ): Promise<Record<string, string | null>> {
   const canonical = CANONICAL_FIELDS[sheetType];
+  // No canonical schema (e.g. "generic"): keep every column as an extra.
+  if (canonical.length === 0) {
+    const result: Record<string, string | null> = {};
+    for (const h of headers) result[h] = null;
+    return result;
+  }
   try {
     const out = await callEmergent<{ mapping?: Record<string, string | null> }>(
       "map-columns",
@@ -183,14 +189,19 @@ async function proposeMapping(
     const result: Record<string, string | null> = {};
     for (const h of headers) {
       const hn = norm(h);
+      if (hn.length < 2) { result[h] = null; continue; }
       const hit =
         canonical.find((c) => norm(c) === hn) ??
-        canonical.find((c) => hn.includes(norm(c)) || norm(c).includes(hn));
+        canonical.find((c) => {
+          const cn = norm(c);
+          return cn.length >= 2 && (hn.includes(cn) || cn.includes(hn));
+        });
       result[h] = hit ?? null;
     }
     return result;
   }
 }
+
 
 // Inspect: fetch the Apps Script URL, return headers + sample + AI-suggested mapping
 export const inspectSheet = createServerFn({ method: "POST" })
