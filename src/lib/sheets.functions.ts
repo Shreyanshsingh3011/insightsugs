@@ -754,7 +754,10 @@ export const askCopilot = createServerFn({ method: "POST" })
     const QUAL_SAMPLE_PER_SHEET = 220;
     const sources: { id: string; name: string; type: string; rowsTotal: number; rowsUsed: number; truncated: boolean }[] = [];
     const sampleRows: Array<{ sheet: string; type: string; row_index: number; data: Record<string, unknown> }> = [];
-    const fullRowsBySheet = new Map<string, { label: string; type: string; rows: Record<string, unknown>[] }>();
+    const fullRowsBySheet = new Map<
+      string,
+      { label: string; type: string; rows: Array<{ row_index: number; data: Record<string, unknown> }> }
+    >();
 
     // Tokenize the question for relevance scoring
     const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","how","many","what","which","show","list","give","me","total","count","sum","avg","average","min","max","please","do","does","you","this","that"]);
@@ -815,7 +818,11 @@ export const askCopilot = createServerFn({ method: "POST" })
         truncated: total > allRows.length,
       });
       const merged = allRows.map(mergedSheetRow);
-      fullRowsBySheet.set(r.id, { label: r.display_name, type: r.sheet_type, rows: merged });
+      fullRowsBySheet.set(r.id, {
+        label: r.display_name,
+        type: r.sheet_type,
+        rows: allRows.map((row, i) => ({ row_index: row.row_index, data: merged[i] })),
+      });
 
       // Question-relevant sampling: score each row by how many question tokens
       // appear in its values. Keep top-N. Falls back to even-stride if zero hits.
@@ -859,7 +866,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         const relevantRows: Array<{ row_index: number; matched_tokens: string[]; data: Record<string, unknown> }> = [];
         const columns = Array.from(
           grp.rows.reduce((s, r) => {
-            Object.keys(r).forEach((k) => s.add(k));
+            Object.keys(r.data).forEach((k) => s.add(k));
             return s;
           }, new Set<string>()),
         );
@@ -867,7 +874,7 @@ export const askCopilot = createServerFn({ method: "POST" })
           // For each question token, count rows where col value contains the token.
           const perToken = new Map<string, number>();
           for (const row of grp.rows) {
-            const v = row[col];
+            const v = row.data[col];
             if (v == null) continue;
             const sv = String(v).toLowerCase();
             if (!sv) continue;
@@ -887,10 +894,10 @@ export const askCopilot = createServerFn({ method: "POST" })
           );
         }
         for (let i = 0; i < grp.rows.length; i++) {
-          const hay = normalizeSearchText(Object.values(grp.rows[i]).join(" "));
+          const hay = normalizeSearchText(Object.values(grp.rows[i].data).join(" "));
           const matched = qTokens.filter((t) => hay.includes(t));
           if (matched.length > 0) {
-            relevantRows.push({ row_index: i, matched_tokens: matched, data: grp.rows[i] });
+            relevantRows.push({ row_index: grp.rows[i].row_index, matched_tokens: matched, data: grp.rows[i].data });
           }
         }
         relevantRows.sort((a, b) => {
@@ -939,11 +946,11 @@ export const askCopilot = createServerFn({ method: "POST" })
     for (const grp of fullRowsBySheet.values()) {
       const columns = Array.from(
         grp.rows.reduce((s, r) => {
-          Object.keys(r).forEach((k) => s.add(k));
+            Object.keys(r.data).forEach((k) => s.add(k));
           return s;
         }, new Set<string>()),
       );
-      const stats = inferColumnStats({ label: grp.label, columns, rows: grp.rows });
+      const stats = inferColumnStats({ label: grp.label, columns, rows: grp.rows.map((r) => r.data) });
       const lines: string[] = [`Sheet "${grp.label}" (${grp.type}) — ${grp.rows.length} rows (FULL DATASET)`];
       for (const st of stats) {
         if (st.type === "number") {
