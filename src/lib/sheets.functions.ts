@@ -768,24 +768,44 @@ export const askCopilot = createServerFn({ method: "POST" })
       ),
     );
 
-    for (const r of regs) {
-      const { count } = await supabase
-        .from("sheet_rows")
-        .select("row_index", { count: "exact", head: true })
-        .eq("sheet_registry_id", r.id);
-      const total = count ?? 0;
-      const fetchTarget = Math.min(total, FULL_FETCH_CAP);
+    const fetchStoredRows = async (registryId: string, fetchTarget: number) => {
       const allRows: { row_index: number; canonical: any; extras: any }[] = [];
       for (let offset = 0; offset < fetchTarget; offset += PAGE) {
         const { data: pageRows } = await supabase
           .from("sheet_rows")
           .select("row_index, canonical, extras")
-          .eq("sheet_registry_id", r.id)
+          .eq("sheet_registry_id", registryId)
           .order("row_index", { ascending: true })
           .range(offset, Math.min(offset + PAGE - 1, fetchTarget - 1));
         if (!pageRows?.length) break;
         allRows.push(...pageRows);
       }
+      return allRows;
+    };
+
+    for (const r of regs) {
+      let { count } = await supabase
+        .from("sheet_rows")
+        .select("row_index", { count: "exact", head: true })
+        .eq("sheet_registry_id", r.id);
+      let total = count ?? 0;
+      let fetchTarget = Math.min(total, FULL_FETCH_CAP);
+      let allRows = await fetchStoredRows(r.id, fetchTarget);
+
+      // If an older import used numeric totals or A/B/C letters as headers,
+      // repair it on demand before answering so Copilot can see real columns.
+      if (storedRowsLookMisread(allRows.slice(0, 12))) {
+        await syncRowsInternal(supabase, userId, r.id);
+        const recount = await supabase
+          .from("sheet_rows")
+          .select("row_index", { count: "exact", head: true })
+          .eq("sheet_registry_id", r.id);
+        count = recount.count;
+        total = count ?? 0;
+        fetchTarget = Math.min(total, FULL_FETCH_CAP);
+        allRows = await fetchStoredRows(r.id, fetchTarget);
+      }
+
       sources.push({
         id: r.id,
         name: r.display_name,
@@ -794,10 +814,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         rowsUsed: allRows.length,
         truncated: total > allRows.length,
       });
-      const merged = allRows.map((row) => ({
-        ...((row.canonical as Record<string, unknown>) ?? {}),
-        ...((row.extras as Record<string, unknown>) ?? {}),
-      }));
+      const merged = allRows.map(mergedSheetRow);
       fullRowsBySheet.set(r.id, { label: r.display_name, type: r.sheet_type, rows: merged });
 
       // Question-relevant sampling: score each row by how many question tokens
