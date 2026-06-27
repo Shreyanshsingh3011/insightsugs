@@ -46,6 +46,17 @@ function spreadsheetColumnIndex(label: string): number | null {
   return n;
 }
 
+function spreadsheetColumnLabel(index: number): string {
+  let n = index + 1;
+  let out = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
 function isSequentialSpreadsheetHeader(row: unknown[]) {
   const cells = row.map(cellText).filter(Boolean);
   if (cells.length < 3) return false;
@@ -399,7 +410,7 @@ async function syncRowsInternal(supabase: any, userId: string, registryId: strin
     headers.forEach((h, i) => {
       if (!h) return;
       const cell = row[i] ?? "";
-      const target = mapping[h];
+      const target = mapping[h] ?? mapping[spreadsheetColumnLabel(i)];
       if (target) canonical[target] = cell;
       else extras[h] = cell;
     });
