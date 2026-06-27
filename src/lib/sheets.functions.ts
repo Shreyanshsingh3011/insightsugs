@@ -926,9 +926,9 @@ export const askCopilot = createServerFn({ method: "POST" })
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
         `DOCUMENT EXCERPTS (top-matched chunks for this question):\n${chunksBlock}`;
 
-      if (geminiKey) {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`,
+      const callGemini = async (model: string) => {
+        return await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -939,18 +939,10 @@ export const askCopilot = createServerFn({ method: "POST" })
             }),
           },
         );
-        if (!res.ok) {
-          const t = await res.text().catch(() => "");
-          throw new Error(`Gemini error (${res.status}): ${t.slice(0, 300)}`);
-        }
-        const j = (await res.json()) as {
-          candidates?: { content?: { parts?: { text?: string }[] } }[];
-        };
-        answer =
-          j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ||
-          "(empty response)";
-      } else {
-        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      };
+
+      const callLovable = async () => {
+        return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKey! },
           body: JSON.stringify({
@@ -961,15 +953,60 @@ export const askCopilot = createServerFn({ method: "POST" })
             ],
           }),
         });
+      };
+
+      const parseGemini = async (res: Response) => {
+        const j = (await res.json()) as {
+          candidates?: { content?: { parts?: { text?: string }[] } }[];
+        };
+        return (
+          j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ||
+          "(empty response)"
+        );
+      };
+      const parseLovable = async (res: Response) => {
+        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        return j.choices?.[0]?.message?.content?.trim() ?? "(empty response)";
+      };
+
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      let lastErr = "";
+      if (geminiKey) {
+        const models = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash"];
+        outer: for (const m of models) {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const res = await callGemini(m);
+            if (res.ok) {
+              answer = await parseGemini(res);
+              lastErr = "";
+              break outer;
+            }
+            lastErr = `Gemini ${m} (${res.status})`;
+            // Only retry on transient errors; otherwise move on to next model
+            if (res.status !== 503 && res.status !== 429 && res.status !== 500) break;
+            await sleep(700 * (attempt + 1));
+          }
+        }
+      }
+
+      if (!answer && lovableKey) {
+        const res = await callLovable();
         if (!res.ok) {
           const t = await res.text().catch(() => "");
           if (res.status === 429) throw new Error("AI rate limit exceeded — please retry shortly.");
           if (res.status === 402) throw new Error("AI credits exhausted for this workspace.");
           throw new Error(`AI error (${res.status}): ${t.slice(0, 300)}`);
         }
-        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-        answer = j.choices?.[0]?.message?.content?.trim() ?? "(empty response)";
+        answer = await parseLovable(res);
       }
+
+      if (!answer) {
+        throw new Error(
+          `AI is temporarily unavailable (${lastErr || "no provider"}). Please retry in a moment.`,
+        );
+      }
+
     }
 
     // Persist the exchange
