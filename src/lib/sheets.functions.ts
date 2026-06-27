@@ -852,9 +852,11 @@ export const askCopilot = createServerFn({ method: "POST" })
     // For each sheet, find columns whose values contain any question token,
     // then compute exact counts per matching value. These are authoritative.
     const filteredFactsBlocks: string[] = [];
+    const relevantRowBlocks: string[] = [];
     if (qTokens.length > 0) {
       for (const grp of fullRowsBySheet.values()) {
         const hits: string[] = [];
+        const relevantRows: Array<{ row_index: number; matched_tokens: string[]; data: Record<string, unknown> }> = [];
         const columns = Array.from(
           grp.rows.reduce((s, r) => {
             Object.keys(r).forEach((k) => s.add(k));
@@ -882,6 +884,24 @@ export const askCopilot = createServerFn({ method: "POST" })
           filteredFactsBlocks.push(
             `Sheet "${grp.label}" — question-token row counts (FULL DATASET):\n` +
               hits.slice(0, 60).join("\n"),
+          );
+        }
+        for (let i = 0; i < grp.rows.length; i++) {
+          const hay = normalizeSearchText(Object.values(grp.rows[i]).join(" "));
+          const matched = qTokens.filter((t) => hay.includes(t));
+          if (matched.length > 0) {
+            relevantRows.push({ row_index: i, matched_tokens: matched, data: grp.rows[i] });
+          }
+        }
+        relevantRows.sort((a, b) => {
+          const diff = b.matched_tokens.length - a.matched_tokens.length;
+          if (diff !== 0) return diff;
+          return a.row_index - b.row_index;
+        });
+        if (relevantRows.length > 0) {
+          relevantRowBlocks.push(
+            `Sheet "${grp.label}" — top query-matching rows from FULL DATASET:\n` +
+              JSON.stringify(relevantRows.slice(0, 80)),
           );
         }
       }
@@ -985,6 +1005,7 @@ export const askCopilot = createServerFn({ method: "POST" })
 
       const factsText = factsBlocks.length ? factsBlocks.join("\n\n") : "(no sheets in scope)";
       const filteredFactsText = filteredFactsBlocks.length ? filteredFactsBlocks.join("\n\n") : "";
+      const relevantRowsText = relevantRowBlocks.length ? relevantRowBlocks.join("\n\n").slice(0, 90000) : "";
       const rowsBlock = sampleRows.length
         ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
         : "(no sheet rows in scope)";
@@ -999,16 +1020,18 @@ export const askCopilot = createServerFn({ method: "POST" })
         "1) NUMBERS are authoritative: any count, sum, average, min, max, distribution, or top-value MUST be quoted VERBATIM from FACTS, QUERY-RELEVANT FACTS, or AGGREGATES. NEVER calculate, estimate, or invent numbers.\n" +
         "2) DO NOT invent fields. Only mention columns/categories that appear in FACTS for the sheet you're answering about. In particular, NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided and those values are non-trivial — those concepts only exist for delay/progress sheets.\n" +
         "3) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), the list of key columns, the top categorical values per relevant column, and headline numeric stats (sum/avg/min/max) — all taken verbatim from FACTS.\n" +
-        "4) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY count rows in the ROW SAMPLE only if the sample is marked complete; otherwise say you don't have it.\n" +
-        "5) The ROW SAMPLE is prioritised for relevance — use it to surface specific items, owners, dates, statuses, examples; cite row_index and sheet name.\n" +
-        "6) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
-        "7) If the answer isn't in the provided context, say so plainly.\n" +
-        "8) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, bold key numbers.";
+        "4) For lookup questions about a specific store, item code, project, person, ID, date, status, or any exact value, first use QUERY-MATCHING ROWS. Those rows are selected from the FULL dataset, not only the sample.\n" +
+        "5) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY quote numeric values from QUERY-MATCHING ROWS for the matched rows; otherwise say you don't have it.\n" +
+        "6) The ROW SAMPLE is prioritised for relevance — use it only for extra examples when QUERY-MATCHING ROWS is insufficient; cite row_index and sheet name.\n" +
+        "7) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
+        "8) If the answer isn't in the provided context, say so plainly.\n" +
+        "9) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, **bold key values**.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
         `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
         (filteredFactsText ? `QUERY-RELEVANT FACTS (FULL rows, exact):\n${filteredFactsText}\n\n` : "") +
+        (relevantRowsText ? `QUERY-MATCHING ROWS (FULL rows, exact row data):\n${relevantRowsText}\n\n` : "") +
         (aggBlock ? `AGGREGATES:\n${aggBlock}\n\n` : "") +
         `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
