@@ -882,7 +882,7 @@ export const askCopilot = createServerFn({ method: "POST" })
     const geminiKey = process.env.GEMINI_API_KEY;
     const lovableKey = process.env.LOVABLE_API_KEY;
 
-    let answer: string;
+    let answer: string = "";
     if (!geminiKey && !lovableKey) {
       answer = "AI isn't configured for this workspace yet.";
     } else {
