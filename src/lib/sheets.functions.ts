@@ -158,8 +158,20 @@ async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: 
   // preamble rows above the real header (blank rows, totals, banners).
   // Skip leading rows that don't look like a real header (need ≥2 non-blank
   // cells) and promote the first usable row as headers.
-  const looksLikeHeader = (row: unknown[]) =>
-    row.filter((c) => String(c ?? "").trim().length > 0).length >= 2;
+  const isNumericLike = (s: string) => {
+    const t = s.trim();
+    if (!t) return false;
+    // strip commas, currency, %, parens — what remains should be a pure number
+    const stripped = t.replace(/[,₹$€£%()\s]/g, "");
+    return stripped.length > 0 && /^-?\d+(\.\d+)?$/.test(stripped);
+  };
+  const looksLikeHeader = (row: unknown[]) => {
+    const cells = row.map((c) => String(c ?? "").trim()).filter((c) => c.length > 0);
+    if (cells.length < 2) return false;
+    const numericCount = cells.filter(isNumericLike).length;
+    // header rows are mostly text labels — reject totals/numeric rows
+    return numericCount / cells.length < 0.5;
+  };
   if (!looksLikeHeader(table.headers) && table.rows.length > 0) {
     let promoted = -1;
     for (let i = 0; i < Math.min(table.rows.length, 20); i++) {
@@ -172,6 +184,7 @@ async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: 
       };
     }
   }
+
 
   // Drop columns whose header is blank or duplicated; rename duplicates with a suffix.
   const seen = new Map<string, number>();
