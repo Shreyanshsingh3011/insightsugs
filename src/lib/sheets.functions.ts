@@ -641,9 +641,13 @@ export const askCopilot = createServerFn({ method: "POST" })
     }
 
     // 1) Computed aggregates across ALL rows (not truncated).
-    //    Re-use buildDashboardFromSheets so Copilot sees the same shape as the UI.
+    //    Only meaningful for delay/progress-style sheets — buildDashboardFromSheets
+    //    is hard-wired to delay semantics (Delayed/Blocked/Completed/At Risk/Risk Score).
+    //    For generic sheets we skip it so the LLM doesn't parrot a zeroed delay template.
+    const DELAY_TYPES = new Set(["progress", "pms", "vendor_billing", "delay"]);
+    const hasDelaySheet = regs.some((r) => DELAY_TYPES.has(r.sheet_type));
     let aggregates: unknown = null;
-    if (data.sheetIds.length > 0) {
+    if (data.sheetIds.length > 0 && hasDelaySheet) {
       const { buildDashboardFromSheets } = await import("./dashboard.functions");
       try {
         aggregates = await (buildDashboardFromSheets as any)({ data: { sheetIds: data.sheetIds } });
