@@ -1,53 +1,44 @@
-# Generic Gemini-routed Copilot for Insights
 
-Scope: only `CopilotSection` in `src/components/InsightDashboard.tsx` + one new server function. No other section, no delay-sheet behavior change.
+## Problem
 
-## New server function
+Two issues are visible on the My Sheets → Add API endpoint flow:
 
-Create `src/lib/insights-copilot.functions.ts` with two `createServerFn` endpoints (both `requireSupabaseAuth`, both call Lovable AI Gateway with `google/gemini-3-flash-preview`, low max tokens):
+1. The "Review column mapping" step shows blank source headers and defaults every row to `material`, so saving stores garbage and nothing maps. This is because the heuristic fallback in `proposeMapping` treats empty/whitespace headers as matching the first canonical field (`"".includes(...)` is always true), and the generic API the user is pasting doesn't fit any of the seven hard-coded "canonical" schemas anyway.
+2. The in-app Co-pilot (`/copilot`) only reads document RAG; it never queries the rows ingested from these sheets, so it can't answer "what is value 27", sums, counts, or lookups against the sheet data.
 
-1. `routeInsightQuestion({ question, sheets })`
-   - Input: question string + per-sheet `{ label, type, row_count, columns:[{name,type}], available_dimensions, available_measures }`.
-   - System prompt: "You are a router. Choose ONE endpoint and params from the catalog. Use ONLY column names from the provided list. Return JSON ONLY, no prose, no numbers."
-   - Endpoint catalog passed in prompt: `dashboard`, `pivot{dimension,measure,agg:sum|avg|count,sheet}`, `anomalies{sheet}`, `quality{sheet}`, `whatif{sheet}`, `forecast{sheet}`, `trends{sheet}`, plus `none`.
-   - Uses AI SDK `Output.object` with a tiny Zod schema `{ endpoint, params?, sheet?, reason? }`. Returns parsed object.
+## What I'll change
 
-2. `phraseInsightAnswer({ question, endpoint, params, payload })`
-   - System prompt: "Write a brief answer to the user's question using ONLY the numbers in `payload`. Quote numbers verbatim — never round, recompute, sum, average, or invent values. If payload lacks the answer, say so."
-   - Payload is trimmed JSON (cap size, e.g. top 50 rows of a pivot table).
-   - Returns `{ text }`.
+### 1. One-click sheet import (no manual mapping)
 
-Both read `process.env.LOVABLE_API_KEY`. No data math server-side; pure routing + phrasing.
+- Add a `"generic"` entry to `SHEET_TYPES` / `SHEET_TYPE_LABELS` / `CANONICAL_FIELDS` (empty canonical list). Make it the default in `AddSheetDialog`.
+- For `generic` (and whenever the user accepts the AI suggestion), skip the "Review column mapping" step entirely:
+  - After `inspectSheet` succeeds, auto-call `registerAndSyncSheet` with the proposed mapping (all columns become `extras` for generic) and close the dialog.
+  - Keep an "Advanced: review mapping" toggle for power users on the seven typed schemas.
+- Fix `proposeMapping` heuristic: skip empty/whitespace headers, require non-empty normalized header before substring matching, never collapse to "first canonical".
+- Tighten `fetchAppsScript` to drop fully-empty header columns and trim header strings, so the table shown later isn't full of blank columns.
 
-## Frontend rewrite of `CopilotSection`
+### 2. Make Co-pilot answer accurately from imported sheets
 
-Replace the current `${base}/copilot` mutation with this flow:
+Extend `sendCopilotMessage` in `src/lib/copilot.functions.ts` so it can ground answers on `sheet_rows` in addition to document chunks:
 
-1. Build runtime catalog from the dashboard data already in scope:
-   - Pass `sheets` (already has `label`, `type`, `row_count`, `columns`) plus `available_dimensions` / `available_measures` from `data.modules.pivot` keyed per-sheet when present. Lift `data` into props (extend `CopilotSection` props to accept the loaded `DashboardData`).
-2. On send:
-   a. Short-circuit: if question matches a trivial total/avg/count of a single measure (regex on "total/average/count of X"), call `${base}/pivot` directly (or use `data.kpis`), skip Gemini routing.
-   b. Otherwise call `routeInsightQuestion` → get `{endpoint, params, sheet}`.
-   c. Validate chosen columns exist on that sheet's column list. If invalid → show honest "No matching column on <sheet>" message. Optional fallback: `${base}/copilot`.
-   d. Call the chosen `${base}/<endpoint>` with params (GET with query string for pivot/anomalies/etc.; existing `apiGet`/`apiSend` helpers).
-   e. If endpoint returns `{message: "..."}` / not-ready / 404, relay verbatim, do not fabricate.
-   f. Call `phraseInsightAnswer` with question + raw payload (trimmed). Render returned text. Show small chip with endpoint + sheet used.
-3. Session cache: `Map<string, {text, endpoint}>` keyed by `${active}|${sheet}|${normalizedQuestion}`. Reuse on repeat.
-4. Remove hardcoded chips that assume delay/concerns vocab; replace with generic chips derived from columns: "Top {firstDimension} by {firstMeasure}", "Summarize this sheet", "Anomalies", "Data quality". Generated at render time from runtime catalog.
+- Before the RAG call, pull a compact catalog of the user's sheets from `sheet_registry` + first ~50 rows per sheet (headers, value types, distinct counts for low-cardinality columns).
+- Detect quantitative/lookup intent (sum/avg/count/min/max/"what is", row lookup by value) with a small router prompt that returns `{ kind, sheet, column, op, filterValue }` — same shape already used in `insights-copilot`.
+- For quantitative intents, fetch all matching rows from `sheet_rows` via `supabaseAdmin` (already used elsewhere for cross-sheet reads), compute the answer in JS (facts-first), and pass the verified numbers to Gemini only for phrasing.
+- For lookup intents ("what is 27", "show row where X=Y"), scan rows server-side and return the exact matching row(s) as Markdown table — no model math.
+- Fall back to existing document RAG when the question isn't sheet-shaped.
+- Add `sheet:<display_name>` / `field:<header>` citations alongside the existing document citations.
 
-## Guardrails
+### 3. UI tidy
 
-- Gemini never sees raw rows for routing — only column metadata.
-- Phrasing call receives numbers only via `payload`; system prompt forbids transformation.
-- `max_tokens` ~256 routing, ~400 phrasing.
-- All keys server-side via `createServerFn`; browser never sees `LOVABLE_API_KEY`.
-- No changes to other sections, OverviewSection, delay rendering, or other tabs.
+- `AddSheetDialog`: default sheet type → "Generic table", URL field always visible, success toast jumps straight to the sheet detail page.
+- Sheets list: show a small "auto-mapped" badge when all columns landed in `extras`, with a "Map columns" link that opens the existing mapping editor (for users who later want canonical mapping).
 
 ## Files touched
 
-- `src/lib/insights-copilot.functions.ts` (new)
-- `src/components/InsightDashboard.tsx` — rewrite `CopilotSection` body, pass `data` into it from the parent render call at the existing tab switch.
+- `src/lib/sheets-schemas.ts` — add `generic` type.
+- `src/lib/sheets.functions.ts` — heuristic fix, header trim, generic handling.
+- `src/routes/_authenticated/sheets.tsx` — auto-register flow, advanced toggle, default type.
+- `src/lib/copilot.functions.ts` — sheet catalog, intent router, JS-computed facts, citations.
+- `src/routes/_authenticated/copilot.tsx` — render new `sheet:`/`field:` citation chips (small change).
 
-## Out of scope
-
-Anything outside `CopilotSection`. Delay-sheet UI, Overview, Concerns, Reminders, Hygiene, Sheets tabs untouched.
+No DB migrations, no new secrets, no changes to existing alerts/notifications/RAG ingestion.

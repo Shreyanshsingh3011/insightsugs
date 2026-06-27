@@ -1,6 +1,7 @@
 // Canonical schemas for each sheet type. Client-safe.
 
 export type SheetType =
+  | "generic"
   | "progress"
   | "material_reconciliation"
   | "procurement"
@@ -10,6 +11,7 @@ export type SheetType =
   | "tat";
 
 export const SHEET_TYPE_LABELS: Record<SheetType, string> = {
+  generic: "Generic table",
   progress: "Progress",
   material_reconciliation: "Material Reconciliation",
   procurement: "Procurement",
@@ -20,6 +22,7 @@ export const SHEET_TYPE_LABELS: Record<SheetType, string> = {
 };
 
 export const CANONICAL_FIELDS: Record<SheetType, string[]> = {
+  generic: [],
   progress: [
     "activity", "owner", "dept",
     "planned_start", "planned_end", "actual_start", "actual_end",
@@ -51,6 +54,7 @@ export const CANONICAL_FIELDS: Record<SheetType, string[]> = {
 };
 
 export const SHEET_TYPES: SheetType[] = [
+  "generic",
   "progress", "material_reconciliation", "procurement",
   "contractor_billing", "bill_tracking", "pms", "tat",
 ];

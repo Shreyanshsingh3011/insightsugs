@@ -253,7 +253,7 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const inspect = useServerFn(inspectSheet);
   const register = useServerFn(registerAndSyncSheet);
 
-  const [sheetType, setSheetType] = useState<SheetType>("progress");
+  const [sheetType, setSheetType] = useState<SheetType>("generic");
   const [appsScriptUrl, setAppsScriptUrl] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [step, setStep] = useState<"input" | "mapping">("input");
@@ -269,40 +269,54 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     setInspectResult(null);
     setAppsScriptUrl("");
     setDisplayName("");
-    setSheetType("progress");
+    setSheetType("generic");
   };
 
-  const inspectMut = useMutation({
-    mutationFn: () => inspect({ data: { appsScriptUrl, sheetType } }),
-    onSuccess: (data) => {
-      setInspectResult(data);
-      setStep("mapping");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't read that URL"),
-  });
+  const finishRegister = (res: { id: string }) => {
+    toast.success("Sheet imported");
+    qc.invalidateQueries({ queryKey: ["sheets-list"] });
+    onOpenChange(false);
+    resetAll();
+    router.navigate({ to: "/sheets/$sheetId", params: { sheetId: res.id } });
+  };
 
   const registerMut = useMutation({
-    mutationFn: async () => {
-      if (!inspectResult) throw new Error("Run inspect first");
+    mutationFn: async (mapping: Record<string, string | null>) => {
       if (!displayName.trim()) throw new Error("Give the sheet a name");
       return register({
         data: {
           appsScriptUrl,
           sheetType,
           displayName: displayName.trim(),
-          mapping: inspectResult.proposedMapping,
+          mapping,
         },
       });
     },
-    onSuccess: (res) => {
-      toast.success("Sheet registered");
-      qc.invalidateQueries({ queryKey: ["sheets-list"] });
-      onOpenChange(false);
-      resetAll();
-      router.navigate({ to: "/sheets/$sheetId", params: { sheetId: res.id } });
-    },
+    onSuccess: finishRegister,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to register"),
   });
+
+  const inspectMut = useMutation({
+    mutationFn: () => inspect({ data: { appsScriptUrl, sheetType } }),
+    onSuccess: (data) => {
+      setInspectResult(data);
+      // Generic sheets skip the manual mapping review entirely — auto-import.
+      if (sheetType === "generic") {
+        registerMut.mutate(data.proposedMapping);
+      } else {
+        setStep("mapping");
+      }
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't read that URL"),
+  });
+
+  const saveMappingMut = useMutation({
+    mutationFn: async () => {
+      if (!inspectResult) throw new Error("Run inspect first");
+      return registerMut.mutateAsync(inspectResult.proposedMapping);
+    },
+  });
+
 
   const updateMapping = (header: string, value: string) => {
     if (!inspectResult) return;
@@ -429,22 +443,32 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           {step === "input" ? (
             <Button
               onClick={() => inspectMut.mutate()}
-              disabled={inspectMut.isPending || !appsScriptUrl || !displayName}
+              disabled={
+                inspectMut.isPending || registerMut.isPending || !appsScriptUrl || !displayName
+              }
             >
-              {inspectMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Inspect with AI
+              {(inspectMut.isPending || registerMut.isPending) && (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              )}
+              {sheetType === "generic" ? "Import sheet" : "Inspect with AI"}
             </Button>
           ) : (
             <>
               <Button variant="ghost" onClick={() => setStep("input")}>
                 Back
               </Button>
-              <Button onClick={() => registerMut.mutate()} disabled={registerMut.isPending}>
-                {registerMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              <Button
+                onClick={() => saveMappingMut.mutate()}
+                disabled={registerMut.isPending || saveMappingMut.isPending}
+              >
+                {(registerMut.isPending || saveMappingMut.isPending) && (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                )}
                 Save & sync
               </Button>
             </>
           )}
+
         </DialogFooter>
       </DialogContent>
     </Dialog>

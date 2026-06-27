@@ -1,0 +1,1 @@
+ALTER TYPE public.sheet_type ADD VALUE IF NOT EXISTS 'generic';
