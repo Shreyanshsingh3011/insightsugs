@@ -2074,7 +2074,7 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
                 columns: [...sheetCols0],
                 backend_answer: fb?.answer ?? null,
                 backend_rows: fb?.rows ?? null,
-                sample_rows: (sheetMeta0 as Sheet | undefined)?.rows?.slice(0, 200) || [],
+                sample_rows: sheetFull0?.rows?.slice(0, 200) || [],
               }, null, 2);
               const out = await generateGemini({
                 system: GROUNDING_RULES + `\nYou are a data copilot for the sheet "${sheetLabel}". Use the backend_answer and any backend_rows/sample_rows verbatim. For row-level lookups, scan the provided rows and return the exact matching value(s). Never invent data. If no match exists in the provided data, say so plainly.`,
