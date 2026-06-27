@@ -135,28 +135,41 @@ async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: 
   const ctype = (res.headers.get("content-type") || "").toLowerCase();
   const body = await res.text();
 
-  // Try JSON first when the server claims JSON or the body looks JSON-y
+  let table: { headers: string[]; rows: string[][] } | null = null;
   const looksJson = ctype.includes("json") || /^\s*[\[{]/.test(body);
   if (looksJson) {
     try {
       const payload = JSON.parse(body);
       const normalized = normalizeAppsScriptPayload(payload);
-      if (normalized.headers.length > 0) return normalized;
-    } catch {
-      /* fall through to CSV */
-    }
+      if (normalized.headers.length > 0) table = normalized;
+    } catch { /* fall through to CSV */ }
   }
-
-  // CSV fallback (Google Sheets export, Excel CSV, generic CSV)
-  if (ctype.includes("csv") || ctype.includes("text/plain") || /,|\n/.test(body)) {
+  if (!table && (ctype.includes("csv") || ctype.includes("text/plain") || /,|\n/.test(body))) {
     const csv = parseCsv(body);
-    if (csv.headers.length > 0) return csv;
+    if (csv.headers.length > 0) table = csv;
+  }
+  if (!table) {
+    throw new Error(
+      "Couldn't read tabular data from this URL. Provide a JSON endpoint (with rows/headers/values or an array of objects), a Google Sheets share link, or a direct CSV URL.",
+    );
   }
 
-  throw new Error(
-    "Couldn't read tabular data from this URL. Provide a JSON endpoint (with rows/headers/values or an array of objects), a Google Sheets share link, or a direct CSV URL.",
-  );
+  // Drop columns whose header is blank or duplicated; rename duplicates with a suffix.
+  const seen = new Map<string, number>();
+  const keepIdx: number[] = [];
+  const finalHeaders: string[] = [];
+  table.headers.forEach((raw, i) => {
+    const h = String(raw ?? "").trim();
+    if (!h) return;
+    const n = (seen.get(h) ?? 0) + 1;
+    seen.set(h, n);
+    keepIdx.push(i);
+    finalHeaders.push(n === 1 ? h : `${h} (${n})`);
+  });
+  const finalRows = table.rows.map((r) => keepIdx.map((i) => r[i] ?? ""));
+  return { headers: finalHeaders, rows: finalRows };
 }
+
 
 async function proposeMapping(
   sheetType: SheetType,
