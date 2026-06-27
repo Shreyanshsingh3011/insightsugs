@@ -2091,13 +2091,13 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
           return;
         } catch (e) {
           // Final fallback: pure Gemini over the sample rows we already have.
-          if (hasGemini() && (sheetMeta0?.rows?.length || 0) > 0) {
+          if (hasGemini() && (sheetFull0?.rows?.length || 0) > 0) {
             try {
               const ctx = JSON.stringify({
                 sheet: sheetLabel,
                 columns: [...sheetCols0],
-                rows: sheetMeta0!.rows!.slice(0, 500),
-                row_count_total: sheetMeta0!.row_count ?? sheetMeta0!.rows!.length,
+                rows: sheetFull0!.rows!.slice(0, 500),
+                row_count_total: sheetFull0!.row_count ?? sheetFull0!.rows!.length,
               }, null, 2);
               const out = await generateGemini({
                 system: GROUNDING_RULES + `\nYou are a data copilot for "${sheetLabel}". Only the first slice of rows is available here; answer from them and clearly note if the answer might exist outside the sample.`,
