@@ -2057,6 +2057,7 @@ function CopilotSection({ base, sheets, data, selectedLabel, onSelectedLabelChan
       // then optionally re-phrase with Gemini for clarity.
       if (!route || route.endpoint === "none") {
         const sheetMeta0 = catalog.find(c => c.label === sheetLabel);
+        const sheetFull0 = sheets.find(s => s.label === sheetLabel);
         const sheetCols0 = new Set((sheetMeta0?.columns || []).map(c => c.name));
         try {
           const fb = await apiSend<{ answer?: string; generated_by?: string; fields_used?: string[]; rows?: Record<string, unknown>[] }>(
