@@ -6,6 +6,7 @@ import { callEmergent } from "@/lib/emergent-client";
 
 
 const SHEET_TYPE_ENUM = z.enum([
+  "generic",
   "progress",
   "material_reconciliation",
   "procurement",
