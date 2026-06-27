@@ -443,22 +443,32 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           {step === "input" ? (
             <Button
               onClick={() => inspectMut.mutate()}
-              disabled={inspectMut.isPending || !appsScriptUrl || !displayName}
+              disabled={
+                inspectMut.isPending || registerMut.isPending || !appsScriptUrl || !displayName
+              }
             >
-              {inspectMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Inspect with AI
+              {(inspectMut.isPending || registerMut.isPending) && (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              )}
+              {sheetType === "generic" ? "Import sheet" : "Inspect with AI"}
             </Button>
           ) : (
             <>
               <Button variant="ghost" onClick={() => setStep("input")}>
                 Back
               </Button>
-              <Button onClick={() => registerMut.mutate()} disabled={registerMut.isPending}>
-                {registerMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              <Button
+                onClick={() => saveMappingMut.mutate()}
+                disabled={registerMut.isPending || saveMappingMut.isPending}
+              >
+                {(registerMut.isPending || saveMappingMut.isPending) && (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                )}
                 Save & sync
               </Button>
             </>
           )}
+
         </DialogFooter>
       </DialogContent>
     </Dialog>
