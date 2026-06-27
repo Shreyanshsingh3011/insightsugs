@@ -659,7 +659,7 @@ export const getSheetDetail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: reg, error: regErr } = await supabase
+    let { data: reg, error: regErr } = await supabase
       .from("sheet_registry")
       .select(
         "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
@@ -669,6 +669,26 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .maybeSingle();
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found.");
+
+    const { data: probeRows } = await supabase
+      .from("sheet_rows")
+      .select("canonical, extras")
+      .eq("sheet_registry_id", data.registryId)
+      .order("row_index", { ascending: true })
+      .limit(12);
+    if (storedRowsLookMisread(probeRows ?? [])) {
+      await syncRowsInternal(supabase, userId, data.registryId);
+      const refreshed = await supabase
+        .from("sheet_registry")
+        .select(
+          "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
+        )
+        .eq("id", data.registryId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (refreshed.error) throw new Error(refreshed.error.message);
+      reg = refreshed.data ?? reg;
+    }
 
     const { data: maps } = await supabase
       .from("sheet_column_mappings")
