@@ -410,7 +410,7 @@ async function syncRowsInternal(supabase: any, userId: string, registryId: strin
     headers.forEach((h, i) => {
       if (!h) return;
       const cell = row[i] ?? "";
-      const target = mapping[h] ?? mapping[spreadsheetColumnLabel(i)];
+      const target = mapping[h];
       if (target) canonical[target] = cell;
       else extras[h] = cell;
     });
