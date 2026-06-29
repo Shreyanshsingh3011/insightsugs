@@ -370,8 +370,9 @@ function CopilotPage() {
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto">
           {history.length === 0 && !askMut.isPending && !singleSheetId ? (
             <Card className="p-8 text-center text-sm text-muted-foreground">
-              Select one or more sheets on the left, then ask a question below. Select a single
-              sheet to unlock Auto-Insights.
+              Select one or more sheets on the left, then ask a question below. With multiple
+              sheets, Copilot returns a combined deduplicated answer plus a per-sheet breakdown.
+              Use <span className="font-medium">Chart this</span> on any answer to visualise it.
             </Card>
           ) : (
             history.map((t, i) => {
