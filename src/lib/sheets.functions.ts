@@ -1468,5 +1468,100 @@ export const askCopilot = createServerFn({ method: "POST" })
       },
     ]);
 
-    return { answer, sources };
+    // Generate 3 short follow-up suggestions (best-effort, never blocks the answer)
+    let suggestions: string[] = [];
+    try {
+      const sugPrompt =
+        `Based on this user question and the analyst's answer, propose exactly 3 short, specific follow-up questions the user is likely to ask next. ` +
+        `Each must be answerable from the same data scope. Output ONLY a JSON array of 3 strings, no prose.\n\n` +
+        `QUESTION: ${data.question}\n\nANSWER: ${answer.slice(0, 4000)}`;
+      if (geminiKey) {
+        const sres = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: sugPrompt }] }],
+              generationConfig: { temperature: 0.5, maxOutputTokens: 400, responseMimeType: "application/json" },
+            }),
+          },
+        );
+        if (sres.ok) {
+          const sj = (await sres.json()) as {
+            candidates?: { content?: { parts?: { text?: string }[] } }[];
+          };
+          const raw = sj.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            suggestions = parsed.filter((s) => typeof s === "string").slice(0, 3);
+          }
+        }
+      }
+    } catch {
+      suggestions = [];
+    }
+
+    return { answer, sources, suggestions };
   });
+
+// ============================================================================
+// Auto-Insights digest: proactive "things you should know" per sheet
+// ============================================================================
+export const generateAutoInsights = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ sheetId: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: reg, error: regErr } = await supabase
+      .from("sheet_registry")
+      .select("id, display_name, sheet_type")
+      .eq("id", data.sheetId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (regErr) throw new Error(regErr.message);
+    if (!reg) throw new Error("Sheet not found");
+
+    // Reuse askCopilot with a curated prompt to keep the answer grounded.
+    const out = await (askCopilot as any)({
+      data: {
+        question:
+          "Give me an Auto-Insights digest: 5 to 7 short, surprising or important findings from this sheet — anomalies, outliers, top movers, concentrations, risk signals, or noteworthy trends. " +
+          "Output ONLY a JSON array of objects with shape {\"title\":string,\"detail\":string,\"severity\":\"info\"|\"warning\"|\"critical\"}. Each title <= 60 chars, each detail 1-2 sentences with at least one specific number from the data. No prose outside the JSON.",
+        sheetIds: [data.sheetId],
+        documentIds: [],
+        history: [],
+      },
+    });
+
+    let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
+    try {
+      const text = (out.answer as string).trim();
+      const start = text.indexOf("[");
+      const end = text.lastIndexOf("]");
+      if (start >= 0 && end > start) {
+        const parsed = JSON.parse(text.slice(start, end + 1));
+        if (Array.isArray(parsed)) {
+          insights = parsed
+            .filter(
+              (i: unknown): i is { title: string; detail: string; severity?: string } =>
+                !!i && typeof (i as any).title === "string" && typeof (i as any).detail === "string",
+            )
+            .map((i) => ({
+              title: i.title.slice(0, 100),
+              detail: i.detail.slice(0, 400),
+              severity:
+                i.severity === "critical" || i.severity === "warning" ? i.severity : "info",
+            }))
+            .slice(0, 7);
+        }
+      }
+    } catch {
+      insights = [];
+    }
+
+    return { sheetId: reg.id, sheetName: reg.display_name, insights };
+  });
+
