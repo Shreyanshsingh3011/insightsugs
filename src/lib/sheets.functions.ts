@@ -1331,8 +1331,17 @@ export const askCopilot = createServerFn({ method: "POST" })
         ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
         : "(no document excerpts retrieved)";
 
+      const multiSheet = regs.length > 1;
+      const multiSheetRules = multiSheet
+        ? "\nMULTI-SHEET MODE — you have " + regs.length + " sheets in context (" + regs.map((r) => `"${r.display_name}"`).join(", ") + "). Structure your answer EXACTLY as:\n" +
+          "## Combined Answer\n" +
+          "One synthesised, DEDUPLICATED response that merges findings across all sheets. Call out overlaps (same entity appearing in multiple sheets — match by name/ID/code) and reconcile conflicting numbers. Do not repeat the same fact twice.\n" +
+          "## Per-Sheet Breakdown\n" +
+          "Then one `### <sheet name>` subsection per sheet with that sheet's specific answer (or 'No relevant data' if empty). Keep each subsection short and grounded in that sheet's FACTS/OPERATION RESULTS.\n"
+        : "";
       const system =
         "You are a precise, sheet-aware analyst (NotebookLM-style). Each sheet has its OWN columns and meaning — adapt your answer to what FACTS and OPERATION RESULTS actually contain.\n" +
+        multiSheetRules +
         "RULES:\n" +
         "1) NUMBERS are authoritative: any count, sum, average, min, max, ranking, top-N, bottom-N, group-by, or distribution MUST be quoted VERBATIM from OPERATION RESULTS, FACTS, QUERY-RELEVANT FACTS, AGGREGATES, or QUERY-MATCHING ROWS. NEVER calculate, estimate, or invent numbers yourself.\n" +
         "2) For ranking/top/bottom/highest/lowest/most/least/sort/'by X'/'per Y' questions, the answer MUST be built from OPERATION RESULTS. If OPERATION RESULTS is empty for that question, say what's missing and offer the closest available view from FACTS.\n" +
