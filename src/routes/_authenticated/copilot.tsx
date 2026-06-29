@@ -21,17 +21,50 @@ import {
   AlertCircle,
   Trash2,
 } from "lucide-react";
-import { listSheets, askCopilot, generateAutoInsights } from "@/lib/sheets.functions";
+import { listSheets, askCopilot, generateAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from "recharts";
+import { BarChart3 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/copilot")({
   component: CopilotPage,
 });
 
 type Source = { id: string; name: string; type: string; rowsUsed: number; truncated: boolean };
-type Turn = { question: string; answer: string; sources: Source[]; suggestions: string[] };
+type ChartSpec = {
+  sheetId: string;
+  sheet: string;
+  chartType: "bar" | "line" | "pie";
+  title: string;
+  xKey: string;
+  yKey: string;
+  data: { name: string; value: number }[];
+};
+type Turn = {
+  question: string;
+  answer: string;
+  sources: Source[];
+  suggestions: string[];
+  charts?: ChartSpec[];
+};
 type Insight = { title: string; detail: string; severity: "info" | "warning" | "critical" };
+
+const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
 
 function CopilotPage() {
   const fetchList = useServerFn(listSheets);
