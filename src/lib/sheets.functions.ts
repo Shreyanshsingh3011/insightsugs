@@ -104,6 +104,206 @@ function storedRowsLookMisread(rows: { canonical?: unknown; extras?: unknown }[]
   return looksLikeHeaderRow(Object.values(merged));
 }
 
+// ===== Operations layer (NotebookLM-style analytical queries) =====
+
+function parseNumber(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const stripped = s.replace(/[,₹$€£%()\s]/g, "");
+  if (!/^-?\d+(\.\d+)?$/.test(stripped)) return null;
+  const n = Number(stripped);
+  return Number.isFinite(n) ? n : null;
+}
+
+function resolveColumn(want: string | null | undefined, available: string[]): string | null {
+  if (!want) return null;
+  if (available.includes(want)) return want;
+  const lc = want.toLowerCase().trim();
+  const exact = available.find((c) => c.toLowerCase().trim() === lc);
+  if (exact) return exact;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const wantN = norm(want);
+  return available.find((c) => norm(c) === wantN) || available.find((c) => norm(c).includes(wantN) || wantN.includes(norm(c))) || null;
+}
+
+function compareValues(a: unknown, b: unknown, dir: "asc" | "desc"): number {
+  const an = parseNumber(a);
+  const bn = parseNumber(b);
+  let cmp: number;
+  if (an != null && bn != null) cmp = an - bn;
+  else cmp = String(a ?? "").localeCompare(String(b ?? ""));
+  return dir === "desc" ? -cmp : cmp;
+}
+
+type OpSpec = {
+  sheet?: string;
+  op: "top_n" | "bottom_n" | "group_by" | "filter_sort" | "aggregate" | "distribution" | "none";
+  measure?: string | null;
+  agg?: "sum" | "avg" | "count" | "min" | "max" | null;
+  dimension?: string | null;
+  filter?: { column: string; op: string; value: unknown }[];
+  sort_by?: string | null;
+  sort_dir?: "asc" | "desc";
+  n?: number;
+};
+
+function applyFilters(
+  rows: { row_index: number; data: Record<string, unknown> }[],
+  filters: OpSpec["filter"],
+  columns: string[],
+) {
+  if (!filters?.length) return rows;
+  return rows.filter((r) => {
+    for (const f of filters) {
+      const col = resolveColumn(f.column, columns);
+      if (!col) continue;
+      const v = r.data[col];
+      const fv = f.value;
+      const sv = String(v ?? "").toLowerCase();
+      const sfv = String(fv ?? "").toLowerCase();
+      const nv = parseNumber(v);
+      const nfv = parseNumber(fv);
+      switch (f.op) {
+        case "eq": if (sv !== sfv) return false; break;
+        case "contains": if (!sv.includes(sfv)) return false; break;
+        case "gt": if (nv == null || nfv == null || !(nv > nfv)) return false; break;
+        case "gte": if (nv == null || nfv == null || !(nv >= nfv)) return false; break;
+        case "lt": if (nv == null || nfv == null || !(nv < nfv)) return false; break;
+        case "lte": if (nv == null || nfv == null || !(nv <= nfv)) return false; break;
+        default: break;
+      }
+    }
+    return true;
+  });
+}
+
+function executeOperation(
+  spec: OpSpec,
+  group: { label: string; rows: { row_index: number; data: Record<string, unknown> }[] },
+): { spec: OpSpec; result: unknown; resolved: Record<string, string | null> } | null {
+  if (!spec || spec.op === "none") return null;
+  const columns = Array.from(group.rows.reduce((s, r) => { Object.keys(r.data).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+  const measure = resolveColumn(spec.measure ?? null, columns);
+  const dimension = resolveColumn(spec.dimension ?? null, columns);
+  const sortBy = resolveColumn(spec.sort_by ?? null, columns) || measure || dimension;
+  const resolved = { measure, dimension, sort_by: sortBy };
+
+  const filtered = applyFilters(group.rows, spec.filter, columns);
+  const n = Math.min(Math.max(spec.n ?? 10, 1), 100);
+
+  if (spec.op === "top_n" || spec.op === "bottom_n") {
+    if (!measure && !sortBy) return null;
+    const key = (sortBy || measure)!;
+    const dir = spec.op === "top_n" ? "desc" : "asc";
+    const sorted = [...filtered].sort((a, b) => compareValues(a.data[key], b.data[key], dir));
+    const out = sorted.slice(0, n).map((r) => {
+      const row: Record<string, unknown> = { row_index: r.row_index };
+      if (dimension) row[dimension] = r.data[dimension];
+      row[key] = r.data[key];
+      // Include up to 3 additional columns for context
+      const extras = columns.filter((c) => c !== dimension && c !== key).slice(0, 3);
+      for (const c of extras) row[c] = r.data[c];
+      return row;
+    });
+    return { spec, result: out, resolved };
+  }
+
+  if (spec.op === "group_by") {
+    if (!dimension) return null;
+    const groups = new Map<string, { values: number[]; count: number }>();
+    for (const r of filtered) {
+      const key = String(r.data[dimension] ?? "(blank)");
+      const g = groups.get(key) ?? { values: [], count: 0 };
+      g.count++;
+      if (measure) {
+        const n2 = parseNumber(r.data[measure]);
+        if (n2 != null) g.values.push(n2);
+      }
+      groups.set(key, g);
+    }
+    const agg = spec.agg ?? (measure ? "sum" : "count");
+    const out = Array.from(groups.entries()).map(([k, g]) => {
+      let val: number;
+      if (agg === "count" || !measure) val = g.count;
+      else if (agg === "sum") val = g.values.reduce((a, b) => a + b, 0);
+      else if (agg === "avg") val = g.values.length ? g.values.reduce((a, b) => a + b, 0) / g.values.length : 0;
+      else if (agg === "min") val = g.values.length ? Math.min(...g.values) : 0;
+      else if (agg === "max") val = g.values.length ? Math.max(...g.values) : 0;
+      else val = g.count;
+      return { [dimension]: k, [`${agg}_${measure ?? "rows"}`]: Math.round(val * 100) / 100, count: g.count };
+    });
+    out.sort((a, b) => {
+      const va = Number((a as any)[`${agg}_${measure ?? "rows"}`]);
+      const vb = Number((b as any)[`${agg}_${measure ?? "rows"}`]);
+      return (spec.sort_dir === "asc" ? 1 : -1) * (va - vb);
+    });
+    return { spec, result: out.slice(0, 50), resolved };
+  }
+
+  if (spec.op === "aggregate") {
+    if (!measure) return { spec, result: { count: filtered.length }, resolved };
+    const nums = filtered.map((r) => parseNumber(r.data[measure])).filter((v): v is number => v != null);
+    const agg = spec.agg ?? "sum";
+    let val = 0;
+    if (agg === "count") val = filtered.length;
+    else if (agg === "sum") val = nums.reduce((a, b) => a + b, 0);
+    else if (agg === "avg") val = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    else if (agg === "min") val = nums.length ? Math.min(...nums) : 0;
+    else if (agg === "max") val = nums.length ? Math.max(...nums) : 0;
+    return { spec, result: { [`${agg}_${measure}`]: Math.round(val * 100) / 100, rows_considered: filtered.length, numeric_values: nums.length }, resolved };
+  }
+
+  if (spec.op === "distribution") {
+    if (!dimension) return null;
+    const counts = new Map<string, number>();
+    for (const r of filtered) {
+      const k = String(r.data[dimension] ?? "(blank)");
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    const out = Array.from(counts.entries())
+      .map(([value, count]) => ({ [dimension]: value, count }))
+      .sort((a, b) => Number((b as any).count) - Number((a as any).count))
+      .slice(0, 50);
+    return { spec, result: out, resolved };
+  }
+
+  if (spec.op === "filter_sort") {
+    if (!sortBy) return { spec, result: filtered.slice(0, 50).map((r) => ({ row_index: r.row_index, ...r.data })), resolved };
+    const sorted = [...filtered].sort((a, b) => compareValues(a.data[sortBy], b.data[sortBy], spec.sort_dir ?? "desc"));
+    return { spec, result: sorted.slice(0, 50).map((r) => ({ row_index: r.row_index, ...r.data })), resolved };
+  }
+
+  return null;
+}
+
+const MEASURE_HINT = /(value|qty|quantity|amount|total|sum|price|cost|sales|billing|stock|days|delay|count|rate|score|target|achieved|balance|due|paid)/i;
+
+function buildHeuristicRanks(
+  group: { label: string; rows: { row_index: number; data: Record<string, unknown> }[] },
+): unknown[] {
+  const columns = Array.from(group.rows.reduce((s, r) => { Object.keys(r.data).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+  const numericCols = columns.filter((c) => {
+    if (!MEASURE_HINT.test(c)) return false;
+    let cnt = 0;
+    for (let i = 0; i < Math.min(group.rows.length, 50); i++) if (parseNumber(group.rows[i].data[c]) != null) cnt++;
+    return cnt >= 5;
+  }).slice(0, 4);
+  const dimCol = columns.find((c) => /name|store|item|project|vendor|customer|product|code|id|category|type/i.test(c)) || columns[0];
+  const out: unknown[] = [];
+  for (const col of numericCols) {
+    const sorted = [...group.rows].sort((a, b) => compareValues(a.data[col], b.data[col], "desc"));
+    out.push({
+      op: "top_n_heuristic",
+      measure: col,
+      dimension: dimCol,
+      top10: sorted.slice(0, 10).map((r) => ({ row_index: r.row_index, [dimCol]: r.data[dimCol], [col]: r.data[col] })),
+    });
+  }
+  return out;
+}
+
 /**
  * Apps Script web app response normalizer.
  * Accepts either:
@@ -791,14 +991,14 @@ export const askCopilot = createServerFn({ method: "POST" })
     >();
 
     // Tokenize the question for relevance scoring
-    const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","how","many","what","which","show","list","give","me","total","count","sum","avg","average","min","max","please","do","does","you","this","that"]);
+    const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","please","do","does","you","this","that"]);
     const qTokens = Array.from(
       new Set(
         data.question
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, " ")
           .split(/\s+/)
-          .filter((t) => t.length >= 2 && !STOP.has(t)),
+          .filter((t) => t && (/[0-9]/.test(t) ? t.length >= 1 : t.length >= 2 && !STOP.has(t))),
       ),
     );
 
@@ -1000,6 +1200,74 @@ export const askCopilot = createServerFn({ method: "POST" })
       factsBlocks.push(lines.join("\n"));
     }
 
+    // ===== OPERATIONS LAYER =====
+    // 1) Heuristic ranks (always-on) over numeric-measure-ish columns.
+    const operationBlocks: string[] = [];
+    for (const grp of fullRowsBySheet.values()) {
+      const ranks = buildHeuristicRanks(grp);
+      if (ranks.length > 0) {
+        operationBlocks.push(
+          `Sheet "${grp.label}" — heuristic ranks (FULL DATASET):\n${JSON.stringify(ranks).slice(0, 6000)}`,
+        );
+      }
+    }
+
+    // 2) AI-planned operations executed deterministically.
+    const lovableKeyEarly = process.env.LOVABLE_API_KEY;
+    const geminiKeyEarly = process.env.GEMINI_API_KEY;
+    if ((lovableKeyEarly || geminiKeyEarly) && fullRowsBySheet.size > 0) {
+      const catalog = Array.from(fullRowsBySheet.values()).map((g) => {
+        const cols = Array.from(g.rows.reduce((s, r) => { Object.keys(r.data).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+        const sample = g.rows.slice(0, 3).map((r) => r.data);
+        return { sheet: g.label, columns: cols, sample };
+      });
+      const plannerSys =
+        "You are an analytics PLANNER. Output STRICT JSON ONLY. Never output numeric results.\n" +
+        "Decide which operations answer the user's question over the given sheets. Use ONLY column names listed.\n" +
+        "Schema: {\"operations\":[{\"sheet\":\"<label>\",\"op\":\"top_n|bottom_n|group_by|filter_sort|aggregate|distribution|none\",\"measure\":\"<col>|null\",\"agg\":\"sum|avg|count|min|max|null\",\"dimension\":\"<col>|null\",\"filter\":[{\"column\":\"<col>\",\"op\":\"eq|contains|gt|gte|lt|lte\",\"value\":<any>}],\"sort_by\":\"<col>|null\",\"sort_dir\":\"asc|desc\",\"n\":<int>}]}\n" +
+        "If question is not analytical, return {\"operations\":[]}. Pick one or two operations max.";
+      const plannerUser = `QUESTION: ${data.question}\n\nSHEETS:\n${JSON.stringify(catalog).slice(0, 18000)}`;
+
+      try {
+        let planText = "";
+        if (lovableKeyEarly) {
+          const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKeyEarly },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [{ role: "system", content: plannerSys }, { role: "user", content: plannerUser }],
+              temperature: 0,
+              response_format: { type: "json_object" },
+            }),
+          });
+          if (res.ok) {
+            const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+            planText = j.choices?.[0]?.message?.content ?? "";
+          }
+        }
+        if (planText) {
+          const fenced = planText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+          const txt = (fenced ? fenced[1] : planText).trim();
+          const first = txt.indexOf("{"); const last = txt.lastIndexOf("}");
+          const jsonStr = first >= 0 && last > first ? txt.slice(first, last + 1) : txt;
+          const plan = JSON.parse(jsonStr) as { operations?: OpSpec[] };
+          for (const spec of plan.operations ?? []) {
+            const target = Array.from(fullRowsBySheet.values()).find((g) => g.label === spec.sheet) ?? Array.from(fullRowsBySheet.values())[0];
+            if (!target) continue;
+            const out = executeOperation(spec, target);
+            if (out) {
+              operationBlocks.push(
+                `Sheet "${target.label}" — planned op:\n${JSON.stringify({ spec: out.spec, resolved: out.resolved, result: out.result }).slice(0, 12000)}`,
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Planner skipped:", (e as Error).message);
+      }
+    }
+
     // Pull document RAG chunks for selected documents (best-effort).
     let docChunkBlocks: string[] = [];
     if (data.documentIds.length > 0) {
@@ -1048,25 +1316,27 @@ export const askCopilot = createServerFn({ method: "POST" })
         ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
         : "(no sheet rows in scope)";
       const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
+      const opsText = operationBlocks.length ? operationBlocks.join("\n\n").slice(0, 30000) : "";
       const chunksBlock = docChunkBlocks.length
         ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
         : "(no document excerpts retrieved)";
 
       const system =
-        "You are a precise, sheet-aware analyst. Each sheet has its OWN columns and meaning — adapt your answer to what FACTS actually contains.\n" +
+        "You are a precise, sheet-aware analyst (NotebookLM-style). Each sheet has its OWN columns and meaning — adapt your answer to what FACTS and OPERATION RESULTS actually contain.\n" +
         "RULES:\n" +
-        "1) NUMBERS are authoritative: any count, sum, average, min, max, distribution, or top-value MUST be quoted VERBATIM from FACTS, QUERY-RELEVANT FACTS, or AGGREGATES. NEVER calculate, estimate, or invent numbers.\n" +
-        "2) DO NOT invent fields. Only mention columns/categories that appear in FACTS for the sheet you're answering about. In particular, NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided and those values are non-trivial — those concepts only exist for delay/progress sheets.\n" +
-        "3) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), the list of key columns, the top categorical values per relevant column, and headline numeric stats (sum/avg/min/max) — all taken verbatim from FACTS.\n" +
-        "4) For lookup questions about a specific store, item code, project, person, ID, date, status, or any exact value, first use QUERY-MATCHING ROWS. Those rows are selected from the FULL dataset, not only the sample.\n" +
-        "5) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY quote numeric values from QUERY-MATCHING ROWS for the matched rows; otherwise say you don't have it.\n" +
-        "6) The ROW SAMPLE is prioritised for relevance — use it only for extra examples when QUERY-MATCHING ROWS is insufficient; cite row_index and sheet name.\n" +
+        "1) NUMBERS are authoritative: any count, sum, average, min, max, ranking, top-N, bottom-N, group-by, or distribution MUST be quoted VERBATIM from OPERATION RESULTS, FACTS, QUERY-RELEVANT FACTS, AGGREGATES, or QUERY-MATCHING ROWS. NEVER calculate, estimate, or invent numbers yourself.\n" +
+        "2) For ranking/top/bottom/highest/lowest/most/least/sort/'by X'/'per Y' questions, the answer MUST be built from OPERATION RESULTS. If OPERATION RESULTS is empty for that question, say what's missing and offer the closest available view from FACTS.\n" +
+        "3) DO NOT invent fields. Only mention columns/categories that appear in FACTS or OPERATION RESULTS for the sheet you're answering about. NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided with non-trivial values — those concepts only exist for delay/progress sheets.\n" +
+        "4) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), key columns, top categorical values, and headline numeric stats — all verbatim from FACTS.\n" +
+        "5) For lookup questions about a specific store, item code, project, person, ID, date, status, or exact value, use QUERY-MATCHING ROWS first (selected from the FULL dataset).\n" +
+        "6) The ROW SAMPLE is for extra examples only — prefer OPERATION RESULTS / QUERY-MATCHING ROWS / FACTS.\n" +
         "7) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
         "8) If the answer isn't in the provided context, say so plainly.\n" +
         "9) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, **bold key values**.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
+        (opsText ? `OPERATION RESULTS (authoritative, computed deterministically over FULL rows — use these verbatim for ranking/aggregation/group-by answers):\n${opsText}\n\n` : "") +
         `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
         (filteredFactsText ? `QUERY-RELEVANT FACTS (FULL rows, exact):\n${filteredFactsText}\n\n` : "") +
         (relevantRowsText ? `QUERY-MATCHING ROWS (FULL rows, exact row data):\n${relevantRowsText}\n\n` : "") +
@@ -1074,6 +1344,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
         `DOCUMENT EXCERPTS (top-matched chunks for this question):\n${chunksBlock}`;
+
 
       const callGemini = async (model: string) => {
         return await fetch(
