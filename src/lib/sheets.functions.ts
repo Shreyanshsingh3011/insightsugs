@@ -1552,9 +1552,11 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
             .map((i) => ({
               title: i.title.slice(0, 100),
               detail: i.detail.slice(0, 400),
-              severity:
-                i.severity === "critical" || i.severity === "warning" ? i.severity : "info",
+              severity: (i.severity === "critical" || i.severity === "warning"
+                ? i.severity
+                : "info") as "info" | "warning" | "critical",
             }))
+
             .slice(0, 7);
         }
       }
