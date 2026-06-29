@@ -1316,25 +1316,27 @@ export const askCopilot = createServerFn({ method: "POST" })
         ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
         : "(no sheet rows in scope)";
       const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
+      const opsText = operationBlocks.length ? operationBlocks.join("\n\n").slice(0, 30000) : "";
       const chunksBlock = docChunkBlocks.length
         ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
         : "(no document excerpts retrieved)";
 
       const system =
-        "You are a precise, sheet-aware analyst. Each sheet has its OWN columns and meaning — adapt your answer to what FACTS actually contains.\n" +
+        "You are a precise, sheet-aware analyst (NotebookLM-style). Each sheet has its OWN columns and meaning — adapt your answer to what FACTS and OPERATION RESULTS actually contain.\n" +
         "RULES:\n" +
-        "1) NUMBERS are authoritative: any count, sum, average, min, max, distribution, or top-value MUST be quoted VERBATIM from FACTS, QUERY-RELEVANT FACTS, or AGGREGATES. NEVER calculate, estimate, or invent numbers.\n" +
-        "2) DO NOT invent fields. Only mention columns/categories that appear in FACTS for the sheet you're answering about. In particular, NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided and those values are non-trivial — those concepts only exist for delay/progress sheets.\n" +
-        "3) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), the list of key columns, the top categorical values per relevant column, and headline numeric stats (sum/avg/min/max) — all taken verbatim from FACTS.\n" +
-        "4) For lookup questions about a specific store, item code, project, person, ID, date, status, or any exact value, first use QUERY-MATCHING ROWS. Those rows are selected from the FULL dataset, not only the sample.\n" +
-        "5) If a number the user asks for isn't present in FACTS / QUERY-RELEVANT FACTS / AGGREGATES, you MAY quote numeric values from QUERY-MATCHING ROWS for the matched rows; otherwise say you don't have it.\n" +
-        "6) The ROW SAMPLE is prioritised for relevance — use it only for extra examples when QUERY-MATCHING ROWS is insufficient; cite row_index and sheet name.\n" +
+        "1) NUMBERS are authoritative: any count, sum, average, min, max, ranking, top-N, bottom-N, group-by, or distribution MUST be quoted VERBATIM from OPERATION RESULTS, FACTS, QUERY-RELEVANT FACTS, AGGREGATES, or QUERY-MATCHING ROWS. NEVER calculate, estimate, or invent numbers yourself.\n" +
+        "2) For ranking/top/bottom/highest/lowest/most/least/sort/'by X'/'per Y' questions, the answer MUST be built from OPERATION RESULTS. If OPERATION RESULTS is empty for that question, say what's missing and offer the closest available view from FACTS.\n" +
+        "3) DO NOT invent fields. Only mention columns/categories that appear in FACTS or OPERATION RESULTS for the sheet you're answering about. NEVER output a Delayed / Blocked / Completed / At Risk / Risk Score template unless an AGGREGATES block is provided with non-trivial values — those concepts only exist for delay/progress sheets.\n" +
+        "4) For a 'summary' or 'overview' question, describe the sheet using its actual columns: total row count (from FACTS), key columns, top categorical values, and headline numeric stats — all verbatim from FACTS.\n" +
+        "5) For lookup questions about a specific store, item code, project, person, ID, date, status, or exact value, use QUERY-MATCHING ROWS first (selected from the FULL dataset).\n" +
+        "6) The ROW SAMPLE is for extra examples only — prefer OPERATION RESULTS / QUERY-MATCHING ROWS / FACTS.\n" +
         "7) For document questions, answer ONLY from DOCUMENT EXCERPTS or SUMMARIES; quote short phrases and cite the document name (and page when shown).\n" +
         "8) If the answer isn't in the provided context, say so plainly.\n" +
         "9) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, **bold key values**.";
 
       const userMsg =
         `QUESTION: ${data.question}\n\n` +
+        (opsText ? `OPERATION RESULTS (authoritative, computed deterministically over FULL rows — use these verbatim for ranking/aggregation/group-by answers):\n${opsText}\n\n` : "") +
         `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
         (filteredFactsText ? `QUERY-RELEVANT FACTS (FULL rows, exact):\n${filteredFactsText}\n\n` : "") +
         (relevantRowsText ? `QUERY-MATCHING ROWS (FULL rows, exact row data):\n${relevantRowsText}\n\n` : "") +
@@ -1342,6 +1344,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
         `DOCUMENT EXCERPTS (top-matched chunks for this question):\n${chunksBlock}`;
+
 
       const callGemini = async (model: string) => {
         return await fetch(
