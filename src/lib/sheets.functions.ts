@@ -1200,6 +1200,74 @@ export const askCopilot = createServerFn({ method: "POST" })
       factsBlocks.push(lines.join("\n"));
     }
 
+    // ===== OPERATIONS LAYER =====
+    // 1) Heuristic ranks (always-on) over numeric-measure-ish columns.
+    const operationBlocks: string[] = [];
+    for (const grp of fullRowsBySheet.values()) {
+      const ranks = buildHeuristicRanks(grp);
+      if (ranks.length > 0) {
+        operationBlocks.push(
+          `Sheet "${grp.label}" — heuristic ranks (FULL DATASET):\n${JSON.stringify(ranks).slice(0, 6000)}`,
+        );
+      }
+    }
+
+    // 2) AI-planned operations executed deterministically.
+    const lovableKeyEarly = process.env.LOVABLE_API_KEY;
+    const geminiKeyEarly = process.env.GEMINI_API_KEY;
+    if ((lovableKeyEarly || geminiKeyEarly) && fullRowsBySheet.size > 0) {
+      const catalog = Array.from(fullRowsBySheet.values()).map((g) => {
+        const cols = Array.from(g.rows.reduce((s, r) => { Object.keys(r.data).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+        const sample = g.rows.slice(0, 3).map((r) => r.data);
+        return { sheet: g.label, columns: cols, sample };
+      });
+      const plannerSys =
+        "You are an analytics PLANNER. Output STRICT JSON ONLY. Never output numeric results.\n" +
+        "Decide which operations answer the user's question over the given sheets. Use ONLY column names listed.\n" +
+        "Schema: {\"operations\":[{\"sheet\":\"<label>\",\"op\":\"top_n|bottom_n|group_by|filter_sort|aggregate|distribution|none\",\"measure\":\"<col>|null\",\"agg\":\"sum|avg|count|min|max|null\",\"dimension\":\"<col>|null\",\"filter\":[{\"column\":\"<col>\",\"op\":\"eq|contains|gt|gte|lt|lte\",\"value\":<any>}],\"sort_by\":\"<col>|null\",\"sort_dir\":\"asc|desc\",\"n\":<int>}]}\n" +
+        "If question is not analytical, return {\"operations\":[]}. Pick one or two operations max.";
+      const plannerUser = `QUESTION: ${data.question}\n\nSHEETS:\n${JSON.stringify(catalog).slice(0, 18000)}`;
+
+      try {
+        let planText = "";
+        if (lovableKeyEarly) {
+          const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKeyEarly },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [{ role: "system", content: plannerSys }, { role: "user", content: plannerUser }],
+              temperature: 0,
+              response_format: { type: "json_object" },
+            }),
+          });
+          if (res.ok) {
+            const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+            planText = j.choices?.[0]?.message?.content ?? "";
+          }
+        }
+        if (planText) {
+          const fenced = planText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+          const txt = (fenced ? fenced[1] : planText).trim();
+          const first = txt.indexOf("{"); const last = txt.lastIndexOf("}");
+          const jsonStr = first >= 0 && last > first ? txt.slice(first, last + 1) : txt;
+          const plan = JSON.parse(jsonStr) as { operations?: OpSpec[] };
+          for (const spec of plan.operations ?? []) {
+            const target = Array.from(fullRowsBySheet.values()).find((g) => g.label === spec.sheet) ?? Array.from(fullRowsBySheet.values())[0];
+            if (!target) continue;
+            const out = executeOperation(spec, target);
+            if (out) {
+              operationBlocks.push(
+                `Sheet "${target.label}" — planned op:\n${JSON.stringify({ spec: out.spec, resolved: out.resolved, result: out.result }).slice(0, 12000)}`,
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Planner skipped:", (e as Error).message);
+      }
+    }
+
     // Pull document RAG chunks for selected documents (best-effort).
     let docChunkBlocks: string[] = [];
     if (data.documentIds.length > 0) {
