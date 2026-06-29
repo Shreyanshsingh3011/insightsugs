@@ -104,6 +104,206 @@ function storedRowsLookMisread(rows: { canonical?: unknown; extras?: unknown }[]
   return looksLikeHeaderRow(Object.values(merged));
 }
 
+// ===== Operations layer (NotebookLM-style analytical queries) =====
+
+function parseNumber(v: unknown): number | null {
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const stripped = s.replace(/[,₹$€£%()\s]/g, "");
+  if (!/^-?\d+(\.\d+)?$/.test(stripped)) return null;
+  const n = Number(stripped);
+  return Number.isFinite(n) ? n : null;
+}
+
+function resolveColumn(want: string | null | undefined, available: string[]): string | null {
+  if (!want) return null;
+  if (available.includes(want)) return want;
+  const lc = want.toLowerCase().trim();
+  const exact = available.find((c) => c.toLowerCase().trim() === lc);
+  if (exact) return exact;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const wantN = norm(want);
+  return available.find((c) => norm(c) === wantN) || available.find((c) => norm(c).includes(wantN) || wantN.includes(norm(c))) || null;
+}
+
+function compareValues(a: unknown, b: unknown, dir: "asc" | "desc"): number {
+  const an = parseNumber(a);
+  const bn = parseNumber(b);
+  let cmp: number;
+  if (an != null && bn != null) cmp = an - bn;
+  else cmp = String(a ?? "").localeCompare(String(b ?? ""));
+  return dir === "desc" ? -cmp : cmp;
+}
+
+type OpSpec = {
+  sheet?: string;
+  op: "top_n" | "bottom_n" | "group_by" | "filter_sort" | "aggregate" | "distribution" | "none";
+  measure?: string | null;
+  agg?: "sum" | "avg" | "count" | "min" | "max" | null;
+  dimension?: string | null;
+  filter?: { column: string; op: string; value: unknown }[];
+  sort_by?: string | null;
+  sort_dir?: "asc" | "desc";
+  n?: number;
+};
+
+function applyFilters(
+  rows: { row_index: number; data: Record<string, unknown> }[],
+  filters: OpSpec["filter"],
+  columns: string[],
+) {
+  if (!filters?.length) return rows;
+  return rows.filter((r) => {
+    for (const f of filters) {
+      const col = resolveColumn(f.column, columns);
+      if (!col) continue;
+      const v = r.data[col];
+      const fv = f.value;
+      const sv = String(v ?? "").toLowerCase();
+      const sfv = String(fv ?? "").toLowerCase();
+      const nv = parseNumber(v);
+      const nfv = parseNumber(fv);
+      switch (f.op) {
+        case "eq": if (sv !== sfv) return false; break;
+        case "contains": if (!sv.includes(sfv)) return false; break;
+        case "gt": if (nv == null || nfv == null || !(nv > nfv)) return false; break;
+        case "gte": if (nv == null || nfv == null || !(nv >= nfv)) return false; break;
+        case "lt": if (nv == null || nfv == null || !(nv < nfv)) return false; break;
+        case "lte": if (nv == null || nfv == null || !(nv <= nfv)) return false; break;
+        default: break;
+      }
+    }
+    return true;
+  });
+}
+
+function executeOperation(
+  spec: OpSpec,
+  group: { label: string; rows: { row_index: number; data: Record<string, unknown> }[] },
+): { spec: OpSpec; result: unknown; resolved: Record<string, string | null> } | null {
+  if (!spec || spec.op === "none") return null;
+  const columns = Array.from(group.rows.reduce((s, r) => { Object.keys(r.data).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+  const measure = resolveColumn(spec.measure ?? null, columns);
+  const dimension = resolveColumn(spec.dimension ?? null, columns);
+  const sortBy = resolveColumn(spec.sort_by ?? null, columns) || measure || dimension;
+  const resolved = { measure, dimension, sort_by: sortBy };
+
+  const filtered = applyFilters(group.rows, spec.filter, columns);
+  const n = Math.min(Math.max(spec.n ?? 10, 1), 100);
+
+  if (spec.op === "top_n" || spec.op === "bottom_n") {
+    if (!measure && !sortBy) return null;
+    const key = (sortBy || measure)!;
+    const dir = spec.op === "top_n" ? "desc" : "asc";
+    const sorted = [...filtered].sort((a, b) => compareValues(a.data[key], b.data[key], dir));
+    const out = sorted.slice(0, n).map((r) => {
+      const row: Record<string, unknown> = { row_index: r.row_index };
+      if (dimension) row[dimension] = r.data[dimension];
+      row[key] = r.data[key];
+      // Include up to 3 additional columns for context
+      const extras = columns.filter((c) => c !== dimension && c !== key).slice(0, 3);
+      for (const c of extras) row[c] = r.data[c];
+      return row;
+    });
+    return { spec, result: out, resolved };
+  }
+
+  if (spec.op === "group_by") {
+    if (!dimension) return null;
+    const groups = new Map<string, { values: number[]; count: number }>();
+    for (const r of filtered) {
+      const key = String(r.data[dimension] ?? "(blank)");
+      const g = groups.get(key) ?? { values: [], count: 0 };
+      g.count++;
+      if (measure) {
+        const n2 = parseNumber(r.data[measure]);
+        if (n2 != null) g.values.push(n2);
+      }
+      groups.set(key, g);
+    }
+    const agg = spec.agg ?? (measure ? "sum" : "count");
+    const out = Array.from(groups.entries()).map(([k, g]) => {
+      let val: number;
+      if (agg === "count" || !measure) val = g.count;
+      else if (agg === "sum") val = g.values.reduce((a, b) => a + b, 0);
+      else if (agg === "avg") val = g.values.length ? g.values.reduce((a, b) => a + b, 0) / g.values.length : 0;
+      else if (agg === "min") val = g.values.length ? Math.min(...g.values) : 0;
+      else if (agg === "max") val = g.values.length ? Math.max(...g.values) : 0;
+      else val = g.count;
+      return { [dimension]: k, [`${agg}_${measure ?? "rows"}`]: Math.round(val * 100) / 100, count: g.count };
+    });
+    out.sort((a, b) => {
+      const va = Number((a as any)[`${agg}_${measure ?? "rows"}`]);
+      const vb = Number((b as any)[`${agg}_${measure ?? "rows"}`]);
+      return (spec.sort_dir === "asc" ? 1 : -1) * (va - vb);
+    });
+    return { spec, result: out.slice(0, 50), resolved };
+  }
+
+  if (spec.op === "aggregate") {
+    if (!measure) return { spec, result: { count: filtered.length }, resolved };
+    const nums = filtered.map((r) => parseNumber(r.data[measure])).filter((v): v is number => v != null);
+    const agg = spec.agg ?? "sum";
+    let val = 0;
+    if (agg === "count") val = filtered.length;
+    else if (agg === "sum") val = nums.reduce((a, b) => a + b, 0);
+    else if (agg === "avg") val = nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+    else if (agg === "min") val = nums.length ? Math.min(...nums) : 0;
+    else if (agg === "max") val = nums.length ? Math.max(...nums) : 0;
+    return { spec, result: { [`${agg}_${measure}`]: Math.round(val * 100) / 100, rows_considered: filtered.length, numeric_values: nums.length }, resolved };
+  }
+
+  if (spec.op === "distribution") {
+    if (!dimension) return null;
+    const counts = new Map<string, number>();
+    for (const r of filtered) {
+      const k = String(r.data[dimension] ?? "(blank)");
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    const out = Array.from(counts.entries())
+      .map(([value, count]) => ({ [dimension]: value, count }))
+      .sort((a, b) => Number((b as any).count) - Number((a as any).count))
+      .slice(0, 50);
+    return { spec, result: out, resolved };
+  }
+
+  if (spec.op === "filter_sort") {
+    if (!sortBy) return { spec, result: filtered.slice(0, 50).map((r) => ({ row_index: r.row_index, ...r.data })), resolved };
+    const sorted = [...filtered].sort((a, b) => compareValues(a.data[sortBy], b.data[sortBy], spec.sort_dir ?? "desc"));
+    return { spec, result: sorted.slice(0, 50).map((r) => ({ row_index: r.row_index, ...r.data })), resolved };
+  }
+
+  return null;
+}
+
+const MEASURE_HINT = /(value|qty|quantity|amount|total|sum|price|cost|sales|billing|stock|days|delay|count|rate|score|target|achieved|balance|due|paid)/i;
+
+function buildHeuristicRanks(
+  group: { label: string; rows: { row_index: number; data: Record<string, unknown> }[] },
+): unknown[] {
+  const columns = Array.from(group.rows.reduce((s, r) => { Object.keys(r.data).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+  const numericCols = columns.filter((c) => {
+    if (!MEASURE_HINT.test(c)) return false;
+    let cnt = 0;
+    for (let i = 0; i < Math.min(group.rows.length, 50); i++) if (parseNumber(group.rows[i].data[c]) != null) cnt++;
+    return cnt >= 5;
+  }).slice(0, 4);
+  const dimCol = columns.find((c) => /name|store|item|project|vendor|customer|product|code|id|category|type/i.test(c)) || columns[0];
+  const out: unknown[] = [];
+  for (const col of numericCols) {
+    const sorted = [...group.rows].sort((a, b) => compareValues(a.data[col], b.data[col], "desc"));
+    out.push({
+      op: "top_n_heuristic",
+      measure: col,
+      dimension: dimCol,
+      top10: sorted.slice(0, 10).map((r) => ({ row_index: r.row_index, [dimCol]: r.data[dimCol], [col]: r.data[col] })),
+    });
+  }
+  return out;
+}
+
 /**
  * Apps Script web app response normalizer.
  * Accepts either:
