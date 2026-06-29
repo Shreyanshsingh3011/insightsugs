@@ -1344,7 +1344,18 @@ export const askCopilot = createServerFn({ method: "POST" })
         "8) If the answer isn't in the provided context, say so plainly.\n" +
         "9) Cite source names in parentheses, e.g. (Sheet A row 42) or (contract.pdf p.4). Use markdown — bullets, short tables, **bold key values**.";
 
+      const historyBlock =
+        data.history.length > 0
+          ? data.history
+              .slice(-8)
+              .map((m) => `${m.role === "user" ? "USER" : "ASSISTANT"}: ${m.content.slice(0, 2000)}`)
+              .join("\n\n")
+          : "";
+
       const userMsg =
+        (historyBlock
+          ? `PRIOR CONVERSATION (most-recent last — resolve pronouns/follow-ups using this, but ground every fact in the data below):\n${historyBlock}\n\n`
+          : "") +
         `QUESTION: ${data.question}\n\n` +
         (opsText ? `OPERATION RESULTS (authoritative, computed deterministically over FULL rows — use these verbatim for ranking/aggregation/group-by answers):\n${opsText}\n\n` : "") +
         `FACTS (authoritative, precomputed over FULL rows):\n${factsText}\n\n` +
@@ -1354,6 +1365,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         `SHEET ROW SAMPLE (JSON, prioritised by relevance to the question):\n${rowsBlock}\n\n` +
         (docSummariesBlock ? `DOCUMENT SUMMARIES:\n${docSummariesBlock}\n\n` : "") +
         `DOCUMENT EXCERPTS (top-matched chunks for this question):\n${chunksBlock}`;
+
 
 
       const callGemini = async (model: string) => {
