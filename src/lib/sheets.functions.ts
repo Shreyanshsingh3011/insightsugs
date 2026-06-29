@@ -941,12 +941,22 @@ export const askCopilot = createServerFn({ method: "POST" })
         question: z.string().min(1).max(2000),
         sheetIds: z.array(z.string().uuid()).max(10).default([]),
         documentIds: z.array(z.string().uuid()).max(10).default([]),
+        history: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant"]),
+              content: z.string().max(8000),
+            }),
+          )
+          .max(20)
+          .default([]),
       })
       .refine((v) => v.sheetIds.length + v.documentIds.length > 0, {
         message: "Select at least one sheet or document.",
       })
       .parse(input),
   )
+
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
