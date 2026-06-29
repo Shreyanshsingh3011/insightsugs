@@ -1331,8 +1331,17 @@ export const askCopilot = createServerFn({ method: "POST" })
         ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
         : "(no document excerpts retrieved)";
 
+      const multiSheet = regs.length > 1;
+      const multiSheetRules = multiSheet
+        ? "\nMULTI-SHEET MODE — you have " + regs.length + " sheets in context (" + regs.map((r) => `"${r.display_name}"`).join(", ") + "). Structure your answer EXACTLY as:\n" +
+          "## Combined Answer\n" +
+          "One synthesised, DEDUPLICATED response that merges findings across all sheets. Call out overlaps (same entity appearing in multiple sheets — match by name/ID/code) and reconcile conflicting numbers. Do not repeat the same fact twice.\n" +
+          "## Per-Sheet Breakdown\n" +
+          "Then one `### <sheet name>` subsection per sheet with that sheet's specific answer (or 'No relevant data' if empty). Keep each subsection short and grounded in that sheet's FACTS/OPERATION RESULTS.\n"
+        : "";
       const system =
         "You are a precise, sheet-aware analyst (NotebookLM-style). Each sheet has its OWN columns and meaning — adapt your answer to what FACTS and OPERATION RESULTS actually contain.\n" +
+        multiSheetRules +
         "RULES:\n" +
         "1) NUMBERS are authoritative: any count, sum, average, min, max, ranking, top-N, bottom-N, group-by, or distribution MUST be quoted VERBATIM from OPERATION RESULTS, FACTS, QUERY-RELEVANT FACTS, AGGREGATES, or QUERY-MATCHING ROWS. NEVER calculate, estimate, or invent numbers yourself.\n" +
         "2) For ranking/top/bottom/highest/lowest/most/least/sort/'by X'/'per Y' questions, the answer MUST be built from OPERATION RESULTS. If OPERATION RESULTS is empty for that question, say what's missing and offer the closest available view from FACTS.\n" +
@@ -1565,5 +1574,221 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     }
 
     return { sheetId: reg.id, sheetName: reg.display_name, insights };
+  });
+
+// ============================================================================
+// generateChart — AI plans a chart spec, server executes deterministically,
+// returns chart-ready data per selected sheet for client rendering.
+// ============================================================================
+export const generateChart = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        question: z.string().min(1).max(2000),
+        sheetIds: z.array(z.string().uuid()).min(1).max(5),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: regs, error } = await supabase
+      .from("sheet_registry")
+      .select("id, display_name, sheet_type")
+      .in("id", data.sheetIds)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+
+    const FETCH_CAP = 50000;
+    const PAGE = 1000;
+    const fetchAll = async (id: string, target: number) => {
+      const out: { row_index: number; canonical: any; extras: any }[] = [];
+      for (let off = 0; off < target; off += PAGE) {
+        const { data: page } = await supabase
+          .from("sheet_rows")
+          .select("row_index, canonical, extras")
+          .eq("sheet_registry_id", id)
+          .order("row_index", { ascending: true })
+          .range(off, Math.min(off + PAGE - 1, target - 1));
+        if (!page?.length) break;
+        out.push(...page);
+      }
+      return out;
+    };
+
+    const lovableKey = process.env.LOVABLE_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!lovableKey && !geminiKey) {
+      throw new Error("AI isn't configured for this workspace yet.");
+    }
+
+    const callPlanner = async (sys: string, user: string): Promise<string> => {
+      if (lovableKey) {
+        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKey },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash",
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0,
+            response_format: { type: "json_object" },
+          }),
+        });
+        if (res.ok) {
+          const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+          return j.choices?.[0]?.message?.content ?? "";
+        }
+      }
+      if (geminiKey) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: sys }] },
+              contents: [{ role: "user", parts: [{ text: user }] }],
+              generationConfig: {
+                temperature: 0,
+                maxOutputTokens: 800,
+                responseMimeType: "application/json",
+              },
+            }),
+          },
+        );
+        if (res.ok) {
+          const j = (await res.json()) as {
+            candidates?: { content?: { parts?: { text?: string }[] } }[];
+          };
+          return j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+        }
+      }
+      return "";
+    };
+
+    type ChartSpec = {
+      chart_type?: "bar" | "line" | "pie";
+      title?: string;
+      op?: "top_n" | "bottom_n" | "group_by" | "distribution";
+      dimension?: string | null;
+      measure?: string | null;
+      agg?: "sum" | "avg" | "count" | "min" | "max" | null;
+      sort_dir?: "asc" | "desc";
+      n?: number;
+    };
+
+    const charts: Array<{
+      sheetId: string;
+      sheet: string;
+      chartType: "bar" | "line" | "pie";
+      title: string;
+      xKey: string;
+      yKey: string;
+      data: Array<{ name: string; value: number }>;
+    }> = [];
+    const skipped: Array<{ sheet: string; reason: string }> = [];
+
+    for (const r of regs ?? []) {
+      const { count } = await supabase
+        .from("sheet_rows")
+        .select("row_index", { count: "exact", head: true })
+        .eq("sheet_registry_id", r.id);
+      const total = count ?? 0;
+      if (!total) {
+        skipped.push({ sheet: r.display_name, reason: "no rows" });
+        continue;
+      }
+      let raw = await fetchAll(r.id, Math.min(total, FETCH_CAP));
+      if (storedRowsLookMisread(raw.slice(0, 12))) {
+        await syncRowsInternal(supabase, userId, r.id);
+        raw = await fetchAll(r.id, Math.min(total, FETCH_CAP));
+      }
+      const merged = raw.map(mergedSheetRow);
+      const group = {
+        label: r.display_name,
+        rows: raw.map((row, i) => ({ row_index: row.row_index, data: merged[i] })),
+      };
+      const columns = Array.from(
+        group.rows.reduce((s, row) => {
+          Object.keys(row.data).forEach((k) => s.add(k));
+          return s;
+        }, new Set<string>()),
+      );
+
+      const sys =
+        "You are a CHART PLANNER. Output STRICT JSON ONLY matching this schema:\n" +
+        '{"chart_type":"bar|line|pie","title":"<short>","op":"top_n|bottom_n|group_by|distribution","dimension":"<col>","measure":"<col>|null","agg":"sum|avg|count|min|max|null","sort_dir":"asc|desc","n":<int 5-20>}\n' +
+        "Rules: use ONLY listed columns. chart_type=pie for small categorical distributions (<=8 slices). line when dimension is a date/time/period. bar otherwise. If measure is null, agg defaults to count. Never invent columns.";
+      const usr = `QUESTION: ${data.question}\nSHEET: ${r.display_name}\nCOLUMNS: ${JSON.stringify(columns)}\nSAMPLE: ${JSON.stringify(group.rows.slice(0, 3).map((x) => x.data))}`;
+
+      let spec: ChartSpec | null = null;
+      try {
+        const text = await callPlanner(sys, usr);
+        const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        const t = (fenced ? fenced[1] : text).trim();
+        const first = t.indexOf("{");
+        const last = t.lastIndexOf("}");
+        spec = JSON.parse(first >= 0 && last > first ? t.slice(first, last + 1) : t) as ChartSpec;
+      } catch (e) {
+        skipped.push({ sheet: r.display_name, reason: "planner failed" });
+        continue;
+      }
+
+      if (!spec || !spec.op) {
+        skipped.push({ sheet: r.display_name, reason: "no chart spec" });
+        continue;
+      }
+
+      const out = executeOperation(
+        {
+          op: spec.op,
+          dimension: spec.dimension ?? null,
+          measure: spec.measure ?? null,
+          agg: spec.agg ?? null,
+          sort_dir: spec.sort_dir ?? "desc",
+          n: spec.n ?? 12,
+        },
+        group,
+      );
+      if (!out || !Array.isArray(out.result)) {
+        skipped.push({ sheet: r.display_name, reason: "operation returned nothing" });
+        continue;
+      }
+
+      const xKey = out.resolved.dimension ?? "name";
+      const points = (out.result as Record<string, unknown>[])
+        .map((row) => {
+          const yKey =
+            Object.keys(row).find(
+              (k) => k !== xKey && k !== "row_index" && typeof row[k] === "number",
+            ) ?? "count";
+          const v = Number(row[yKey] ?? 0);
+          return {
+            name: String(row[xKey] ?? "(blank)").slice(0, 40),
+            value: Number.isFinite(v) ? Math.round(v * 100) / 100 : 0,
+          };
+        })
+        .slice(0, Math.min(spec.n ?? 20, 30));
+
+      if (points.length === 0) {
+        skipped.push({ sheet: r.display_name, reason: "no datapoints" });
+        continue;
+      }
+
+      charts.push({
+        sheetId: r.id,
+        sheet: r.display_name,
+        chartType: (spec.chart_type ?? "bar") as "bar" | "line" | "pie",
+        title: spec.title?.slice(0, 80) ?? `${r.display_name} — chart`,
+        xKey,
+        yKey: "value",
+        data: points,
+      });
+    }
+
+    return { charts, skipped };
   });
 
