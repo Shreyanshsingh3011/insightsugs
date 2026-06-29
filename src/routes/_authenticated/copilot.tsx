@@ -71,6 +71,7 @@ function CopilotPage() {
   const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
   const autoInsights = useServerFn(generateAutoInsights);
+  const chartFn = useServerFn(generateChart);
 
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
   const documents = useQuery({
