@@ -991,14 +991,14 @@ export const askCopilot = createServerFn({ method: "POST" })
     >();
 
     // Tokenize the question for relevance scoring
-    const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","how","many","what","which","show","list","give","me","total","count","sum","avg","average","min","max","please","do","does","you","this","that"]);
+    const STOP = new Set(["the","a","an","of","to","in","for","on","at","is","are","be","by","and","or","with","please","do","does","you","this","that"]);
     const qTokens = Array.from(
       new Set(
         data.question
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, " ")
           .split(/\s+/)
-          .filter((t) => t.length >= 2 && !STOP.has(t)),
+          .filter((t) => t && (/[0-9]/.test(t) ? t.length >= 1 : t.length >= 2 && !STOP.has(t))),
       ),
     );
 
