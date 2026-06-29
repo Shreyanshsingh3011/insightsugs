@@ -386,19 +386,96 @@ function CopilotPage() {
                     <div className="mb-1 flex items-center justify-between">
                       <div className="text-xs font-medium text-muted-foreground">Copilot</div>
                       {isLast && !askMut.isPending && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={regenerate}
-                        >
-                          <RefreshCw className="mr-1 h-3 w-3" /> Regenerate
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {selected.size > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              disabled={chartMut.isPending}
+                              onClick={() =>
+                                chartMut.mutate({ turnIndex: i, question: t.question })
+                              }
+                            >
+                              {chartMut.isPending && chartMut.variables?.turnIndex === i ? (
+                                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                              ) : (
+                                <BarChart3 className="mr-1 h-3 w-3" />
+                              )}
+                              {t.charts?.length ? "Regenerate chart" : "Chart this"}
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={regenerate}
+                          >
+                            <RefreshCw className="mr-1 h-3 w-3" /> Regenerate
+                          </Button>
+                        </div>
                       )}
                     </div>
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-table:my-2 prose-p:my-1.5 prose-headings:my-2">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.answer}</ReactMarkdown>
                     </div>
+                    {t.charts && t.charts.length > 0 && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {t.charts.map((c, ci) => (
+                          <div key={ci} className="rounded-md border bg-muted/20 p-2">
+                            <div className="mb-1 text-xs font-medium">
+                              {c.title}
+                              <span className="ml-1 text-muted-foreground">· {c.sheet}</span>
+                            </div>
+                            <div className="h-56">
+                              <ResponsiveContainer width="100%" height="100%">
+                                {c.chartType === "pie" ? (
+                                  <PieChart>
+                                    <Pie
+                                      data={c.data}
+                                      dataKey="value"
+                                      nameKey="name"
+                                      outerRadius={70}
+                                      label
+                                    >
+                                      {c.data.map((_, idx) => (
+                                        <Cell
+                                          key={idx}
+                                          fill={CHART_COLORS[idx % CHART_COLORS.length]}
+                                        />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend />
+                                  </PieChart>
+                                ) : c.chartType === "line" ? (
+                                  <LineChart data={c.data}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" fontSize={10} />
+                                    <YAxis fontSize={10} />
+                                    <Tooltip />
+                                    <Line
+                                      type="monotone"
+                                      dataKey="value"
+                                      stroke={CHART_COLORS[0]}
+                                      strokeWidth={2}
+                                    />
+                                  </LineChart>
+                                ) : (
+                                  <BarChart data={c.data}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" fontSize={10} />
+                                    <YAxis fontSize={10} />
+                                    <Tooltip />
+                                    <Bar dataKey="value" fill={CHART_COLORS[0]} />
+                                  </BarChart>
+                                )}
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {t.sources.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {t.sources.map((s) => (
