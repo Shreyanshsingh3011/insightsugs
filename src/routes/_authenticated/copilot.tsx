@@ -133,6 +133,21 @@ function CopilotPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
   });
 
+  const chartMut = useMutation({
+    mutationFn: (vars: { turnIndex: number; question: string }) =>
+      chartFn({ data: { question: vars.question, sheetIds: Array.from(selected) } }),
+    onSuccess: (res, vars) => {
+      if (!res.charts.length) {
+        toast.info("Couldn't build a chart from this question.");
+        return;
+      }
+      setHistory((h) =>
+        h.map((t, i) => (i === vars.turnIndex ? { ...t, charts: res.charts } : t)),
+      );
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Chart generation failed"),
+  });
+
   const toggle = (id: string) => {
     setSelected((s) => {
       const next = new Set(s);
