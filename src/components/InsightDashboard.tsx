@@ -1114,7 +1114,8 @@ function metricEntriesFromPayload(payload: ExportPayload): KPI[] {
     for (const k of (payload as any).type_kpis) {
       if (!isPlainObject(k)) continue;
       const label = String((k as any).label || (k as any).name || (k as any).metric || "Metric");
-      const value = toNumberish((k as any).value) ?? (k as any).value;
+      const rawValue = (k as any).value;
+      const value = toNumberish(rawValue) ?? fmtCell(rawValue);
       metrics.push({ label, value });
     }
   }
