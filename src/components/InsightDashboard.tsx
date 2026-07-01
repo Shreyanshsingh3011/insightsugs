@@ -3304,12 +3304,22 @@ function NotebookCopilotTab({ base, sheets, setTab }: { base: string; sheets: Sh
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "actions", label: "Actions", icon: Sparkles },
+  { id: "inventory", label: "Inventory", icon: LayoutDashboard },
+  { id: "anomalies", label: "Anomalies", icon: MessageSquareWarning },
+  { id: "quality", label: "Quality", icon: Wand2 },
   { id: "sheets", label: "Sheets", icon: SheetIcon },
   { id: "concerns", label: "Concerns", icon: MessageSquareWarning },
   { id: "reminders", label: "Reminders", icon: Bell },
   { id: "copilot", label: "Copilot", icon: Sparkles },
   { id: "hygiene", label: "Data Hygiene", icon: Wand2 },
 ] as const;
+const AGENTIC_SCROLL_TARGETS: Record<string, string> = {
+  actions: "section-actions",
+  inventory: "section-inventory",
+  anomalies: "section-breakdown",
+  quality: "section-quality",
+};
 
 export default function InsightDashboard() {
   const { raw, setRaw, active, activeExport, exportOnly, error, apply, clear } = useLinkInput();
@@ -3364,13 +3374,18 @@ export default function InsightDashboard() {
     () => sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined)),
     [sheets, data.analysis]
   );
+  const agenticFlags = useMemo(() => computeAgenticTabs(data as unknown as AgenticDashboardData), [data]);
   const visibleTabs = useMemo(
     () => TABS.filter(t => {
-      if (exportOnly && t.id !== "overview" && t.id !== "sheets") return false;
+      if (exportOnly && t.id !== "overview" && t.id !== "sheets" && t.id !== "actions" && t.id !== "inventory" && t.id !== "anomalies" && t.id !== "quality") return false;
       if ((t.id === "concerns" || t.id === "reminders") && !hasAnyDelaySheet) return false;
+      if (t.id === "inventory" && !agenticFlags.inventory) return false;
+      if (t.id === "anomalies" && !agenticFlags.anomalies) return false;
+      if (t.id === "actions" && !agenticFlags.actions) return false;
+      if (t.id === "quality" && !agenticFlags.quality) return false;
       return true;
     }),
-    [hasAnyDelaySheet, exportOnly]
+    [hasAnyDelaySheet, exportOnly, agenticFlags]
   );
   useEffect(() => {
     if (!visibleTabs.find(t => t.id === tab)) setTab("overview");
