@@ -1110,11 +1110,22 @@ function metricEntriesFromPayload(payload: ExportPayload): KPI[] {
   const totals = isPlainObject(payload.totals) ? payload.totals : undefined;
   const source = totals && Object.keys(totals).length ? totals : undefined;
   const metrics: KPI[] = [];
+  if (Array.isArray((payload as any).type_kpis)) {
+    for (const k of (payload as any).type_kpis) {
+      if (!isPlainObject(k)) continue;
+      const label = String((k as any).label || (k as any).name || (k as any).metric || "Metric");
+      const value = toNumberish((k as any).value) ?? (k as any).value;
+      metrics.push({ label, value });
+    }
+  }
   if (source) {
     for (const [k, v] of Object.entries(source).slice(0, 10)) metrics.push({ label: titleize(k), value: typeof v === "number" ? v : fmtCell(v) });
   }
+  if (toNumberish((payload as any).count) != null && !metrics.some(m => /^records?|rows?|count$/i.test(m.label))) {
+    metrics.unshift({ label: "Records", value: toNumberish((payload as any).count)! });
+  }
   if (!metrics.length) {
-    const leaves = [...pickNumericLeaves(payload.data_dashboard), ...pickNumericLeaves(payload.stock_views)].slice(0, 10);
+    const leaves = [...pickNumericLeaves(payload.data_dashboard), ...pickNumericLeaves(payload.stock_views), ...pickNumericLeaves((payload as any).data).slice(0, 4)].slice(0, 10);
     leaves.forEach(l => metrics.push({ label: titleize(l.label.split(".").slice(-2).join(" · ")), value: l.value }));
   }
   const risk = typeof payload.risk_score === "number" ? payload.risk_score : (isPlainObject(payload.risk_score) ? toNumberish((payload.risk_score as any).score) : null);
