@@ -1307,6 +1307,12 @@ function AgentBrief({ payload, project }: { payload: ExportPayload; project?: st
   const deterministic = useMemo(() => {
     const bits: string[] = [];
     if (typeof payload.summary === "string") bits.push(payload.summary as string);
+    if (!bits.length && (payload as any).project) bits.push(`${payload.project} is loaded as a live agentic dashboard.`);
+    const count = toNumberish((payload as any).count);
+    if (count != null) bits.push(`${fmtNum(count)} source record${count === 1 ? "" : "s"} available for visual analysis.`);
+    if (Array.isArray((payload as any).type_kpis) && (payload as any).type_kpis.length) {
+      bits.push("Key KPIs: " + (payload as any).type_kpis.slice(0, 5).map((k: any) => `${String(k.label || k.name || "Metric")} ${fmtNum(k.value)}`).join(", ") + ".");
+    }
     const totals = payload.totals as Record<string, number> | undefined;
     if (totals && Object.keys(totals).length) {
       bits.push("Totals: " + Object.entries(totals).slice(0, 6).map(([k, v]) => `${k.replace(/_/g, " ")} ${fmtNum(v)}`).join(", ") + ".");
