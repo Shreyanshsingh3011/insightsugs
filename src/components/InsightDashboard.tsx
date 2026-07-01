@@ -3304,12 +3304,22 @@ function NotebookCopilotTab({ base, sheets, setTab }: { base: string; sheets: Sh
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "actions", label: "Actions", icon: Sparkles },
+  { id: "inventory", label: "Inventory", icon: LayoutDashboard },
+  { id: "anomalies", label: "Anomalies", icon: MessageSquareWarning },
+  { id: "quality", label: "Quality", icon: Wand2 },
   { id: "sheets", label: "Sheets", icon: SheetIcon },
   { id: "concerns", label: "Concerns", icon: MessageSquareWarning },
   { id: "reminders", label: "Reminders", icon: Bell },
   { id: "copilot", label: "Copilot", icon: Sparkles },
   { id: "hygiene", label: "Data Hygiene", icon: Wand2 },
 ] as const;
+const AGENTIC_SCROLL_TARGETS: Record<string, string> = {
+  actions: "section-actions",
+  inventory: "section-inventory",
+  anomalies: "section-breakdown",
+  quality: "section-quality",
+};
 
 export default function InsightDashboard() {
   const { raw, setRaw, active, activeExport, exportOnly, error, apply, clear } = useLinkInput();
