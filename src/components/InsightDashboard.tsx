@@ -3374,13 +3374,18 @@ export default function InsightDashboard() {
     () => sheets.some((s, i) => isDelaySheet(s, i === 0 ? data.analysis : undefined)),
     [sheets, data.analysis]
   );
+  const agenticFlags = useMemo(() => computeAgenticTabs(data as unknown as AgenticDashboardData), [data]);
   const visibleTabs = useMemo(
     () => TABS.filter(t => {
-      if (exportOnly && t.id !== "overview" && t.id !== "sheets") return false;
+      if (exportOnly && t.id !== "overview" && t.id !== "sheets" && t.id !== "actions" && t.id !== "inventory" && t.id !== "anomalies" && t.id !== "quality") return false;
       if ((t.id === "concerns" || t.id === "reminders") && !hasAnyDelaySheet) return false;
+      if (t.id === "inventory" && !agenticFlags.inventory) return false;
+      if (t.id === "anomalies" && !agenticFlags.anomalies) return false;
+      if (t.id === "actions" && !agenticFlags.actions) return false;
+      if (t.id === "quality" && !agenticFlags.quality) return false;
       return true;
     }),
-    [hasAnyDelaySheet, exportOnly]
+    [hasAnyDelaySheet, exportOnly, agenticFlags]
   );
   useEffect(() => {
     if (!visibleTabs.find(t => t.id === tab)) setTab("overview");
