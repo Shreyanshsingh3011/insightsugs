@@ -1429,7 +1429,15 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
 
   return (
     <div className="space-y-6">
+      <AgenticOverview
+        payload={exportPayload || null}
+        project={data.project}
+        fetchedAt={exportFetchedAt}
+        onRefresh={onRefreshExport}
+        refreshing={refreshingExport}
+      />
       <AIInsightsCard data={data} selected={selected} isBasis={isBasis} />
+
       {/* Sheet selector */}
       {sheets.length > 0 && (
         <div className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl bg-background/80 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/60">
