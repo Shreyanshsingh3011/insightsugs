@@ -1151,9 +1151,10 @@ function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
               <div key={i} className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">{String(a.title || a.metric || a.name || `Anomaly ${i + 1}`)}</div>
-                  {a.severity && <Badge variant={sevColor(String(a.severity))} className="capitalize">{String(a.severity)}</Badge>}
+                  {a.severity != null && <Badge variant={sevColor(String(a.severity))} className="capitalize">{String(a.severity)}</Badge>}
                 </div>
-                {a.description && <div className="mt-1 text-xs text-muted-foreground">{String(a.description)}</div>}
+                {a.description != null && <div className="mt-1 text-xs text-muted-foreground">{String(a.description)}</div>}
+
                 {(a.expected != null || a.actual != null || a.delta != null) && (
                   <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular-nums">
                     {a.expected != null && <div><div className="text-muted-foreground">Expected</div><div>{fmtNum(a.expected)}</div></div>}
