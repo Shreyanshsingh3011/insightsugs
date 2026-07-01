@@ -899,7 +899,456 @@ function AIInsightsCard({ data, selected, isBasis }: { data: DashboardData; sele
 }
 
 
-function OverviewSection({ data, onSelectedChange, selectedLabel, onSelectedLabelChange }: { data: DashboardData; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
+/* ============================ Agentic Overview (field-driven) ============================ */
+
+type ExportPayload = Record<string, unknown>;
+
+function pickNumericLeaves(obj: unknown, prefix = "", out: { label: string; value: number }[] = [], depth = 0): { label: string; value: number }[] {
+  if (depth > 3 || out.length > 12) return out;
+  if (obj == null) return out;
+  if (typeof obj === "number" && Number.isFinite(obj)) { out.push({ label: prefix || "value", value: obj }); return out; }
+  if (Array.isArray(obj)) {
+    obj.slice(0, 6).forEach((v, i) => pickNumericLeaves(v, prefix ? `${prefix}[${i}]` : String(i), out, depth + 1));
+    return out;
+  }
+  if (isPlainObject(obj)) {
+    for (const [k, v] of Object.entries(obj)) {
+      pickNumericLeaves(v, prefix ? `${prefix}.${k}` : k, out, depth + 1);
+    }
+  }
+  return out;
+}
+
+function toChartData(v: unknown, maxBars = 12): { name: string; value: number }[] | null {
+  if (Array.isArray(v) && v.length && v.every(isPlainObject)) {
+    const rows = v as Record<string, unknown>[];
+    const firstRow = rows[0];
+    const keys = Object.keys(firstRow);
+    const nameKey = keys.find(k => typeof firstRow[k] === "string") || keys[0];
+    const numKey = keys.find(k => k !== nameKey && typeof firstRow[k] === "number");
+    if (!numKey) return null;
+    return rows.slice(0, maxBars).map(r => ({ name: String(r[nameKey] ?? ""), value: Number(r[numKey]) || 0 }));
+  }
+  if (isPlainObject(v)) {
+    const entries = Object.entries(v as Record<string, unknown>).filter(([, val]) => typeof val === "number");
+    if (!entries.length) return null;
+    return entries.slice(0, maxBars).map(([name, val]) => ({ name, value: Number(val) }));
+  }
+  return null;
+}
+
+function AgentBrief({ payload, project }: { payload: ExportPayload; project?: string }) {
+  const facts = useMemo(() => {
+    const f: Record<string, unknown> = {};
+    for (const k of ["summary", "totals", "status_breakdown", "digest", "recommendations", "flags", "anomalies", "data_quality"]) {
+      const v = payload[k];
+      if (!isEmpty(v)) f[k] = v;
+    }
+    return f;
+  }, [payload]);
+  const factsJson = JSON.stringify(facts);
+  const [text, setText] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [enhanced, setEnhanced] = useState(false);
+
+  const deterministic = useMemo(() => {
+    const bits: string[] = [];
+    if (typeof payload.summary === "string") bits.push(payload.summary as string);
+    const totals = payload.totals as Record<string, number> | undefined;
+    if (totals && Object.keys(totals).length) {
+      bits.push("Totals: " + Object.entries(totals).slice(0, 6).map(([k, v]) => `${k.replace(/_/g, " ")} ${fmtNum(v)}`).join(", ") + ".");
+    }
+    const flags = payload.flags as Flag[] | undefined;
+    if (flags?.length) {
+      const high = flags.filter(f => /(high|critical)/i.test(f.severity || "")).length;
+      bits.push(`${flags.length} flag${flags.length === 1 ? "" : "s"}${high ? ` (${high} high/critical)` : ""}.`);
+    }
+    const anomalies = payload.anomalies as unknown[] | undefined;
+    if (Array.isArray(anomalies) && anomalies.length) bits.push(`${anomalies.length} anomaly signal${anomalies.length === 1 ? "" : "s"} detected.`);
+    return bits.join(" ");
+  }, [payload]);
+
+  useEffect(() => {
+    setEnhanced(false);
+    setText(deterministic);
+    if (!hasGemini() || isEmpty(facts)) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const out = await generateGemini({
+          system: GROUNDING_RULES + "\nYou are an executive-briefing agent for a live data dashboard. Be concise and specific.",
+          prompt: [
+            `Project: ${project || "Insights"}.`,
+            "Write a 4-6 sentence situational brief: state of the numbers, top risks, and 1 clear action.",
+            "Cite exact values from the JSON facts. Do not invent numbers.",
+            "Facts (JSON):",
+            factsJson,
+          ].join("\n\n"),
+          temperature: 0.35,
+        });
+        if (!cancelled && out.trim()) { setText(out.trim()); setEnhanced(true); }
+      } catch { /* keep fallback */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [factsJson]);
+
+  if (!text && !loading) return null;
+  return (
+    <Card className="rounded-3xl border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Sparkles className="h-4 w-4 text-primary" /> Agent brief
+        </CardTitle>
+        {enhanced && <Badge variant="outline" className="text-[10px]">Gemini</Badge>}
+      </CardHeader>
+      <CardContent className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
+        {loading && !text ? "Briefing the room…" : text}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NextBestActions({ payload }: { payload: ExportPayload }) {
+  const actions = useMemo(() => {
+    const out: { title: string; detail?: string; severity: "low" | "medium" | "high"; source: string }[] = [];
+    const recs = payload.recommendations as unknown;
+    if (Array.isArray(recs)) {
+      for (const r of recs.slice(0, 5)) {
+        if (typeof r === "string") out.push({ title: r, severity: "medium", source: "recommendations" });
+        else if (isPlainObject(r)) {
+          const rr = r as Record<string, unknown>;
+          out.push({ title: String(rr.title || rr.action || rr.detail || "Recommendation"), detail: typeof rr.detail === "string" ? rr.detail : undefined, severity: (String(rr.severity || "medium").toLowerCase() as any) || "medium", source: "recommendations" });
+        }
+      }
+    }
+    const flags = payload.flags as Flag[] | undefined;
+    if (Array.isArray(flags)) {
+      for (const f of flags.filter(x => /(high|critical)/i.test(x.severity || "")).slice(0, 3)) {
+        out.push({ title: f.title || f.message || "Flag", detail: f.title && f.message ? f.message : undefined, severity: "high", source: "flags" });
+      }
+    }
+    const anomalies = payload.anomalies as unknown;
+    if (Array.isArray(anomalies)) {
+      for (const a of anomalies.slice(0, 3)) {
+        if (isPlainObject(a)) {
+          const aa = a as Record<string, unknown>;
+          out.push({ title: String(aa.title || aa.metric || "Anomaly"), detail: String(aa.description || aa.detail || ""), severity: "high", source: "anomalies" });
+        }
+      }
+    }
+    return out.slice(0, 6);
+  }, [payload]);
+
+  if (!actions.length) return null;
+  return (
+    <Card className="rounded-3xl border-border/60 shadow-sm">
+      <CardHeader className="pb-2">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600">Agent · next best actions</div>
+        <CardTitle className="text-base font-semibold">Do these next</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ul className="grid gap-2.5 text-sm md:grid-cols-2">
+          {actions.map((a, i) => (
+            <li key={i} className="flex items-start gap-2.5 rounded-2xl border border-border/50 bg-card/60 p-3">
+              <Badge variant={sevColor(a.severity)} className="shrink-0 capitalize">{a.severity}</Badge>
+              <div className="min-w-0">
+                <div className="font-medium">{a.title}</div>
+                {a.detail && <div className="text-xs text-muted-foreground">{a.detail}</div>}
+                <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">via {a.source}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Renderers keyed by field name. Returns null if the value can't be rendered meaningfully. */
+function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
+  if (isEmpty(value)) return null;
+
+  // KPIs
+  if (name === "totals" && isPlainObject(value)) {
+    const entries = Object.entries(value as Record<string, unknown>);
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Totals</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {entries.map(([k, v], i) => (
+              <div key={k} className="rounded-2xl border border-border/60 p-3">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{k.replace(/_/g, " ")}</div>
+                <div className="mt-1 text-2xl font-semibold tabular-nums">{fmtNum(v)}</div>
+                <div className="mt-1 h-1 w-full rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length], opacity: 0.5 }} />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "status_breakdown" && isPlainObject(value)) {
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Status breakdown</CardTitle></CardHeader>
+        <CardContent><StackedBar data={value as Record<string, number>} /></CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "summary" && typeof value === "string") {
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Summary</CardTitle></CardHeader>
+        <CardContent className="text-sm leading-relaxed">{value}</CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "digest") {
+    const text = typeof value === "string" ? value : (isPlainObject(value) ? String((value as any).text || "") : "");
+    if (!text) return null;
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Digest</CardTitle></CardHeader>
+        <CardContent className="text-sm leading-relaxed">{text}</CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "flags" && Array.isArray(value)) {
+    const flags = value as Flag[];
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Flags ({flags.length})</CardTitle></CardHeader>
+        <CardContent>
+          <ul className="space-y-2 text-sm">
+            {flags.slice(0, 20).map((f, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl border border-border/50 bg-card/60 p-2.5">
+                <Badge variant={sevColor(f.severity)} className="shrink-0 capitalize">{f.severity || "info"}</Badge>
+                <span>{f.title || f.message}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "anomalies" && Array.isArray(value)) {
+    const list = value as Record<string, unknown>[];
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Anomalies ({list.length})</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid gap-2 md:grid-cols-2">
+            {list.slice(0, 8).map((a, i) => (
+              <div key={i} className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">{String(a.title || a.metric || a.name || `Anomaly ${i + 1}`)}</div>
+                  {a.severity && <Badge variant={sevColor(String(a.severity))} className="capitalize">{String(a.severity)}</Badge>}
+                </div>
+                {a.description && <div className="mt-1 text-xs text-muted-foreground">{String(a.description)}</div>}
+                {(a.expected != null || a.actual != null || a.delta != null) && (
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular-nums">
+                    {a.expected != null && <div><div className="text-muted-foreground">Expected</div><div>{fmtNum(a.expected)}</div></div>}
+                    {a.actual != null && <div><div className="text-muted-foreground">Actual</div><div>{fmtNum(a.actual)}</div></div>}
+                    {a.delta != null && <div><div className="text-muted-foreground">Δ</div><div>{fmtNum(a.delta)}</div></div>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "variance") {
+    const chart = toChartData(value, 15);
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Variance</CardTitle></CardHeader>
+        <CardContent>
+          {chart ? <MiniBarChart data={chart} color="var(--chart-3)" /> : <GenericValue value={value} />}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "trends" || name === "forecast") {
+    const chart = toChartData(value, 24);
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name}</CardTitle></CardHeader>
+        <CardContent>
+          {chart ? <MiniBarChart data={chart} color={name === "forecast" ? "var(--chart-4)" : "var(--chart-1)"} /> : <GenericValue value={value} />}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "recommendations" && Array.isArray(value)) {
+    const items = value as unknown[];
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Recommendations</CardTitle></CardHeader>
+        <CardContent>
+          <ul className="grid gap-2 text-sm md:grid-cols-2">
+            {items.slice(0, 12).map((r, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-xl border border-border/50 bg-card/60 p-2.5">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <span>{typeof r === "string" ? r : (isPlainObject(r) ? String((r as any).title || (r as any).detail || JSON.stringify(r)) : String(r))}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "data_quality" && isPlainObject(value)) {
+    const dq = value as Record<string, unknown>;
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Data quality</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {dq.score != null && <Ring label="Score" value={Number(dq.score) || 0} />}
+          {Array.isArray(dq.issues) && dq.issues.length > 0 && (
+            <div className="text-xs text-muted-foreground">{dq.issues.length} issue(s)</div>
+          )}
+          <GenericValue value={dq.issues} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "stock_views" || name === "data_dashboard") {
+    const kpis = pickNumericLeaves(value).slice(0, 8);
+    const chart = toChartData(value, 12);
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name.replace(/_/g, " ")}</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          {!!kpis.length && (
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {kpis.map((k, i) => (
+                <div key={i} className="rounded-xl border border-border/50 p-2">
+                  <div className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">{k.label}</div>
+                  <div className="text-lg font-semibold tabular-nums">{fmtNum(k.value)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {chart && <MiniBarChart data={chart} color="var(--chart-2)" />}
+          {!kpis.length && !chart && <GenericValue value={value} />}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (name === "whatif" || name === "pivot") {
+    return (
+      <Card className="rounded-3xl border-border/60 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name}</CardTitle></CardHeader>
+        <CardContent><GenericValue value={value} /></CardContent>
+      </Card>
+    );
+  }
+
+  // Fallback for anything else
+  return (
+    <Card className="rounded-3xl border-border/60 shadow-sm">
+      <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name.replace(/_/g, " ")}</CardTitle></CardHeader>
+      <CardContent><GenericValue value={value} /></CardContent>
+    </Card>
+  );
+}
+
+function AgenticOverview({ payload, project, fetchedAt, onRefresh, refreshing }: {
+  payload: ExportPayload | null | undefined;
+  project?: string;
+  fetchedAt?: number;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
+  const [showRaw, setShowRaw] = useState(false);
+  if (!payload || !isPlainObject(payload)) return null;
+
+  // Order for the field-driven blocks. `sheets` is left to the existing renderer below.
+  const ORDER = [
+    "summary","totals","status_breakdown","data_quality","digest",
+    "recommendations","flags","anomalies","variance","trends","forecast",
+    "pivot","whatif","stock_views","data_dashboard",
+  ];
+  const enabled = Array.isArray((payload as any).enabled_fields) ? ((payload as any).enabled_fields as string[]) : [];
+  const presentKeys = ORDER.filter(k => !isEmpty(payload[k]));
+  const emptyDeclared = enabled.filter(k => ORDER.includes(k) && isEmpty(payload[k]));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Live signals</span>
+        {presentKeys.map(k => (
+          <Badge key={k} variant="secondary" className="gap-1 text-[10px]">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" /> {k.replace(/_/g, " ")}
+          </Badge>
+        ))}
+        {emptyDeclared.map(k => (
+          <Badge key={k} variant="outline" className="gap-1 text-[10px] opacity-60">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground" /> {k.replace(/_/g, " ")} · empty
+          </Badge>
+        ))}
+        <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
+          {fetchedAt ? <span>Fetched {relTime(new Date(fetchedAt).toISOString())}</span> : null}
+          {onRefresh && (
+            <Button size="sm" variant="ghost" className="h-6 gap-1 px-2" onClick={onRefresh} disabled={refreshing}>
+              <RefreshCcw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} /> Refresh
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <AgentBrief payload={payload} project={project} />
+      <NextBestActions payload={payload} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {presentKeys
+          .filter(k => !["summary","totals","status_breakdown","flags","digest","recommendations","data_quality"].includes(k))
+          .map(k => <AgenticFieldBlock key={k} name={k} value={payload[k]} />)}
+      </div>
+
+      <Collapsible open={showRaw} onOpenChange={setShowRaw}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="sm" className="gap-1 text-xs text-muted-foreground">
+            <ChevronDown className={`h-3 w-3 transition-transform ${showRaw ? "rotate-180" : ""}`} />
+            {showRaw ? "Hide" : "View"} raw payload
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <Card className="rounded-2xl">
+            <CardContent className="p-3">
+              <ScrollArea className="max-h-96">
+                <pre className="whitespace-pre-wrap break-all text-[11px] leading-relaxed text-muted-foreground">
+                  {JSON.stringify(payload, null, 2)}
+                </pre>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
+
+function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport, refreshingExport, onSelectedChange, selectedLabel, onSelectedLabelChange }: { data: DashboardData; exportPayload?: ExportPayload | null; exportFetchedAt?: number; onRefreshExport?: () => void; refreshingExport?: boolean; onSelectedChange?: (sheet: Sheet | undefined, isDelay: boolean) => void; selectedLabel?: string; onSelectedLabelChange?: (label: string) => void }) {
+
   const sheets = data.sheets || [];
   const [localLabel, setLocalLabel] = useState(sheets[0]?.label || "");
   const activeLabel = selectedLabel ?? localLabel;
