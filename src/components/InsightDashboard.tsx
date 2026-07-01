@@ -1227,7 +1227,7 @@ function normalizeExportSheet(raw: unknown, index = 0): Sheet | null {
     row_count: toNumberish(raw.row_count) ?? toNumberish(raw.rows_count) ?? rows.length,
     columns,
     rows,
-    kpis: Array.isArray(raw.kpis) ? raw.kpis as KPI[] : undefined,
+    kpis: Array.isArray(raw.kpis) ? raw.kpis as KPI[] : Array.isArray(raw.type_kpis) ? raw.type_kpis as KPI[] : undefined,
     charts: Array.isArray(raw.charts) ? raw.charts as ChartDef[] : undefined,
   };
   normalized.kpis = normalized.kpis?.length ? normalized.kpis : deriveKpisForSheet(normalized);
@@ -1237,6 +1237,18 @@ function normalizeExportSheet(raw: unknown, index = 0): Sheet | null {
 
 function extractSheetsFromExport(payload?: ExportPayload | null): Sheet[] {
   if (!payload) return [];
+  if (Array.isArray((payload as any).data) && (payload as any).data.some(isPlainObject)) {
+    const rootSheet = normalizeExportSheet({
+      label: (payload as any).sheet || (payload as any).project || "Export Data",
+      name: (payload as any).project || (payload as any).sheet || "Export Data",
+      type: (payload as any).sheet_type,
+      columns: (payload as any).columns,
+      rows: (payload as any).data,
+      row_count: (payload as any).count,
+      type_kpis: (payload as any).type_kpis,
+    }, 0);
+    if (rootSheet) return [rootSheet];
+  }
   const rawSheets = Array.isArray(payload.sheets)
     ? payload.sheets
     : isPlainObject(payload.sheets)
