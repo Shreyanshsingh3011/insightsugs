@@ -1,4 +1,5 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { formatDistanceToNow, parseISO, isValid as isValidDate } from "date-fns";
 import {
@@ -37,6 +38,7 @@ import {
 } from "lucide-react";
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 import { generateGemini, hasGemini, GROUNDING_RULES } from "@/lib/gemini-client";
+import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string; distinct?: number };
@@ -111,7 +113,10 @@ const STATUS_COLOR: Record<string, string> = {
 
 function fmtNum(v: unknown) {
   if (typeof v === "number" && Number.isFinite(v)) return v.toLocaleString();
-  if (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v))) return Number(v).toLocaleString();
+  if (typeof v === "string") {
+    const n = Number(v.replace(/[₹$€£,\s]/g, "").replace(/%$/, ""));
+    if (v.trim() !== "" && Number.isFinite(n)) return n.toLocaleString();
+  }
   return String(v ?? "");
 }
 function fmtCell(v: unknown) {
@@ -135,10 +140,12 @@ const AGENTIC_FIELDS = [
   "data_dashboard","copilot","data_quality","pivot","forecast","anomalies",
   "digest","recommendations","trends","whatif","stock_views",
 ];
-function normalizeBase(raw: string): { base: string; exportUrl?: string; error?: string } {
+function normalizeBase(raw: string): { base: string; exportUrl?: string; isExport?: boolean; error?: string } {
   let s = (raw || "").trim();
   if (!s) return { base: "", error: "Enter a full URL starting with https://" };
-  if (!/^https:\/\//i.test(s)) return { base: "", error: "Enter a full URL starting with https://" };
+  const wasRelative = s.startsWith("/");
+  if (wasRelative && typeof window !== "undefined") s = `${window.location.origin}${s}`;
+  if (!/^https:\/\//i.test(s) && !(wasRelative && /^http:\/\//i.test(s))) return { base: "", error: "Enter a full URL starting with https:// or a /api/public link" };
   let u: URL;
   try { u = new URL(s); if (!u.host) throw new Error(); } catch {
     return { base: "", error: "Enter a valid URL" };
@@ -156,7 +163,7 @@ function normalizeBase(raw: string): { base: string; exportUrl?: string; error?:
   if (!exportUrl) {
     exportUrl = `${base}/export?fields=${AGENTIC_FIELDS.join(",")}`;
   }
-  return { base, exportUrl };
+  return { base, exportUrl, isExport };
 }
 
 function relTime(iso?: string) {
@@ -205,20 +212,22 @@ function useLinkInput() {
     return new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link") || "";
   });
   const initial = (() => {
-    if (typeof window === "undefined") return { base: "", exportUrl: "" };
+    if (typeof window === "undefined") return { base: "", exportUrl: "", isExport: false };
     const r = new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link") || "";
     const n = normalizeBase(r);
-    return { base: n.base, exportUrl: n.exportUrl || "" };
+    return { base: n.base, exportUrl: n.exportUrl || "", isExport: !!n.isExport };
   })();
   const [active, setActive] = useState<string>(initial.base);
   const [activeExport, setActiveExport] = useState<string>(initial.exportUrl);
+  const [exportOnly, setExportOnly] = useState<boolean>(initial.isExport);
   const [error, setError] = useState<string | undefined>();
   const apply = (val: string) => {
-    const { base, exportUrl, error } = normalizeBase(val);
-    if (error) { setError(error); setActive(""); setActiveExport(""); return; }
+    const { base, exportUrl, isExport, error } = normalizeBase(val);
+    if (error) { setError(error); setActive(""); setActiveExport(""); setExportOnly(false); return; }
     setError(undefined);
     setActive(base);
     setActiveExport(exportUrl || "");
+    setExportOnly(!!isExport);
     try { localStorage.setItem("insight:link", val); } catch { /* ignore */ }
     if (typeof window !== "undefined") {
       const u = new URL(window.location.href);
@@ -230,6 +239,7 @@ function useLinkInput() {
     setRaw("");
     setActive("");
     setActiveExport("");
+    setExportOnly(false);
     setError(undefined);
     try { localStorage.removeItem("insight:link"); } catch { /* ignore */ }
     if (typeof window !== "undefined") {
@@ -238,7 +248,7 @@ function useLinkInput() {
       window.history.replaceState({}, "", u.toString());
     }
   };
-  return { raw, setRaw, active, activeExport, error, apply, clear };
+  return { raw, setRaw, active, activeExport, exportOnly, error, apply, clear };
 }
 
 
@@ -304,6 +314,160 @@ function GenericValue({ value }: { value: unknown }) {
   }
   if (isPlainObject(value)) return <KVList obj={value} />;
   return null;
+}
+
+function titleize(raw: string) {
+  return String(raw || "")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function toNumberish(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v !== "string") return null;
+  const cleaned = v.replace(/[₹$€£,\s]/g, "").replace(/%$/, "");
+  if (!cleaned || cleaned === "-" || cleaned === ".") return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isNumericColumn(rows: Record<string, unknown>[], col: string) {
+  let seen = 0, numeric = 0;
+  for (const row of rows.slice(0, 250)) {
+    const v = row[col];
+    if (v == null || v === "") continue;
+    seen++;
+    if (toNumberish(v) != null) numeric++;
+  }
+  return seen > 0 && numeric / seen >= 0.72;
+}
+
+function columnsFromRows(rows: Record<string, unknown>[]): Column[] {
+  const names = Array.from(rows.reduce((set, row) => {
+    Object.keys(row || {}).forEach(k => set.add(k));
+    return set;
+  }, new Set<string>()));
+  return names.map(name => {
+    const distinct = new Set(rows.slice(0, 1000).map(r => r[name]).filter(v => v != null && v !== "").map(String)).size;
+    return { name, type: isNumericColumn(rows, name) ? "number" : distinct <= 20 ? "category" : "text", distinct };
+  });
+}
+
+function normalizeSheet(sheet: Sheet): Sheet {
+  const rows = Array.isArray(sheet.rows) ? sheet.rows.filter(isPlainObject) as Record<string, unknown>[] : [];
+  const inferred = rows.length ? columnsFromRows(rows) : [];
+  const columns = sheet.columns?.length
+    ? sheet.columns.map(c => {
+      const hit = inferred.find(i => i.name === c.name);
+      return { ...hit, ...c, type: c.type || hit?.type, distinct: c.distinct ?? hit?.distinct };
+    })
+    : inferred;
+  return { ...sheet, rows, columns, row_count: sheet.row_count ?? rows.length };
+}
+
+function topEntriesFromMap(map: Map<string, number>, limit = 10) {
+  const sorted = [...map.entries()].sort((a, b) => b[1] - a[1]);
+  const top = sorted.slice(0, limit).map(([name, value]) => ({ name, value }));
+  const rest = sorted.slice(limit).reduce((sum, [, v]) => sum + v, 0);
+  if (rest > 0) top.push({ name: "Other", value: rest });
+  return top;
+}
+
+function deriveChartsForSheet(sheetInput: Sheet, maxCharts = 8): ChartDef[] {
+  const sheet = normalizeSheet(sheetInput);
+  const rows = sheet.rows || [];
+  const columns = sheet.columns || [];
+  if (!rows.length || !columns.length) return sheet.charts || [];
+  const existing = sheet.charts || [];
+  const numericCols = columns.filter(c => c.type === "number" || isNumericColumn(rows, c.name)).map(c => c.name);
+  const categorical = columns
+    .filter(c => !numericCols.includes(c.name))
+    .map(c => ({ ...c, distinct: c.distinct ?? new Set(rows.map(r => r[c.name]).filter(Boolean).map(String)).size }))
+    .filter(c => (c.distinct ?? 0) > 1 && (c.distinct ?? 0) <= 80)
+    .sort((a, b) => (a.distinct ?? 999) - (b.distinct ?? 999));
+  const primaryMeasures = numericCols.filter(c => !/^sr\.?\s*no\.?$/i.test(c)).slice(0, 4);
+  const charts: ChartDef[] = [...existing];
+  for (const dim of categorical.slice(0, 6)) {
+    if (charts.length >= maxCharts) break;
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const key = String(r[dim.name] ?? "").trim();
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    if (counts.size > 1) charts.push({ type: "bar", title: `Count by ${dim.name}`, x: "name", y: "value", data: topEntriesFromMap(counts, 8) });
+    for (const measure of primaryMeasures.slice(0, 2)) {
+      if (charts.length >= maxCharts) break;
+      const sums = new Map<string, number>();
+      for (const r of rows) {
+        const key = String(r[dim.name] ?? "").trim();
+        const n = toNumberish(r[measure]);
+        if (key && n != null) sums.set(key, (sums.get(key) || 0) + n);
+      }
+      if (sums.size > 1) charts.push({ type: "bar", title: `${measure} by ${dim.name}`, x: "name", y: "value", data: topEntriesFromMap(sums, 8) });
+    }
+  }
+  return charts.slice(0, maxCharts);
+}
+
+function deriveKpisForSheet(sheetInput: Sheet): KPI[] {
+  const sheet = normalizeSheet(sheetInput);
+  const rows = sheet.rows || [];
+  const columns = sheet.columns || [];
+  const out: KPI[] = [{ label: "Records", value: sheet.row_count ?? rows.length }];
+  const numericCols = columns.filter(c => c.type === "number" || isNumericColumn(rows, c.name)).map(c => c.name);
+  for (const col of numericCols.filter(c => !/^sr\.?\s*no\.?$/i.test(c)).slice(0, 5)) {
+    let sum = 0, count = 0;
+    for (const r of rows) {
+      const n = toNumberish(r[col]);
+      if (n != null) { sum += n; count++; }
+    }
+    if (count) out.push({ label: `Σ ${col}`, value: Math.round(sum * 100) / 100 });
+  }
+  const category = columns.find(c => c.type !== "number" && (c.distinct ?? 0) > 1);
+  if (category?.distinct) out.push({ label: `${category.name} types`, value: category.distinct });
+  return (sheet.kpis?.length ? sheet.kpis : out).slice(0, 8);
+}
+
+function deriveRankingsForSheet(sheetInput: Sheet, limit = 5) {
+  const sheet = normalizeSheet(sheetInput);
+  const rows = sheet.rows || [];
+  const columns = sheet.columns || [];
+  const numericCols = columns.filter(c => c.type === "number" || isNumericColumn(rows, c.name)).map(c => c.name).filter(c => !/^sr\.?\s*no\.?$/i.test(c));
+  const dims = columns.filter(c => !numericCols.includes(c.name) && (c.distinct ?? 999) > 1 && (c.distinct ?? 999) <= 120).map(c => c.name);
+  const rankings: { title: string; data: { name: string; value: number }[] }[] = [];
+  for (const measure of numericCols.slice(0, 3)) {
+    const dim = dims.find(d => /item|store|project|group|name|code|category|unit/i.test(d)) || dims[0];
+    if (!dim) continue;
+    const sums = new Map<string, number>();
+    for (const r of rows) {
+      const key = String(r[dim] ?? "").trim();
+      const n = toNumberish(r[measure]);
+      if (key && n != null) sums.set(key, (sums.get(key) || 0) + n);
+    }
+    const top = topEntriesFromMap(sums, limit).filter(x => x.name !== "Other");
+    if (top.length > 1) rankings.push({ title: `Top ${limit} ${dim} by ${measure}`, data: top });
+  }
+  return rankings.slice(0, 4);
+}
+
+function findObjectArrays(value: unknown, prefix = "", out: { path: string; rows: Record<string, unknown>[] }[] = [], depth = 0) {
+  if (depth > 4 || out.length > 10) return out;
+  if (Array.isArray(value) && value.length && value.some(isPlainObject)) {
+    out.push({ path: prefix || "records", rows: value.filter(isPlainObject) as Record<string, unknown>[] });
+    return out;
+  }
+  if (isPlainObject(value)) {
+    Object.entries(value).forEach(([k, v]) => findObjectArrays(v, prefix ? `${prefix}.${k}` : k, out, depth + 1));
+  }
+  return out;
+}
+
+function chartFromRows(rows: Record<string, unknown>[], titlePrefix = ""): ChartDef[] {
+  if (!rows.length) return [];
+  const sheet: Sheet = { label: titlePrefix || "records", rows, columns: columnsFromRows(rows) };
+  return deriveChartsForSheet(sheet, 4).map(c => ({ ...c, title: titlePrefix ? `${titleize(titlePrefix)} · ${c.title}` : c.title }));
 }
 
 /* ============================ Pieces ============================ */
@@ -425,15 +589,15 @@ function HeroKpi({ label, value, color, index = 0, featured = false, onClick }: 
     </Card>
   );
 }
-function StackedBar({ data, onSelect }: { data: Record<string, number>; onSelect?: (key: string) => void }) {
-  const entries = Object.entries(data).filter(([, v]) => Number(v) > 0);
-  const total = entries.reduce((s, [, v]) => s + Number(v), 0) || 1;
+function StackedBar({ data, onSelect }: { data: Record<string, unknown>; onSelect?: (key: string) => void }) {
+  const entries = Object.entries(data).map(([k, v]) => [k, toNumberish(v) ?? 0] as const).filter(([, v]) => v > 0);
+  const total = entries.reduce((s, [, v]) => s + v, 0) || 1;
   return (
     <div className="space-y-3">
       <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
         {entries.map(([k, v], i) => (
           <div key={k} title={`${k}: ${v}`} onClick={onSelect ? () => onSelect(k) : undefined}
-            style={{ width: `${(Number(v) / total) * 100}%`, background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length], cursor: onSelect ? "pointer" : undefined }} />
+            style={{ width: `${(v / total) * 100}%`, background: STATUS_COLOR[k.toLowerCase()] || CHART_COLORS[i % CHART_COLORS.length], cursor: onSelect ? "pointer" : undefined }} />
         ))}
       </div>
       <div className="flex flex-wrap gap-2">
@@ -907,6 +1071,11 @@ function pickNumericLeaves(obj: unknown, prefix = "", out: { label: string; valu
   if (depth > 3 || out.length > 12) return out;
   if (obj == null) return out;
   if (typeof obj === "number" && Number.isFinite(obj)) { out.push({ label: prefix || "value", value: obj }); return out; }
+  if (typeof obj === "string") {
+    const n = toNumberish(obj);
+    if (n != null) out.push({ label: prefix || "value", value: n });
+    return out;
+  }
   if (Array.isArray(obj)) {
     obj.slice(0, 6).forEach((v, i) => pickNumericLeaves(v, prefix ? `${prefix}[${i}]` : String(i), out, depth + 1));
     return out;
@@ -924,17 +1093,201 @@ function toChartData(v: unknown, maxBars = 12): { name: string; value: number }[
     const rows = v as Record<string, unknown>[];
     const firstRow = rows[0];
     const keys = Object.keys(firstRow);
-    const nameKey = keys.find(k => typeof firstRow[k] === "string") || keys[0];
-    const numKey = keys.find(k => k !== nameKey && typeof firstRow[k] === "number");
+    const numKey = keys.find(k => rows.slice(0, 50).some(r => toNumberish(r[k]) != null));
+    const nameKey = keys.find(k => k !== numKey && rows.slice(0, 50).some(r => typeof r[k] === "string" && String(r[k]).trim())) || keys.find(k => k !== numKey) || keys[0];
     if (!numKey) return null;
-    return rows.slice(0, maxBars).map(r => ({ name: String(r[nameKey] ?? ""), value: Number(r[numKey]) || 0 }));
+    return rows.slice(0, maxBars).map(r => ({ name: String(r[nameKey] ?? ""), value: toNumberish(r[numKey]) ?? 0 }));
   }
   if (isPlainObject(v)) {
-    const entries = Object.entries(v as Record<string, unknown>).filter(([, val]) => typeof val === "number");
+    const entries = Object.entries(v as Record<string, unknown>).map(([key, val]) => [key, toNumberish(val)] as const).filter(([, val]) => val != null);
     if (!entries.length) return null;
     return entries.slice(0, maxBars).map(([name, val]) => ({ name, value: Number(val) }));
   }
   return null;
+}
+
+function metricEntriesFromPayload(payload: ExportPayload): KPI[] {
+  const totals = isPlainObject(payload.totals) ? payload.totals : undefined;
+  const source = totals && Object.keys(totals).length ? totals : undefined;
+  const metrics: KPI[] = [];
+  if (Array.isArray((payload as any).type_kpis)) {
+    for (const k of (payload as any).type_kpis) {
+      if (!isPlainObject(k)) continue;
+      const label = String((k as any).label || (k as any).name || (k as any).metric || "Metric");
+      const rawValue = (k as any).value;
+      const value = toNumberish(rawValue) ?? fmtCell(rawValue);
+      metrics.push({ label, value });
+    }
+  }
+  if (source) {
+    for (const [k, v] of Object.entries(source).slice(0, 10)) metrics.push({ label: titleize(k), value: typeof v === "number" ? v : fmtCell(v) });
+  }
+  if (toNumberish((payload as any).count) != null && !metrics.some(m => /^records?|rows?|count$/i.test(m.label))) {
+    metrics.unshift({ label: "Records", value: toNumberish((payload as any).count)! });
+  }
+  if (!metrics.length) {
+    const leaves = [...pickNumericLeaves(payload.data_dashboard), ...pickNumericLeaves(payload.stock_views), ...pickNumericLeaves((payload as any).data).slice(0, 4)].slice(0, 10);
+    leaves.forEach(l => metrics.push({ label: titleize(l.label.split(".").slice(-2).join(" · ")), value: l.value }));
+  }
+  const risk = typeof payload.risk_score === "number" ? payload.risk_score : (isPlainObject(payload.risk_score) ? toNumberish((payload.risk_score as any).score) : null);
+  if (risk != null && !metrics.some(m => /risk/i.test(m.label))) metrics.unshift({ label: "Risk Score", value: risk });
+  return metrics.slice(0, 10);
+}
+
+function FieldVisuals({ name, value }: { name: string; value: unknown }) {
+  const kpis = pickNumericLeaves(value).slice(0, 8);
+  const direct = toChartData(value, 12);
+  const tables = findObjectArrays(value).slice(0, 3);
+  const derivedCharts = tables.flatMap(t => chartFromRows(t.rows.slice(0, 1500), t.path)).slice(0, direct ? 3 : 4);
+  const charts = [direct ? { title: titleize(name), data: direct } : null, ...derivedCharts.map(c => ({ title: c.title, data: c.data }))].filter(Boolean) as { title: string; data: { name: string; value: number }[] }[];
+
+  return (
+    <div className="space-y-4">
+      {!!kpis.length && (
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {kpis.map((k, i) => (
+            <div key={`${k.label}-${i}`} className="rounded-xl border border-border/50 bg-muted/20 p-2.5">
+              <div className="truncate text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{titleize(k.label.split(".").slice(-2).join(" · "))}</div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">{fmtNum(k.value)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!!charts.length && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {charts.map((chart, i) => (
+            <div key={`${chart.title}-${i}`} className="rounded-2xl border border-border/50 p-3">
+              <div className="mb-2 text-xs font-semibold text-muted-foreground">{chart.title}</div>
+              <MiniBarChart data={chart.data} color={CHART_COLORS[i % CHART_COLORS.length]} />
+            </div>
+          ))}
+        </div>
+      )}
+      {!!tables.length && (
+        <div className="space-y-3">
+          {tables.map(t => (
+            <div key={t.path} className="rounded-2xl border border-border/50">
+              <div className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">{titleize(t.path)} · {fmtNum(t.rows.length)} records</div>
+              <ObjectArrayTable rows={t.rows} maxRows={80} />
+            </div>
+          ))}
+        </div>
+      )}
+      {!kpis.length && !charts.length && !tables.length && <GenericValue value={value} />}
+    </div>
+  );
+}
+
+function AgentHero({ payload, project }: { payload: ExportPayload; project?: string }) {
+  const quality = isPlainObject(payload.data_quality) ? toNumberish((payload.data_quality as any).score) : null;
+  const flags = Array.isArray(payload.flags) ? payload.flags.length : 0;
+  const anomalies = Array.isArray(payload.anomalies) ? payload.anomalies.length : 0;
+  return (
+    <section className="relative overflow-hidden rounded-3xl border border-border/70 bg-slate-950 text-slate-50 shadow-sm">
+      <div className="absolute inset-0 opacity-30" style={{ background: "radial-gradient(circle at 20% 20%, var(--chart-1), transparent 28%), radial-gradient(circle at 80% 10%, var(--chart-2), transparent 25%)" }} />
+      <div className="relative grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="bg-white/10 text-slate-50 hover:bg-white/10">Agentic overview</Badge>
+            <span className="text-xs text-slate-400">{project || "Live analytics"}</span>
+          </div>
+          <h1 className="mt-4 text-2xl font-semibold tracking-normal md:text-3xl">Live decision cockpit</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-300">
+            {typeof payload.summary === "string" && payload.summary.trim()
+              ? payload.summary
+              : "The dashboard has converted the provided link into metrics, signals, actions, charts, and explorable records."}
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-400">Flags</div><div className="text-2xl font-semibold tabular-nums">{fmtNum(flags)}</div></div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-400">Anomalies</div><div className="text-2xl font-semibold tabular-nums">{fmtNum(anomalies)}</div></div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-400">Quality</div><div className="text-2xl font-semibold tabular-nums">{quality != null ? `${Math.round(quality)}%` : "—"}</div></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function normalizeExportSheet(raw: unknown, index = 0): Sheet | null {
+  if (!isPlainObject(raw)) return null;
+  const rows = (
+    Array.isArray(raw.rows) ? raw.rows :
+    Array.isArray(raw.data) ? raw.data :
+    Array.isArray(raw.records) ? raw.records :
+    Array.isArray(raw.values) ? raw.values : []
+  ).filter(isPlainObject) as Record<string, unknown>[];
+  const label = String(raw.label || raw.name || raw.sheet || raw.title || `Sheet ${index + 1}`);
+  const columns = Array.isArray(raw.columns)
+    ? (raw.columns as unknown[]).map((c) => isPlainObject(c) ? c as Column : { name: String(c) }).filter(c => c.name)
+    : columnsFromRows(rows);
+  const normalized: Sheet = {
+    label,
+    name: String(raw.name || label),
+    type: raw.type ? String(raw.type) : undefined,
+    color: raw.color ? String(raw.color) : undefined,
+    row_count: toNumberish(raw.row_count) ?? toNumberish(raw.rows_count) ?? rows.length,
+    columns,
+    rows,
+    kpis: Array.isArray(raw.kpis) ? raw.kpis as KPI[] : Array.isArray(raw.type_kpis) ? raw.type_kpis as KPI[] : undefined,
+    charts: Array.isArray(raw.charts) ? raw.charts as ChartDef[] : undefined,
+  };
+  normalized.kpis = normalized.kpis?.length ? normalized.kpis : deriveKpisForSheet(normalized);
+  normalized.charts = normalized.charts?.length ? normalized.charts : deriveChartsForSheet(normalized, 8);
+  return normalized;
+}
+
+function extractSheetsFromExport(payload?: ExportPayload | null): Sheet[] {
+  if (!payload) return [];
+  if (Array.isArray((payload as any).data) && (payload as any).data.some(isPlainObject)) {
+    const rootSheet = normalizeExportSheet({
+      label: (payload as any).sheet || (payload as any).project || "Export Data",
+      name: (payload as any).project || (payload as any).sheet || "Export Data",
+      type: (payload as any).sheet_type,
+      columns: (payload as any).columns,
+      rows: (payload as any).data,
+      row_count: (payload as any).count,
+      type_kpis: (payload as any).type_kpis,
+    }, 0);
+    if (rootSheet) return [rootSheet];
+  }
+  const rawSheets = Array.isArray(payload.sheets)
+    ? payload.sheets
+    : isPlainObject(payload.sheets)
+      ? Object.entries(payload.sheets).map(([label, value]) => Array.isArray(value) ? { label, rows: value } : isPlainObject(value) ? { label, ...value } : { label, value })
+      : [];
+  const sheets = rawSheets.map((s, i) => normalizeExportSheet(s, i)).filter(Boolean) as Sheet[];
+  if (sheets.length) return sheets;
+  const tables = findObjectArrays(payload).filter(t => /sheet|data|record|row|dashboard|stock/i.test(t.path));
+  return tables.slice(0, 6).map((t, i) => normalizeExportSheet({ label: titleize(t.path.split(".").slice(-1)[0] || `Sheet ${i + 1}`), rows: t.rows }, i)).filter(Boolean) as Sheet[];
+}
+
+function dashboardFromExport(payload?: ExportPayload | null): DashboardData {
+  if (!payload) return {};
+  const sheets = extractSheetsFromExport(payload);
+  return {
+    project: String(payload.project || payload.name || payload.title || "Agentic Insights"),
+    enabled_fields: Array.isArray(payload.enabled_fields) ? payload.enabled_fields as string[] : AGENTIC_FIELDS.filter(f => !isEmpty(payload[f])),
+    sheets,
+    analysis: {
+      summary: typeof payload.summary === "string" ? payload.summary : undefined,
+      totals: isPlainObject(payload.totals) ? payload.totals as Record<string, number> : undefined,
+      status_breakdown: isPlainObject(payload.status_breakdown) ? payload.status_breakdown as Record<string, number> : undefined,
+      flags: Array.isArray(payload.flags) ? payload.flags as Flag[] : undefined,
+      risk_score: payload.risk_score as any,
+    },
+    modules: {
+      data_quality: isPlainObject(payload.data_quality) ? payload.data_quality as Modules["data_quality"] : undefined,
+      digest: payload.digest as Modules["digest"],
+      recommendations: Array.isArray(payload.recommendations) ? payload.recommendations as Modules["recommendations"] : undefined,
+      pivot: payload.pivot,
+      anomalies: payload.anomalies,
+      forecast: payload.forecast,
+      trends: payload.trends,
+      whatif: payload.whatif,
+      stock_views: payload.stock_views,
+      data_dashboard: payload.data_dashboard,
+    },
+  };
 }
 
 function AgentBrief({ payload, project }: { payload: ExportPayload; project?: string }) {
@@ -954,6 +1307,12 @@ function AgentBrief({ payload, project }: { payload: ExportPayload; project?: st
   const deterministic = useMemo(() => {
     const bits: string[] = [];
     if (typeof payload.summary === "string") bits.push(payload.summary as string);
+    if (!bits.length && (payload as any).project) bits.push(`${payload.project} is loaded as a live agentic dashboard.`);
+    const count = toNumberish((payload as any).count);
+    if (count != null) bits.push(`${fmtNum(count)} source record${count === 1 ? "" : "s"} available for visual analysis.`);
+    if (Array.isArray((payload as any).type_kpis) && (payload as any).type_kpis.length) {
+      bits.push("Key KPIs: " + (payload as any).type_kpis.slice(0, 5).map((k: any) => `${String(k.label || k.name || "Metric")} ${fmtNum(k.value)}`).join(", ") + ".");
+    }
     const totals = payload.totals as Record<string, number> | undefined;
     if (totals && Object.keys(totals).length) {
       bits.push("Totals: " + Object.entries(totals).slice(0, 6).map(([k, v]) => `${k.replace(/_/g, " ")} ${fmtNum(v)}`).join(", ") + ".");
@@ -1176,7 +1535,7 @@ function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
       <Card className="rounded-3xl border-border/60 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Variance</CardTitle></CardHeader>
         <CardContent>
-          {chart ? <MiniBarChart data={chart} color="var(--chart-3)" /> : <GenericValue value={value} />}
+          {chart ? <MiniBarChart data={chart} color="var(--chart-3)" /> : <FieldVisuals name={name} value={value} />}
         </CardContent>
       </Card>
     );
@@ -1188,7 +1547,7 @@ function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
       <Card className="rounded-3xl border-border/60 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name}</CardTitle></CardHeader>
         <CardContent>
-          {chart ? <MiniBarChart data={chart} color={name === "forecast" ? "var(--chart-4)" : "var(--chart-1)"} /> : <GenericValue value={value} />}
+          {chart ? <MiniBarChart data={chart} color={name === "forecast" ? "var(--chart-4)" : "var(--chart-1)"} /> : <FieldVisuals name={name} value={value} />}
         </CardContent>
       </Card>
     );
@@ -1230,25 +1589,10 @@ function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
   }
 
   if (name === "stock_views" || name === "data_dashboard") {
-    const kpis = pickNumericLeaves(value).slice(0, 8);
-    const chart = toChartData(value, 12);
     return (
       <Card className="rounded-3xl border-border/60 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name.replace(/_/g, " ")}</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {!!kpis.length && (
-            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              {kpis.map((k, i) => (
-                <div key={i} className="rounded-xl border border-border/50 p-2">
-                  <div className="truncate text-[10px] uppercase tracking-wider text-muted-foreground">{k.label}</div>
-                  <div className="text-lg font-semibold tabular-nums">{fmtNum(k.value)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          {chart && <MiniBarChart data={chart} color="var(--chart-2)" />}
-          {!kpis.length && !chart && <GenericValue value={value} />}
-        </CardContent>
+        <CardContent><FieldVisuals name={name} value={value} /></CardContent>
       </Card>
     );
   }
@@ -1257,7 +1601,7 @@ function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
     return (
       <Card className="rounded-3xl border-border/60 shadow-sm">
         <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name}</CardTitle></CardHeader>
-        <CardContent><GenericValue value={value} /></CardContent>
+        <CardContent><FieldVisuals name={name} value={value} /></CardContent>
       </Card>
     );
   }
@@ -1266,7 +1610,7 @@ function AgenticFieldBlock({ name, value }: { name: string; value: unknown }) {
   return (
     <Card className="rounded-3xl border-border/60 shadow-sm">
       <CardHeader className="pb-2"><CardTitle className="text-base font-semibold capitalize">{name.replace(/_/g, " ")}</CardTitle></CardHeader>
-      <CardContent><GenericValue value={value} /></CardContent>
+      <CardContent><FieldVisuals name={name} value={value} /></CardContent>
     </Card>
   );
 }
@@ -1285,14 +1629,18 @@ function AgenticOverview({ payload, project, fetchedAt, onRefresh, refreshing }:
   const ORDER = [
     "summary","totals","status_breakdown","data_quality","digest",
     "recommendations","flags","anomalies","variance","trends","forecast",
-    "pivot","whatif","stock_views","data_dashboard",
+    "pivot","whatif","stock_views","data_dashboard","type_kpis","data",
   ];
   const enabled = Array.isArray((payload as any).enabled_fields) ? ((payload as any).enabled_fields as string[]) : [];
   const presentKeys = ORDER.filter(k => !isEmpty(payload[k]));
   const emptyDeclared = enabled.filter(k => ORDER.includes(k) && isEmpty(payload[k]));
+  const metrics = metricEntriesFromPayload(payload);
+  const statusChart = isPlainObject(payload.status_breakdown) ? payload.status_breakdown as Record<string, number> : null;
 
   return (
     <div className="space-y-4">
+      <AgentHero payload={payload} project={project} />
+
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Live signals</span>
         {presentKeys.map(k => (
@@ -1315,12 +1663,33 @@ function AgenticOverview({ payload, project, fetchedAt, onRefresh, refreshing }:
         </div>
       </div>
 
+      {!!metrics.length && (
+        <div className="grid auto-rows-fr grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
+          {metrics.map((m, i) => (
+            <HeroKpi key={`${m.label}-${i}`} label={m.label} value={m.value} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} />
+          ))}
+        </div>
+      )}
+
+      {(statusChart || !isEmpty(payload.data_quality)) && (
+        <div className="grid gap-4 lg:grid-cols-5">
+          {statusChart && <Card className="rounded-3xl border-border/60 shadow-sm lg:col-span-3"><CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Status breakdown</CardTitle></CardHeader><CardContent><StackedBar data={statusChart} /></CardContent></Card>}
+          {!isEmpty(payload.data_quality) && <AgenticFieldBlock name="data_quality" value={payload.data_quality} />}
+        </div>
+      )}
+
       <AgentBrief payload={payload} project={project} />
       <NextBestActions payload={payload} />
 
       <div className="grid gap-4 md:grid-cols-2">
         {presentKeys
-          .filter(k => !["summary","totals","status_breakdown","flags","digest","recommendations","data_quality"].includes(k))
+          .filter(k => ["digest","recommendations","flags","anomalies"].includes(k))
+          .map(k => <AgenticFieldBlock key={k} name={k} value={payload[k]} />)}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {presentKeys
+          .filter(k => !["summary","totals","status_breakdown","flags","digest","recommendations","data_quality","anomalies","data"].includes(k))
           .map(k => <AgenticFieldBlock key={k} name={k} value={payload[k]} />)}
       </div>
 
@@ -1359,7 +1728,8 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheets, activeLabel]);
 
-  const selected = sheets.find(s => s.label === activeLabel) || sheets[0];
+  const selectedRaw = sheets.find(s => s.label === activeLabel) || sheets[0];
+  const selected = selectedRaw ? normalizeSheet(selectedRaw) : undefined;
   const isBasis = !!selected && selected.label === sheets[0]?.label;
   const delay = !!selected && isBasis && isDelaySheet(selected, data.analysis);
 
@@ -1458,9 +1828,9 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
       {selected && !delay && (
         <>
           {/* Generic sheet: KPI hero tiles */}
-          {!!selected.kpis?.length && (
+          {!!deriveKpisForSheet(selected).length && (
             <div className="grid auto-rows-fr grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
-              {selected.kpis.map((k, i) => (
+              {deriveKpisForSheet(selected).map((k, i) => (
                 <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} index={i} featured={i === 0} onClick={() => drillKpi(k.label, k.value)} />
               ))}
             </div>
@@ -1468,7 +1838,7 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
 
           {/* Generic sheet: charts (from API + auto-derived from rows for any column missed) */}
           {(() => {
-            const apiCharts = selected.charts || [];
+            const apiCharts = deriveChartsForSheet(selected, 10);
             const chartedCols = new Set<string>();
             apiCharts.forEach(c => {
               const m = /^(?:Count|Σ|Sum|Avg|Average)\s+(?:of\s+)?(.+?)(?:\s+by\s+(.+))?$/i.exec(c.title || "");
@@ -1476,7 +1846,7 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
             });
             const cols = selected.columns || [];
             const rows = selected.rows || [];
-            const numericCols = cols.filter(c => c.type === "number").map(c => c.name);
+            const numericCols = cols.filter(c => c.type === "number" || isNumericColumn(rows, c.name)).map(c => c.name);
             const primaryNumeric = numericCols[0];
             const derived: ChartDef[] = [];
             cols.forEach(col => {
@@ -1493,8 +1863,8 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
                 if (!k) return;
                 counts.set(k, (counts.get(k) || 0) + 1);
                 if (primaryNumeric) {
-                  const n = Number(r[primaryNumeric]);
-                  if (Number.isFinite(n)) sums.set(k, (sums.get(k) || 0) + n);
+                  const n = toNumberish(r[primaryNumeric]);
+                  if (n != null) sums.set(k, (sums.get(k) || 0) + n);
                 }
               });
               const toTop = (m: Map<string, number>) => {
@@ -1589,7 +1959,7 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
                       <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Module</div>
                       <CardTitle className="text-base font-semibold capitalize">{k}</CardTitle>
                     </CardHeader>
-                    <CardContent><GenericValue value={v} /></CardContent>
+                    <CardContent><FieldVisuals name={k} value={v} /></CardContent>
                   </Card>
                 );
               })}
@@ -1714,10 +2084,10 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-3 space-y-4">
                 {extraAnalysis.map(([k, v]) => (
-                  <Card key={`a-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
+                  <Card key={`a-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><FieldVisuals name={k} value={v} /></CardContent></Card>
                 ))}
                 {extraModules.map(([k, v]) => (
-                  <Card key={`m-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><GenericValue value={v} /></CardContent></Card>
+                  <Card key={`m-${k}`} className="rounded-2xl"><CardHeader className="pb-2"><CardTitle className="text-sm capitalize">{k.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><FieldVisuals name={k} value={v} /></CardContent></Card>
                 ))}
               </CollapsibleContent>
             </Collapsible>
@@ -1748,8 +2118,9 @@ function downloadCSV(filename: string, columns: string[], rows: Record<string, u
 }
 
 function SheetTable({ sheet }: { sheet: Sheet }) {
-  const rows = sheet.rows || [];
-  const columns = sheet.columns || [];
+  const normalized = normalizeSheet(sheet);
+  const rows = normalized.rows || [];
+  const columns = normalized.columns || [];
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
@@ -1812,7 +2183,7 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
         const av = a[sortCol]; const bv = b[sortCol];
         if (av == null && bv == null) return 0;
         if (av == null) return 1; if (bv == null) return -1;
-        if (numeric) return (Number(av) - Number(bv)) * dir;
+        if (numeric) return ((toNumberish(av) ?? 0) - (toNumberish(bv) ?? 0)) * dir;
         return String(av).localeCompare(String(bv)) * dir;
       });
     }
@@ -1860,7 +2231,7 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" className="h-8 gap-1"
-            onClick={() => downloadCSV(`${sheet.label}.csv`, columns.map(c => c.name), filtered)}>
+            onClick={() => downloadCSV(`${normalized.label}.csv`, columns.map(c => c.name), filtered)}>
             <Download className="h-3.5 w-3.5" /> CSV
           </Button>
         </div>
@@ -1943,14 +2314,45 @@ function SheetTable({ sheet }: { sheet: Sheet }) {
 function SheetsSection({ sheets }: { sheets: Sheet[] }) {
   const [active, setActive] = useState(sheets[0]?.label || "");
   const drill = useDrill();
-  useEffect(() => { if (!sheets.find(s => s.label === active)) setActive(sheets[0]?.label || ""); }, [sheets, active]);
-  if (!sheets.length) return <SectionEmpty icon={SheetIcon} label="No sheets returned." />;
-  const sheet = sheets.find(s => s.label === active) || sheets[0];
+  const normalizedSheets = useMemo(() => sheets.map(normalizeSheet), [sheets]);
+  useEffect(() => { if (!normalizedSheets.find(s => s.label === active)) setActive(normalizedSheets[0]?.label || ""); }, [normalizedSheets, active]);
+  if (!normalizedSheets.length) return <SectionEmpty icon={SheetIcon} label="No sheets returned." />;
+  const sheet = normalizedSheets.find(s => s.label === active) || normalizedSheets[0];
+  const kpis = deriveKpisForSheet(sheet);
+  const charts = deriveChartsForSheet(sheet, 10);
+  const rankings = deriveRankingsForSheet(sheet, 5);
+  const rows = sheet.rows || [];
+  const cols = sheet.columns || [];
+  const numericCols = cols.filter(c => c.type === "number" || isNumericColumn(rows, c.name));
+  const categoryCols = cols.filter(c => !numericCols.some(n => n.name === c.name));
+  const totalCells = Math.max(1, rows.length * Math.max(1, cols.length));
+  const emptyCells = rows.reduce((sum, r) => sum + cols.filter(c => r[c.name] == null || r[c.name] === "").length, 0);
+  const completeness = Math.max(0, Math.round((1 - emptyCells / totalCells) * 100));
   return (
     <div className="space-y-5">
+      <Card className="overflow-hidden rounded-3xl border-border/60 bg-gradient-to-br from-card via-card to-primary/5 shadow-sm">
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" /> Sheet agent</Badge>
+              <span className="text-xs text-muted-foreground">{fmtNum(rows.length)} rows · {fmtNum(cols.length)} columns</span>
+            </div>
+            <h2 className="mt-3 truncate text-2xl font-semibold tracking-tight">{sheet.name || sheet.label}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Auto-profiled this sheet into KPIs, field intelligence, ranked drivers, visual breakdowns, and searchable operational records.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+            <div className="rounded-2xl border border-border/60 bg-background/70 p-3"><div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Completeness</div><div className="mt-1 text-2xl font-semibold tabular-nums">{completeness}%</div></div>
+            <div className="rounded-2xl border border-border/60 bg-background/70 p-3"><div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Measures</div><div className="mt-1 text-2xl font-semibold tabular-nums">{numericCols.length}</div></div>
+            <div className="rounded-2xl border border-border/60 bg-background/70 p-3"><div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Dimensions</div><div className="mt-1 text-2xl font-semibold tabular-nums">{categoryCols.length}</div></div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="overflow-x-auto">
         <div className="flex flex-wrap gap-2">
-          {sheets.map(s => (
+          {normalizedSheets.map(s => (
             <button key={s.label} onClick={() => setActive(s.label)}
               className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition ${active === s.label ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-accent"}`}>
               <span className="font-medium">{s.label}</span>
@@ -1976,22 +2378,61 @@ function SheetsSection({ sheets }: { sheets: Sheet[] }) {
         };
         return (
           <>
-            {!!sheet.kpis?.length && (
+            {!!kpis.length && (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-                {sheet.kpis.map((k, i) => (
+                {kpis.map((k, i) => (
                   <HeroKpi key={i} label={k.label} value={k.value} color={CHART_COLORS[i % CHART_COLORS.length]} onClick={() => openKpi(k.label, k.value)} />
                 ))}
               </div>
             )}
-            {!!sheet.charts?.length && (
-              <div className="grid gap-4 md:grid-cols-2">
-                {sheet.charts.map((c, i) => (
-                  <Card key={i} className="rounded-2xl shadow-sm">
-                    <CardHeader className="pb-2"><CardTitle className="text-sm">{c.title}</CardTitle></CardHeader>
+            {!!rankings.length && (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {rankings.map((r, i) => (
+                  <Card key={r.title} className="rounded-3xl border-border/60 shadow-sm">
+                    <CardHeader className="pb-2">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Driver ranking</div>
+                      <CardTitle className="text-sm">{r.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {r.data.map((item, idx) => (
+                        <button key={item.name} onClick={() => openChart(r.title, item.name)} className="flex w-full items-center gap-2 rounded-xl p-1.5 text-left transition hover:bg-accent">
+                          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">{idx + 1}</span>
+                          <span className="min-w-0 flex-1 truncate text-xs">{item.name}</span>
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">{fmtNum(item.value)}</span>
+                        </button>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {!!charts.length && (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {charts.map((c, i) => (
+                  <Card key={i} className={`rounded-3xl border-border/60 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${i === 0 ? "md:col-span-2" : ""}`}>
+                    <CardHeader className="pb-2">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Auto visual</div>
+                      <CardTitle className="text-sm">{c.title}</CardTitle>
+                    </CardHeader>
                     <CardContent><MiniBarChart data={c.data || []} color={CHART_COLORS[i % CHART_COLORS.length]} onBarClick={(name) => openChart(c.title, name)} /></CardContent>
                   </Card>
                 ))}
               </div>
+            )}
+            {!!cols.length && (
+              <Card className="rounded-3xl border-border/60 shadow-sm">
+                <CardHeader className="pb-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Schema intelligence</div>
+                  <CardTitle className="text-sm">Fields detected by the sheet agent</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
+                  {cols.slice(0, 60).map(c => (
+                    <Badge key={c.name} variant={numericCols.some(n => n.name === c.name) ? "default" : "secondary"} className="rounded-full">
+                      {c.name}{c.distinct != null ? ` · ${fmtNum(c.distinct)}` : ""}
+                    </Badge>
+                  ))}
+                </CardContent>
+              </Card>
             )}
           </>
         );
@@ -2871,28 +3312,41 @@ const TABS = [
 ] as const;
 
 export default function InsightDashboard() {
-  const { raw, setRaw, active, activeExport, error, apply, clear } = useLinkInput();
+  const { raw, setRaw, active, activeExport, exportOnly, error, apply, clear } = useLinkInput();
+  const fetchUrl = useServerFn(fetchInsightUrl);
   const [tab, setTab] = useState<typeof TABS[number]["id"]>("overview");
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderPrefill, setReminderPrefill] = useState<{ related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string } | undefined>();
 
   const dq = useQuery({
-    queryKey: ["dashboard", active], enabled: !!active,
-    queryFn: ({ signal }) => apiGet<DashboardData>(`${active}/dashboard`, signal),
+    queryKey: ["dashboard", active], enabled: !!active && !exportOnly,
+    queryFn: async () => {
+      const res = await fetchUrl({ data: { url: `${active}/dashboard` } });
+      return res.payload as DashboardData;
+    },
     placeholderData: keepPreviousData,
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
 
   const expQ = useQuery({
     queryKey: ["export", activeExport], enabled: !!activeExport,
-    queryFn: ({ signal }) => apiGet<ExportPayload>(activeExport, signal),
+    queryFn: async () => {
+      const res = await fetchUrl({ data: { url: activeExport } });
+      return res.payload as ExportPayload;
+    },
     placeholderData: keepPreviousData,
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
   const exportFetchedAt = expQ.dataUpdatedAt;
 
-
-  const data = dq.data || {};
+  const exportDashboard = useMemo(() => dashboardFromExport(expQ.data), [expQ.data]);
+  const data = useMemo<DashboardData>(() => {
+    if (dq.data && Object.keys(dq.data).length) {
+      const mergedSheets = (dq.data.sheets?.length ? dq.data.sheets : exportDashboard.sheets) || [];
+      return { ...exportDashboard, ...dq.data, sheets: mergedSheets, modules: { ...(exportDashboard.modules || {}), ...(dq.data.modules || {}) }, analysis: { ...(exportDashboard.analysis || {}), ...(dq.data.analysis || {}) } };
+    }
+    return exportDashboard;
+  }, [dq.data, exportDashboard]);
   const sheets = data.sheets || [];
   const project = data.project || "Insights";
   const modeBadge = data.analysis?.mode_badge;
@@ -2911,8 +3365,12 @@ export default function InsightDashboard() {
     [sheets, data.analysis]
   );
   const visibleTabs = useMemo(
-    () => TABS.filter(t => (t.id === "concerns" || t.id === "reminders") ? hasAnyDelaySheet : true),
-    [hasAnyDelaySheet]
+    () => TABS.filter(t => {
+      if (exportOnly && t.id !== "overview" && t.id !== "sheets") return false;
+      if ((t.id === "concerns" || t.id === "reminders") && !hasAnyDelaySheet) return false;
+      return true;
+    }),
+    [hasAnyDelaySheet, exportOnly]
   );
   useEffect(() => {
     if (!visibleTabs.find(t => t.id === tab)) setTab("overview");
@@ -2920,7 +3378,7 @@ export default function InsightDashboard() {
 
 
   const colMapQ = useQuery({
-    queryKey: ["column-map", active], enabled: !!active,
+    queryKey: ["column-map", active], enabled: !!active && !exportOnly,
     queryFn: ({ signal }) => apiGet<ColumnMap>(`${active}/column-map`, signal),
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
@@ -2938,7 +3396,8 @@ export default function InsightDashboard() {
     setReminderOpen(true);
   };
 
-  const reloadAll = () => { dq.refetch(); expQ.refetch(); };
+  const reloadAll = () => { if (!exportOnly) dq.refetch(); expQ.refetch(); };
+  const contentReady = exportOnly ? (!!expQ.data || !!expQ.error) : (!dq.isPending || !!expQ.data);
 
   return (
     <DrillProvider>
@@ -2978,8 +3437,8 @@ export default function InsightDashboard() {
               Clear
             </Button>
 
-            <Button type="button" size="sm" variant="outline" onClick={reloadAll} disabled={!active || dq.isFetching}>
-              <RefreshCcw className={`h-4 w-4 ${dq.isFetching ? "animate-spin" : ""}`} />
+            <Button type="button" size="sm" variant="outline" onClick={reloadAll} disabled={!active || dq.isFetching || expQ.isFetching}>
+              <RefreshCcw className={`h-4 w-4 ${dq.isFetching || expQ.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </form>
         </CardContent>
@@ -2995,8 +3454,9 @@ export default function InsightDashboard() {
 
       {active && (
         <>
-          {dq.error instanceof NotFoundError && <SectionError message="Dashboard endpoint not found at this URL" />}
-          {dq.error && !(dq.error instanceof NotFoundError) && <SectionError message={(dq.error as Error).message} />}
+          {!expQ.data && dq.error instanceof NotFoundError && <SectionError message="Dashboard endpoint not found at this URL" />}
+          {!expQ.data && dq.error && !(dq.error instanceof NotFoundError) && <SectionError message={(dq.error as Error).message} />}
+          {expQ.error && <SectionError message={`Export analytics failed: ${(expQ.error as Error).message}`} />}
 
           {/* Mobile select */}
           <div className="md:hidden">
@@ -3027,18 +3487,18 @@ export default function InsightDashboard() {
 
             {/* Content */}
             <div className="min-w-0 space-y-4">
-              {dq.isPending && (
+              {!contentReady && (
                 <div className="grid gap-3 md:grid-cols-4">
                   {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
                 </div>
               )}
 
-              {!dq.isPending && tab === "overview" && <OverviewSection data={data} exportPayload={expQ.data} exportFetchedAt={exportFetchedAt} onRefreshExport={() => expQ.refetch()} refreshingExport={expQ.isFetching} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
-              {!dq.isPending && tab === "sheets" && <SheetsSection sheets={sheets} />}
-              {!dq.isPending && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
-              {!dq.isPending && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
-              {!dq.isPending && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} data={data} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} />}
-              {!dq.isPending && tab === "hygiene" && active && <HygieneSection base={active} />}
+              {contentReady && tab === "overview" && <OverviewSection data={data} exportPayload={expQ.data} exportFetchedAt={exportFetchedAt} onRefreshExport={() => expQ.refetch()} refreshingExport={expQ.isFetching} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
+              {contentReady && tab === "sheets" && <SheetsSection sheets={sheets} />}
+              {contentReady && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
+              {contentReady && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
+              {contentReady && tab === "copilot" && active && !exportOnly && <CopilotSection base={active} sheets={sheets} data={data} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} />}
+              {contentReady && tab === "hygiene" && active && !exportOnly && <HygieneSection base={active} />}
             </div>
           </div>
 
