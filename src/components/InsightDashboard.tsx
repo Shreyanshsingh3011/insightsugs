@@ -3366,8 +3366,8 @@ export default function InsightDashboard() {
   );
   const visibleTabs = useMemo(
     () => TABS.filter(t => {
+      if (exportOnly && t.id !== "overview" && t.id !== "sheets") return false;
       if ((t.id === "concerns" || t.id === "reminders") && !hasAnyDelaySheet) return false;
-      if (exportOnly && (t.id === "copilot" || t.id === "hygiene")) return false;
       return true;
     }),
     [hasAnyDelaySheet, exportOnly]
