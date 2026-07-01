@@ -8,8 +8,10 @@ const InputSchema = z.object({
 
 function assertSafePublicUrl(raw: string): URL {
   const url = new URL(raw);
-  if (url.protocol !== "https:") throw new Error("Only https links are supported.");
   const host = url.hostname.toLowerCase();
+  const isLocalPublicApi = url.protocol === "http:" && (host === "localhost" || host === "127.0.0.1") && url.pathname.startsWith("/api/public/");
+  if (url.protocol !== "https:" && !isLocalPublicApi) throw new Error("Only https links are supported.");
+  if (isLocalPublicApi) return url;
   if (
     host === "localhost" ||
     host === "127.0.0.1" ||
