@@ -3393,6 +3393,7 @@ export default function InsightDashboard() {
   };
 
   const reloadAll = () => { if (!exportOnly) dq.refetch(); expQ.refetch(); };
+  const contentReady = exportOnly ? (!!expQ.data || !!expQ.error) : (!dq.isPending || !!expQ.data);
 
   return (
     <DrillProvider>
@@ -3482,18 +3483,18 @@ export default function InsightDashboard() {
 
             {/* Content */}
             <div className="min-w-0 space-y-4">
-              {dq.isPending && !expQ.data && (
+              {!contentReady && (
                 <div className="grid gap-3 md:grid-cols-4">
                   {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
                 </div>
               )}
 
-              {(!dq.isPending || !!expQ.data) && tab === "overview" && <OverviewSection data={data} exportPayload={expQ.data} exportFetchedAt={exportFetchedAt} onRefreshExport={() => expQ.refetch()} refreshingExport={expQ.isFetching} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
-              {(!dq.isPending || !!expQ.data) && tab === "sheets" && <SheetsSection sheets={sheets} />}
-              {(!dq.isPending || !!expQ.data) && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
-              {(!dq.isPending || !!expQ.data) && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
-              {(!dq.isPending || !!expQ.data) && tab === "copilot" && active && <CopilotSection base={active} sheets={sheets} data={data} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} />}
-              {(!dq.isPending || !!expQ.data) && tab === "hygiene" && active && <HygieneSection base={active} />}
+              {contentReady && tab === "overview" && <OverviewSection data={data} exportPayload={expQ.data} exportFetchedAt={exportFetchedAt} onRefreshExport={() => expQ.refetch()} refreshingExport={expQ.isFetching} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
+              {contentReady && tab === "sheets" && <SheetsSection sheets={sheets} />}
+              {contentReady && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
+              {contentReady && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
+              {contentReady && tab === "copilot" && active && !exportOnly && <CopilotSection base={active} sheets={sheets} data={data} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} />}
+              {contentReady && tab === "hygiene" && active && !exportOnly && <HygieneSection base={active} />}
             </div>
           </div>
 
