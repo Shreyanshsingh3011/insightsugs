@@ -204,16 +204,21 @@ function useLinkInput() {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link") || "";
   });
-  const [active, setActive] = useState<string>(() => {
-    const r = (typeof window !== "undefined" && (new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link"))) || "";
-    return normalizeBase(r).base;
-  });
+  const initial = (() => {
+    if (typeof window === "undefined") return { base: "", exportUrl: "" };
+    const r = new URLSearchParams(window.location.search).get("link") || localStorage.getItem("insight:link") || "";
+    const n = normalizeBase(r);
+    return { base: n.base, exportUrl: n.exportUrl || "" };
+  })();
+  const [active, setActive] = useState<string>(initial.base);
+  const [activeExport, setActiveExport] = useState<string>(initial.exportUrl);
   const [error, setError] = useState<string | undefined>();
   const apply = (val: string) => {
-    const { base, error } = normalizeBase(val);
-    if (error) { setError(error); setActive(""); return; }
+    const { base, exportUrl, error } = normalizeBase(val);
+    if (error) { setError(error); setActive(""); setActiveExport(""); return; }
     setError(undefined);
     setActive(base);
+    setActiveExport(exportUrl || "");
     try { localStorage.setItem("insight:link", val); } catch { /* ignore */ }
     if (typeof window !== "undefined") {
       const u = new URL(window.location.href);
@@ -224,6 +229,7 @@ function useLinkInput() {
   const clear = () => {
     setRaw("");
     setActive("");
+    setActiveExport("");
     setError(undefined);
     try { localStorage.removeItem("insight:link"); } catch { /* ignore */ }
     if (typeof window !== "undefined") {
@@ -232,8 +238,9 @@ function useLinkInput() {
       window.history.replaceState({}, "", u.toString());
     }
   };
-  return { raw, setRaw, active, error, apply, clear };
+  return { raw, setRaw, active, activeExport, error, apply, clear };
 }
+
 
 
 /* ============================ Generic renderers ============================ */
