@@ -3386,7 +3386,7 @@ export default function InsightDashboard() {
     setReminderOpen(true);
   };
 
-  const reloadAll = () => { dq.refetch(); expQ.refetch(); };
+  const reloadAll = () => { if (!exportOnly) dq.refetch(); expQ.refetch(); };
 
   return (
     <DrillProvider>
@@ -3426,8 +3426,8 @@ export default function InsightDashboard() {
               Clear
             </Button>
 
-            <Button type="button" size="sm" variant="outline" onClick={reloadAll} disabled={!active || dq.isFetching}>
-              <RefreshCcw className={`h-4 w-4 ${dq.isFetching ? "animate-spin" : ""}`} />
+            <Button type="button" size="sm" variant="outline" onClick={reloadAll} disabled={!active || dq.isFetching || expQ.isFetching}>
+              <RefreshCcw className={`h-4 w-4 ${dq.isFetching || expQ.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </form>
         </CardContent>
