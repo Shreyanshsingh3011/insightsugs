@@ -2930,7 +2930,7 @@ export default function InsightDashboard() {
     setReminderOpen(true);
   };
 
-  const reloadAll = () => dq.refetch();
+  const reloadAll = () => { dq.refetch(); expQ.refetch(); };
 
   return (
     <DrillProvider>
