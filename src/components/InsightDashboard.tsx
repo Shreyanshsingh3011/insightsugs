@@ -3368,7 +3368,7 @@ export default function InsightDashboard() {
 
 
   const colMapQ = useQuery({
-    queryKey: ["column-map", active], enabled: !!active,
+    queryKey: ["column-map", active], enabled: !!active && !exportOnly,
     queryFn: ({ signal }) => apiGet<ColumnMap>(`${active}/column-map`, signal),
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
