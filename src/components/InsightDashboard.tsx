@@ -1622,7 +1622,7 @@ function AgenticOverview({ payload, project, fetchedAt, onRefresh, refreshing }:
   const ORDER = [
     "summary","totals","status_breakdown","data_quality","digest",
     "recommendations","flags","anomalies","variance","trends","forecast",
-    "pivot","whatif","stock_views","data_dashboard",
+    "pivot","whatif","stock_views","data_dashboard","type_kpis","data",
   ];
   const enabled = Array.isArray((payload as any).enabled_fields) ? ((payload as any).enabled_fields as string[]) : [];
   const presentKeys = ORDER.filter(k => !isEmpty(payload[k]));
@@ -1682,7 +1682,7 @@ function AgenticOverview({ payload, project, fetchedAt, onRefresh, refreshing }:
 
       <div className="grid gap-4 md:grid-cols-2">
         {presentKeys
-          .filter(k => !["summary","totals","status_breakdown","flags","digest","recommendations","data_quality","anomalies"].includes(k))
+          .filter(k => !["summary","totals","status_breakdown","flags","digest","recommendations","data_quality","anomalies","data"].includes(k))
           .map(k => <AgenticFieldBlock key={k} name={k} value={payload[k]} />)}
       </div>
 
