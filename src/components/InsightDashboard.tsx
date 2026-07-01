@@ -130,18 +130,35 @@ function isEmpty(v: unknown): boolean {
   if (typeof v === "string") return v.trim() === "";
   return false;
 }
-function normalizeBase(raw: string): { base: string; error?: string } {
+const AGENTIC_FIELDS = [
+  "summary","totals","status_breakdown","sheets","variance","flags",
+  "data_dashboard","copilot","data_quality","pivot","forecast","anomalies",
+  "digest","recommendations","trends","whatif","stock_views",
+];
+function normalizeBase(raw: string): { base: string; exportUrl?: string; error?: string } {
   let s = (raw || "").trim();
   if (!s) return { base: "", error: "Enter a full URL starting with https://" };
-  s = s.replace(/[?#].*$/, "");
-  s = s.replace(/\/(dashboard|copilot|export|concerns|reminders|harmonize|column-map)\/?$/i, "");
-  s = s.replace(/\/+$/, "");
   if (!/^https:\/\//i.test(s)) return { base: "", error: "Enter a full URL starting with https://" };
-  try { const u = new URL(s); if (!u.host) throw new Error(); } catch {
+  let u: URL;
+  try { u = new URL(s); if (!u.host) throw new Error(); } catch {
     return { base: "", error: "Enter a valid URL" };
   }
-  return { base: s };
+  // Detect /export path — preserve fully including querystring
+  const isExport = /\/export\/?$/i.test(u.pathname);
+  let exportUrl: string | undefined;
+  if (isExport) {
+    exportUrl = u.toString();
+  }
+  // Strip trailing subpaths + query to derive base
+  let basePath = u.pathname.replace(/\/(dashboard|copilot|export|concerns|reminders|harmonize|column-map)\/?$/i, "");
+  basePath = basePath.replace(/\/+$/, "");
+  const base = `${u.origin}${basePath}`;
+  if (!exportUrl) {
+    exportUrl = `${base}/export?fields=${AGENTIC_FIELDS.join(",")}`;
+  }
+  return { base, exportUrl };
 }
+
 function relTime(iso?: string) {
   if (!iso) return "";
   const d = parseISO(iso);
