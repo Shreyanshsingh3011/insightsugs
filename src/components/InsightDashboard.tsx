@@ -2863,7 +2863,7 @@ const TABS = [
 ] as const;
 
 export default function InsightDashboard() {
-  const { raw, setRaw, active, error, apply, clear } = useLinkInput();
+  const { raw, setRaw, active, activeExport, error, apply, clear } = useLinkInput();
   const [tab, setTab] = useState<typeof TABS[number]["id"]>("overview");
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderPrefill, setReminderPrefill] = useState<{ related_id?: string; recipient_email?: string; subject?: string; body?: string; recurrence?: string } | undefined>();
@@ -2874,6 +2874,15 @@ export default function InsightDashboard() {
     placeholderData: keepPreviousData,
     retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
   });
+
+  const expQ = useQuery({
+    queryKey: ["export", activeExport], enabled: !!activeExport,
+    queryFn: ({ signal }) => apiGet<ExportPayload>(activeExport, signal),
+    placeholderData: keepPreviousData,
+    retry: (n, e) => !(e instanceof NotFoundError) && n < 1,
+  });
+  const exportFetchedAt = expQ.dataUpdatedAt;
+
 
   const data = dq.data || {};
   const sheets = data.sheets || [];
