@@ -3365,8 +3365,12 @@ export default function InsightDashboard() {
     [sheets, data.analysis]
   );
   const visibleTabs = useMemo(
-    () => TABS.filter(t => (t.id === "concerns" || t.id === "reminders") ? hasAnyDelaySheet : true),
-    [hasAnyDelaySheet]
+    () => TABS.filter(t => {
+      if ((t.id === "concerns" || t.id === "reminders") && !hasAnyDelaySheet) return false;
+      if (exportOnly && (t.id === "copilot" || t.id === "hygiene")) return false;
+      return true;
+    }),
+    [hasAnyDelaySheet, exportOnly]
   );
   useEffect(() => {
     if (!visibleTabs.find(t => t.id === tab)) setTab("overview");
