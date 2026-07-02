@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { computeAgenticTabs, type AgenticDashboardData } from "@/components/AgenticInsightsOverview";
+import AgenticInsightsOverview, { computeAgenticTabs, type AgenticDashboardData } from "@/components/AgenticInsightsOverview";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { formatDistanceToNow, parseISO, isValid as isValidDate } from "date-fns";
@@ -3509,7 +3509,15 @@ export default function InsightDashboard() {
                 </div>
               )}
 
-              {contentReady && tab === "overview" && <OverviewSection data={data} exportPayload={expQ.data} exportFetchedAt={exportFetchedAt} onRefreshExport={() => expQ.refetch()} refreshingExport={expQ.isFetching} selectedLabel={sharedSheetLabel} onSelectedLabelChange={setSharedSheetLabel} onSelectedChange={(sheet, isDelay) => setOverviewSelected({ sheet, isDelay })} />}
+              {contentReady && (tab === "overview" || tab === "actions" || tab === "inventory" || tab === "anomalies" || tab === "quality") && (
+                <AgenticInsightsOverview
+                  data={data as unknown as AgenticDashboardData}
+                  base={active}
+                  onRefresh={() => { void dq.refetch(); void expQ.refetch(); }}
+                  refreshing={dq.isFetching || expQ.isFetching}
+                  scrollTo={AGENTIC_SCROLL_TARGETS[tab]}
+                />
+              )}
               {contentReady && tab === "sheets" && <SheetsSection sheets={sheets} />}
               {contentReady && tab === "concerns" && active && hasAnyDelaySheet && <ConcernsSection base={active} sheets={sheets} onRemind={openRemind} />}
               {contentReady && tab === "reminders" && active && hasAnyDelaySheet && <RemindersSection base={active} onNew={() => { setReminderPrefill(undefined); setReminderOpen(true); }} />}
