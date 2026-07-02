@@ -1043,7 +1043,12 @@ function RankedBars({
   );
 }
 
-function InventorySection({ stock }: { stock: StockViews }) {
+function InventorySection({
+  stock, actions = [], facts, geminiItems,
+}: {
+  stock: StockViews; actions?: Action[];
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   const top = stock.top_consumers?.data || [];
   const low = stock.low_balance?.data || [];
   if (!top.length && !low.length) return null;
@@ -1071,7 +1076,19 @@ function InventorySection({ stock }: { stock: StockViews }) {
                 {low.filter((x) => x.value <= 0).length} items short by cumulative {fmt(low.reduce((s, x) => s + (x.value < 0 ? Math.abs(x.value) : 0), 0), stock.low_balance?.measure)}
               </div>
             </CardHeader>
-            <CardContent><RankedBars data={low} measureLabel={stock.low_balance?.measure} tone="danger" /></CardContent>
+            <CardContent>
+              <RankedBars data={low} measureLabel={stock.low_balance?.measure} tone="danger" />
+              {facts ? (
+                <SectionActions
+                  title="Reorder queue"
+                  actions={actions}
+                  facts={facts}
+                  geminiItems={geminiItems}
+                  emptyText="No shortages detected."
+                  max={5}
+                />
+              ) : null}
+            </CardContent>
           </Card>
         )}
       </div>
