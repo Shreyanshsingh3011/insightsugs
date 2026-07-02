@@ -932,12 +932,29 @@ function PivotChartCard({
             </BarChart>
           </ResponsiveContainer>
         </div>
+          </ResponsiveContainer>
+        </div>
+        {facts && (
+          <SectionActions
+            title="Focus these first"
+            actions={pivotFocusActions(pivot)}
+            facts={facts}
+            geminiItems={geminiItems}
+            emptyText="No standout drivers detected."
+            max={3}
+          />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function RiskFeed({ anomalies }: { anomalies: Anomaly[] }) {
+function RiskFeed({
+  anomalies, actions = [], facts, geminiItems,
+}: {
+  anomalies: Anomaly[]; actions?: Action[];
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   if (!anomalies.length) return null;
   const top = anomalies.slice(0, 6);
   return (
