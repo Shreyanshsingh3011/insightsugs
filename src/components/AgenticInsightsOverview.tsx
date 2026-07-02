@@ -1103,7 +1103,13 @@ const HELPER_KEYS = new Set([
   "available_dates", "delta_pct", "delta", "enabled", "numeric_sums", "column_roles",
 ]);
 
-function ItemTable({ sheet, anomalies }: { sheet: SheetLite; anomalies: Anomaly[] }) {
+function ItemTable({
+  sheet, anomalies, actions = [], facts, geminiItems,
+}: {
+  sheet: SheetLite; anomalies: Anomaly[];
+  actions?: Action[]; facts?: unknown;
+  geminiItems?: Record<string, { text?: string }>;
+}) {
   const [q, setQ] = useState("");
   const [showAll, setShowAll] = useState(false);
   const anomalySet = useMemo(
