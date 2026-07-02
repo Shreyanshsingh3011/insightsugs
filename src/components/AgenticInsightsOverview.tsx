@@ -1208,6 +1208,37 @@ function ItemTable({
           <ChevronDown className={`ml-1 h-4 w-4 transition ${showAll ? "rotate-180" : ""}`} />
         </Button>
       )}
+      {facts ? (
+        <SectionActions
+          title="Row-level next steps"
+          actions={
+            // Combine row rule-based severities with cross-payload actions for this sheet
+            [
+              ...sorted
+                .filter(({ rec }) => rec.severity === "high" || rec.severity === "medium")
+                .slice(0, 6)
+                .map(({ row, rec }, i) => {
+                  const k = keyCol ? String(row[keyCol] ?? "").trim() : `row ${i + 1}`;
+                  return {
+                    id: `item-${i}`,
+                    source: "Recommendation" as const,
+                    severity: rec.severity,
+                    title: `${rec.text} — ${k || `row ${i + 1}`}`,
+                    detail: showCols
+                      .filter((c) => c !== keyCol)
+                      .map((c) => `${c}: ${typeof row[c] === "number" ? fmt(row[c], c) : String(row[c] ?? "—")}`)
+                      .join(" · "),
+                  };
+                }),
+              ...actions.filter((a) => a.source === "Shortage" || a.source === "Anomaly").slice(0, 3),
+            ]
+          }
+          facts={facts}
+          geminiItems={geminiItems}
+          emptyText="All rows nominal."
+          max={5}
+        />
+      ) : null}
     </section>
   );
 }
