@@ -746,6 +746,91 @@ function NextBestActions({
   );
 }
 
+/* ---------- Section-scoped Next Best Actions strip ---------- */
+
+function SectionActions({
+  actions, facts, geminiItems, title = "Next best actions",
+  emptyText = "No actions in this area.", max = 4,
+}: {
+  actions: Action[];
+  facts: unknown;
+  geminiItems?: Record<string, { text?: string }>;
+  title?: string;
+  emptyText?: string;
+  max?: number;
+}) {
+  const [draft, setDraft] = useState<null | { kind: "reorder" | "email" | "summary"; facts: unknown; title: string }>(null);
+  const [showAll, setShowAll] = useState(false);
+  if (!actions.length) {
+    return (
+      <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <SparkleIcon className="h-3 w-3 text-primary" /> {emptyText}
+      </div>
+    );
+  }
+  const visible = showAll ? actions : actions.slice(0, max);
+  return (
+    <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <SparkleIcon className="h-3 w-3 text-primary" /> {title}
+        </div>
+        <Badge variant="outline" className="text-[10px]">{actions.length}</Badge>
+      </div>
+      <ul className="space-y-1.5">
+        {visible.map((a) => (
+          <li
+            key={a.id}
+            className={`flex items-start justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-1.5 border-l-4 ${SEV_BORDER[a.severity]}`}
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${SEV_DOT[a.severity]}`} />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{a.source}</span>
+              </div>
+              <div className="mt-0.5 truncate text-xs font-medium">{a.title}</div>
+              {(geminiItems?.[a.id]?.text || a.detail) && (
+                <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
+                  {geminiItems?.[a.id]?.text || a.detail}
+                </div>
+              )}
+            </div>
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={() =>
+                setDraft({
+                  kind: a.source === "Shortage" ? "reorder" : "email",
+                  title: a.source === "Shortage" ? "Draft reorder" : "Draft email",
+                  facts: { ...(facts as object), focus_action: a },
+                })
+              }
+            >
+              <SparkleIcon /> Draft
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {actions.length > max && (
+        <Button
+          variant="ghost" size="sm"
+          className="mt-1 h-7 text-[11px]"
+          onClick={() => setShowAll((s) => !s)}
+        >
+          {showAll ? "Show fewer" : `Show all ${actions.length}`}
+          <ChevronDown className={`ml-1 h-3.5 w-3.5 transition ${showAll ? "rotate-180" : ""}`} />
+        </Button>
+      )}
+      {draft && (
+        <DraftDialog
+          open onClose={() => setDraft(null)}
+          kind={draft.kind} title={draft.title} facts={draft.facts}
+        />
+      )}
+    </div>
+  );
+}
+
 /* ---------- Pivot chart + Risk feed ---------- */
 
 function PivotChartCard({ base, initial }: { base: string; initial?: Pivot }) {
