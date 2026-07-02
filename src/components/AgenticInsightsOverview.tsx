@@ -833,7 +833,32 @@ function SectionActions({
 
 /* ---------- Pivot chart + Risk feed ---------- */
 
-function PivotChartCard({ base, initial }: { base: string; initial?: Pivot }) {
+function pivotFocusActions(pivot?: Pivot): Action[] {
+  const rows = pivot?.data || [];
+  if (!rows.length) return [];
+  const total = pivot?.total ?? rows.reduce((s, r) => s + (toNum(r.value) || 0), 0);
+  const dim = pivot?.dimension || "dimension";
+  const meas = pivot?.measure || "value";
+  return rows.slice(0, 3).map((r, i) => {
+    const v = toNum(r.value) || 0;
+    const share = total ? (v / total) * 100 : 0;
+    const sev: Severity = share >= 40 ? "medium" : "low";
+    return {
+      id: `pivot-${i}`,
+      source: "Recommendation",
+      severity: sev,
+      title: `Review ${r.key} (${dim})`,
+      detail: `${fmt(v, meas)} ${meas}${share > 0 ? ` — ${pct(share)} of total` : ""}`,
+    };
+  });
+}
+
+function PivotChartCard({
+  base, initial, facts, geminiItems,
+}: {
+  base: string; initial?: Pivot;
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   const [dim, setDim] = useState<string | undefined>(initial?.dimension);
   const [meas, setMeas] = useState<string | undefined>(initial?.measure);
   const fetchUrl = useServerFn(fetchInsightUrl);
