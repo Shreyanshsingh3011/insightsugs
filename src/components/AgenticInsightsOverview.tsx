@@ -983,6 +983,16 @@ function RiskFeed({
             );
           })}
         </ul>
+        {facts ? (
+          <SectionActions
+            title="Investigate first"
+            actions={actions}
+            facts={facts}
+            geminiItems={geminiItems}
+            emptyText="No anomalies flagged."
+            max={4}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
