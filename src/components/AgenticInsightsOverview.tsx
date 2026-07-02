@@ -746,9 +746,119 @@ function NextBestActions({
   );
 }
 
+/* ---------- Section-scoped Next Best Actions strip ---------- */
+
+function SectionActions({
+  actions, facts, geminiItems, title = "Next best actions",
+  emptyText = "No actions in this area.", max = 4,
+}: {
+  actions: Action[];
+  facts: unknown;
+  geminiItems?: Record<string, { text?: string }>;
+  title?: string;
+  emptyText?: string;
+  max?: number;
+}) {
+  const [draft, setDraft] = useState<null | { kind: "reorder" | "email" | "summary"; facts: unknown; title: string }>(null);
+  const [showAll, setShowAll] = useState(false);
+  if (!actions.length) {
+    return (
+      <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <SparkleIcon className="h-3 w-3 text-primary" /> {emptyText}
+      </div>
+    );
+  }
+  const visible = showAll ? actions : actions.slice(0, max);
+  return (
+    <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <SparkleIcon className="h-3 w-3 text-primary" /> {title}
+        </div>
+        <Badge variant="outline" className="text-[10px]">{actions.length}</Badge>
+      </div>
+      <ul className="space-y-1.5">
+        {visible.map((a) => (
+          <li
+            key={a.id}
+            className={`flex items-start justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-1.5 border-l-4 ${SEV_BORDER[a.severity]}`}
+          >
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${SEV_DOT[a.severity]}`} />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{a.source}</span>
+              </div>
+              <div className="mt-0.5 truncate text-xs font-medium">{a.title}</div>
+              {(geminiItems?.[a.id]?.text || a.detail) && (
+                <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
+                  {geminiItems?.[a.id]?.text || a.detail}
+                </div>
+              )}
+            </div>
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 text-[11px]"
+              onClick={() =>
+                setDraft({
+                  kind: a.source === "Shortage" ? "reorder" : "email",
+                  title: a.source === "Shortage" ? "Draft reorder" : "Draft email",
+                  facts: { ...(facts as object), focus_action: a },
+                })
+              }
+            >
+              <SparkleIcon /> Draft
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {actions.length > max && (
+        <Button
+          variant="ghost" size="sm"
+          className="mt-1 h-7 text-[11px]"
+          onClick={() => setShowAll((s) => !s)}
+        >
+          {showAll ? "Show fewer" : `Show all ${actions.length}`}
+          <ChevronDown className={`ml-1 h-3.5 w-3.5 transition ${showAll ? "rotate-180" : ""}`} />
+        </Button>
+      )}
+      {draft && (
+        <DraftDialog
+          open onClose={() => setDraft(null)}
+          kind={draft.kind} title={draft.title} facts={draft.facts}
+        />
+      )}
+    </div>
+  );
+}
+
 /* ---------- Pivot chart + Risk feed ---------- */
 
-function PivotChartCard({ base, initial }: { base: string; initial?: Pivot }) {
+function pivotFocusActions(pivot?: Pivot): Action[] {
+  const rows = pivot?.data || [];
+  if (!rows.length) return [];
+  const total = pivot?.total ?? rows.reduce((s, r) => s + (toNum(r.value) || 0), 0);
+  const dim = pivot?.dimension || "dimension";
+  const meas = pivot?.measure || "value";
+  return rows.slice(0, 3).map((r, i) => {
+    const v = toNum(r.value) || 0;
+    const share = total ? (v / total) * 100 : 0;
+    const sev: Severity = share >= 40 ? "medium" : "low";
+    return {
+      id: `pivot-${i}`,
+      source: "Recommendation",
+      severity: sev,
+      title: `Review ${r.key} (${dim})`,
+      detail: `${fmt(v, meas)} ${meas}${share > 0 ? ` — ${pct(share)} of total` : ""}`,
+    };
+  });
+}
+
+function PivotChartCard({
+  base, initial, facts, geminiItems,
+}: {
+  base: string; initial?: Pivot;
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   const [dim, setDim] = useState<string | undefined>(initial?.dimension);
   const [meas, setMeas] = useState<string | undefined>(initial?.measure);
   const fetchUrl = useServerFn(fetchInsightUrl);
@@ -822,12 +932,27 @@ function PivotChartCard({ base, initial }: { base: string; initial?: Pivot }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {facts ? (
+          <SectionActions
+            title="Focus these first"
+            actions={pivotFocusActions(pivot)}
+            facts={facts}
+            geminiItems={geminiItems}
+            emptyText="No standout drivers detected."
+            max={3}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function RiskFeed({ anomalies }: { anomalies: Anomaly[] }) {
+function RiskFeed({
+  anomalies, actions = [], facts, geminiItems,
+}: {
+  anomalies: Anomaly[]; actions?: Action[];
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   if (!anomalies.length) return null;
   const top = anomalies.slice(0, 6);
   return (
@@ -858,6 +983,16 @@ function RiskFeed({ anomalies }: { anomalies: Anomaly[] }) {
             );
           })}
         </ul>
+        {facts ? (
+          <SectionActions
+            title="Investigate first"
+            actions={actions}
+            facts={facts}
+            geminiItems={geminiItems}
+            emptyText="No anomalies flagged."
+            max={4}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -908,7 +1043,12 @@ function RankedBars({
   );
 }
 
-function InventorySection({ stock }: { stock: StockViews }) {
+function InventorySection({
+  stock, actions = [], facts, geminiItems,
+}: {
+  stock: StockViews; actions?: Action[];
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   const top = stock.top_consumers?.data || [];
   const low = stock.low_balance?.data || [];
   if (!top.length && !low.length) return null;
@@ -936,7 +1076,19 @@ function InventorySection({ stock }: { stock: StockViews }) {
                 {low.filter((x) => x.value <= 0).length} items short by cumulative {fmt(low.reduce((s, x) => s + (x.value < 0 ? Math.abs(x.value) : 0), 0), stock.low_balance?.measure)}
               </div>
             </CardHeader>
-            <CardContent><RankedBars data={low} measureLabel={stock.low_balance?.measure} tone="danger" /></CardContent>
+            <CardContent>
+              <RankedBars data={low} measureLabel={stock.low_balance?.measure} tone="danger" />
+              {facts ? (
+                <SectionActions
+                  title="Reorder queue"
+                  actions={actions}
+                  facts={facts}
+                  geminiItems={geminiItems}
+                  emptyText="No shortages detected."
+                  max={5}
+                />
+              ) : null}
+            </CardContent>
           </Card>
         )}
       </div>
@@ -951,7 +1103,13 @@ const HELPER_KEYS = new Set([
   "available_dates", "delta_pct", "delta", "enabled", "numeric_sums", "column_roles",
 ]);
 
-function ItemTable({ sheet, anomalies }: { sheet: SheetLite; anomalies: Anomaly[] }) {
+function ItemTable({
+  sheet, anomalies, actions = [], facts, geminiItems,
+}: {
+  sheet: SheetLite; anomalies: Anomaly[];
+  actions?: Action[]; facts?: unknown;
+  geminiItems?: Record<string, { text?: string }>;
+}) {
   const [q, setQ] = useState("");
   const [showAll, setShowAll] = useState(false);
   const anomalySet = useMemo(
@@ -1050,6 +1208,37 @@ function ItemTable({ sheet, anomalies }: { sheet: SheetLite; anomalies: Anomaly[
           <ChevronDown className={`ml-1 h-4 w-4 transition ${showAll ? "rotate-180" : ""}`} />
         </Button>
       )}
+      {facts ? (
+        <SectionActions
+          title="Row-level next steps"
+          actions={
+            // Combine row rule-based severities with cross-payload actions for this sheet
+            [
+              ...sorted
+                .filter(({ rec }) => rec.severity === "high" || rec.severity === "medium")
+                .slice(0, 6)
+                .map(({ row, rec }, i) => {
+                  const k = keyCol ? String(row[keyCol] ?? "").trim() : `row ${i + 1}`;
+                  return {
+                    id: `item-${i}`,
+                    source: "Recommendation" as const,
+                    severity: rec.severity,
+                    title: `${rec.text} — ${k || `row ${i + 1}`}`,
+                    detail: showCols
+                      .filter((c) => c !== keyCol)
+                      .map((c) => `${c}: ${typeof row[c] === "number" ? fmt(row[c], c) : String(row[c] ?? "—")}`)
+                      .join(" · "),
+                  };
+                }),
+              ...actions.filter((a) => a.source === "Shortage" || a.source === "Anomaly").slice(0, 3),
+            ]
+          }
+          facts={facts}
+          geminiItems={geminiItems}
+          emptyText="All rows nominal."
+          max={5}
+        />
+      ) : null}
     </section>
   );
 }
@@ -1079,7 +1268,12 @@ function QualityGauge({ score }: { score: number }) {
     </div>
   );
 }
-function QualitySection({ quality }: { quality: Quality }) {
+function QualitySection({
+  quality, actions = [], facts, geminiItems,
+}: {
+  quality: Quality; actions?: Action[];
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   const q = quality.sheets?.[0];
   if (!q) return null;
   const issues = q.issues || [];
@@ -1116,6 +1310,16 @@ function QualitySection({ quality }: { quality: Quality }) {
                 <CheckCircle2 className="h-4 w-4" /> No issues logged.
               </div>
             )}
+            {facts ? (
+              <SectionActions
+                title="Quality fixes"
+                actions={actions}
+                facts={facts}
+                geminiItems={geminiItems}
+                emptyText="No quality actions."
+                max={4}
+              />
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -1221,21 +1425,55 @@ export default function AgenticInsightsOverview({
           <div className="grid gap-4 lg:grid-cols-3">
             {pivot?.data?.length ? (
               <div className="lg:col-span-2">
-                {base ? <PivotChartCard base={base} initial={pivot} /> : null}
+                {base ? (
+                  <PivotChartCard
+                    base={base}
+                    initial={pivot}
+                    facts={facts}
+                    geminiItems={gemini.data?.items}
+                  />
+                ) : null}
               </div>
             ) : null}
             {anomalies.length > 0 && (
               <div className={pivot?.data?.length ? "" : "lg:col-span-3"}>
-                <RiskFeed anomalies={anomalies} />
+                <RiskFeed
+                  anomalies={anomalies}
+                  actions={actions.filter((a) => a.source === "Anomaly")}
+                  facts={facts}
+                  geminiItems={gemini.data?.items}
+                />
               </div>
             )}
           </div>
         </section>
       )}
 
-      {stock?.enabled && <InventorySection stock={stock} />}
-      {sheet && <ItemTable sheet={sheet} anomalies={anomalies} />}
-      {quality && <QualitySection quality={quality} />}
+      {stock?.enabled && (
+        <InventorySection
+          stock={stock}
+          actions={actions.filter((a) => a.source === "Shortage")}
+          facts={facts}
+          geminiItems={gemini.data?.items}
+        />
+      )}
+      {sheet && (
+        <ItemTable
+          sheet={sheet}
+          anomalies={anomalies}
+          actions={actions}
+          facts={facts}
+          geminiItems={gemini.data?.items}
+        />
+      )}
+      {quality && (
+        <QualitySection
+          quality={quality}
+          actions={actions.filter((a) => a.source === "Quality")}
+          facts={facts}
+          geminiItems={gemini.data?.items}
+        />
+      )}
       {data.modules?.trends && <TrendsSection trends={data.modules.trends} />}
 
       <Collapsible>
