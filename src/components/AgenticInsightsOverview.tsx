@@ -1268,7 +1268,12 @@ function QualityGauge({ score }: { score: number }) {
     </div>
   );
 }
-function QualitySection({ quality }: { quality: Quality }) {
+function QualitySection({
+  quality, actions = [], facts, geminiItems,
+}: {
+  quality: Quality; actions?: Action[];
+  facts?: unknown; geminiItems?: Record<string, { text?: string }>;
+}) {
   const q = quality.sheets?.[0];
   if (!q) return null;
   const issues = q.issues || [];
@@ -1305,6 +1310,16 @@ function QualitySection({ quality }: { quality: Quality }) {
                 <CheckCircle2 className="h-4 w-4" /> No issues logged.
               </div>
             )}
+            {facts ? (
+              <SectionActions
+                title="Quality fixes"
+                actions={actions}
+                facts={facts}
+                geminiItems={geminiItems}
+                emptyText="No quality actions."
+                max={4}
+              />
+            ) : null}
           </div>
         </CardContent>
       </Card>
