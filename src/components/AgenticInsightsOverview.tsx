@@ -1425,21 +1425,55 @@ export default function AgenticInsightsOverview({
           <div className="grid gap-4 lg:grid-cols-3">
             {pivot?.data?.length ? (
               <div className="lg:col-span-2">
-                {base ? <PivotChartCard base={base} initial={pivot} /> : null}
+                {base ? (
+                  <PivotChartCard
+                    base={base}
+                    initial={pivot}
+                    facts={facts}
+                    geminiItems={gemini.data?.items}
+                  />
+                ) : null}
               </div>
             ) : null}
             {anomalies.length > 0 && (
               <div className={pivot?.data?.length ? "" : "lg:col-span-3"}>
-                <RiskFeed anomalies={anomalies} />
+                <RiskFeed
+                  anomalies={anomalies}
+                  actions={actions.filter((a) => a.source === "Anomaly")}
+                  facts={facts}
+                  geminiItems={gemini.data?.items}
+                />
               </div>
             )}
           </div>
         </section>
       )}
 
-      {stock?.enabled && <InventorySection stock={stock} />}
-      {sheet && <ItemTable sheet={sheet} anomalies={anomalies} />}
-      {quality && <QualitySection quality={quality} />}
+      {stock?.enabled && (
+        <InventorySection
+          stock={stock}
+          actions={actions.filter((a) => a.source === "Shortage")}
+          facts={facts}
+          geminiItems={gemini.data?.items}
+        />
+      )}
+      {sheet && (
+        <ItemTable
+          sheet={sheet}
+          anomalies={anomalies}
+          actions={actions}
+          facts={facts}
+          geminiItems={gemini.data?.items}
+        />
+      )}
+      {quality && (
+        <QualitySection
+          quality={quality}
+          actions={actions.filter((a) => a.source === "Quality")}
+          facts={facts}
+          geminiItems={gemini.data?.items}
+        />
+      )}
       {data.modules?.trends && <TrendsSection trends={data.modules.trends} />}
 
       <Collapsible>
