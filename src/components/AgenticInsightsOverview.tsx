@@ -932,8 +932,7 @@ function PivotChartCard({
             </BarChart>
           </ResponsiveContainer>
         </div>
-        {facts && (
-
+        {facts ? (
           <SectionActions
             title="Focus these first"
             actions={pivotFocusActions(pivot)}
@@ -942,7 +941,7 @@ function PivotChartCard({
             emptyText="No standout drivers detected."
             max={3}
           />
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
