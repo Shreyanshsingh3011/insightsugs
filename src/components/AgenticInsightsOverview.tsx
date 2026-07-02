@@ -932,9 +932,8 @@ function PivotChartCard({
             </BarChart>
           </ResponsiveContainer>
         </div>
-          </ResponsiveContainer>
-        </div>
         {facts && (
+
           <SectionActions
             title="Focus these first"
             actions={pivotFocusActions(pivot)}
