@@ -1,9 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { ArrowLeft, Mail, Send, User as UserIcon, Layers, AlertTriangle, ExternalLink, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft, Mail, Send, User as UserIcon, Layers, AlertTriangle,
+  ExternalLink, MessageSquare, History, CheckCircle2, MessageCircle,
+} from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +15,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { decodeDetailPayload, type DetailPayload } from "@/lib/agent-detail-payload";
 import { sendAlert } from "@/lib/alerts.functions";
+import { getSourceTimeline, type TimelineEvent } from "@/lib/source-timeline.functions";
+import { fetchMyRoles } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/_authenticated/agent/detail/$payload")({
   head: () => ({ meta: [{ title: "Action detail — DelayLens" }] }),
+  beforeLoad: async () => {
+    const roles = await fetchMyRoles();
+    if (roles.length === 0) {
+      // Unverified account — bounce to home instead of exposing action data.
+      throw redirect({ to: "/" });
+    }
+  },
   component: DetailPage,
 });
 
