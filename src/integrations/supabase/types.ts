@@ -100,6 +100,96 @@ export type Database = {
           },
         ]
       }
+      agent_drafts: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          assigned_to: string | null
+          body: string
+          cc: Json
+          channel: string
+          confidence: number
+          created_at: string
+          created_by_rule: string | null
+          dismiss_reason: string | null
+          draft_type: string
+          id: string
+          payload: Json
+          playbook_slug: string | null
+          playbook_step: number | null
+          recipient_email: string | null
+          recipient_user_id: string | null
+          send_result: Json | null
+          sent_at: string | null
+          snoozed_until: string | null
+          source_key: string
+          source_kind: string
+          state: string
+          subject: string | null
+          title: string
+          updated_at: string
+          why: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          assigned_to?: string | null
+          body: string
+          cc?: Json
+          channel?: string
+          confidence?: number
+          created_at?: string
+          created_by_rule?: string | null
+          dismiss_reason?: string | null
+          draft_type: string
+          id?: string
+          payload?: Json
+          playbook_slug?: string | null
+          playbook_step?: number | null
+          recipient_email?: string | null
+          recipient_user_id?: string | null
+          send_result?: Json | null
+          sent_at?: string | null
+          snoozed_until?: string | null
+          source_key: string
+          source_kind: string
+          state?: string
+          subject?: string | null
+          title: string
+          updated_at?: string
+          why?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          assigned_to?: string | null
+          body?: string
+          cc?: Json
+          channel?: string
+          confidence?: number
+          created_at?: string
+          created_by_rule?: string | null
+          dismiss_reason?: string | null
+          draft_type?: string
+          id?: string
+          payload?: Json
+          playbook_slug?: string | null
+          playbook_step?: number | null
+          recipient_email?: string | null
+          recipient_user_id?: string | null
+          send_result?: Json | null
+          sent_at?: string | null
+          snoozed_until?: string | null
+          source_key?: string
+          source_kind?: string
+          state?: string
+          subject?: string | null
+          title?: string
+          updated_at?: string
+          why?: string | null
+        }
+        Relationships: []
+      }
       alert_messages: {
         Row: {
           alert_id: string
