@@ -4,9 +4,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Bell, FileSearch, Search } from "lucide-react";
+import { AlertTriangle, Bell, FileSearch, Search, UserCheck } from "lucide-react";
 import { fetchDashboard, type DashboardData } from "@/lib/dashboard-data";
 import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
+import { useAgentScope } from "@/hooks/useAgentScope";
 
 const SHEETS_KEY = "dashboard.selectedSheets.v1";
 
@@ -45,9 +46,15 @@ function AlertsList() {
   });
 
   const allFlags = data?.flags ?? [];
+  const scope = useAgentScope();
   const [q, setQ] = useState("");
   const [fSev, setFSev] = useState<string>("all");
   const [fStatus, setFStatus] = useState<string>("all");
+  const [onlyMine, setOnlyMine] = useState<boolean>(scope.mode === "name-scoped");
+  useEffect(() => {
+    // Default non-admins to "For me" once scope loads
+    if (!scope.loading && scope.mode === "name-scoped") setOnlyMine(true);
+  }, [scope.loading, scope.mode]);
 
   const severities = useMemo(
     () => Array.from(new Set(allFlags.map((f) => f.severity).filter(Boolean))) as string[],
@@ -59,16 +66,21 @@ function AlertsList() {
   );
 
   const flags = useMemo(() => {
+    const needles = scope.nameNeedles;
     return allFlags.filter((f) => {
       if (fSev !== "all" && f.severity !== fSev) return false;
       if (fStatus !== "all" && f.status !== fStatus) return false;
+      if (onlyMine && needles.length > 0) {
+        const hay = `${f.flagged_to?.person ?? ""} ${f.flagged_to?.email ?? ""} ${f.activity ?? ""}`.toLowerCase();
+        if (!needles.some((n) => hay.includes(n))) return false;
+      }
       if (q.trim()) {
         const hay = `${f.id} ${f.activity} ${f.flagged_to?.person ?? ""} ${f.reason_text ?? ""} ${f.reason ?? ""} ${f.stage ?? ""}`.toLowerCase();
         if (!hay.includes(q.toLowerCase())) return false;
       }
       return true;
     });
-  }, [allFlags, fSev, fStatus, q]);
+  }, [allFlags, fSev, fStatus, q, onlyMine, scope.nameNeedles]);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6">
@@ -111,6 +123,16 @@ function AlertsList() {
             <option value="all">All statuses</option>
             {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+          <label className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
+            <input
+              type="checkbox"
+              checked={onlyMine}
+              onChange={(e) => setOnlyMine(e.target.checked)}
+              disabled={scope.nameNeedles.length === 0}
+              aria-label="Show only alerts for me"
+            />
+            <UserCheck className="h-3.5 w-3.5" /> For me
+          </label>
           <div className="ml-auto text-xs text-muted-foreground">
             {flags.length} of {allFlags.length} alert{allFlags.length === 1 ? "" : "s"}
           </div>

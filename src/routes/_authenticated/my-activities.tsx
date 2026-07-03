@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet, Activity as ActivityIcon } from "lucide-react";
 import { getMyDependentActivities } from "@/lib/sheets.functions";
 
 
@@ -61,6 +61,21 @@ function MyActivitiesPage() {
     queryKey: ["my-sheet-activities", userId],
     enabled: !!userId,
     queryFn: () => fetchSheetActs(),
+  });
+
+  const { data: feed } = useQuery({
+    queryKey: ["my-activity-feed", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audit_log")
+        .select("id, event_type, details, created_at, activity_id")
+        .eq("actor_id", userId!)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data as { id: string; event_type: string; details: any; created_at: string; activity_id: string | null }[];
+    },
   });
 
 
@@ -188,6 +203,36 @@ function MyActivitiesPage() {
           </div>
         </div>
       )}
+
+      <div className="mt-10">
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
+          <ActivityIcon className="h-5 w-5" /> Recent activity
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Actions you've taken — status changes, notes, and system events.
+        </p>
+        <Card className="mt-4 divide-y divide-border/60">
+          {(feed?.length ?? 0) === 0 && (
+            <p className="p-6 text-center text-sm text-muted-foreground">No recorded activity yet.</p>
+          )}
+          {feed?.map((e) => {
+            const to = e.details?.to as string | undefined;
+            const note = e.details?.note as string | undefined;
+            return (
+              <div key={e.id} className="p-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <Badge variant="outline" className="text-[10px] uppercase">{e.event_type.replace(/_/g, " ")}</Badge>
+                  {to && <span>Status → <span className="font-medium">{to.replace("_", " ")}</span></span>}
+                  <span className="ml-auto text-xs text-muted-foreground">{new Date(e.created_at).toLocaleString()}</span>
+                </div>
+                {note && <p className="mt-1 text-sm text-muted-foreground">{note}</p>}
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+
+
 
 
       <Dialog open={!!delayDialog} onOpenChange={(o) => !o && setDelayDialog(null)}>
