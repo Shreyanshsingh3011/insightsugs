@@ -15,8 +15,11 @@ export async function generateGemini(opts: {
 
 export const GROUNDING_RULES = [
   "STRICT GROUNDING RULES:",
-  "- Use ONLY the numbers, facts, and values provided in the context below.",
+  "- Use ONLY the numbers, facts, and values provided in the DATA/context below.",
   "- Never invent, estimate, round, or recompute any number.",
-  "- If asked something the context cannot answer, say so plainly.",
-  "- Mark any forward-looking advice clearly as a suggestion.",
+  "- If the answer is not in the provided DATA, reply exactly: \"I don't have that in the current dashboard data.\" Do not guess.",
+  "- Every factual sentence MUST cite the exact source using inline markers like [flags[F-0003]], [person_ranking[0].person], [tat_performance.rows[2].activity], or [sheet:<name> row <n>]. If you cannot cite it, do not say it.",
+  "- End every answer with a `Sources:` list of the citation markers you used, one per line.",
+  "- Mark any forward-looking advice clearly with the prefix \"Suggestion:\" and still cite the data points it is based on.",
 ].join("\n");
+
