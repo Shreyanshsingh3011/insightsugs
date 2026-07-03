@@ -435,19 +435,19 @@ export default function AgentDashboard() {
   // it is only a first-name or an email fragment.
   const personDirectory = useMemo(() => {
     const seen = new Map<string, { name: string; email: string; tokens: string[] }>();
-    for (const r of rowsAll) {
-      const name = r.person || "";
-      const email = r.email || "";
+    for (const r of rowIndex) {
+      const name = String(r.person ?? "");
+      const email = String(r.email ?? "");
       const key = (name || email).toLowerCase().trim();
       if (!key || seen.has(key)) continue;
       const tokens = [
-        ...name.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2),
-        ...email.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2),
+        ...name.toLowerCase().split(/[^a-z0-9]+/).filter((t: string) => t.length > 2),
+        ...email.toLowerCase().split(/[^a-z0-9]+/).filter((t: string) => t.length > 2),
       ];
       seen.set(key, { name, email, tokens });
     }
     return Array.from(seen.values());
-  }, [rowsAll]);
+  }, [rowIndex]);
 
   /** Find every person mentioned by name or email fragment inside a question. */
   function detectPersons(q: string) {
