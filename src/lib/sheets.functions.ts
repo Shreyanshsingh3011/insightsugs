@@ -550,11 +550,22 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
         sheetType: SHEET_TYPE_ENUM,
         displayName: z.string().min(1).max(200),
         mapping: z.record(z.string(), z.string().nullable()),
+        visibility: z.enum(["private", "public", "shared"]).optional(),
+        sharedUserIds: z.array(z.string().uuid()).optional(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+
+    // Only admins may pick anything other than 'private'.
+    let visibility: "private" | "public" | "shared" = "private";
+    if (data.visibility && data.visibility !== "private") {
+      const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+      if (isAdmin) visibility = data.visibility;
+    }
+    const sharedIds =
+      visibility === "shared" ? Array.from(new Set(data.sharedUserIds ?? [])) : [];
 
     const { data: reg, error: regErr } = await supabase
       .from("sheet_registry")
@@ -563,11 +574,18 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
         sheet_type: data.sheetType,
         apps_script_url: data.appsScriptUrl,
         display_name: data.displayName,
+        visibility,
       })
       .select("id")
       .single();
     if (regErr) throw new Error(regErr.message);
     const registryId = reg.id as string;
+
+    if (sharedIds.length > 0) {
+      await supabase.from("sheet_registry_shares").insert(
+        sharedIds.map((uid) => ({ sheet_registry_id: registryId, user_id: uid, created_by: userId })),
+      );
+    }
 
     const mappingRows = Object.entries(data.mapping).map(([source, canonical], idx) => ({
       sheet_registry_id: registryId,
@@ -583,6 +601,7 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
     await syncRowsInternal(supabase, userId, registryId);
     return { id: registryId };
   });
+
 
 async function syncRowsInternal(supabase: any, userId: string, registryId: string) {
   const { data: reg, error: regErr } = await supabase
@@ -658,16 +677,38 @@ export const listSheets = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    // RLS returns: owner + admin + public + shared-with-me
     const { data, error } = await supabase
       .from("sheet_registry")
       .select(
-        "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at",
+        "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
       )
-      .eq("user_id", userId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return { sheets: data ?? [] };
+
+    const ids = (data ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
+    const shareCounts = new Map<string, number>();
+    if (ids.length > 0) {
+      const { data: shares } = await supabase
+        .from("sheet_registry_shares")
+        .select("sheet_registry_id")
+        .in("sheet_registry_id", ids);
+      for (const s of shares ?? []) {
+        shareCounts.set(
+          s.sheet_registry_id,
+          (shareCounts.get(s.sheet_registry_id) ?? 0) + 1,
+        );
+      }
+    }
+    return {
+      sheets: (data ?? []).map((r: any) => ({
+        ...r,
+        share_count: shareCounts.get(r.id) ?? 0,
+        is_owner: r.user_id === userId,
+      })),
+    };
   });
+
 
 // Update endpoint / source-link / display name for an existing sheet
 export const updateSheetMeta = createServerFn({ method: "POST" })
@@ -1828,3 +1869,59 @@ export const generateChart = createServerFn({ method: "POST" })
     return { charts, skipped };
   });
 
+
+// ----- Sheet sharing / visibility -------------------------------------------
+
+export const getSheetShares = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ registryId: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+    if (!isAdmin) throw new Error("Only admins can view shares");
+    const { data: rows, error } = await supabase
+      .from("sheet_registry_shares")
+      .select("user_id")
+      .eq("sheet_registry_id", data.registryId);
+    if (error) throw new Error(error.message);
+    return { user_ids: (rows ?? []).map((r: any) => r.user_id as string) };
+  });
+
+export const updateSheetVisibility = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        registryId: z.string().uuid(),
+        visibility: z.enum(["private", "public", "shared"]),
+        sharedUserIds: z.array(z.string().uuid()).optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+    if (!isAdmin) throw new Error("Only admins can change visibility");
+
+    const { error: uerr } = await supabase
+      .from("sheet_registry")
+      .update({ visibility: data.visibility })
+      .eq("id", data.registryId);
+    if (uerr) throw new Error(uerr.message);
+
+    await supabase.from("sheet_registry_shares").delete().eq("sheet_registry_id", data.registryId);
+    if (data.visibility === "shared") {
+      const ids = Array.from(new Set(data.sharedUserIds ?? []));
+      if (ids.length > 0) {
+        const { error: ierr } = await supabase.from("sheet_registry_shares").insert(
+          ids.map((uid) => ({
+            sheet_registry_id: data.registryId,
+            user_id: uid,
+            created_by: userId,
+          })),
+        );
+        if (ierr) throw new Error(ierr.message);
+      }
+    }
+    return { ok: true };
+  });

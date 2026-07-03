@@ -14,13 +14,17 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle, ExternalLink, Link2 } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle, ExternalLink, Link2, Shield } from "lucide-react";
 import {
   listSheets, inspectSheet, registerAndSyncSheet, refreshSheet, deleteSheet, updateSheetMeta,
 } from "@/lib/sheets.functions";
 import {
   SHEET_TYPE_LABELS, SHEET_TYPES, CANONICAL_FIELDS, type SheetType,
 } from "@/lib/sheets-schemas";
+import { useIsAdmin } from "@/hooks/useSession";
+import { VisibilityPicker, VisibilityBadge, type Visibility } from "@/components/VisibilityPicker";
+import { ChangeVisibilityDialog } from "@/components/ChangeVisibilityDialog";
+
 
 export const Route = createFileRoute("/_authenticated/sheets")({
   component: SheetsPage,
@@ -35,6 +39,9 @@ function SheetsPage() {
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<null | { id: string; display_name: string; apps_script_url: string; source_url: string | null }>(null);
+  const [visEditing, setVisEditing] = useState<null | { id: string; name: string; visibility: Visibility }>(null);
+  const isAdmin = useIsAdmin();
+
 
   const refreshMut = useMutation({
     mutationFn: (id: string) => refresh({ data: { registryId: id } }),
@@ -96,6 +103,8 @@ function SheetsPage() {
                     {s.display_name}
                   </Link>
                   <Badge variant="outline">{SHEET_TYPE_LABELS[s.sheet_type as SheetType]}</Badge>
+                  <VisibilityBadge visibility={s.visibility ?? "private"} shareCount={s.share_count} size="xs" />
+
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {s.row_count} rows ·{" "}
@@ -141,6 +150,18 @@ function SheetsPage() {
                   <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshMut.isPending ? "animate-spin" : ""}`} />
                   Refresh
                 </Button>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setVisEditing({ id: s.id, name: s.display_name, visibility: s.visibility ?? "private" })
+                    }
+                    title="Change visibility"
+                  >
+                    <Shield className="mr-1.5 h-4 w-4" /> Visibility
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -150,17 +171,27 @@ function SheetsPage() {
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
+
               </div>
             </Card>
           ))}
         </div>
       )}
 
-      <AddSheetDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddSheetDialog open={addOpen} onOpenChange={setAddOpen} isAdmin={isAdmin} />
       <EditSheetMetaDialog
         editing={editing}
         onClose={() => setEditing(null)}
       />
+      <ChangeVisibilityDialog
+        open={!!visEditing}
+        onOpenChange={(v) => { if (!v) setVisEditing(null); }}
+        kind="sheet"
+        id={visEditing?.id ?? null}
+        name={visEditing?.name ?? ""}
+        currentVisibility={visEditing?.visibility ?? "private"}
+      />
+
     </div>
   );
 }
@@ -247,7 +278,7 @@ function EditSheetMetaDialog({
 
 
 
-function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function AddSheetDialog({ open, onOpenChange, isAdmin }: { open: boolean; onOpenChange: (v: boolean) => void; isAdmin: boolean }) {
   const qc = useQueryClient();
   const router = useRouter();
   const inspect = useServerFn(inspectSheet);
@@ -256,6 +287,8 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const [sheetType, setSheetType] = useState<SheetType>("generic");
   const [appsScriptUrl, setAppsScriptUrl] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [visibility, setVisibility] = useState<Visibility>("private");
+  const [sharedIds, setSharedIds] = useState<string[]>([]);
   const [step, setStep] = useState<"input" | "mapping">("input");
   const [inspectResult, setInspectResult] = useState<{
     headers: string[];
@@ -270,6 +303,8 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     setAppsScriptUrl("");
     setDisplayName("");
     setSheetType("generic");
+    setVisibility("private");
+    setSharedIds([]);
   };
 
   const finishRegister = (res: { id: string }) => {
@@ -289,12 +324,15 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           sheetType,
           displayName: displayName.trim(),
           mapping,
+          visibility: isAdmin ? visibility : "private",
+          sharedUserIds: isAdmin && visibility === "shared" ? sharedIds : [],
         },
       });
     },
     onSuccess: finishRegister,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to register"),
   });
+
 
   const inspectMut = useMutation({
     mutationFn: () => inspect({ data: { appsScriptUrl, sheetType } }),
@@ -389,7 +427,18 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
                 </span>
               </div>
             </div>
+            {isAdmin && (
+              <div className="rounded-md border border-border p-3">
+                <VisibilityPicker
+                  visibility={visibility}
+                  onVisibilityChange={setVisibility}
+                  sharedUserIds={sharedIds}
+                  onSharedUserIdsChange={setSharedIds}
+                />
+              </div>
+            )}
           </div>
+
         ) : inspectResult ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">

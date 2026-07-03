@@ -63,16 +63,35 @@ export const listDocuments = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder_id?: string | null } = {}) => d)
   .handler(async ({ data, context }) => {
-    const { supabase } = context as { supabase: any };
+    const { supabase, userId } = context as { supabase: any; userId: string };
     let q = supabase
       .from("documents")
-      .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error")
+      .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
       .order("created_at", { ascending: false });
     if (data.folder_id) q = q.eq("folder_id", data.folder_id);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return { documents: rows ?? [] };
+    // Attach share counts for admins so the UI can show "Shared · N".
+    const ids = (rows ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
+    let shareCounts = new Map<string, number>();
+    if (ids.length > 0) {
+      const { data: shares } = await supabase
+        .from("document_shares")
+        .select("document_id")
+        .in("document_id", ids);
+      for (const s of shares ?? []) {
+        shareCounts.set(s.document_id, (shareCounts.get(s.document_id) ?? 0) + 1);
+      }
+    }
+    return {
+      documents: (rows ?? []).map((r: any) => ({
+        ...r,
+        share_count: shareCounts.get(r.id) ?? 0,
+        is_owner: r.owner_id === userId,
+      })),
+    };
   });
+
 
 export const getDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -118,11 +137,17 @@ export const registerAndProcessDocument = createServerFn({ method: "POST" })
       size_bytes: number;
       storage_path: string;
       folder_id?: string | null;
+      visibility?: "private" | "public" | "shared";
+      shared_user_ids?: string[];
     }) => d,
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
     await assertAdmin(supabase, userId);
+
+    const visibility = data.visibility ?? "private";
+    const sharedIds =
+      visibility === "shared" ? Array.from(new Set(data.shared_user_ids ?? [])) : [];
 
     const { data: inserted, error: ierr } = await supabase
       .from("documents")
@@ -134,10 +159,18 @@ export const registerAndProcessDocument = createServerFn({ method: "POST" })
         size_bytes: data.size_bytes,
         storage_path: data.storage_path,
         status: "processing",
+        visibility,
       })
       .select("id")
       .single();
     if (ierr) throw new Error(ierr.message);
+
+    if (sharedIds.length > 0) {
+      await supabase.from("document_shares").insert(
+        sharedIds.map((uid) => ({ document_id: inserted.id, user_id: uid, created_by: userId })),
+      );
+    }
+
 
     const docId = inserted.id as string;
     const admin = getAdminSupabase();
@@ -214,4 +247,65 @@ export const registerAndProcessDocument = createServerFn({ method: "POST" })
         .eq("id", docId);
       throw e;
     }
+  });
+
+// ----- Sharing / visibility --------------------------------------------------
+
+export const listShareableUsers = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    await assertAdmin(supabase, userId);
+    const admin = getAdminSupabase();
+    const { data, error } = await admin
+      .from("profiles")
+      .select("id, full_name, email")
+      .order("full_name", { ascending: true });
+    if (error) throw new Error(error.message);
+    return { users: (data ?? []).filter((u: any) => u.id !== userId) };
+  });
+
+export const getDocumentShares = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    await assertAdmin(supabase, userId);
+    const { data: rows, error } = await supabase
+      .from("document_shares")
+      .select("user_id")
+      .eq("document_id", data.id);
+    if (error) throw new Error(error.message);
+    return { user_ids: (rows ?? []).map((r: any) => r.user_id as string) };
+  });
+
+export const updateDocumentVisibility = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    (d: {
+      id: string;
+      visibility: "private" | "public" | "shared";
+      shared_user_ids?: string[];
+    }) => d,
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    await assertAdmin(supabase, userId);
+    const admin = getAdminSupabase();
+    const { error: uerr } = await admin
+      .from("documents")
+      .update({ visibility: data.visibility })
+      .eq("id", data.id);
+    if (uerr) throw new Error(uerr.message);
+    await admin.from("document_shares").delete().eq("document_id", data.id);
+    if (data.visibility === "shared") {
+      const ids = Array.from(new Set(data.shared_user_ids ?? []));
+      if (ids.length > 0) {
+        const { error: ierr } = await admin.from("document_shares").insert(
+          ids.map((uid) => ({ document_id: data.id, user_id: uid, created_by: userId })),
+        );
+        if (ierr) throw new Error(ierr.message);
+      }
+    }
+    return { ok: true };
   });
