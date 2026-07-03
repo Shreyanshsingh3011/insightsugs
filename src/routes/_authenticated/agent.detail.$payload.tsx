@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -18,15 +18,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { decodeDetailPayload, type DetailPayload, type DetailContextRow } from "@/lib/agent-detail-payload";
 import { sendAlert } from "@/lib/alerts.functions";
 import { getSourceTimeline, type TimelineEvent } from "@/lib/source-timeline.functions";
-import { fetchMyRoles } from "@/lib/route-guards";
+
 import { generateGeminiFn } from "@/lib/gemini.functions";
 
 export const Route = createFileRoute("/_authenticated/agent/detail/$payload")({
   head: () => ({ meta: [{ title: "Action detail — DelayLens" }] }),
-  beforeLoad: async () => {
-    const roles = await fetchMyRoles();
-    if (roles.length === 0) throw redirect({ to: "/" });
-  },
+  // Auth is already enforced by the `_authenticated` layout. We intentionally
+  // do NOT re-check roles here: `supabase.auth.getUser()` can transiently fail
+  // during quick client-side navigations and would incorrectly bounce the user
+  // back to the dashboard. Any unauthenticated visitor is redirected to /auth
+  // by the parent guard before this loader ever runs.
   component: DetailPage,
 });
 
