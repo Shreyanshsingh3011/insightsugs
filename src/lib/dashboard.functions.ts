@@ -8,6 +8,8 @@ import type {
   TatRow,
   FlagEntry,
 } from "@/lib/dashboard-data";
+import { resolvePerson, type ProfileDirectory } from "@/lib/person-resolver";
+
 
 type Row = Record<string, string>;
 
