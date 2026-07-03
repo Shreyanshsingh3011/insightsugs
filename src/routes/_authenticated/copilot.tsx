@@ -62,7 +62,22 @@ type Turn = {
   sources: Source[];
   suggestions: string[];
   charts?: ChartSpec[];
+  citationsMissing?: boolean;
+  retriedForCitations?: boolean;
 };
+
+// A response is grounded when it contains at least one inline [...] marker AND
+// a "Sources:" section — matches GROUNDING_RULES in src/lib/gemini-client.ts.
+// Ignore the "I don't have that in the current dashboard data." fallback.
+function validateCitations(answer: string): boolean {
+  const t = answer.trim();
+  if (!t) return false;
+  if (/^i don'?t have that in the current dashboard data/i.test(t)) return true;
+  const hasInline = /\[[^\]\n]{2,}\]/.test(t);
+  const hasSources = /(^|\n)\s*sources\s*:/i.test(t);
+  return hasInline && hasSources;
+}
+
 type Insight = { title: string; detail: string; severity: "info" | "warning" | "critical" };
 
 const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
