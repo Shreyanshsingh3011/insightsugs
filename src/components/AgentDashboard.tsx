@@ -1323,9 +1323,9 @@ function Kpi({ icon, label, value, sub, tone = "default", to }: {
   );
   if (!to) return body;
   // Discriminated Link so TS accepts every param shape.
-  if (to.to === "/agent/detail/$payload")
-    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
   if (to.to === "/agent/kpi/$id")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/row/$key")
     return <Link to={to.to} params={to.params} className="block">{body}</Link>;
   if (to.to === "/agent/person/$key")
     return <Link to={to.to} params={to.params} className="block">{body}</Link>;
