@@ -29,6 +29,8 @@ import { listSheets, askCopilot, generateAutoInsights, generateChart } from "@/l
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
+import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
+import { renderWithCitations } from "@/components/copilot/CitationLink";
 import {
   ResponsiveContainer,
   BarChart,
@@ -69,7 +71,8 @@ type Turn = {
   citationsMissing?: boolean;
   citationValidation?: CitationValidation;
   retriedForCitations?: boolean;
-
+  toolTrace?: import("@/components/copilot/ToolCallTrace").ToolCall[];
+  citationOk?: boolean;
 };
 
 // Detailed citation validator. Returns { ok, issues[] } so the UI can explain
@@ -98,6 +101,20 @@ export type CitationValidation = {
 };
 
 const INLINE_RE = /\[([^\]\n]{2,}?)\]/g;
+
+// Walk react-markdown children and replace any string containing inline [..]
+// citation markers with clickable citation links.
+function decorateChildren(children: React.ReactNode, sources: Source[]): React.ReactNode {
+  const walk = (node: React.ReactNode, key: string): React.ReactNode => {
+    if (typeof node === "string") {
+      if (!/\[[^\]\n]{2,}?\]/.test(node)) return node;
+      return <>{renderWithCitations(node, sources)}</>;
+    }
+    if (Array.isArray(node)) return node.map((c, i) => walk(c, `${key}-${i}`));
+    return node;
+  };
+  return walk(children, "d");
+}
 const KNOWN_SHAPES = [
   /^sheet:\s*[^,\s]+(?:\s+row\s+\d+)?$/i,
   /^flags?\[.+\]$/i,
@@ -351,6 +368,8 @@ function CopilotPage() {
           citationsMissing: !validation.ok,
           citationValidation: validation,
           retriedForCitations: vars.retryForCitations,
+          toolTrace: (res as any).toolTrace ?? [],
+          citationOk: (res as any).citationOk ?? validation.ok,
         },
       ]);
       if (!validation.ok && vars.retryForCitations) {
@@ -752,8 +771,28 @@ function CopilotPage() {
                       </div>
                     )}
 
+                    {t.toolTrace && t.toolTrace.length > 0 && (
+                      <ToolCallTrace trace={t.toolTrace} />
+                    )}
+
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-table:my-2 prose-p:my-1.5 prose-headings:my-2">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.answer}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // Replace bare text nodes with citation-aware React nodes.
+                          p: ({ children, ...props }) => (
+                            <p {...props}>{decorateChildren(children, t.sources)}</p>
+                          ),
+                          li: ({ children, ...props }) => (
+                            <li {...props}>{decorateChildren(children, t.sources)}</li>
+                          ),
+                          td: ({ children, ...props }) => (
+                            <td {...props}>{decorateChildren(children, t.sources)}</td>
+                          ),
+                        }}
+                      >
+                        {t.answer}
+                      </ReactMarkdown>
                     </div>
 
                     {t.charts && t.charts.length > 0 && (

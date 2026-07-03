@@ -1,0 +1,749 @@
+// Agentic Copilot: the model plans and calls tools that read your sheets/docs.
+// The model NEVER sees raw rows in its system prompt; every fact it can cite
+// must come from a tool it explicitly called this turn. See plan for the
+// full contract.
+
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
+import { generateText, stepCountIs, tool } from "ai";
+
+// -------------------- helpers --------------------
+
+function mergeRow(row: { canonical?: unknown; extras?: unknown }): Record<string, unknown> {
+  return {
+    ...(((row.canonical as Record<string, unknown>) ?? {})),
+    ...(((row.extras as Record<string, unknown>) ?? {})),
+  };
+}
+
+function stringifyRow(data: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(data)) {
+    if (v == null || v === "") continue;
+    parts.push(`${k}: ${String(v).slice(0, 200)}`);
+  }
+  return parts.join(" | ").slice(0, 1200);
+}
+
+async function fetchAllRows(
+  supabase: any,
+  registryId: string,
+  cap = 20000,
+): Promise<Array<{ row_index: number; data: Record<string, unknown> }>> {
+  const PAGE = 1000;
+  const out: Array<{ row_index: number; data: Record<string, unknown> }> = [];
+  for (let offset = 0; offset < cap; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("sheet_rows")
+      .select("row_index, canonical, extras")
+      .eq("sheet_registry_id", registryId)
+      .order("row_index", { ascending: true })
+      .range(offset, Math.min(offset + PAGE - 1, cap - 1));
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    for (const r of data as any[]) {
+      out.push({ row_index: r.row_index, data: mergeRow(r) });
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}
+
+// Lazily embed any rows for a sheet that don't yet have an embedding row.
+// Skip if the sheet already has an entry for every row_index.
+async function ensureSheetEmbeddings(
+  supabase: any,
+  registryId: string,
+): Promise<{ embedded: number; total: number }> {
+  const { embedTexts, contentHash } = await import("./embeddings.server");
+
+  // Count total rows vs. embedded rows; only fetch what's missing to keep cost down.
+  const { count: totalCount } = await supabase
+    .from("sheet_rows")
+    .select("row_index", { count: "exact", head: true })
+    .eq("sheet_registry_id", registryId);
+  const total = totalCount ?? 0;
+  if (total === 0) return { embedded: 0, total: 0 };
+
+  const { count: haveCount } = await supabase
+    .from("sheet_row_embeddings")
+    .select("row_index", { count: "exact", head: true })
+    .eq("sheet_registry_id", registryId);
+  if ((haveCount ?? 0) >= total) return { embedded: 0, total };
+
+  // Cap on the first embed pass so a huge sheet doesn't stall the first
+  // question. Users hitting the cap will get progressively better coverage
+  // as they keep asking questions.
+  const FIRST_PASS_CAP = 4000;
+  const allRows = await fetchAllRows(supabase, registryId, FIRST_PASS_CAP);
+
+  const { data: existing } = await supabase
+    .from("sheet_row_embeddings")
+    .select("row_index")
+    .eq("sheet_registry_id", registryId);
+  const have = new Set<number>((existing ?? []).map((r: any) => r.row_index));
+  const missing = allRows.filter((r) => !have.has(r.row_index));
+  if (missing.length === 0) return { embedded: 0, total };
+
+  const snippets = missing.map((r) => stringifyRow(r.data));
+  const vectors = await embedTexts(snippets);
+
+  // Insert in chunks; unique(registry_id,row_index) prevents dupes on race.
+  const toInsert = missing.map((r, i) => ({
+    sheet_registry_id: registryId,
+    row_index: r.row_index,
+    content_snippet: snippets[i].slice(0, 2000),
+    content_hash: contentHash(snippets[i]),
+    embedding: vectors[i] as any,
+  }));
+  const CHUNK = 200;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    const { error } = await supabase
+      .from("sheet_row_embeddings")
+      .upsert(toInsert.slice(i, i + CHUNK), {
+        onConflict: "sheet_registry_id,row_index",
+      });
+    if (error) throw new Error(`Embed insert failed: ${error.message}`);
+  }
+  return { embedded: missing.length, total };
+}
+
+// -------------------- ledger --------------------
+
+type LedgerEntry =
+  | { kind: "sheet_row"; registryId: string; sheetLabel: string; rowIndex: number; data: Record<string, unknown> }
+  | { kind: "doc_chunk"; documentId: string; documentName: string; pageNo: number; snippet: string };
+
+// Kept intentionally `any`-shaped: TanStack Start's server-fn return type
+// checker rejects `unknown` (not JSON-serializable by its rule set).
+type ToolCallLog = {
+  name: string;
+  args: any;
+  ok: boolean;
+  ms: number;
+  summary: string;
+  result?: any;
+};
+
+// -------------------- main server function --------------------
+
+const InputSchema = z
+  .object({
+    question: z.string().min(1).max(2000),
+    sheetIds: z.array(z.string().uuid()).max(10).default([]),
+    documentIds: z.array(z.string().uuid()).max(10).default([]),
+    history: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().max(8000),
+        }),
+      )
+      .max(20)
+      .default([]),
+  })
+  .refine((v) => v.sheetIds.length + v.documentIds.length > 0, {
+    message: "Select at least one sheet or document.",
+  });
+
+export const askCopilotV2 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => InputSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const key = process.env.LOVABLE_API_KEY;
+    if (!key) throw new Error("Missing LOVABLE_API_KEY");
+
+    // 1) Resolve sheet + document metadata (labels for citations, IDs for scope).
+    const [regsRes, docsRes] = await Promise.all([
+      data.sheetIds.length
+        ? supabase
+            .from("sheet_registry")
+            .select("id, display_name, sheet_type, row_count")
+            .in("id", data.sheetIds)
+            .eq("user_id", userId)
+        : Promise.resolve({ data: [] as any[], error: null }),
+      data.documentIds.length
+        ? supabase
+            .from("documents")
+            .select("id, name, summary, page_count")
+            .in("id", data.documentIds)
+        : Promise.resolve({ data: [] as any[], error: null }),
+    ]);
+    if ((regsRes as any).error) throw new Error((regsRes as any).error.message);
+    if ((docsRes as any).error) throw new Error((docsRes as any).error.message);
+
+    const regs = (regsRes.data ?? []) as {
+      id: string;
+      display_name: string;
+      sheet_type: string;
+      row_count: number | null;
+    }[];
+    const docs = (docsRes.data ?? []) as {
+      id: string;
+      name: string;
+      summary: string | null;
+      page_count: number | null;
+    }[];
+
+    const sheetById = new Map(regs.map((r) => [r.id, r]));
+    const sheetByLabel = new Map(regs.map((r) => [r.display_name.toLowerCase(), r]));
+    const docById = new Map(docs.map((d) => [d.id, d]));
+    const docByLabel = new Map(docs.map((d) => [d.name.toLowerCase(), d]));
+
+    // 2) Ledger — every row/chunk the model was given via a tool call.
+    const ledger: LedgerEntry[] = [];
+    const toolTrace: ToolCallLog[] = [];
+    const cachedRowsBySheet = new Map<
+      string,
+      Array<{ row_index: number; data: Record<string, unknown> }>
+    >();
+
+    const getSheetRows = async (registryId: string) => {
+      const cached = cachedRowsBySheet.get(registryId);
+      if (cached) return cached;
+      const rows = await fetchAllRows(supabase, registryId);
+      cachedRowsBySheet.set(registryId, rows);
+      return rows;
+    };
+
+    // 3) Tools — each records to the ledger and toolTrace.
+
+    const withTrace = async <T>(name: string, args: unknown, fn: () => Promise<T>) => {
+      const started = performance.now();
+      try {
+        const result = (await fn()) as any;
+        toolTrace.push({
+          name,
+          args,
+          ok: true,
+          ms: Math.round(performance.now() - started),
+          summary: result?._summary ?? "ok",
+          result: result?._resultForModel ?? result,
+        });
+        return result?._resultForModel ?? result;
+      } catch (err) {
+        const msg = (err as Error).message ?? String(err);
+        toolTrace.push({
+          name,
+          args,
+          ok: false,
+          ms: Math.round(performance.now() - started),
+          summary: msg.slice(0, 200),
+        });
+        return { error: msg };
+      }
+    };
+
+    const searchSheetRows = tool({
+      description:
+        "Semantic + keyword search for rows in a specific sheet. Returns up to k rows most relevant to the query.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid().describe("Sheet registry id from the sheets catalog"),
+        query: z.string().min(1).max(500),
+        k: z.number().int().min(1).max(20).default(8),
+      }),
+      execute: async ({ sheet_id, query, k }) =>
+        withTrace("search_sheet_rows", { sheet_id, query, k }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const { embedQuery } = await import("./embeddings.server");
+          await ensureSheetEmbeddings(supabase, sheet_id);
+          const qvec = await embedQuery(query);
+          const { data: matches, error } = await supabase.rpc("match_sheet_rows", {
+            _user_id: userId,
+            _registry_id: sheet_id,
+            _query: qvec as any,
+            _match_count: k,
+          });
+          if (error) return { error: error.message };
+
+          // Fetch canonical/extras for the matched rows so the model sees columns.
+          const rowIdxs = (matches ?? []).map((m: any) => m.row_index);
+          const rows = await getSheetRows(sheet_id);
+          const byIndex = new Map(rows.map((r) => [r.row_index, r.data]));
+          const results = (matches ?? []).map((m: any) => {
+            const dataRow = byIndex.get(m.row_index) ?? {};
+            ledger.push({
+              kind: "sheet_row",
+              registryId: sheet_id,
+              sheetLabel: reg.display_name,
+              rowIndex: m.row_index,
+              data: dataRow,
+            });
+            return {
+              sheet: reg.display_name,
+              row_index: m.row_index,
+              similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
+              data: dataRow,
+              cite: `[sheet:${reg.display_name} row ${m.row_index + 1}]`,
+            };
+          });
+
+          return {
+            _summary: `${results.length} rows from "${reg.display_name}"`,
+            _resultForModel: { sheet: reg.display_name, matches: results },
+          };
+        }),
+    });
+
+    const filterSheetRows = tool({
+      description:
+        "Filter a sheet by column value. op: eq|neq|contains|gt|gte|lt|lte. Returns up to 50 matching rows.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        column: z.string().min(1).max(120),
+        op: z.enum(["eq", "neq", "contains", "gt", "gte", "lt", "lte"]),
+        value: z.union([z.string(), z.number(), z.boolean()]),
+        limit: z.number().int().min(1).max(50).default(20),
+      }),
+      execute: async ({ sheet_id, column, op, value, limit }) =>
+        withTrace("filter_sheet_rows", { sheet_id, column, op, value, limit }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const num = typeof value === "number" ? value : Number(value);
+          const numeric = ["gt", "gte", "lt", "lte"].includes(op);
+          const s = String(value).toLowerCase();
+          const matches: Array<{ row_index: number; data: Record<string, unknown> }> = [];
+          for (const r of rows) {
+            const v = r.data[column];
+            if (v == null) continue;
+            let hit = false;
+            if (numeric) {
+              const nv = Number(v);
+              if (!Number.isFinite(nv) || !Number.isFinite(num)) continue;
+              if (op === "gt") hit = nv > num;
+              else if (op === "gte") hit = nv >= num;
+              else if (op === "lt") hit = nv < num;
+              else if (op === "lte") hit = nv <= num;
+            } else {
+              const sv = String(v).toLowerCase();
+              if (op === "eq") hit = sv === s;
+              else if (op === "neq") hit = sv !== s;
+              else if (op === "contains") hit = sv.includes(s);
+            }
+            if (hit) {
+              matches.push(r);
+              if (matches.length >= limit) break;
+            }
+          }
+          for (const r of matches) {
+            ledger.push({
+              kind: "sheet_row",
+              registryId: sheet_id,
+              sheetLabel: reg.display_name,
+              rowIndex: r.row_index,
+              data: r.data,
+            });
+          }
+          return {
+            _summary: `${matches.length} rows match ${column} ${op} ${JSON.stringify(value)}`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              total_scanned: rows.length,
+              rows: matches.map((r) => ({
+                row_index: r.row_index,
+                data: r.data,
+                cite: `[sheet:${reg.display_name} row ${r.row_index + 1}]`,
+              })),
+            },
+          };
+        }),
+    });
+
+    const aggregateColumn = tool({
+      description:
+        "Compute an aggregate over a numeric column: sum, avg, min, max, or count. Optionally group by another column (top 20 groups).",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        column: z.string().min(1).max(120),
+        op: z.enum(["sum", "avg", "min", "max", "count"]),
+        group_by: z.string().min(1).max(120).nullable().default(null),
+      }),
+      execute: async ({ sheet_id, column, op, group_by }) =>
+        withTrace("aggregate_column", { sheet_id, column, op, group_by }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const compute = (subset: typeof rows) => {
+            const nums: number[] = [];
+            for (const r of subset) {
+              const v = r.data[column];
+              if (v == null || v === "") continue;
+              if (op === "count") {
+                nums.push(1);
+              } else {
+                const n = Number(v);
+                if (Number.isFinite(n)) nums.push(n);
+              }
+            }
+            if (nums.length === 0) return null;
+            if (op === "count") return nums.length;
+            if (op === "sum") return nums.reduce((a, b) => a + b, 0);
+            if (op === "avg") return nums.reduce((a, b) => a + b, 0) / nums.length;
+            if (op === "min") return Math.min(...nums);
+            if (op === "max") return Math.max(...nums);
+            return null;
+          };
+
+          if (!group_by) {
+            const value = compute(rows);
+            return {
+              _summary: `${op}(${column}) = ${value}`,
+              _resultForModel: {
+                sheet: reg.display_name,
+                op,
+                column,
+                value,
+                row_count: rows.length,
+              },
+            };
+          }
+
+          const groups = new Map<string, typeof rows>();
+          for (const r of rows) {
+            const g = String(r.data[group_by] ?? "(blank)");
+            if (!groups.has(g)) groups.set(g, []);
+            groups.get(g)!.push(r);
+          }
+          const rows_out = Array.from(groups.entries())
+            .map(([g, subset]) => ({ group: g, value: compute(subset), n: subset.length }))
+            .filter((r) => r.value != null)
+            .sort((a, b) => Number(b.value) - Number(a.value))
+            .slice(0, 20);
+          return {
+            _summary: `${op}(${column}) grouped by ${group_by}: ${rows_out.length} groups`,
+            _resultForModel: { sheet: reg.display_name, op, column, group_by, rows: rows_out },
+          };
+        }),
+    });
+
+    const getSheetSchema = tool({
+      description:
+        "List the columns present in a sheet and up to 3 sample values per column. Call this before other tools if you're unsure which column to use.",
+      inputSchema: z.object({ sheet_id: z.string().uuid() }),
+      execute: async ({ sheet_id }) =>
+        withTrace("get_sheet_schema", { sheet_id }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const cols = new Map<string, Set<string>>();
+          for (const r of rows.slice(0, 200)) {
+            for (const [k, v] of Object.entries(r.data)) {
+              if (v == null || v === "") continue;
+              if (!cols.has(k)) cols.set(k, new Set());
+              const s = cols.get(k)!;
+              if (s.size < 3) s.add(String(v).slice(0, 60));
+            }
+          }
+          const columns = Array.from(cols.entries()).map(([name, samples]) => ({
+            name,
+            samples: Array.from(samples),
+          }));
+          return {
+            _summary: `${columns.length} columns`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              sheet_type: reg.sheet_type,
+              total_rows: rows.length,
+              columns,
+            },
+          };
+        }),
+    });
+
+    const getRow = tool({
+      description: "Fetch one exact row by row_index. Useful to double-check a citation.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        row_index: z.number().int().min(0),
+      }),
+      execute: async ({ sheet_id, row_index }) =>
+        withTrace("get_row", { sheet_id, row_index }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const hit = rows.find((r) => r.row_index === row_index);
+          if (!hit) return { error: "No such row_index" };
+          ledger.push({
+            kind: "sheet_row",
+            registryId: sheet_id,
+            sheetLabel: reg.display_name,
+            rowIndex: row_index,
+            data: hit.data,
+          });
+          return {
+            _summary: `row ${row_index} from "${reg.display_name}"`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              row_index,
+              data: hit.data,
+              cite: `[sheet:${reg.display_name} row ${row_index + 1}]`,
+            },
+          };
+        }),
+    });
+
+    const searchDocChunks = tool({
+      description:
+        "Semantic search over the text of a specific document. Returns up to k page-scoped chunks.",
+      inputSchema: z.object({
+        document_id: z.string().uuid(),
+        query: z.string().min(1).max(500),
+        k: z.number().int().min(1).max(12).default(6),
+      }),
+      execute: async ({ document_id, query, k }) =>
+        withTrace("search_doc_chunks", { document_id, query, k }, async () => {
+          const doc = docById.get(document_id);
+          if (!doc) return { error: "Unknown document_id" };
+          const { embedQuery } = await import("./embeddings.server");
+          const qvec = await embedQuery(query);
+          const { data: matches, error } = await supabase.rpc("match_doc_chunks", {
+            _user_id: userId,
+            _query: qvec as any,
+            _scope_folder: null as unknown as string,
+            _scope_document: document_id,
+            _match_count: k,
+          });
+          if (error) return { error: error.message };
+          const results = (matches ?? []).map((m: any) => {
+            ledger.push({
+              kind: "doc_chunk",
+              documentId: m.document_id,
+              documentName: m.document_name,
+              pageNo: m.page_no ?? 0,
+              snippet: m.content ?? "",
+            });
+            return {
+              document: m.document_name,
+              page: m.page_no ?? 0,
+              snippet: (m.content ?? "").slice(0, 400),
+              similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
+              cite: `[doc:${m.document_name} p.${m.page_no ?? 0}]`,
+            };
+          });
+          return {
+            _summary: `${results.length} chunks from "${doc.name}"`,
+            _resultForModel: { document: doc.name, matches: results },
+          };
+        }),
+    });
+
+    // 4) System prompt — the agent has no rows, only tools.
+    const catalog = {
+      sheets: regs.map((r) => ({
+        id: r.id,
+        name: r.display_name,
+        type: r.sheet_type,
+        rows: r.row_count ?? 0,
+      })),
+      documents: docs.map((d) => ({
+        id: d.id,
+        name: d.name,
+        pages: d.page_count ?? 0,
+        summary: d.summary ?? null,
+      })),
+    };
+
+    const system = [
+      "You are the dashboard Copilot. You have NO memory of the underlying data.",
+      "To answer factually, you MUST call the provided tools first. Do not answer from prior knowledge.",
+      "",
+      "CITATION RULES (strict):",
+      "- Every factual sentence must include an inline citation marker:",
+      "    [sheet:<display_name> row <one-based row number>]  or",
+      "    [doc:<name> p.<page>]",
+      "- Only cite rows/chunks a tool actually returned in THIS turn.",
+      "- End the answer with a `Sources:` list, one marker per line (deduplicated).",
+      "- If you cannot support a claim from tool output, do not make it.",
+      "- If no tool returned anything useful, respond EXACTLY:",
+      '    "I don\'t have that in the current dashboard data."',
+      "",
+      "STYLE:",
+      "- Prefer short, precise answers with numbers and names.",
+      "- When multiple rows matter, list them as a compact markdown table underneath the answer (using the citation marker in a trailing column named `source`).",
+      "- Use Suggestion: prefix for any forward-looking advice.",
+      "",
+      "AVAILABLE DATA CATALOG (call get_sheet_schema for column details before filtering):",
+      JSON.stringify(catalog).slice(0, 4000),
+    ].join("\n");
+
+    // 5) Assemble messages: prior history + new question.
+    const messages = [
+      ...data.history.map((h) => ({ role: h.role, content: h.content })),
+      { role: "user" as const, content: data.question },
+    ];
+
+    const gateway = createLovableAiGatewayProvider(key);
+    const model = gateway("google/gemini-3-flash-preview");
+
+    const result = await generateText({
+      model,
+      system,
+      messages: messages as any,
+      tools: {
+        get_sheet_schema: getSheetSchema,
+        search_sheet_rows: searchSheetRows,
+        filter_sheet_rows: filterSheetRows,
+        aggregate_column: aggregateColumn,
+        get_row: getRow,
+        search_doc_chunks: searchDocChunks,
+      },
+      stopWhen: stepCountIs(8),
+    });
+
+    const rawAnswer = (result.text ?? "").trim();
+
+    // 6) Structural citation validator against the ledger.
+    const inlineRe = /\[([^\]\n]{2,}?)\]/g;
+    const seen = new Set<string>();
+    const unverified: string[] = [];
+    let inlineCount = 0;
+    let m: RegExpExecArray | null;
+    while ((m = inlineRe.exec(rawAnswer)) !== null) {
+      // Skip markdown links [text](url)
+      if (rawAnswer[m.index + m[0].length] === "(") continue;
+      const marker = m[0];
+      const body = m[1];
+      inlineCount++;
+      if (seen.has(marker)) continue;
+      seen.add(marker);
+
+      // [sheet:<name> row <n>]
+      const sheetMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s*$/i.exec(body);
+      if (sheetMatch) {
+        const label = sheetMatch[1].trim().toLowerCase();
+        const rowN = Number(sheetMatch[2]);
+        const reg = sheetByLabel.get(label);
+        if (!reg) {
+          unverified.push(marker);
+          continue;
+        }
+        const zeroIdx = rowN - 1;
+        const inLedger = ledger.some(
+          (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === zeroIdx,
+        );
+        if (!inLedger) unverified.push(marker);
+        continue;
+      }
+      // [doc:<name> p.<n>]
+      const docMatch = /^doc:\s*(.+?)\s+p\.\s*(\d+)\s*$/i.exec(body);
+      if (docMatch) {
+        const label = docMatch[1].trim().toLowerCase();
+        const page = Number(docMatch[2]);
+        const doc = docByLabel.get(label);
+        if (!doc) {
+          unverified.push(marker);
+          continue;
+        }
+        const inLedger = ledger.some(
+          (l) => l.kind === "doc_chunk" && l.documentId === doc.id && l.pageNo === page,
+        );
+        if (!inLedger) unverified.push(marker);
+        continue;
+      }
+      // Unknown marker shape — allow legacy [flags[...]] etc but flag as unverified
+      unverified.push(marker);
+    }
+
+    const isFallback =
+      /^i don'?t have that in the current dashboard data\.?$/i.test(rawAnswer);
+    const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(rawAnswer);
+    const citationOk =
+      isFallback ||
+      (inlineCount > 0 && unverified.length === 0 && hasSourcesSection);
+
+    // 7) If nothing verified and not a fallback, replace with refusal.
+    let finalAnswer = rawAnswer;
+    if (!citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
+      finalAnswer = "I don't have that in the current dashboard data.";
+    }
+
+    // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
+    const rowsUsedBySheet = new Map<string, number>();
+    const docsUsed = new Map<string, number>();
+    for (const l of ledger) {
+      if (l.kind === "sheet_row") {
+        rowsUsedBySheet.set(l.registryId, (rowsUsedBySheet.get(l.registryId) ?? 0) + 1);
+      } else {
+        docsUsed.set(l.documentId, (docsUsed.get(l.documentId) ?? 0) + 1);
+      }
+    }
+    const sources = [
+      ...regs.map((r) => ({
+        id: r.id,
+        name: r.display_name,
+        type: r.sheet_type,
+        rowsTotal: r.row_count ?? 0,
+        rowsUsed: rowsUsedBySheet.get(r.id) ?? 0,
+        truncated: false,
+      })),
+      ...docs.map((d) => ({
+        id: d.id,
+        name: d.name,
+        type: "document",
+        rowsTotal: 0,
+        rowsUsed: docsUsed.get(d.id) ?? 0,
+        truncated: false,
+      })),
+    ];
+
+    // 9) Persist for history + audit.
+    await supabase.from("copilot_messages").insert([
+      {
+        user_id: userId,
+        role: "user",
+        content: data.question,
+        scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+      },
+      {
+        user_id: userId,
+        role: "assistant",
+        content: finalAnswer,
+        scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+        citations: sources,
+      },
+    ]);
+
+    // 10) Follow-up suggestions (best-effort, non-blocking).
+    let suggestions: string[] = [];
+    try {
+      const sug = await generateText({
+        model,
+        system:
+          "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
+        prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
+      });
+      const parsed = JSON.parse(sug.text.trim().replace(/^```(?:json)?\n?|\n?```$/g, ""));
+      if (Array.isArray(parsed)) suggestions = parsed.filter((s) => typeof s === "string").slice(0, 3);
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      answer: finalAnswer,
+      sources,
+      suggestions,
+      toolTrace,
+      retrievalLedger: ledger.map((l) =>
+        l.kind === "sheet_row"
+          ? {
+              kind: "sheet_row" as const,
+              sheetId: l.registryId,
+              sheetLabel: l.sheetLabel,
+              rowIndex: l.rowIndex,
+            }
+          : {
+              kind: "doc_chunk" as const,
+              documentId: l.documentId,
+              documentName: l.documentName,
+              pageNo: l.pageNo,
+            },
+      ),
+      citationOk,
+      unverifiedCitations: unverified,
+    };
+  });

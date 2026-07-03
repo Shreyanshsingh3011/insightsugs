@@ -1198,6 +1198,44 @@ export type Database = {
         }
         Relationships: []
       }
+      sheet_row_embeddings: {
+        Row: {
+          content_hash: string
+          content_snippet: string
+          created_at: string
+          embedding: string
+          id: string
+          row_index: number
+          sheet_registry_id: string
+        }
+        Insert: {
+          content_hash: string
+          content_snippet: string
+          created_at?: string
+          embedding: string
+          id?: string
+          row_index: number
+          sheet_registry_id: string
+        }
+        Update: {
+          content_hash?: string
+          content_snippet?: string
+          created_at?: string
+          embedding?: string
+          id?: string
+          row_index?: number
+          sheet_registry_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_row_embeddings_sheet_registry_id_fkey"
+            columns: ["sheet_registry_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_registry"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sheet_rows: {
         Row: {
           canonical: Json
@@ -1468,6 +1506,19 @@ export type Database = {
           document_name: string
           page_no: number
           similarity: number
+        }[]
+      }
+      match_sheet_rows: {
+        Args: {
+          _match_count?: number
+          _query: string
+          _registry_id: string
+          _user_id: string
+        }
+        Returns: {
+          row_index: number
+          similarity: number
+          snippet: string
         }[]
       }
       move_to_dlq: {
