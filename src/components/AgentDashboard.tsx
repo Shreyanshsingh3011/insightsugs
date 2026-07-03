@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Link } from "@tanstack/react-router";
-import { encodeDetailPayload } from "@/lib/agent-detail-payload";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { encodeDetailPayload, type DetailPayload } from "@/lib/agent-detail-payload";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
@@ -631,6 +631,21 @@ export default function AgentDashboard() {
   }
 
 
+  // Every card/row on the dashboard deep-links to /agent/detail/$payload so
+  // the user can read AI suggestions and dispatch a mail/message from there.
+  const nav = useNavigate();
+  const detailLink = (p: Partial<DetailPayload> & { title: string }) => {
+    const payloadStr = encodeDetailPayload({
+      kind: p.kind ?? "aggregate",
+      projectId: selected === "all" ? undefined : selected,
+      projectLabel: payload?.project,
+      severity: p.severity ?? "med",
+      source: p.source ?? "Dashboard",
+      ...p,
+    });
+    return { to: "/agent/detail/$payload" as const, params: { payload: payloadStr } };
+  };
+
   return (
     <div className="space-y-6">
       {/* HERO */}
@@ -761,42 +776,54 @@ export default function AgentDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="overflow-hidden">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Gauge className="h-4 w-4 text-primary" /> Project health
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex items-center gap-3 pb-4">
-                <div className="h-32 w-32 shrink-0">
-                  <ResponsiveContainer>
-                    <RadialBarChart innerRadius="70%" outerRadius="100%" data={[{ name: "h", value: d.healthScore, fill: d.healthScore > 70 ? "#10b981" : d.healthScore > 40 ? "#f59e0b" : "#ef4444" }]} startAngle={90} endAngle={-270}>
-                      <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                      <RadialBar dataKey="value" cornerRadius={12} background={{ fill: "hsl(var(--muted))" }} />
-                    </RadialBarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="min-w-0">
-                  <div className="text-4xl font-semibold">{d.healthScore}</div>
-                  <div className="text-xs text-muted-foreground">out of 100</div>
-                  <div className="mt-2 space-y-0.5 text-[11px]">
-                    <div>On-time <b>{d.onTimeRate}%</b></div>
-                    <div>Completion <b>{d.completionRate}%</b></div>
-                    <div>Pace <b>{d.paceRatio}%</b> of TAT</div>
+            <Link
+              {...detailLink({
+                kind: "aggregate",
+                title: `Project health · ${payload?.project ?? "All projects"}`,
+                source: "Health",
+                severity: d.healthScore > 70 ? "ok" : d.healthScore > 40 ? "med" : "high",
+                detail: `Health ${d.healthScore}/100 · on-time ${d.onTimeRate}% · completion ${d.completionRate}% · pace ${d.paceRatio}% of TAT.`,
+              })}
+              className="block"
+            >
+              <Card className="overflow-hidden transition hover:shadow-md">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Gauge className="h-4 w-4 text-primary" /> Project health
+                    <ArrowRight className="ml-auto h-3.5 w-3.5 opacity-40" />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex items-center gap-3 pb-4">
+                  <div className="h-32 w-32 shrink-0">
+                    <ResponsiveContainer>
+                      <RadialBarChart innerRadius="70%" outerRadius="100%" data={[{ name: "h", value: d.healthScore, fill: d.healthScore > 70 ? "#10b981" : d.healthScore > 40 ? "#f59e0b" : "#ef4444" }]} startAngle={90} endAngle={-270}>
+                        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                        <RadialBar dataKey="value" cornerRadius={12} background={{ fill: "hsl(var(--muted))" }} />
+                      </RadialBarChart>
+                    </ResponsiveContainer>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="min-w-0">
+                    <div className="text-4xl font-semibold">{d.healthScore}</div>
+                    <div className="text-xs text-muted-foreground">out of 100</div>
+                    <div className="mt-2 space-y-0.5 text-[11px]">
+                      <div>On-time <b>{d.onTimeRate}%</b></div>
+                      <div>Completion <b>{d.completionRate}%</b></div>
+                      <div>Pace <b>{d.paceRatio}%</b> of TAT</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
 
           {/* KPI STRIP */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-            <Kpi icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
-            <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
-            <Kpi icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
-            <Kpi icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
-            <Kpi icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
-            <Kpi icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
+            <Kpi to={detailLink({ title: "All activities", source: "KPI", detail: `${d.totals.total} activities across the current scope.` })} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
+            <Kpi to={detailLink({ title: "Completed activities", source: "KPI", severity: "ok", detail: `${d.totals.completed} of ${d.totals.total} completed (${d.completionRate}%).` })} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
+            <Kpi to={detailLink({ title: "Delayed activities", source: "KPI", severity: d.delayRate > 15 ? "high" : "med", detail: `${d.totals.delayed} activities are delayed (${d.delayRate}%). Top offender: ${d.overdue[0]?.activity ?? "n/a"} — ${d.overdue[0]?.person ?? ""}.` })} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
+            <Kpi to={detailLink({ title: "Average delay", source: "KPI", severity: d.avgDelay > 30 ? "high" : "med", detail: `Team is running ${d.avgDelay} days late on average across delayed items.` })} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
+            <Kpi to={detailLink({ title: "Not started", source: "KPI", severity: "low", detail: `${d.totals.notStarted} activities have not been started yet.` })} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
+            <Kpi to={detailLink({ title: "Projected finish", source: "KPI", detail: d.projectedDaysToFinish ? `At current pace the remaining work needs ~${d.projectedDaysToFinish} more days.` : "Not enough completions yet to project a finish date." })} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
           </div>
 
           {/* NEXT BEST ACTIONS */}
@@ -992,23 +1019,40 @@ export default function AgentDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRows.slice(0, 200).map(r => (
-                      <TableRow key={r.i}>
-                        <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>{r.activity || "—"}</TableCell>
-                        <TableCell className="text-xs">{r.person || "—"}</TableCell>
-                        <TableCell className="text-xs">{r.stage || "—"}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={
-                            /complete|done/i.test(r.status) ? TONE.ok :
-                            /delay|late|overdue/i.test(r.status) ? TONE.high :
-                            /progress/i.test(r.status) ? TONE.med : TONE.low
-                          }>{r.status || "—"}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.taken || "—"}</TableCell>
-                        <TableCell className={`text-right tabular-nums ${r.delay > 0 ? "text-rose-600 font-semibold" : ""}`}>{r.delay || "—"}</TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredRows.slice(0, 200).map(r => {
+                      const link = detailLink({
+                        kind: "row",
+                        title: r.activity || "Activity",
+                        source: "Filtered report",
+                        severity: r.delay > 30 ? "high" : r.delay > 0 ? "med" : "low",
+                        person: r.person, stage: r.stage, email: r.email,
+                        detail: `${r.status || "—"} · TAT ${r.tat}d / taken ${r.taken}d${r.delay > 0 ? ` · ${r.delay}d late` : ""}`,
+                        row: rowsAll[r.i] as Record<string, unknown>,
+                      });
+                      return (
+                        <TableRow key={r.i} className="cursor-pointer hover:bg-muted/40" onClick={(e) => {
+                          // Router-safe navigation via a hidden Link inside the row.
+                          const a = e.currentTarget.querySelector<HTMLAnchorElement>("a[data-row-link]");
+                          a?.click();
+                        }}>
+                          <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>
+                            <Link {...link} data-row-link className="hover:underline">{r.activity || "—"}</Link>
+                          </TableCell>
+                          <TableCell className="text-xs">{r.person || "—"}</TableCell>
+                          <TableCell className="text-xs">{r.stage || "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={
+                              /complete|done/i.test(r.status) ? TONE.ok :
+                              /delay|late|overdue/i.test(r.status) ? TONE.high :
+                              /progress/i.test(r.status) ? TONE.med : TONE.low
+                            }>{r.status || "—"}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.taken || "—"}</TableCell>
+                          <TableCell className={`text-right tabular-nums ${r.delay > 0 ? "text-rose-600 font-semibold" : ""}`}>{r.delay || "—"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {filteredRows.length === 0 && (
                       <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
                     )}
@@ -1033,13 +1077,35 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="h-72">
                 <ResponsiveContainer>
-                  <BarChart data={d.stages.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 10 }}>
+                  <BarChart
+                    data={d.stages.slice(0, 8)}
+                    layout="vertical"
+                    margin={{ left: 10, right: 10 }}
+                    onClick={(e: { activeLabel?: string } | null) => {
+                      const stage = e?.activeLabel;
+                      if (!stage) return;
+                      const st = d.stages.find(s => s.stage === stage);
+                      if (!st) return;
+                      const link = detailLink({
+                        kind: "aggregate",
+                        title: `Stage · ${stage}`,
+                        stage,
+                        source: "Bottleneck map",
+                        severity: st.delayDays > 60 ? "high" : st.delayDays > 20 ? "med" : "low",
+                        detail: `${st.delayed} delayed items · ${st.delayDays}d cumulative delay across ${st.total} activities in this stage.`,
+                      });
+                      nav({ to: link.to, params: link.params });
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
                     <XAxis type="number" fontSize={11} />
-                    <YAxis type="category" dataKey="stage" fontSize={11} width={130} />
+                    <YAxis
+                      type="category" dataKey="stage" fontSize={11} width={130}
+                      style={{ cursor: "pointer" }}
+                    />
                     <Tooltip cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }} />
-                    <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" radius={[0, 6, 6, 0]} />
-                    <Bar dataKey="delayed" fill="#f59e0b" name="Delayed items" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }} />
+                    <Bar dataKey="delayed" fill="#f59e0b" name="Delayed items" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }} />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -1054,20 +1120,33 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {d.topPerformers.slice(0, 5).map((p, i) => (
-                  <div key={p.person} className="rounded-lg border border-border/60 p-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{p.person}</div>
-                        <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
+                  <Link
+                    key={p.person}
+                    {...detailLink({
+                      kind: "aggregate",
+                      title: `Top performer · ${p.person}`,
+                      person: p.person,
+                      source: "Top performers",
+                      severity: "ok",
+                      detail: `${p.person} completed ${p.completed}/${p.total} activities · efficiency ${p.efficiency}. Consider a thank-you note or asking them to mentor others.`,
+                    })}
+                    className="block"
+                  >
+                    <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{p.person}</div>
+                          <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">{p.efficiency}</div>
+                          <div className="text-[10px] text-muted-foreground">EFF</div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold">{p.efficiency}</div>
-                        <div className="text-[10px] text-muted-foreground">EFF</div>
-                      </div>
+                      <Progress value={p.efficiency} className="mt-1.5 h-1" />
                     </div>
-                    <Progress value={p.efficiency} className="mt-1.5 h-1" />
-                  </div>
+                  </Link>
                 ))}
                 {d.topPerformers.length === 0 && <p className="text-xs text-muted-foreground">Not enough completions yet.</p>}
               </CardContent>
@@ -1098,26 +1177,38 @@ export default function AgentDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {d.personsByBurden.slice(0, 12).map(p => (
-                    <TableRow key={p.person}>
-                      <TableCell className="font-medium">{p.person}</TableCell>
-                      <TableCell className="text-right">{p.total}</TableCell>
-                      <TableCell className="text-right">{p.completed}</TableCell>
-                      <TableCell className="text-right">{p.delayed}</TableCell>
-                      <TableCell className="text-right">{p.delayDays}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Progress value={p.efficiency} className="h-1.5" />
-                          <span className="w-8 text-xs text-muted-foreground">{p.efficiency}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={p.riskScore > 50 ? TONE.high : p.riskScore > 25 ? TONE.med : TONE.ok}>
-                          {p.riskScore}%
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {d.personsByBurden.slice(0, 12).map(p => {
+                    const link = detailLink({
+                      kind: "aggregate",
+                      title: `Person · ${p.person}`,
+                      person: p.person,
+                      source: "Efficiency ranking",
+                      severity: p.riskScore > 50 ? "high" : p.riskScore > 25 ? "med" : "ok",
+                      detail: `${p.person} — ${p.total} activities, ${p.completed} done, ${p.delayed} delayed (${p.delayDays}d). Efficiency ${p.efficiency}, risk ${p.riskScore}%.`,
+                    });
+                    return (
+                      <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav({ to: link.to, params: link.params })}>
+                        <TableCell className="font-medium">
+                          <Link {...link} className="hover:underline">{p.person}</Link>
+                        </TableCell>
+                        <TableCell className="text-right">{p.total}</TableCell>
+                        <TableCell className="text-right">{p.completed}</TableCell>
+                        <TableCell className="text-right">{p.delayed}</TableCell>
+                        <TableCell className="text-right">{p.delayDays}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress value={p.efficiency} className="h-1.5" />
+                            <span className="w-8 text-xs text-muted-foreground">{p.efficiency}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={p.riskScore > 50 ? TONE.high : p.riskScore > 25 ? TONE.med : TONE.ok}>
+                            {p.riskScore}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -1133,20 +1224,33 @@ export default function AgentDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.overdue.slice(0, 8).map((o, i) => (
-                  <div key={i} className={`rounded-lg border p-2.5 ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold">{o.activity}</div>
-                        <div className="mt-0.5 text-[11px] opacity-80">{o.person} · {o.stage}</div>
+                {d.overdue.slice(0, 8).map((o, i) => {
+                  const link = detailLink({
+                    kind: "row",
+                    title: o.activity || "Overdue activity",
+                    person: o.person, stage: o.stage, email: o.email,
+                    source: "Overdue queue",
+                    severity: o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low",
+                    detail: `${o.delay}d late · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Draft an escalation and commit a recovery date.`,
+                    row: o.row as Record<string, unknown>,
+                  });
+                  return (
+                    <Link key={i} {...link} className="block">
+                      <div className={`rounded-lg border p-2.5 transition hover:shadow-sm ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold">{o.activity}</div>
+                            <div className="mt-0.5 text-[11px] opacity-80">{o.person} · {o.stage}</div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-sm font-bold">{o.delay}d</div>
+                            <div className="text-[10px] opacity-70">TAT {o.tat} / took {o.taken}</div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-sm font-bold">{o.delay}d</div>
-                        <div className="text-[10px] opacity-70">TAT {o.tat} / took {o.taken}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    </Link>
+                  );
+                })}
                 {d.overdue.length === 0 && <p className="text-xs text-muted-foreground">No overdue items.</p>}
               </CardContent>
             </Card>
@@ -1159,19 +1263,31 @@ export default function AgentDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.anomalies.map((a, i) => (
-                  <div key={i} className="rounded-lg border border-border/60 p-2.5">
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{a.activity}</div>
-                        <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                {d.anomalies.map((a, i) => {
+                  const link = detailLink({
+                    kind: "aggregate",
+                    title: `Anomaly · ${a.activity}`,
+                    person: a.person, stage: a.stage,
+                    source: "Anomalies",
+                    severity: a.ratio >= 3 ? "high" : "med",
+                    detail: `${a.activity} took ${a.taken}d against a TAT of ${a.tat}d (${a.ratio.toFixed(1)}× budget). Review scope, blockers, or estimate accuracy with ${a.person}.`,
+                  });
+                  return (
+                    <Link key={i} {...link} className="block">
+                      <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{a.activity}</div>
+                            <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                          </div>
+                          <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
+                            {a.ratio.toFixed(1)}×
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
-                        {a.ratio.toFixed(1)}×
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                    </Link>
+                  );
+                })}
                 {d.anomalies.length === 0 && <p className="text-xs text-muted-foreground">No anomalies detected.</p>}
               </CardContent>
             </Card>
@@ -1183,9 +1299,10 @@ export default function AgentDashboard() {
 }
 
 // ────────────────── KPI ──────────────────
-function Kpi({ icon, label, value, sub, tone = "default" }: {
+function Kpi({ icon, label, value, sub, tone = "default", to }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
   tone?: "default" | "ok" | "med" | "high" | "low";
+  to?: { to: "/agent/detail/$payload"; params: { payload: string } };
 }) {
   const cls =
     tone === "ok" ? TONE.ok :
@@ -1193,17 +1310,19 @@ function Kpi({ icon, label, value, sub, tone = "default" }: {
     tone === "high" ? TONE.high :
     tone === "low" ? TONE.low :
     "border-border/60 bg-card";
-  return (
-    <Card className={`border ${cls}`}>
+  const body = (
+    <Card className={`border transition ${cls} ${to ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5" : ""}`}>
       <CardContent className="p-3.5">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest opacity-70">
           {icon}{label}
+          {to && <ArrowRight className="ml-auto h-3 w-3 opacity-40" />}
         </div>
         <div className="mt-1 text-2xl font-semibold leading-none">{value}</div>
         {sub && <div className="mt-1 text-[11px] opacity-70">{sub}</div>}
       </CardContent>
     </Card>
   );
+  return to ? <Link to={to.to} params={to.params} className="block">{body}</Link> : body;
 }
 
 function ProjectChip({ label, count, active, loading, error, onClick }: {
