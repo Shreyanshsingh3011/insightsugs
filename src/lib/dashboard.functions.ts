@@ -242,16 +242,19 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
         reasonAgg[reason].days += n.overdue;
 
         if (n.owner) {
-          const p = personMap.get(n.owner) ?? {
-            person: n.owner, email: "", phone: "",
+          const key = n.ownerKey || n.owner;
+          const p = personMap.get(key) ?? {
+            person: n.owner, email: n.ownerEmail ?? "", phone: "",
             delay_count: 0, total_overdue_days: 0, reasons: {}, activities: [],
           };
           p.delay_count += 1;
           p.total_overdue_days += n.overdue;
+          if (!p.email && n.ownerEmail) p.email = n.ownerEmail;
           p.reasons[reason] = (p.reasons[reason] || 0) + 1;
           if (n.activity && !p.activities.includes(n.activity)) p.activities.push(n.activity);
-          personMap.set(n.owner, p);
+          personMap.set(key, p);
         }
+
         if (n.dept) {
           const d = deptMap.get(n.dept) ?? {
             department: n.dept, delay_count: 0, total_overdue_days: 0, reasons: {},
