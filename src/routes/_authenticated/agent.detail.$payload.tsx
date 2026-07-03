@@ -94,8 +94,16 @@ function DetailPage() {
     },
     onSuccess: (_res, channel) => {
       toast.success(channel === "email" ? "Email dispatched" : "Message sent");
+      qc.invalidateQueries({ queryKey: ["source-timeline", activityTitle, data?.stage ?? null] });
     },
     onError: (e) => toast.error((e as Error).message),
+  });
+
+  const timelineQ = useQuery({
+    queryKey: ["source-timeline", activityTitle, data?.stage ?? null],
+    queryFn: () => timelineFn({ data: { activity: activityTitle, stage: data?.stage ?? null } }),
+    enabled: !!activityTitle,
+    refetchInterval: 30_000,
   });
 
   if (!data) {
