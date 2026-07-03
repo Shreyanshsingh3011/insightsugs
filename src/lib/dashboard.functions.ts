@@ -72,7 +72,13 @@ interface NormalizedRow {
 }
 
 
-function normalizeRow(sheetName: string, sheetType: string, merged: Row): NormalizedRow {
+function normalizeRow(
+  sheetName: string,
+  sheetType: string,
+  merged: Row,
+  directory?: ProfileDirectory,
+): NormalizedRow {
+
   const now = new Date();
   const status = bucketStatus(merged.status || merged.breach || "");
   const isCompleted = status === "Completed";
