@@ -1828,3 +1828,103 @@ function ProjectChip({ label, count, active, loading, error, onClick }: {
   );
 }
 
+// ────────────────── PERSON RESOLUTION DEBUG PANEL ──────────────────
+type PersonDiagnostics = {
+  total: number;
+  counts: { source: string; count: number }[];
+  titleRows: { project: string; raw: string; resolved: string; source: string; email: string; activity: string }[];
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  "alt-column": "Owner/Assignee column",
+  "raw-name":   "Sheet name column",
+  "profile":    "Profile (matched by email)",
+  "email-local":"Guessed from email local-part",
+  "role-fallback":"Role/title fallback ⚠",
+  "unassigned": "Unassigned",
+};
+
+function PersonResolutionPanel({ diagnostics }: { diagnostics: PersonDiagnostics }) {
+  const [open, setOpen] = useState(false);
+  const titleCount = diagnostics.titleRows.length;
+  const titlePct = diagnostics.total ? Math.round((titleCount / diagnostics.total) * 100) : 0;
+
+  return (
+    <Card className={titleCount > 0 ? "border-amber-500/40 bg-amber-500/[0.04]" : "border-border/60"}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 p-3 text-left"
+        aria-expanded={open}
+        aria-controls="person-resolution-panel"
+      >
+        <div className={`grid h-8 w-8 place-items-center rounded-full ${titleCount > 0 ? "bg-amber-500/15 text-amber-700" : "bg-emerald-500/15 text-emerald-700"}`}>
+          {titleCount > 0 ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">
+            Person name resolution
+            {titleCount > 0
+              ? <span className="ml-2 text-amber-700">· {titleCount} row{titleCount === 1 ? "" : "s"} ({titlePct}%) use a job title, not a name</span>
+              : <span className="ml-2 text-emerald-700">· all rows resolved to a real person</span>}
+          </div>
+          <div className="flex flex-wrap gap-1.5 pt-1 text-[10.5px] text-muted-foreground">
+            {diagnostics.counts.map((c) => (
+              <span key={c.source} className={`rounded-full border px-2 py-0.5 ${c.source === "role-fallback" ? "border-amber-500/40 text-amber-800" : "border-border/60"}`}>
+                {SOURCE_LABEL[c.source] ?? c.source}: <b className="tabular-nums">{c.count}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+        <ArrowRight className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`} aria-hidden />
+      </button>
+      {open && (
+        <div id="person-resolution-panel" className="border-t border-border/60 p-3">
+          {titleCount === 0 ? (
+            <div className="text-xs text-muted-foreground">
+              No title fallbacks. Every row mapped to a real person via a name column, profile email lookup, or humanised email local-part.
+            </div>
+          ) : (
+            <>
+              <p className="pb-2 text-[11px] text-muted-foreground">
+                These rows had a role/title in the <b>Responsible Person</b> column and no email that matched a profile.
+                Fix by filling <b>Responsible Person Mail ID</b> in the source sheet, or adding an <b>Owner Name / Assignee</b> column.
+              </p>
+              <div className="max-h-64 overflow-auto rounded-md border border-border/50">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-muted/60 text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-1.5">Project</th>
+                      <th className="px-2 py-1.5">Activity</th>
+                      <th className="px-2 py-1.5">Raw (title)</th>
+                      <th className="px-2 py-1.5">Email</th>
+                      <th className="px-2 py-1.5">Shown as</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diagnostics.titleRows.slice(0, 50).map((r, i) => (
+                      <tr key={i} className="border-t border-border/40">
+                        <td className="px-2 py-1 text-muted-foreground">{r.project}</td>
+                        <td className="px-2 py-1 max-w-[240px] truncate" title={r.activity}>{r.activity || "—"}</td>
+                        <td className="px-2 py-1 text-amber-700">{r.raw || "—"}</td>
+                        <td className="px-2 py-1 text-muted-foreground">{r.email || <span className="italic">missing</span>}</td>
+                        <td className="px-2 py-1 font-medium">{r.resolved}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {diagnostics.titleRows.length > 50 && (
+                  <div className="border-t border-border/40 bg-muted/40 px-2 py-1 text-center text-[10px] text-muted-foreground">
+                    …and {diagnostics.titleRows.length - 50} more
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
