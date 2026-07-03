@@ -82,6 +82,111 @@ function validateCitations(answer: string): boolean {
   return hasInline && hasSources;
 }
 
+/** Parse inline [..] citation markers from an answer and classify each. */
+type ParsedCitation = { raw: string; kind: string; ref: string; matchedSource?: Source };
+function parseCitations(answer: string, sources: Source[]): ParsedCitation[] {
+  const out: ParsedCitation[] = [];
+  const seen = new Set<string>();
+  const re = /\[([^\]\n]{2,}?)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(answer)) !== null) {
+    const raw = m[1].trim();
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    // Skip markdown link labels [text](url) — the "]" is immediately followed by "(".
+    if (answer[m.index + m[0].length] === "(") continue;
+    let kind = "reference";
+    let ref = raw;
+    let matched: Source | undefined;
+    const sheetMatch = raw.match(/^sheet:\s*([^,\s]+)(?:\s+row\s+(\d+))?/i);
+    const flagMatch = raw.match(/^flags?\[(.+)\]$/i);
+    const docMatch = raw.match(/^doc:\s*(.+?)(?:\s+p\.?\s*(\d+))?$/i);
+    if (sheetMatch) {
+      kind = "sheet";
+      ref = sheetMatch[2] ? `${sheetMatch[1]} · row ${sheetMatch[2]}` : sheetMatch[1];
+      const needle = sheetMatch[1].toLowerCase();
+      matched = sources.find(
+        (s) => s.type === "sheet" && (s.name.toLowerCase().includes(needle) || s.id.toLowerCase() === needle),
+      );
+    } else if (flagMatch) {
+      kind = "flag";
+      ref = flagMatch[1];
+    } else if (docMatch) {
+      kind = "document";
+      ref = docMatch[2] ? `${docMatch[1]} · p. ${docMatch[2]}` : docMatch[1];
+      const needle = docMatch[1].toLowerCase();
+      matched = sources.find((s) => s.type === "document" && s.name.toLowerCase().includes(needle));
+    }
+    out.push({ raw, kind, ref, matchedSource: matched });
+  }
+  return out;
+}
+
+function GroundingInspector({ answer, sources }: { answer: string; sources: Source[] }) {
+  const [open, setOpen] = useState(false);
+  const citations = useMemo(() => parseCitations(answer, sources), [answer, sources]);
+  const orphanSources = sources.filter((s) => !citations.some((c) => c.matchedSource?.id === s.id));
+  const missingMatches = citations.filter((c) => (c.kind === "sheet" || c.kind === "document") && !c.matchedSource);
+
+  return (
+    <div className="mt-3 rounded-md border bg-muted/20 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-2.5 py-1.5 text-left hover:bg-muted/40"
+      >
+        <span className="flex items-center gap-1.5 font-medium">
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          <ShieldCheck className="h-3 w-3 text-primary" />
+          Grounding check
+          <span className="text-muted-foreground">
+            · {citations.length} citation{citations.length === 1 ? "" : "s"}
+            {missingMatches.length > 0 && ` · ${missingMatches.length} unmatched`}
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div className="border-t px-2.5 py-2 space-y-2">
+          {citations.length === 0 ? (
+            <p className="text-destructive">No inline [..] citations found in this answer.</p>
+          ) : (
+            <ul className="space-y-1">
+              {citations.map((c, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-1.5">
+                  <code className="rounded bg-background px-1 font-mono text-[10px]">[{c.raw}]</code>
+                  <span className="text-muted-foreground">→</span>
+                  <Badge variant="outline" className="text-[10px] capitalize">{c.kind}</Badge>
+                  <span>{c.ref}</span>
+                  {c.matchedSource ? (
+                    <span className="text-emerald-600 dark:text-emerald-400">✓ {c.matchedSource.name}</span>
+                  ) : c.kind === "sheet" || c.kind === "document" ? (
+                    <span className="text-destructive">✗ no matching source</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {orphanSources.length > 0 && (
+            <div className="border-t pt-2">
+              <div className="mb-1 font-medium text-muted-foreground">
+                Sources loaded but never cited:
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {orphanSources.map((s) => (
+                  <Badge key={s.id} variant="outline" className="text-[10px]">
+                    {s.name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 type Insight = { title: string; detail: string; severity: "info" | "warning" | "critical" };
 
 const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
