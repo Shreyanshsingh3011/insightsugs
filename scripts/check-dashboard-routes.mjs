@@ -94,6 +94,37 @@ if (!anomaliesRegion) {
   }
 }
 
+// ── 6. Overdue queue must link to /agent/row/$key ───────────────────────────
+const overdueRegion = src.match(/Overdue queue[\s\S]{0,2000}?<\/Card>/);
+if (!overdueRegion) {
+  errors.push("Could not locate Overdue queue block.");
+} else if (!/\/agent\/row\/\$key/.test(overdueRegion[0])) {
+  errors.push("Overdue queue does not link to /agent/row/$key.");
+} else if (/\/agent\/detail\/\$payload/.test(overdueRegion[0])) {
+  errors.push("Overdue queue still links to aggregate /agent/detail/$payload.");
+} else {
+  ok.push("Overdue queue wired to /agent/row/$key");
+}
+
+// ── 7. Filtered report rows must link to /agent/row/$key ────────────────────
+const filteredRegion = src.match(/Filtered report[\s\S]{0,3500}?<\/Table>/);
+if (!filteredRegion) {
+  errors.push("Could not locate Filtered report block.");
+} else if (!/\/agent\/row\/\$key/.test(filteredRegion[0])) {
+  errors.push("Filtered report rows do not link to /agent/row/$key.");
+} else if (/\/agent\/detail\/\$payload/.test(filteredRegion[0])) {
+  errors.push("Filtered report rows still link to aggregate /agent/detail/$payload.");
+} else {
+  ok.push("Filtered report rows wired to /agent/row/$key");
+}
+
+// ── 8. No detailLink( call sites remain ─────────────────────────────────────
+if (/\bdetailLink\s*\(/.test(src)) {
+  errors.push("`detailLink(` call sites still remain in AgentDashboard.tsx.");
+} else {
+  ok.push("no detailLink() call sites remain");
+}
+
 // ── Report ───────────────────────────────────────────────────────────────────
 console.log("Dashboard route check");
 console.log("=====================");
