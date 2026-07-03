@@ -11,6 +11,8 @@ import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
+import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1023,10 +1025,12 @@ export default function AgentDashboard() {
                   current={assignedKeys}
                 />
               )}
+              <QuickAddDependencyDialog onAdded={refetchAll} />
               <Button variant="outline" size="sm" onClick={refetchAll}>
                 <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
                 Sync
               </Button>
+
               <div className="inline-flex overflow-hidden rounded-md border border-border/60">
                 <Button
                   variant="ghost" size="sm"
