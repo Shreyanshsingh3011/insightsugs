@@ -8,6 +8,8 @@ import type {
   TatRow,
   FlagEntry,
 } from "@/lib/dashboard-data";
+import { resolvePerson, type ProfileDirectory } from "@/lib/person-resolver";
+
 
 type Row = Record<string, string>;
 
@@ -58,6 +60,10 @@ interface NormalizedRow {
   isBlocked: boolean;
   overdue: number;
   owner?: string;
+  ownerEmail?: string;
+  ownerKey?: string;
+  ownerSource?: string;
+  ownerIsTitleFallback?: boolean;
   dept?: string;
   activity?: string;
   reason?: string;
@@ -65,7 +71,14 @@ interface NormalizedRow {
   daysTaken?: number;
 }
 
-function normalizeRow(sheetName: string, sheetType: string, merged: Row): NormalizedRow {
+
+function normalizeRow(
+  sheetName: string,
+  sheetType: string,
+  merged: Row,
+  directory?: ProfileDirectory,
+): NormalizedRow {
+
   const now = new Date();
   const status = bucketStatus(merged.status || merged.breach || "");
   const isCompleted = status === "Completed";
@@ -91,6 +104,32 @@ function normalizeRow(sheetName: string, sheetType: string, merged: Row): Normal
   const breachFlag = /^(true|yes|1|breach|y)$/i.test(merged.breach || "");
   const isDelayed = !isCompleted && (status === "Delayed" || overdue > 0 || breachFlag);
 
+  // Resolve the row's person using the shared resolver (title → name mapping).
+  const rawRole =
+    merged.responsible_person ||
+    merged.responsibility ||
+    merged.approvers_name ||
+    merged.owner ||
+    merged.approver ||
+    merged.vendor ||
+    merged.contractor ||
+    "";
+  const altName =
+    merged.owner_name || merged.assignee || merged.assigned_to || "";
+  const email = (
+    merged.responsible_person_mail_id ||
+    merged.approvers_email_id ||
+    merged.owner_email ||
+    ""
+  ).toLowerCase();
+  const resolution = resolvePerson(
+    { raw: rawRole, alt: altName, email },
+    directory,
+  );
+  const ownerLabel = resolution.displayName && resolution.source !== "unassigned"
+    ? resolution.displayName
+    : undefined;
+
   return {
     sheetName,
     sheetType,
@@ -100,12 +139,17 @@ function normalizeRow(sheetName: string, sheetType: string, merged: Row): Normal
     isCompleted,
     isBlocked,
     overdue,
-    owner: merged.owner || merged.approver || merged.vendor || merged.contractor || undefined,
+    owner: ownerLabel,
+    ownerEmail: resolution.email || undefined,
+    ownerKey: resolution.key,
+    ownerSource: resolution.source,
+    ownerIsTitleFallback: resolution.isTitleFallback,
     dept: merged.dept || merged.department || undefined,
     activity: merged.activity || merged.item || merged.material || merged.kpi || merged.bill_no || merged.po_no || undefined,
     reason: (merged.remarks || merged.reason || "").trim() || undefined,
     tat,
     daysTaken,
+
   };
 }
 
@@ -126,6 +170,22 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
       .eq("user_id", userId);
     if (regErr) throw new Error(regErr.message);
     if (!regs || regs.length === 0) throw new Error("No matching sheets.");
+
+    // Fetch the profile directory once so we can map Responsible-Person-Mail-ID
+    // → profiles.full_name and avoid job-title fallbacks.
+    const directory: ProfileDirectory = new Map();
+    try {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("email, full_name");
+      for (const p of profiles ?? []) {
+        const em = String(p.email ?? "").trim().toLowerCase();
+        const nm = String(p.full_name ?? "").trim();
+        if (em && nm) directory.set(em, nm);
+      }
+    } catch {
+      // non-fatal: resolver falls back to email-local / raw values.
+    }
 
     const PER_SHEET = 1000;
     const normalized: NormalizedRow[] = [];
@@ -152,9 +212,10 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
           const key = k.toLowerCase().replace(/\s+/g, "_");
           if (!(key in merged)) merged[key] = String(v ?? "");
         }
-        normalized.push(normalizeRow(r.display_name, r.sheet_type, merged));
+        normalized.push(normalizeRow(r.display_name, r.sheet_type, merged, directory));
       }
     }
+
 
     // Aggregates
     const status_breakdown: Record<string, number> = {};
@@ -181,16 +242,19 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
         reasonAgg[reason].days += n.overdue;
 
         if (n.owner) {
-          const p = personMap.get(n.owner) ?? {
-            person: n.owner, email: "", phone: "",
+          const key = n.ownerKey || n.owner;
+          const p = personMap.get(key) ?? {
+            person: n.owner, email: n.ownerEmail ?? "", phone: "",
             delay_count: 0, total_overdue_days: 0, reasons: {}, activities: [],
           };
           p.delay_count += 1;
           p.total_overdue_days += n.overdue;
+          if (!p.email && n.ownerEmail) p.email = n.ownerEmail;
           p.reasons[reason] = (p.reasons[reason] || 0) + 1;
           if (n.activity && !p.activities.includes(n.activity)) p.activities.push(n.activity);
-          personMap.set(n.owner, p);
+          personMap.set(key, p);
         }
+
         if (n.dept) {
           const d = deptMap.get(n.dept) ?? {
             department: n.dept, delay_count: 0, total_overdue_days: 0, reasons: {},
