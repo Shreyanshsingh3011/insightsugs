@@ -504,17 +504,19 @@ export default function AgentDashboard() {
       // Person-specific rollups so the model can answer "why is X delayed"
       // without having to re-aggregate the raw rows itself.
       const personRollups = (focusPersons.length ? focusPersons : []).map(fp => {
-        const owned = rowsAll.filter(r => {
-          const hay = `${r.person} ${r.email}`.toLowerCase();
+        const owned = rowIndex.filter(r => {
+          const hay = `${String(r.person ?? "")} ${String(r.email ?? "")}`.toLowerCase();
           return (fp.name && hay.includes(fp.name.toLowerCase())) || (fp.email && hay.includes(fp.email.toLowerCase()));
         });
         const overdue = owned.filter(r => r.delay > 0);
-        const done = owned.filter(r => /complete|done/i.test(r.status));
+        const done = owned.filter(r => /complete|done/i.test(String(r.status ?? "")));
         const byProj: Record<string, number> = {};
         const byStage: Record<string, number> = {};
         for (const r of owned) {
-          if (r.proj) byProj[r.proj] = (byProj[r.proj] ?? 0) + 1;
-          if (r.stage) byStage[r.stage] = (byStage[r.stage] ?? 0) + 1;
+          const p = String(r.proj ?? "");
+          const s = String(r.stage ?? "");
+          if (p) byProj[p] = (byProj[p] ?? 0) + 1;
+          if (s) byStage[s] = (byStage[s] ?? 0) + 1;
         }
         const avgDelay = overdue.length
           ? Math.round((overdue.reduce((s, r) => s + r.delay, 0) / overdue.length) * 10) / 10
