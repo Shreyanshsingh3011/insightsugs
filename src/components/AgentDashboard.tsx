@@ -275,6 +275,7 @@ export default function AgentDashboard() {
   const genFn = useServerFn(generateGeminiFn);
 
   const scope = useAgentScope();
+  const { directory: profileDir } = useProfileDirectory();
 
   // Persist the project selector across navigations so returning from the
   // detail page keeps the drill-down context intact.
