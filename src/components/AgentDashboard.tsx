@@ -803,6 +803,14 @@ export default function AgentDashboard() {
             onClick={() => setSelected(s.project.id)}
           />
         ))}
+        {selected !== "all" && (
+          <Link
+            to="/agent/project/$projectId"
+            params={{ projectId: selected }}
+            className="ml-1 rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+            title="Open full project workspace"
+          >Open workspace →</Link>
+        )}
       </div>
 
       {anyLoading && !payload && (
