@@ -2,15 +2,27 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { getEmailQueueStatus, resendAgentDraftEmail } from "@/lib/email-ops.functions";
+import {
+  getEmailQueueStatus,
+  resendAgentDraftEmail,
+  bulkResendAgentDraftEmails,
+  getDraftResendHistory,
+  type EmailLogRow,
+} from "@/lib/email-ops.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Mail, RefreshCw, Search, Send, Loader2, X } from "lucide-react";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
+import {
+  Mail, RefreshCw, Search, Send, Loader2, X, Download, History, ChevronDown,
+} from "lucide-react";
 
 type StatusFilter = "all" | "sent" | "pending" | "failed" | "suppressed" | "dlq" | "bounced" | "complained";
 
@@ -22,10 +34,29 @@ function statusTone(s: string): string {
 }
 
 const FAIL_STATES = new Set(["failed", "dlq", "bounced", "complained", "suppressed"]);
+const PAGE_SIZE = 25;
+
+function csvEscape(v: unknown): string {
+  if (v == null) return "";
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function toCsv(rows: EmailLogRow[]): string {
+  const headers = ["created_at", "status", "recipient_email", "template_name", "message_id", "draft_id", "error_message"];
+  const lines = [headers.join(",")];
+  for (const r of rows) {
+    lines.push(headers.map((h) => csvEscape((r as any)[h])).join(","));
+  }
+  return lines.join("\n");
+}
 
 export function EmailQueuePanel() {
   const fetchStatus = useServerFn(getEmailQueueStatus);
   const resendFn = useServerFn(resendAgentDraftEmail);
+  const bulkResendFn = useServerFn(bulkResendAgentDraftEmails);
+  const historyFn = useServerFn(getDraftResendHistory);
   const qc = useQueryClient();
 
   const q = useQuery({
@@ -40,6 +71,9 @@ export function EmailQueuePanel() {
   const [draftId, setDraftId] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set());
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [historyDraftId, setHistoryDraftId] = useState<string | null>(null);
 
   const resend = useMutation({
     mutationFn: (id: string) => resendFn({ data: { draftId: id } }) as Promise<any>,
@@ -51,6 +85,23 @@ export function EmailQueuePanel() {
       qc.invalidateQueries({ queryKey: ["email-queue-status"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Resend failed"),
+  });
+
+  const bulkResend = useMutation({
+    mutationFn: (ids: string[]) => bulkResendFn({ data: { draftIds: ids } }) as Promise<any>,
+    onSuccess: (res) => {
+      if (res.okCount > 0) toast.success(`Requeued ${res.okCount} draft${res.okCount === 1 ? "" : "s"}.`);
+      if (res.failCount > 0) toast.error(`${res.failCount} failed to requeue.`);
+      setSelectedDrafts(new Set());
+      qc.invalidateQueries({ queryKey: ["email-queue-status"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Bulk resend failed"),
+  });
+
+  const historyQuery = useQuery({
+    queryKey: ["draft-resend-history", historyDraftId],
+    queryFn: () => historyFn({ data: { draftId: historyDraftId! } }) as any,
+    enabled: !!historyDraftId,
   });
 
   const filtered = useMemo(() => {
@@ -70,20 +121,65 @@ export function EmailQueuePanel() {
     });
   }, [data, search, messageId, draftId, status]);
 
+  const visible = filtered.slice(0, visibleCount);
+  const selectableIds = useMemo(
+    () => visible.filter((r) => r.draft_id && FAIL_STATES.has(r.status)).map((r) => r.draft_id as string),
+    [visible],
+  );
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedDrafts.has(id));
+
   if (data && !data.isAdmin) return null;
 
   const hasFilters = search || messageId || draftId || status !== "all";
 
+  const exportCsv = () => {
+    const blob = new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `email-send-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleDraft = (id: string) =>
+    setSelectedDrafts((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const toggleAll = () =>
+    setSelectedDrafts((s) => {
+      if (allSelected) {
+        const n = new Set(s);
+        selectableIds.forEach((id) => n.delete(id));
+        return n;
+      }
+      const n = new Set(s);
+      selectableIds.forEach((id) => n.add(id));
+      return n;
+    });
+
   return (
+    <>
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Mail className="h-4 w-4 text-primary" /> Email queue &amp; delivery
         </CardTitle>
-        <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
-          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
-          Refresh now
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || filtered.length === 0}>
+            <Download className="mr-1.5 h-3.5 w-3.5" /> Export CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Drafts snapshot */}
@@ -109,23 +205,23 @@ export function EmailQueuePanel() {
             <Input
               placeholder="Search recipient, template, error…"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setVisibleCount(PAGE_SIZE); }}
               className="h-8 pl-7 text-xs"
             />
           </div>
           <Input
             placeholder="message_id contains…"
             value={messageId}
-            onChange={(e) => setMessageId(e.target.value)}
+            onChange={(e) => { setMessageId(e.target.value); setVisibleCount(PAGE_SIZE); }}
             className="h-8 text-xs font-mono"
           />
           <Input
             placeholder="draft id contains…"
             value={draftId}
-            onChange={(e) => setDraftId(e.target.value)}
+            onChange={(e) => { setDraftId(e.target.value); setVisibleCount(PAGE_SIZE); }}
             className="h-8 text-xs font-mono"
           />
-          <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+          <Select value={status} onValueChange={(v) => { setStatus(v as StatusFilter); setVisibleCount(PAGE_SIZE); }}>
             <SelectTrigger className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
@@ -146,7 +242,7 @@ export function EmailQueuePanel() {
               variant="ghost"
               className="h-8 text-xs"
               onClick={() => {
-                setSearch(""); setMessageId(""); setDraftId(""); setStatus("all");
+                setSearch(""); setMessageId(""); setDraftId(""); setStatus("all"); setVisibleCount(PAGE_SIZE);
               }}
             >
               <X className="mr-1 h-3.5 w-3.5" /> Clear
@@ -154,9 +250,42 @@ export function EmailQueuePanel() {
           )}
         </div>
 
+        {/* Bulk actions bar */}
+        {selectedDrafts.size > 0 && (
+          <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs">
+            <span>{selectedDrafts.size} draft{selectedDrafts.size === 1 ? "" : "s"} selected</span>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelectedDrafts(new Set())}>
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                disabled={bulkResend.isPending}
+                onClick={() => bulkResend.mutate(Array.from(selectedDrafts))}
+              >
+                {bulkResend.isPending ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Send className="mr-1 h-3 w-3" />
+                )}
+                Resend {selectedDrafts.size}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Log */}
         <div className="rounded-md border">
-          <div className="grid grid-cols-[1.4fr_120px_120px_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="grid grid-cols-[24px_1.4fr_120px_120px_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div>
+              <Checkbox
+                checked={allSelected}
+                onCheckedChange={toggleAll}
+                disabled={selectableIds.length === 0}
+                aria-label="Select all failed/suppressed"
+              />
+            </div>
             <div>Recipient · template · IDs</div>
             <div>Status</div>
             <div>When</div>
@@ -170,22 +299,32 @@ export function EmailQueuePanel() {
                 : "No entries match the current filters."}
             </div>
           )}
-          {filtered.slice(0, 25).map((r) => {
+          {visible.map((r) => {
             const canResend = !!r.draft_id && FAIL_STATES.has(r.status);
             const isResending = resendingId === r.draft_id;
+            const isSelected = r.draft_id ? selectedDrafts.has(r.draft_id) : false;
             return (
               <div
                 key={r.id}
-                className="grid grid-cols-[1.4fr_120px_120px_auto] items-center gap-2 border-t px-3 py-1.5 text-xs"
+                className="grid grid-cols-[24px_1.4fr_120px_120px_auto] items-center gap-2 border-t px-3 py-1.5 text-xs"
               >
+                <div>
+                  {canResend && (
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleDraft(r.draft_id!)}
+                      aria-label="Select for bulk resend"
+                    />
+                  )}
+                </div>
                 <div className="min-w-0">
                   <div className="truncate">
                     <span className="font-medium">{r.recipient_email ?? "—"}</span>
                     <span className="text-muted-foreground"> · {r.template_name ?? "—"}</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
-                    {r.message_id && <span title="message_id">msg:{r.message_id.slice(0, 8)}…</span>}
-                    {r.draft_id && <span title="agent_drafts.id">draft:{r.draft_id.slice(0, 8)}…</span>}
+                    {r.message_id && <span title={r.message_id}>msg:{r.message_id.slice(0, 12)}…</span>}
+                    {r.draft_id && <span title={r.draft_id}>draft:{r.draft_id.slice(0, 8)}…</span>}
                   </div>
                   {r.error_message && (
                     <div className="mt-0.5 truncate text-[10px] text-destructive" title={r.error_message}>
@@ -199,7 +338,18 @@ export function EmailQueuePanel() {
                 <div className="tabular-nums text-muted-foreground">
                   {new Date(r.created_at).toLocaleTimeString()}
                 </div>
-                <div className="text-right">
+                <div className="flex items-center justify-end gap-1">
+                  {r.draft_id && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      title="View resend history"
+                      onClick={() => setHistoryDraftId(r.draft_id!)}
+                    >
+                      <History className="h-3 w-3" />
+                    </Button>
+                  )}
                   {canResend && (
                     <Button
                       size="sm"
@@ -221,12 +371,61 @@ export function EmailQueuePanel() {
             );
           })}
         </div>
-        {data && filtered.length > 25 && (
-          <div className="text-[10px] text-muted-foreground">
-            Showing 25 of {filtered.length} matches. Narrow the filters to see more.
+        {filtered.length > visible.length && (
+          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>Showing {visible.length} of {filtered.length} matches</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+            >
+              <ChevronDown className="mr-1 h-3 w-3" /> Load {Math.min(PAGE_SIZE, filtered.length - visible.length)} more
+            </Button>
           </div>
         )}
       </CardContent>
     </Card>
+
+    {/* Resend history drawer */}
+    <Sheet open={!!historyDraftId} onOpenChange={(o) => !o && setHistoryDraftId(null)}>
+      <SheetContent className="w-full sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4" /> Resend history
+          </SheetTitle>
+          <SheetDescription className="font-mono text-[10px]">
+            draft: {historyDraftId}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="mt-4 space-y-2">
+          {historyQuery.isLoading && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading history…
+            </div>
+          )}
+          {historyQuery.data && historyQuery.data.rows.length === 0 && (
+            <p className="text-xs text-muted-foreground">No send log entries found for this draft.</p>
+          )}
+          {historyQuery.data?.rows.map((row: EmailLogRow) => (
+            <div key={row.id} className="rounded-md border p-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant="outline" className={statusTone(row.status)}>{row.status}</Badge>
+                <span className="tabular-nums text-muted-foreground">
+                  {new Date(row.created_at).toLocaleString()}
+                </span>
+              </div>
+              <div className="mt-1 font-mono text-[10px] text-muted-foreground break-all">
+                {row.message_id}
+              </div>
+              {row.error_message && (
+                <div className="mt-1 text-[10px] text-destructive">{row.error_message}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </SheetContent>
+    </Sheet>
+    </>
   );
 }
