@@ -446,16 +446,33 @@ export default function AgentDashboard() {
 
   const askMut = useMutation({
     mutationFn: async (q: string) => {
-      const matches = retrieveRows(q, 30).map(r => ({
-        activity: r.activity, person: r.person, email: r.email,
-        stage: r.stage, status: r.status, criticality: r.crit,
-        project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
-      }));
+      // If the user is asking about "me / my / mine", prioritise rows owned by them.
+      const isSelfQ = /\b(my|mine|me|i)\b/i.test(q);
+      let pool = rowIndex;
+      if (isSelfQ && scope.nameNeedles.length) {
+        const mine = rowIndex.filter((r) => {
+          const hay = `${r.person} ${r.email}`.toLowerCase();
+          return scope.nameNeedles.some((n) => hay.includes(n));
+        });
+        if (mine.length) pool = mine;
+      }
+      const matches = (isSelfQ ? pool.slice(0, 30) : retrieveRows(q, 30))
+        .map(r => ({
+          activity: r.activity, person: r.person, email: r.email,
+          stage: r.stage, status: r.status, criticality: r.crit,
+          project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
+        }));
+      const you = {
+        name: scope.profile?.full_name || "(unknown)",
+        email: scope.profile?.email || "(unknown)",
+        role: scope.isSuper ? "super_admin (MD / Vertical Head)" : scope.isAdmin ? "admin (Reporting Manager)" : "user",
+        assigned_projects: scope.assignments.map((a) => a.project_label),
+      };
       const facts = {
         project: payload?.project,
         totals: d.totals, health: d.healthScore, completion_pct: d.completionRate,
         on_time_pct: d.onTimeRate, avg_delay_days: d.avgDelay, pace_pct_of_tat: d.paceRatio,
-        stages: d.stages, // full list
+        stages: d.stages,
         persons: d.personsByBurden.slice(0, 20),
         overdue_top: d.overdue.slice(0, 15),
         anomalies: d.anomalies,
@@ -464,8 +481,8 @@ export default function AgentDashboard() {
       const history = chat.slice(-6).map(m => `${m.role === "user" ? "USER" : "AGENT"}: ${m.text}`).join("\n");
       const res = await genFn({
         data: {
-          system: "You are the project's autonomous agent. Answer using ONLY the FACTS and MATCHING_ROWS provided. Cite concrete numbers, activity names, people, or stages from the data. If the answer is not derivable from the data, say 'not in the data'. Prefer 2-6 sentences; use a short bullet list only when the user asks for a list, ranking, or plan. Never invent rows, dates, or people.",
-          prompt: `FACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
+          system: "You are the user's personal project agent. Answer using ONLY YOU (the user's identity), FACTS, and MATCHING_ROWS. When the user says 'me / my / mine', treat that as referring to YOU.name / YOU.email. Cite concrete activity names, stages, people, and numbers from the data. Never invent rows, dates, or people. If the data doesn't cover it, say 'not in the data'. Prefer 2-6 sentences; use short bullets only for lists, rankings, or step plans.",
+          prompt: `YOU:\n${JSON.stringify(you)}\n\nFACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total${isSelfQ ? ", filtered to YOU when possible" : ""}):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
           temperature: 0.15,
         },
       });
