@@ -278,7 +278,7 @@ function EditSheetMetaDialog({
 
 
 
-function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function AddSheetDialog({ open, onOpenChange, isAdmin }: { open: boolean; onOpenChange: (v: boolean) => void; isAdmin: boolean }) {
   const qc = useQueryClient();
   const router = useRouter();
   const inspect = useServerFn(inspectSheet);
@@ -287,6 +287,8 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   const [sheetType, setSheetType] = useState<SheetType>("generic");
   const [appsScriptUrl, setAppsScriptUrl] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [visibility, setVisibility] = useState<Visibility>("private");
+  const [sharedIds, setSharedIds] = useState<string[]>([]);
   const [step, setStep] = useState<"input" | "mapping">("input");
   const [inspectResult, setInspectResult] = useState<{
     headers: string[];
@@ -301,6 +303,8 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     setAppsScriptUrl("");
     setDisplayName("");
     setSheetType("generic");
+    setVisibility("private");
+    setSharedIds([]);
   };
 
   const finishRegister = (res: { id: string }) => {
@@ -320,12 +324,15 @@ function AddSheetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           sheetType,
           displayName: displayName.trim(),
           mapping,
+          visibility: isAdmin ? visibility : "private",
+          sharedUserIds: isAdmin && visibility === "shared" ? sharedIds : [],
         },
       });
     },
     onSuccess: finishRegister,
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to register"),
   });
+
 
   const inspectMut = useMutation({
     mutationFn: () => inspect({ data: { appsScriptUrl, sheetType } }),
