@@ -1018,23 +1018,40 @@ export default function AgentDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRows.slice(0, 200).map(r => (
-                      <TableRow key={r.i}>
-                        <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>{r.activity || "—"}</TableCell>
-                        <TableCell className="text-xs">{r.person || "—"}</TableCell>
-                        <TableCell className="text-xs">{r.stage || "—"}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={
-                            /complete|done/i.test(r.status) ? TONE.ok :
-                            /delay|late|overdue/i.test(r.status) ? TONE.high :
-                            /progress/i.test(r.status) ? TONE.med : TONE.low
-                          }>{r.status || "—"}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.taken || "—"}</TableCell>
-                        <TableCell className={`text-right tabular-nums ${r.delay > 0 ? "text-rose-600 font-semibold" : ""}`}>{r.delay || "—"}</TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredRows.slice(0, 200).map(r => {
+                      const link = detailLink({
+                        kind: "row",
+                        title: r.activity || "Activity",
+                        source: "Filtered report",
+                        severity: r.delay > 30 ? "high" : r.delay > 0 ? "med" : "low",
+                        person: r.person, stage: r.stage, email: r.email,
+                        detail: `${r.status || "—"} · TAT ${r.tat}d / taken ${r.taken}d${r.delay > 0 ? ` · ${r.delay}d late` : ""}`,
+                        row: rowsAll[r.i] as Record<string, unknown>,
+                      });
+                      return (
+                        <TableRow key={r.i} className="cursor-pointer hover:bg-muted/40" onClick={(e) => {
+                          // Router-safe navigation via a hidden Link inside the row.
+                          const a = e.currentTarget.querySelector<HTMLAnchorElement>("a[data-row-link]");
+                          a?.click();
+                        }}>
+                          <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>
+                            <Link {...link} data-row-link className="hover:underline">{r.activity || "—"}</Link>
+                          </TableCell>
+                          <TableCell className="text-xs">{r.person || "—"}</TableCell>
+                          <TableCell className="text-xs">{r.stage || "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={
+                              /complete|done/i.test(r.status) ? TONE.ok :
+                              /delay|late|overdue/i.test(r.status) ? TONE.high :
+                              /progress/i.test(r.status) ? TONE.med : TONE.low
+                            }>{r.status || "—"}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.taken || "—"}</TableCell>
+                          <TableCell className={`text-right tabular-nums ${r.delay > 0 ? "text-rose-600 font-semibold" : ""}`}>{r.delay || "—"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {filteredRows.length === 0 && (
                       <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
                     )}
