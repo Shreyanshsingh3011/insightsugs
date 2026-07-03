@@ -1185,30 +1185,15 @@ export default function AgentDashboard() {
                 {d.topPerformers.slice(0, 5).map((p, i) => (
                   <Link
                     key={p.person}
-                    {...detailLink({
-                      kind: "aggregate",
-                      title: `Top performer · ${p.person}`,
-                      person: p.person,
-                      source: "Top performers",
-                      severity: "ok",
-                      detail: `${p.person} completed ${p.completed}/${p.total} activities · efficiency ${p.efficiency}. Consider a thank-you note or asking them to mentor others.`,
-                    })}
+                    to="/agent/person/$key"
+                    params={{ key: encodeEntityKey(p.person) }}
                     className="block"
                   >
                     <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
                       <div className="flex items-center gap-2">
                         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <div className="truncate text-sm font-medium">{p.person}</div>
-                            <Link
-                              to="/agent/person/$key"
-                              params={{ key: encodeEntityKey(p.person) }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
-                              title="Open person profile"
-                            >Profile</Link>
-                          </div>
+                          <div className="truncate text-sm font-medium">{p.person}</div>
                           <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
                         </div>
                         <div className="text-right">
