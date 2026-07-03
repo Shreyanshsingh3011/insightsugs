@@ -1023,10 +1023,12 @@ export default function AgentDashboard() {
                   current={assignedKeys}
                 />
               )}
+              <QuickAddDependencyDialog onAdded={refetchAll} />
               <Button variant="outline" size="sm" onClick={refetchAll}>
                 <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
                 Sync
               </Button>
+
               <div className="inline-flex overflow-hidden rounded-md border border-border/60">
                 <Button
                   variant="ghost" size="sm"
