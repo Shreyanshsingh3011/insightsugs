@@ -138,6 +138,14 @@ export const Route = createFileRoute("/api/public/hooks/weekly-briefing")({
           sheetSharedTo.set(s.sheet_registry_id, set);
         }
 
+        // Per-user briefing preferences
+        const { data: prefRows } = await admin
+          .from("briefing_preferences")
+          .select("user_id, sections, overdue_priority");
+        const prefsByUser = new Map<string, { sections: string[]; overdue_priority: string }>();
+        for (const p of prefRows ?? []) prefsByUser.set(p.user_id, { sections: p.sections, overdue_priority: p.overdue_priority });
+        const defaultPrefs = { sections: ["projects", "sheets", "documents", "alerts"], overdue_priority: "top" };
+
         const briefingUrl = `${new URL(request.url).origin}/briefings`;
         const generated: Array<{ user_id: string | null; scope: "user" | "org"; sections: Section[]; email?: string; name?: string }> = [];
 
@@ -145,8 +153,18 @@ export const Route = createFileRoute("/api/public/hooks/weekly-briefing")({
         for (const u of users ?? []) {
           const uid = u.id;
           const admin_ = isAdmin(uid);
+          const prefs = prefsByUser.get(uid) ?? defaultPrefs;
+          const enabled = new Set(prefs.sections);
           const myActivities = (activities ?? []).filter((a) => a.assignee_id === uid);
-          const overdue = myActivities.filter((a) => a.due_date && a.due_date < endISO && a.status !== "completed").length;
+
+          // Overdue sorting per preference
+          const overdueList = myActivities.filter((a) => a.due_date && a.due_date < endISO && a.status !== "completed");
+          const sortedOverdue = [...overdueList].sort((a, b) => {
+            if (prefs.overdue_priority === "by_due_date") return (a.due_date ?? "").localeCompare(b.due_date ?? "");
+            if (prefs.overdue_priority === "by_age") return (a.updated_at ?? "").localeCompare(b.updated_at ?? "");
+            return 0; // "top" — keep insertion order, AI will surface first
+          }).slice(0, 10).map((a) => ({ title: a.title, due: a.due_date, project: projectName(a.project_id) }));
+
           const completed = myActivities.filter((a) => a.completed_at && a.completed_at >= startTs).length;
           const upcoming = myActivities
             .filter((a) => a.due_date && a.due_date >= endISO && a.status !== "completed")
@@ -159,15 +177,37 @@ export const Route = createFileRoute("/api/public/hooks/weekly-briefing")({
           const visibleSheets = (sheets ?? []).filter((s) =>
             s.user_id === uid || s.visibility === "public" || admin_ || (s.visibility === "shared" && sheetSharedTo.get(s.id)?.has(uid)),
           );
+          const myAlerts = (alerts ?? []).slice(0, 15);
+          const myConcerns = (concerns ?? []).slice(0, 15);
 
-          const raw = {
+          const raw: any = {
             audience: u.full_name || u.email || "user",
             week: { start: startISO, end: endISO },
-            activities: { assigned_total: myActivities.length, overdue, completed_last_7d: completed, upcoming },
-            documents: { updated_last_7d: visibleDocs.length, samples: visibleDocs.slice(0, 5).map((d) => d.name) },
-            sheets: { visible: visibleSheets.length, samples: visibleSheets.slice(0, 5).map((s) => s.display_name) },
+            preferences: { enabled_sections: prefs.sections, overdue_priority: prefs.overdue_priority },
           };
-          const hasAnything = myActivities.length + visibleDocs.length + visibleSheets.length > 0;
+          if (enabled.has("projects")) {
+            raw.activities = {
+              assigned_total: myActivities.length,
+              overdue_count: overdueList.length,
+              overdue_prioritized: sortedOverdue,
+              completed_last_7d: completed,
+              upcoming,
+            };
+          }
+          if (enabled.has("documents")) {
+            raw.documents = { updated_last_7d: visibleDocs.length, samples: visibleDocs.slice(0, 5).map((d) => d.name) };
+          }
+          if (enabled.has("sheets")) {
+            raw.sheets = { visible: visibleSheets.length, samples: visibleSheets.slice(0, 5).map((s) => s.display_name) };
+          }
+          if (enabled.has("alerts")) {
+            raw.alerts_and_concerns = {
+              alerts_last_7d: myAlerts.map((a) => ({ activity: a.activity, severity: a.severity })),
+              concerns_last_7d: myConcerns.map((c) => ({ title: c.title, severity: c.severity, status: c.status })),
+            };
+          }
+
+          const hasAnything = myActivities.length + visibleDocs.length + visibleSheets.length + myAlerts.length + myConcerns.length > 0;
           if (!hasAnything) continue;
 
           const sections = await generateAiSections(raw, { scope: "user", audience: u.full_name || u.email || "you" });
