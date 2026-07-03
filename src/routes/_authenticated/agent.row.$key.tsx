@@ -170,7 +170,7 @@ function RowPage() {
               </div>
             </div>
           </div>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <EntityActionsBar
               ctx={{
                 scopeKind: "stage",
@@ -182,7 +182,16 @@ function RowPage() {
                 summaryLine: `${activity} · ${project} · ${status} · TAT ${tat || "—"}d, taken ${taken || "—"}d${delay > 0 ? `, ${delay}d late` : ""}.`,
               }}
             />
+            <DraftActionButton
+              sourceKind="row"
+              sourceKey={`${project}::${ident.srNo || activity}`}
+              scopeLabel={activity}
+              recipientEmail={email || null}
+              recipientName={person || null}
+              contextSummary={`${project} · ${stage} · ${status}${delay > 0 ? ` · ${delay}d late` : ""}${tat ? ` · TAT ${tat}d, taken ${taken}d` : ""}.`}
+            />
           </div>
+
         </CardContent>
       </Card>
 
