@@ -265,33 +265,114 @@ function UsersPage() {
       )}
 
       {/* ALL USERS */}
-      <section>
-        <div className="mb-2 flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-primary" />
-          <h2 className="text-sm font-semibold">All users</h2>
+      <AllUsers data={data ?? []} onSetRole={(userId, role) => setRole.mutate({ userId, role })} />
+    </div>
+  );
+}
+
+function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string, role: AppRole) => void }) {
+  const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | AppRole>("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+
+  const filtered = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return data.filter((u) => {
+      const primary = (u.roles[0] ?? "user") as AppRole;
+      if (roleFilter !== "all" && primary !== roleFilter) return false;
+      if (!t) return true;
+      return (
+        (u.full_name ?? "").toLowerCase().includes(t) ||
+        (u.email ?? "").toLowerCase().includes(t)
+      );
+    });
+  }, [data, q, roleFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const view = filtered.slice(start, start + pageSize);
+
+  // Reset to first page when filter changes.
+  useMemo(() => { setPage(1); return null; }, [q, roleFilter]);
+
+  return (
+    <section aria-labelledby="all-users-heading">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-primary" aria-hidden />
+        <h2 id="all-users-heading" className="text-sm font-semibold">All users</h2>
+        <Badge variant="secondary" className="ml-1">{filtered.length}</Badge>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              className="h-8 w-56 pl-7 text-xs"
+              placeholder="Search name or email…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              aria-label="Search all users by name or email"
+            />
+          </div>
+          <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as typeof roleFilter)}>
+            <SelectTrigger className="h-8 w-36 text-xs" aria-label="Filter by role">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All roles</SelectItem>
+              <SelectItem value="user">user</SelectItem>
+              <SelectItem value="admin">admin</SelectItem>
+              <SelectItem value="super_admin">super_admin</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <Card className="divide-y divide-border/60">
-          {data?.map((u) => {
-            const current = (u.roles[0] ?? "user") as AppRole;
-            return (
-              <div key={u.id} className="flex items-center gap-4 p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium">{u.full_name || "(no name)"}</div>
-                  <div className="text-xs text-muted-foreground">{u.email}</div>
-                </div>
-                <Select value={current} onValueChange={(v) => setRole.mutate({ userId: u.id, role: v as AppRole })}>
-                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="user">user</SelectItem>
-                    <SelectItem value="admin">admin</SelectItem>
-                    <SelectItem value="super_admin">super_admin</SelectItem>
-                  </SelectContent>
-                </Select>
+      </div>
+
+      <Card className="divide-y divide-border/60">
+        {view.length === 0 ? (
+          <div className="p-6 text-center text-sm text-muted-foreground">No users match your filters.</div>
+        ) : view.map((u) => {
+          const current = (u.roles[0] ?? "user") as AppRole;
+          return (
+            <div key={u.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium">{u.full_name || "(no name)"}</div>
+                <div className="truncate text-xs text-muted-foreground">{u.email}</div>
               </div>
-            );
-          })}
-        </Card>
-      </section>
+              <Select value={current} onValueChange={(v) => onSetRole(u.id, v as AppRole)}>
+                <SelectTrigger className="w-full sm:w-44" aria-label={`Change role for ${u.full_name || u.email}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">user</SelectItem>
+                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="super_admin">super_admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        })}
+      </Card>
+
+      {filtered.length > pageSize && (
+        <nav className="mt-3 flex items-center justify-between text-xs text-muted-foreground" aria-label="Pagination">
+          <div>
+            Showing <b className="tabular-nums">{start + 1}</b>–<b className="tabular-nums">{Math.min(start + pageSize, filtered.length)}</b> of <b className="tabular-nums">{filtered.length}</b>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              Previous
+            </Button>
+            <span className="tabular-nums">Page {currentPage} / {totalPages}</span>
+            <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+              Next
+            </Button>
+          </div>
+        </nav>
+      )}
+    </section>
+  );
+}
     </div>
   );
 }
