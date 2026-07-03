@@ -22,6 +22,7 @@ import { Route as AuthenticatedInsightsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticated/concerns'
+import { Route as AuthenticatedBriefingsRouteImport } from './routes/_authenticated/briefings'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
 import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
@@ -31,12 +32,15 @@ import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authen
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
+import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_authenticated/admin.smart-alerts'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
 import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
+import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/public/hooks/weekly-briefing'
+import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
 import { Route as ApiPublicHooksAgentWatchersRouteImport } from './routes/api/public/hooks/agent-watchers'
@@ -112,6 +116,11 @@ const AuthenticatedConcernsRoute = AuthenticatedConcernsRouteImport.update({
   path: '/concerns',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedBriefingsRoute = AuthenticatedBriefingsRouteImport.update({
+  id: '/briefings',
+  path: '/briefings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAlertsRoute = AuthenticatedAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -159,6 +168,12 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminSmartAlertsRoute =
+  AuthenticatedAdminSmartAlertsRouteImport.update({
+    id: '/admin/smart-alerts',
+    path: '/admin/smart-alerts',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminEmailGroupsRoute =
   AuthenticatedAdminEmailGroupsRouteImport.update({
     id: '/admin/email-groups',
@@ -192,6 +207,18 @@ const ApiPublicHooksWeeklyReportRoute =
   ApiPublicHooksWeeklyReportRouteImport.update({
     id: '/api/public/hooks/weekly-report',
     path: '/api/public/hooks/weekly-report',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksWeeklyBriefingRoute =
+  ApiPublicHooksWeeklyBriefingRouteImport.update({
+    id: '/api/public/hooks/weekly-briefing',
+    path: '/api/public/hooks/weekly-briefing',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksSmartAlertsScanRoute =
+  ApiPublicHooksSmartAlertsScanRouteImport.update({
+    id: '/api/public/hooks/smart-alerts-scan',
+    path: '/api/public/hooks/smart-alerts-scan',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
@@ -246,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/agent': typeof AuthenticatedAgentRouteWithChildren
   '/alerts': typeof AuthenticatedAlertsRouteWithChildren
+  '/briefings': typeof AuthenticatedBriefingsRoute
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -258,6 +286,7 @@ export interface FileRoutesByFullPath {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
+  '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -273,6 +302,8 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
+  '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
@@ -281,6 +312,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/briefings': typeof AuthenticatedBriefingsRoute
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -293,6 +325,7 @@ export interface FileRoutesByTo {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
+  '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -308,6 +341,8 @@ export interface FileRoutesByTo {
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
+  '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
@@ -320,6 +355,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_authenticated/agent': typeof AuthenticatedAgentRouteWithChildren
   '/_authenticated/alerts': typeof AuthenticatedAlertsRouteWithChildren
+  '/_authenticated/briefings': typeof AuthenticatedBriefingsRoute
   '/_authenticated/concerns': typeof AuthenticatedConcernsRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
@@ -332,6 +368,7 @@ export interface FileRoutesById {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
+  '/_authenticated/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -347,6 +384,8 @@ export interface FileRoutesById {
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
+  '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
@@ -359,6 +398,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/agent'
     | '/alerts'
+    | '/briefings'
     | '/concerns'
     | '/copilot'
     | '/documents'
@@ -371,6 +411,7 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/admin/audit'
     | '/admin/email-groups'
+    | '/admin/smart-alerts'
     | '/admin/users'
     | '/agent/inbox'
     | '/alerts/$id'
@@ -386,6 +427,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/smart-alerts-scan'
+    | '/api/public/hooks/weekly-briefing'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
@@ -394,6 +437,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/briefings'
     | '/concerns'
     | '/copilot'
     | '/documents'
@@ -406,6 +450,7 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/admin/audit'
     | '/admin/email-groups'
+    | '/admin/smart-alerts'
     | '/admin/users'
     | '/agent/inbox'
     | '/alerts/$id'
@@ -421,6 +466,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/smart-alerts-scan'
+    | '/api/public/hooks/weekly-briefing'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
@@ -432,6 +479,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_authenticated/agent'
     | '/_authenticated/alerts'
+    | '/_authenticated/briefings'
     | '/_authenticated/concerns'
     | '/_authenticated/copilot'
     | '/_authenticated/documents'
@@ -444,6 +492,7 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/email-groups'
+    | '/_authenticated/admin/smart-alerts'
     | '/_authenticated/admin/users'
     | '/_authenticated/agent/inbox'
     | '/_authenticated/alerts/$id'
@@ -459,6 +508,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/smart-alerts-scan'
+    | '/api/public/hooks/weekly-briefing'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
@@ -474,6 +525,8 @@ export interface RootRouteChildren {
   ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
+  ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
+  ApiPublicHooksWeeklyBriefingRoute: typeof ApiPublicHooksWeeklyBriefingRoute
   ApiPublicHooksWeeklyReportRoute: typeof ApiPublicHooksWeeklyReportRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
   LovableEmailTransactionalPreviewRoute: typeof LovableEmailTransactionalPreviewRoute
@@ -573,6 +626,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedConcernsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/briefings': {
+      id: '/_authenticated/briefings'
+      path: '/briefings'
+      fullPath: '/briefings'
+      preLoaderRoute: typeof AuthenticatedBriefingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/alerts': {
       id: '/_authenticated/alerts'
       path: '/alerts'
@@ -636,6 +696,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/smart-alerts': {
+      id: '/_authenticated/admin/smart-alerts'
+      path: '/admin/smart-alerts'
+      fullPath: '/admin/smart-alerts'
+      preLoaderRoute: typeof AuthenticatedAdminSmartAlertsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/email-groups': {
       id: '/_authenticated/admin/email-groups'
       path: '/admin/email-groups'
@@ -676,6 +743,20 @@ declare module '@tanstack/react-router' {
       path: '/api/public/hooks/weekly-report'
       fullPath: '/api/public/hooks/weekly-report'
       preLoaderRoute: typeof ApiPublicHooksWeeklyReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/weekly-briefing': {
+      id: '/api/public/hooks/weekly-briefing'
+      path: '/api/public/hooks/weekly-briefing'
+      fullPath: '/api/public/hooks/weekly-briefing'
+      preLoaderRoute: typeof ApiPublicHooksWeeklyBriefingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/smart-alerts-scan': {
+      id: '/api/public/hooks/smart-alerts-scan'
+      path: '/api/public/hooks/smart-alerts-scan'
+      fullPath: '/api/public/hooks/smart-alerts-scan'
+      preLoaderRoute: typeof ApiPublicHooksSmartAlertsScanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/escalate': {
@@ -788,6 +869,7 @@ const AuthenticatedSheetsRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAgentRoute: typeof AuthenticatedAgentRouteWithChildren
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
+  AuthenticatedBriefingsRoute: typeof AuthenticatedBriefingsRoute
   AuthenticatedConcernsRoute: typeof AuthenticatedConcernsRoute
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
@@ -799,12 +881,14 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
+  AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAgentRoute: AuthenticatedAgentRouteWithChildren,
   AuthenticatedAlertsRoute: AuthenticatedAlertsRouteWithChildren,
+  AuthenticatedBriefingsRoute: AuthenticatedBriefingsRoute,
   AuthenticatedConcernsRoute: AuthenticatedConcernsRoute,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
@@ -816,6 +900,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
+  AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
 }
 
@@ -832,6 +917,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
+  ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
+  ApiPublicHooksWeeklyBriefingRoute: ApiPublicHooksWeeklyBriefingRoute,
   ApiPublicHooksWeeklyReportRoute: ApiPublicHooksWeeklyReportRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
   LovableEmailTransactionalPreviewRoute: LovableEmailTransactionalPreviewRoute,
