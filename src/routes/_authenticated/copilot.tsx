@@ -67,20 +67,103 @@ type Turn = {
   suggestions: string[];
   charts?: ChartSpec[];
   citationsMissing?: boolean;
+  citationValidation?: CitationValidation;
   retriedForCitations?: boolean;
+
 };
 
-// A response is grounded when it contains at least one inline [...] marker AND
-// a "Sources:" section — matches GROUNDING_RULES in src/lib/gemini-client.ts.
-// Ignore the "I don't have that in the current dashboard data." fallback.
-function validateCitations(answer: string): boolean {
-  const t = answer.trim();
-  if (!t) return false;
-  if (/^i don'?t have that in the current dashboard data/i.test(t)) return true;
-  const hasInline = /\[[^\]\n]{2,}\]/.test(t);
-  const hasSources = /(^|\n)\s*sources\s*:/i.test(t);
-  return hasInline && hasSources;
+// Detailed citation validator. Returns { ok, issues[] } so the UI can explain
+// exactly what is missing when we reject an answer. Matches GROUNDING_RULES in
+// src/lib/gemini-client.ts:
+//   * Every non-fallback answer must contain at least one inline [..] marker.
+//   * Inline markers must use a recognised shape: [sheet:<name> row <n>],
+//     [flags[<id>]], or [doc:<name> p.<n>].
+//   * A "Sources:" section must exist and list at least one bullet.
+//   * Every distinct inline marker must appear (verbatim or by ref) in Sources.
+export type CitationIssue =
+  | "empty"
+  | "no_inline_citations"
+  | "malformed_citations"
+  | "no_sources_section"
+  | "empty_sources_section"
+  | "uncited_in_sources";
+
+export type CitationValidation = {
+  ok: boolean;
+  issues: CitationIssue[];
+  inlineCount: number;
+  malformed: string[];
+  uncited: string[];
+  isFallback: boolean;
+};
+
+const INLINE_RE = /\[([^\]\n]{2,}?)\]/g;
+const KNOWN_SHAPES = [
+  /^sheet:\s*[^,\s]+(?:\s+row\s+\d+)?$/i,
+  /^flags?\[.+\]$/i,
+  /^doc:\s*.+?(?:\s+p\.?\s*\d+)?$/i,
+];
+
+function extractInlineMarkers(answer: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  INLINE_RE.lastIndex = 0;
+  while ((m = INLINE_RE.exec(answer)) !== null) {
+    // Skip markdown link labels [text](url).
+    if (answer[m.index + m[0].length] === "(") continue;
+    const raw = m[1].trim();
+    if (!raw || seen.has(raw)) continue;
+    seen.add(raw);
+    out.push(raw);
+  }
+  return out;
 }
+
+export function validateCitationsDetailed(answer: string): CitationValidation {
+  const t = (answer ?? "").trim();
+  const base: CitationValidation = {
+    ok: false, issues: [], inlineCount: 0, malformed: [], uncited: [], isFallback: false,
+  };
+  if (!t) return { ...base, issues: ["empty"] };
+  if (/^i don'?t have that in the current dashboard data/i.test(t)) {
+    return { ...base, ok: true, isFallback: true };
+  }
+  const issues: CitationIssue[] = [];
+  const markers = extractInlineMarkers(t);
+  if (markers.length === 0) issues.push("no_inline_citations");
+  const malformed = markers.filter((raw) => !KNOWN_SHAPES.some((re) => re.test(raw)));
+  if (malformed.length > 0 && markers.length > 0) issues.push("malformed_citations");
+
+  const sourcesMatch = t.match(/(^|\n)\s*sources\s*:\s*([\s\S]*)$/i);
+  let uncited: string[] = [];
+  if (!sourcesMatch) {
+    issues.push("no_sources_section");
+  } else {
+    const body = sourcesMatch[2].trim();
+    if (!body || !/\S/.test(body.replace(/[-*•\d.\s]/g, ""))) {
+      issues.push("empty_sources_section");
+    } else {
+      const bodyLc = body.toLowerCase();
+      uncited = markers.filter((raw) => {
+        const lc = raw.toLowerCase();
+        if (bodyLc.includes(lc)) return false;
+        // Also accept a match on the ref part (sheet/doc name, flag id).
+        const refPart = lc.replace(/^(sheet:|doc:|flags?\[)/, "").replace(/\]$/, "").split(/\s+row\s+|\s+p\.?\s*/)[0]?.trim();
+        return !(refPart && bodyLc.includes(refPart));
+      });
+      if (uncited.length > 0) issues.push("uncited_in_sources");
+    }
+  }
+
+  return { ...base, ok: issues.length === 0, issues, inlineCount: markers.length, malformed, uncited };
+}
+
+// Boolean wrapper kept for the mutation retry check.
+function validateCitations(answer: string): boolean {
+  return validateCitationsDetailed(answer).ok;
+}
+
 
 /** Parse inline [..] citation markers from an answer and classify each. */
 type ParsedCitation = { raw: string; kind: string; ref: string; matchedSource?: Source };
@@ -247,10 +330,9 @@ function CopilotPage() {
     },
     onSuccess: (res, vars) => {
       const displayedQuestion = vars.originalQuestion ?? vars.question;
-      const ok = validateCitations(res.answer);
-      if (!ok && !vars.retryForCitations) {
-        // First failure — auto-retry once with a stronger cite instruction.
-        toast.info("Answer missing citations — retrying…");
+      const validation = validateCitationsDetailed(res.answer);
+      if (!validation.ok && !vars.retryForCitations) {
+        toast.info("Answer rejected — missing citations. Retrying…");
         askMut.mutate({
           question: displayedQuestion,
           history: vars.history,
@@ -266,14 +348,16 @@ function CopilotPage() {
           answer: res.answer,
           sources: res.sources,
           suggestions: (res as any).suggestions ?? [],
-          citationsMissing: !ok,
+          citationsMissing: !validation.ok,
+          citationValidation: validation,
           retriedForCitations: vars.retryForCitations,
         },
       ]);
-      if (!ok && vars.retryForCitations) {
+      if (!validation.ok && vars.retryForCitations) {
         toast.warning("Copilot still didn't cite sources — flagged inline.");
       }
     },
+
     onError: (e) => toast.error(e instanceof Error ? e.message : "AI request failed"),
   });
 
@@ -577,15 +661,74 @@ function CopilotPage() {
                     {t.citationsMissing && (
                       <div className="mb-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
                         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-                        <div className="flex-1">
+                        <div className="flex-1 space-y-1">
                           <div className="font-medium text-destructive">
-                            Citations missing — treat this answer as ungrounded.
+                            Answer rejected — grounding check failed.
                           </div>
-                          <div className="mt-0.5 text-muted-foreground">
-                            Copilot didn't include inline <code className="rounded bg-background px-1">[…]</code>
-                            {" "}markers or a <span className="font-medium">Sources:</span> list.
-                            {t.retriedForCitations ? " Automatic retry also failed." : ""}
-                          </div>
+                          {t.citationValidation && (
+                            <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+                              {t.citationValidation.issues.map((issue) => {
+                                switch (issue) {
+                                  case "empty":
+                                    return <li key={issue}>The model returned an empty answer.</li>;
+                                  case "no_inline_citations":
+                                    return (
+                                      <li key={issue}>
+                                        No inline citation markers found. Expected at least one
+                                        {" "}<code className="rounded bg-background px-1">[sheet:&lt;name&gt; row &lt;n&gt;]</code>,
+                                        {" "}<code className="rounded bg-background px-1">[flags[&lt;id&gt;]]</code>,
+                                        {" or "}<code className="rounded bg-background px-1">[doc:&lt;name&gt; p.&lt;n&gt;]</code>.
+                                      </li>
+                                    );
+                                  case "malformed_citations":
+                                    return (
+                                      <li key={issue}>
+                                        {t.citationValidation!.malformed.length} malformed marker
+                                        {t.citationValidation!.malformed.length === 1 ? "" : "s"}:{" "}
+                                        {t.citationValidation!.malformed.slice(0, 3).map((raw, mi) => (
+                                          <code key={mi} className="mr-1 rounded bg-background px-1">[{raw}]</code>
+                                        ))}
+                                        {t.citationValidation!.malformed.length > 3 && "…"}
+                                      </li>
+                                    );
+                                  case "no_sources_section":
+                                    return (
+                                      <li key={issue}>
+                                        Missing <span className="font-medium">Sources:</span> section at the end
+                                        of the answer.
+                                      </li>
+                                    );
+                                  case "empty_sources_section":
+                                    return (
+                                      <li key={issue}>
+                                        <span className="font-medium">Sources:</span> section is present but
+                                        contains no entries.
+                                      </li>
+                                    );
+                                  case "uncited_in_sources":
+                                    return (
+                                      <li key={issue}>
+                                        {t.citationValidation!.uncited.length} inline marker
+                                        {t.citationValidation!.uncited.length === 1 ? "" : "s"} not repeated
+                                        in the Sources list:{" "}
+                                        {t.citationValidation!.uncited.slice(0, 3).map((raw, mi) => (
+                                          <code key={mi} className="mr-1 rounded bg-background px-1">[{raw}]</code>
+                                        ))}
+                                        {t.citationValidation!.uncited.length > 3 && "…"}
+                                      </li>
+                                    );
+                                  default:
+                                    return null;
+                                }
+                              })}
+                            </ul>
+                          )}
+                          {t.retriedForCitations && (
+                            <div className="italic text-muted-foreground">
+                              Automatic retry with a stricter reminder also failed — the answer below is shown
+                              for transparency but should not be trusted.
+                            </div>
+                          )}
                         </div>
                         <Button
                           size="sm"
@@ -608,6 +751,7 @@ function CopilotPage() {
                         </Button>
                       </div>
                     )}
+
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-table:my-2 prose-p:my-1.5 prose-headings:my-2">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.answer}</ReactMarkdown>
                     </div>
