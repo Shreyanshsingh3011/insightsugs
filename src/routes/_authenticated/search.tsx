@@ -19,24 +19,24 @@ function iconFor(kind: SearchHit["kind"]) {
   return <ListChecks className="h-4 w-4" />;
 }
 
-// Build a case-insensitive regex from the query tokens, escaping regex metacharacters.
-function buildHighlightRegex(query: string): RegExp | null {
-  const tokens = query
+// Extract highlight tokens from a query, escaping regex metacharacters.
+function buildHighlightTokens(query: string): string[] {
+  return query
     .toLowerCase()
     .split(/\s+/)
     .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .filter((t) => t.length >= 2);
-  if (tokens.length === 0) return null;
-  return new RegExp(`(${tokens.join("|")})`, "gi");
 }
 
-function Highlighted({ text, regex }: { text: string; regex: RegExp | null }) {
-  if (!regex) return <>{text}</>;
-  const parts = text.split(regex);
+function Highlighted({ text, tokens }: { text: string; tokens: string[] }) {
+  if (tokens.length === 0) return <>{text}</>;
+  const splitRe = new RegExp(`(${tokens.join("|")})`, "gi");
+  const testRe = new RegExp(`^(?:${tokens.join("|")})$`, "i");
+  const parts = text.split(splitRe);
   return (
     <>
       {parts.map((part, i) =>
-        regex.test(part) ? (
+        testRe.test(part) ? (
           <mark key={i} className="rounded bg-yellow-200 px-0.5 text-foreground dark:bg-yellow-500/40">
             {part}
           </mark>
@@ -47,6 +47,7 @@ function Highlighted({ text, regex }: { text: string; regex: RegExp | null }) {
     </>
   );
 }
+
 
 
 function SearchPage() {
