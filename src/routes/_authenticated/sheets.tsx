@@ -103,6 +103,8 @@ function SheetsPage() {
                     {s.display_name}
                   </Link>
                   <Badge variant="outline">{SHEET_TYPE_LABELS[s.sheet_type as SheetType]}</Badge>
+                  <VisibilityBadge visibility={s.visibility ?? "private"} shareCount={s.share_count} size="xs" />
+
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {s.row_count} rows ·{" "}
