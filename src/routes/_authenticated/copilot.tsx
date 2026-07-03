@@ -69,7 +69,8 @@ type Turn = {
   citationsMissing?: boolean;
   citationValidation?: CitationValidation;
   retriedForCitations?: boolean;
-
+  toolTrace?: import("@/components/copilot/ToolCallTrace").ToolCall[];
+  citationOk?: boolean;
 };
 
 // Detailed citation validator. Returns { ok, issues[] } so the UI can explain
