@@ -321,10 +321,9 @@ export const runAgentWatchers = createServerFn({ method: "POST" })
     if (data.url) {
       projects = [{ label: new URL(data.url).hostname, url: data.url }];
     } else {
-      // Reuse the same registry fetcher the dashboard uses.
-      const { fetchAgentProjects } = await import("@/lib/agent-registry.functions");
+      const { loadAgentProjects } = await import("@/lib/agent-registry.functions");
       try {
-        const reg = await fetchAgentProjects();
+        const reg = await loadAgentProjects();
         projects = reg.projects.map((p) => ({ label: p.label, url: p.url }));
       } catch (e) {
         return {
@@ -335,6 +334,7 @@ export const runAgentWatchers = createServerFn({ method: "POST" })
     }
     return runWatchersCore(projects, supabaseAdmin, userId);
   });
+
 
 /**
  * runAgentWatchersFromHook — internal helper for the cron endpoint.
