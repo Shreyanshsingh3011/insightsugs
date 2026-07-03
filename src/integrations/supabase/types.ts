@@ -1660,6 +1660,16 @@ export type Database = {
         Args: { _alert_id: string; _user_id: string }
         Returns: boolean
       }
+      match_all_sheet_rows: {
+        Args: { _match_count?: number; _query: string; _user_id: string }
+        Returns: {
+          row_index: number
+          sheet_name: string
+          sheet_registry_id: string
+          similarity: number
+          snippet: string
+        }[]
+      }
       match_doc_chunks: {
         Args: {
           _match_count?: number
