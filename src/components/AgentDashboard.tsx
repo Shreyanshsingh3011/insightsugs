@@ -656,14 +656,60 @@ export default function AgentDashboard() {
 
   // Every card/row on the dashboard deep-links to /agent/detail/$payload so
   // the user can read AI suggestions and dispatch a mail/message from there.
+  // We ship a compact context (metrics + up to 40 related rows) so the
+  // detail page's chatbot and email drafter can ground answers on the exact
+  // slice of data the user clicked.
   const nav = useNavigate();
   const detailLink = (p: Partial<DetailPayload> & { title: string }) => {
+    const norm = (s?: string) => (s ?? "").trim().toLowerCase();
+    const targetPerson = norm(p.person);
+    const targetStage = norm(p.stage);
+    const rowMatches = rowIndex.filter(r => {
+      if (targetPerson && norm(r.person) !== targetPerson) return false;
+      if (targetStage && norm(r.stage) !== targetStage) return false;
+      return true;
+    });
+    const contextRows: DetailPayload["contextRows"] = rowMatches
+      .slice(0, 40)
+      .map(r => ({
+        activity: r.activity,
+        person: r.person, stage: r.stage, status: r.status,
+        tat: r.tat, taken: r.taken, delay: r.delay, email: r.email,
+      }));
+
+    let metrics: DetailPayload["metrics"] = [];
+    if (p.kind !== "row" && rowMatches.length) {
+      const total = rowMatches.length;
+      const done = rowMatches.filter(r => /complete|done/i.test(r.status)).length;
+      const delayed = rowMatches.filter(r => r.delay > 0 && !/complete|done/i.test(r.status)).length;
+      const totalDelay = rowMatches.reduce((s, r) => s + Math.max(0, r.delay), 0);
+      const avgDelay = delayed ? Math.round(totalDelay / delayed) : 0;
+      metrics = [
+        { label: "Activities", value: total },
+        { label: "Completed", value: `${done} (${Math.round((done / total) * 100)}%)`, tone: done / total > 0.7 ? "ok" : "med" },
+        { label: "Delayed", value: delayed, tone: delayed / Math.max(1, total) > 0.2 ? "high" : "med" },
+        { label: "Avg delay (delayed)", value: `${avgDelay}d`, tone: avgDelay > 20 ? "high" : "med" },
+      ];
+    } else if (p.row) {
+      const tat = Number(p.row["TAT"] ?? 0) || 0;
+      const taken = Number(p.row["Days Taken"] ?? 0) || 0;
+      const delay = Math.max(0, taken - tat);
+      metrics = [
+        { label: "TAT", value: `${tat}d` },
+        { label: "Days taken", value: `${taken}d`, tone: taken > tat ? "high" : "ok" },
+        { label: "Delay", value: `${delay}d`, tone: delay > 30 ? "high" : delay > 0 ? "med" : "ok" },
+        { label: "Status", value: String(p.row["Status"] ?? "—") },
+      ];
+    }
+
     const payloadStr = encodeDetailPayload({
       kind: p.kind ?? "aggregate",
       projectId: selected === "all" ? undefined : selected,
       projectLabel: payload?.project,
       severity: p.severity ?? "med",
       source: p.source ?? "Dashboard",
+      metrics,
+      contextRows,
       ...p,
     });
     return { to: "/agent/detail/$payload" as const, params: { payload: payloadStr } };
