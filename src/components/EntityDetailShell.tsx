@@ -62,6 +62,7 @@ function Icon({ kind }: { kind: EntityKind }) {
   const C = kind === "person" ? UserIcon
     : kind === "stage" ? Layers
     : kind === "project" ? FolderKanban
+    : kind === "row" ? AlertTriangle
     : Gauge;
   return <C className="h-5 w-5" aria-hidden />;
 }
