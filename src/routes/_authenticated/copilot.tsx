@@ -67,7 +67,9 @@ type Turn = {
   suggestions: string[];
   charts?: ChartSpec[];
   citationsMissing?: boolean;
+  citationValidation?: CitationValidation;
   retriedForCitations?: boolean;
+
 };
 
 // Detailed citation validator. Returns { ok, issues[] } so the UI can explain
