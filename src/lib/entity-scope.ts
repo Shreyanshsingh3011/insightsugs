@@ -94,3 +94,35 @@ export function decodeKey(s: string): string {
   if (typeof window === "undefined") return Buffer.from(b, "base64").toString("utf8");
   return decodeURIComponent(escape(atob(b)));
 }
+
+// ── Row identity ────────────────────────────────────────────────────────────
+// Compact, deterministic URL key for a single source row. We only encode the
+// identifier tuple (project + Sr. No. + activity) — never the full row — so
+// the URL stays short and the page rehydrates from the live source cache.
+export type RowIdent = { project: string; srNo: string; activity: string };
+
+export function rowIdent(r: Row, projectLabel?: string): RowIdent {
+  return {
+    project: projectLabel || String(r["__project"] ?? "") || "",
+    srNo: pick(r, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo"),
+    activity: activityName(r),
+  };
+}
+
+export function encodeRowKey(ident: RowIdent): string {
+  return encodeKey(`${ident.project}::${ident.srNo}::${ident.activity}`);
+}
+
+export function decodeRowKey(key: string): RowIdent {
+  const raw = decodeKey(key);
+  const [project = "", srNo = "", ...rest] = raw.split("::");
+  return { project, srNo, activity: rest.join("::") };
+}
+
+/** Match a source row against a decoded ident. Falls back to activity if Sr. No. is blank. */
+export function rowMatchesIdent(r: Row, ident: RowIdent, projectLabel?: string): boolean {
+  const id = rowIdent(r, projectLabel);
+  if (ident.project && id.project && id.project !== ident.project) return false;
+  if (ident.srNo && id.srNo) return id.srNo === ident.srNo;
+  return !!ident.activity && id.activity === ident.activity;
+}
