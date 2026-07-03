@@ -178,7 +178,11 @@ function derive(payload: Payload | undefined) {
     : 0;
 
   // ── AGENTIC RULES: Next Best Actions
-  type Action = { id: string; title: string; detail: string; severity: keyof typeof TONE; source: string; impact: number };
+  type Action = {
+    id: string; title: string; detail: string;
+    severity: keyof typeof TONE; source: string; impact: number;
+    row?: Row; person?: string; stage?: string; email?: string;
+  };
   const actions: Action[] = [];
   overdue.slice(0, 6).forEach((o, i) => {
     const sev = o.criticality === "Critical" || o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low";
@@ -187,6 +191,7 @@ function derive(payload: Payload | undefined) {
       title: `Unblock "${o.activity}"`,
       detail: `${o.delay}d overdue · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Escalate + commit recovery date.`,
       severity: sev, source: "Overdue", impact: o.delay,
+      row: o.row, person: o.person, stage: o.stage, email: o.email,
     });
   });
   personsByBurden.slice(0, 3).forEach((p, i) => {
@@ -196,6 +201,7 @@ function derive(payload: Payload | undefined) {
         title: `Rebalance ${p.person}`,
         detail: `${p.delayed}/${p.total} delayed (${p.riskScore}%). Efficiency ${p.efficiency}. Redistribute or pair up.`,
         severity: p.riskScore >= 60 ? "high" : "med", impact: p.delayDays,
+        person: p.person, email: p.email,
       });
     }
   });
@@ -206,6 +212,7 @@ function derive(payload: Payload | undefined) {
         title: `Fix ${s.stage}`,
         detail: `Only ${s.healthPct}% healthy · ${s.delayed}/${s.total} delayed · ${s.delayDays}d cumulative. Audit handoffs and dependencies.`,
         severity: s.healthPct < 40 ? "high" : "med", impact: s.delayDays,
+        stage: s.stage,
       });
     }
   });
