@@ -79,11 +79,17 @@ export function EntityDetailShell({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 md:py-8 space-y-6">
-      {/* Top nav */}
+      {/* Top nav + breadcrumb */}
       <div className="flex flex-wrap items-center gap-3">
         <Link to="/agent" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" aria-hidden /> Back to dashboard
         </Link>
+        <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${CHIP_TONE[kindIcon]}`}>
+          <Icon kind={kindIcon} />
+          <span className="uppercase tracking-wider">{kindIcon}</span>
+          <span className="opacity-70">·</span>
+          <span className="max-w-[240px] truncate normal-case tracking-normal">{title}</span>
+        </div>
         {onRefresh && (
           <Button size="sm" variant="outline" className="ml-auto" onClick={onRefresh}>
             <RefreshCw className={`h-4 w-4 ${refetching ? "animate-spin" : ""}`} /> Sync
@@ -92,10 +98,10 @@ export function EntityDetailShell({
       </div>
 
       {/* Header */}
-      <Card className="overflow-hidden border-primary/30 bg-gradient-to-br from-primary/[0.07] to-transparent">
+      <Card className={`overflow-hidden ${HEADER_TONE[kindIcon]}`}>
         <CardContent className="p-5 md:p-6">
           <div className="flex items-start gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-full bg-primary/10 text-primary">
+            <div className={`grid h-11 w-11 place-items-center rounded-full ${CHIP_TONE[kindIcon]}`}>
               <Icon kind={kindIcon} />
             </div>
             <div className="min-w-0 flex-1">
