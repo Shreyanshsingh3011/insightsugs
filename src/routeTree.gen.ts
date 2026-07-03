@@ -24,6 +24,7 @@ import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
 import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
+import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent.index'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
@@ -117,6 +118,11 @@ const AuthenticatedAlertsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedAlertsRoute,
   } as any)
+const AuthenticatedAgentIndexRoute = AuthenticatedAgentIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAgentRoute,
+} as any)
 const AuthenticatedSheetsSheetIdRoute =
   AuthenticatedSheetsSheetIdRouteImport.update({
     id: '/$sheetId',
@@ -222,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/agent/': typeof AuthenticatedAgentIndexRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
@@ -237,7 +244,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/agent': typeof AuthenticatedAgentRouteWithChildren
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -252,6 +258,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/agent': typeof AuthenticatedAgentIndexRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
@@ -285,6 +292,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/_authenticated/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/_authenticated/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
@@ -318,6 +326,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/agent/'
     | '/alerts/'
     | '/agent/detail/$payload'
     | '/agent/kpi/$id'
@@ -333,7 +342,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
-    | '/agent'
     | '/concerns'
     | '/copilot'
     | '/documents'
@@ -348,6 +356,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/agent'
     | '/alerts'
     | '/agent/detail/$payload'
     | '/agent/kpi/$id'
@@ -380,6 +389,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
+    | '/_authenticated/agent/'
     | '/_authenticated/alerts/'
     | '/_authenticated/agent/detail/$payload'
     | '/_authenticated/agent/kpi/$id'
@@ -510,6 +520,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsIndexRouteImport
       parentRoute: typeof AuthenticatedAlertsRoute
     }
+    '/_authenticated/agent/': {
+      id: '/_authenticated/agent/'
+      path: '/'
+      fullPath: '/agent/'
+      preLoaderRoute: typeof AuthenticatedAgentIndexRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/sheets/$sheetId': {
       id: '/_authenticated/sheets/$sheetId'
       path: '/$sheetId'
@@ -619,6 +636,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAgentRouteChildren {
+  AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
   AuthenticatedAgentDetailPayloadRoute: typeof AuthenticatedAgentDetailPayloadRoute
   AuthenticatedAgentKpiIdRoute: typeof AuthenticatedAgentKpiIdRoute
   AuthenticatedAgentPersonKeyRoute: typeof AuthenticatedAgentPersonKeyRoute
@@ -628,6 +646,7 @@ interface AuthenticatedAgentRouteChildren {
 }
 
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
+  AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
   AuthenticatedAgentDetailPayloadRoute: AuthenticatedAgentDetailPayloadRoute,
   AuthenticatedAgentKpiIdRoute: AuthenticatedAgentKpiIdRoute,
   AuthenticatedAgentPersonKeyRoute: AuthenticatedAgentPersonKeyRoute,
@@ -714,3 +733,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
