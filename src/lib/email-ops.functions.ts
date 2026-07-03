@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type EmailLogRow = {
@@ -9,6 +10,7 @@ export type EmailLogRow = {
   status: string;
   error_message: string | null;
   created_at: string;
+  draft_id: string | null;
 };
 
 export type EmailQueueStatus = {
@@ -25,45 +27,66 @@ export type EmailQueueStatus = {
   };
 };
 
+async function assertAdmin(context: any) {
+  const { supabase, userId } = context as { supabase: any; userId: string };
+  const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+  return { isAdmin: !!isAdmin, userId };
+}
+
 export const getEmailQueueStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<EmailQueueStatus> => {
-    const { supabase, userId } = context as { supabase: any; userId: string };
-    const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+    const { isAdmin } = await assertAdmin(context);
     if (!isAdmin) {
       return {
         isAdmin: false,
         recent: [],
         totals: {},
-        drafts: {
-          pending: 0, snoozed: 0, sent: 0, dismissed: 0, queued_email: 0, pending_setup: 0,
-        },
+        drafts: { pending: 0, snoozed: 0, sent: 0, dismissed: 0, queued_email: 0, pending_setup: 0 },
       };
     }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Latest status per message_id via a window sort in JS (dataset is small).
     const { data: rows } = await supabaseAdmin
       .from("email_send_log")
       .select("id,message_id,template_name,recipient_email,status,error_message,created_at")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(500);
 
+    // Deduplicate to latest per message_id.
     const seen = new Set<string>();
     const dedup: EmailLogRow[] = [];
-    for (const r of (rows ?? []) as EmailLogRow[]) {
+    for (const r of (rows ?? []) as any[]) {
       const key = r.message_id || r.id;
       if (seen.has(key)) continue;
       seen.add(key);
-      dedup.push(r);
-      if (dedup.length >= 25) break;
+      dedup.push({ ...r, draft_id: null });
+      if (dedup.length >= 100) break;
+    }
+
+    // Enrich agent-notification rows with the source draft id.
+    const messageIds = dedup
+      .filter((r) => r.template_name === "agent-notification" && r.message_id)
+      .map((r) => r.message_id as string);
+    if (messageIds.length > 0) {
+      const { data: drafts } = await supabaseAdmin
+        .from("agent_drafts")
+        .select("id,send_result")
+        .in("state", ["sent", "pending", "snoozed", "dismissed"]);
+      const byMsg = new Map<string, string>();
+      for (const d of (drafts ?? []) as any[]) {
+        const mid = d?.send_result?.message_id;
+        if (typeof mid === "string") byMsg.set(mid, d.id);
+      }
+      for (const r of dedup) {
+        if (r.message_id && byMsg.has(r.message_id)) r.draft_id = byMsg.get(r.message_id)!;
+      }
     }
 
     const totals: Record<string, number> = {};
     for (const r of dedup) totals[r.status] = (totals[r.status] ?? 0) + 1;
 
-    // Draft queue snapshot.
     const { data: draftRows } = await supabaseAdmin
       .from("agent_drafts")
       .select("state,send_result");
@@ -81,4 +104,66 @@ export const getEmailQueueStatus = createServerFn({ method: "GET" })
     }
 
     return { isAdmin: true, recent: dedup, totals, drafts };
+  });
+
+const ResendInput = z.object({ draftId: z.string().uuid() });
+
+export const resendAgentDraftEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => ResendInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await assertAdmin(context);
+    if (!isAdmin) throw new Error("Forbidden");
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: draft, error } = await supabaseAdmin
+      .from("agent_drafts")
+      .select("*")
+      .eq("id", data.draftId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!draft) throw new Error("Draft not found");
+    if (!draft.recipient_email) throw new Error("Draft has no email recipient");
+
+    // If suppressed, remove the suppression so the retry can go through.
+    const normalized = draft.recipient_email.toLowerCase();
+    await supabaseAdmin.from("suppressed_emails").delete().eq("email", normalized);
+
+    const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+    const payload = (draft.payload ?? {}) as Record<string, unknown>;
+    const ctxParts = [
+      payload.project ? `Project ${payload.project}` : "",
+      payload.stage ? `Stage ${payload.stage}` : "",
+      payload.activity ? `Activity ${payload.activity}` : "",
+    ].filter(Boolean);
+
+    const r = await enqueueAppEmail({
+      templateName: "agent-notification",
+      recipientEmail: draft.recipient_email,
+      idempotencyKey: `agent-draft-${draft.id}-retry-${Date.now()}`,
+      templateData: {
+        senderName: "InsightSugs Agent",
+        subject: draft.subject ?? draft.title,
+        message: draft.body,
+        context: ctxParts.join(" · ") || undefined,
+        reasonWhy: draft.why ?? undefined,
+      },
+    });
+
+    const send_result: Record<string, unknown> = {
+      ...(draft.send_result ?? {}),
+      channel: draft.channel,
+      email: draft.recipient_email,
+      retried_at: new Date().toISOString(),
+    };
+    if (r.ok) {
+      send_result.status = "email_queued";
+      send_result.message_id = r.messageId;
+    } else {
+      send_result.status = `email_${r.reason}`;
+      if (r.error) send_result.email_error = r.error;
+    }
+    await supabaseAdmin.from("agent_drafts").update({ send_result }).eq("id", draft.id);
+
+    return { ok: r.ok, reason: r.ok ? "queued" : r.reason, messageId: r.ok ? r.messageId : null };
   });
