@@ -1292,8 +1292,8 @@ export default function AgentDashboard() {
 
 // ────────────────── KPI ──────────────────
 type KpiLink =
-  | { to: "/agent/detail/$payload"; params: { payload: string } }
   | { to: "/agent/kpi/$id"; params: { id: string } }
+  | { to: "/agent/row/$key"; params: { key: string } }
   | { to: "/agent/person/$key"; params: { key: string } }
   | { to: "/agent/stage/$key"; params: { key: string } }
   | { to: "/agent/project/$projectId"; params: { projectId: string } };
