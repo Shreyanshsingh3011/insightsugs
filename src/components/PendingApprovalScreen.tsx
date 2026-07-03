@@ -95,7 +95,3 @@ export function PendingApprovalScreen({ email }: { email: string }) {
   );
 }
 
-// Compat with the `reject_reason` field on PendingRequest.
-declare module "@/lib/signup-verify.functions" {
-  interface PendingRequest { reject_reason?: string | null }
-}
