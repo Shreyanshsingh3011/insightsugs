@@ -29,6 +29,8 @@ import { listSheets, askCopilot, generateAutoInsights, generateChart } from "@/l
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
+import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
+import { renderWithCitations } from "@/components/copilot/CitationLink";
 import {
   ResponsiveContainer,
   BarChart,
