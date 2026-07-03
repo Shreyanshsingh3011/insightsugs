@@ -33,6 +33,7 @@ import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/e
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
+import { Route as AuthenticatedAgentDetailPayloadRouteImport } from './routes/_authenticated/agent.detail.$payload'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -161,11 +162,17 @@ const ApiPublicHooksConcernNudgesRoute =
     path: '/api/public/hooks/concern-nudges',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedAgentDetailPayloadRoute =
+  AuthenticatedAgentDetailPayloadRouteImport.update({
+    id: '/detail/$payload',
+    path: '/detail/$payload',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/agent': typeof AuthenticatedAgentRoute
+  '/agent': typeof AuthenticatedAgentRouteWithChildren
   '/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
@@ -182,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
+  '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -190,7 +198,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/agent': typeof AuthenticatedAgentRoute
+  '/agent': typeof AuthenticatedAgentRouteWithChildren
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -206,6 +214,7 @@ export interface FileRoutesByTo {
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
+  '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -216,7 +225,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
-  '/_authenticated/agent': typeof AuthenticatedAgentRoute
+  '/_authenticated/agent': typeof AuthenticatedAgentRouteWithChildren
   '/_authenticated/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/_authenticated/concerns': typeof AuthenticatedConcernsRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
@@ -233,6 +242,7 @@ export interface FileRoutesById {
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
+  '/_authenticated/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -260,6 +270,7 @@ export interface FileRouteTypes {
     | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/alerts/'
+    | '/agent/detail/$payload'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -284,6 +295,7 @@ export interface FileRouteTypes {
     | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/alerts'
+    | '/agent/detail/$payload'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -310,6 +322,7 @@ export interface FileRouteTypes {
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
     | '/_authenticated/alerts/'
+    | '/_authenticated/agent/detail/$payload'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -496,8 +509,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksConcernNudgesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/agent/detail/$payload': {
+      id: '/_authenticated/agent/detail/$payload'
+      path: '/detail/$payload'
+      fullPath: '/agent/detail/$payload'
+      preLoaderRoute: typeof AuthenticatedAgentDetailPayloadRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
   }
 }
+
+interface AuthenticatedAgentRouteChildren {
+  AuthenticatedAgentDetailPayloadRoute: typeof AuthenticatedAgentDetailPayloadRoute
+}
+
+const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
+  AuthenticatedAgentDetailPayloadRoute: AuthenticatedAgentDetailPayloadRoute,
+}
+
+const AuthenticatedAgentRouteWithChildren =
+  AuthenticatedAgentRoute._addFileChildren(AuthenticatedAgentRouteChildren)
 
 interface AuthenticatedAlertsRouteChildren {
   AuthenticatedAlertsIdRoute: typeof AuthenticatedAlertsIdRoute
@@ -524,7 +555,7 @@ const AuthenticatedSheetsRouteWithChildren =
   AuthenticatedSheetsRoute._addFileChildren(AuthenticatedSheetsRouteChildren)
 
 interface AuthenticatedRouteChildren {
-  AuthenticatedAgentRoute: typeof AuthenticatedAgentRoute
+  AuthenticatedAgentRoute: typeof AuthenticatedAgentRouteWithChildren
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
   AuthenticatedConcernsRoute: typeof AuthenticatedConcernsRoute
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
@@ -541,7 +572,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
-  AuthenticatedAgentRoute: AuthenticatedAgentRoute,
+  AuthenticatedAgentRoute: AuthenticatedAgentRouteWithChildren,
   AuthenticatedAlertsRoute: AuthenticatedAlertsRouteWithChildren,
   AuthenticatedConcernsRoute: AuthenticatedConcernsRoute,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
