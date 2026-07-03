@@ -79,6 +79,7 @@ function AuthLayout() {
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-border bg-card/80 px-4 backdrop-blur md:px-6">
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm md:hidden">
             <SideLink to="/insights" icon={<LayoutDashboard className="h-4 w-4" />}>Insights</SideLink>
+            <SideLink to="/search" icon={<Search className="h-4 w-4" />}>Search</SideLink>
             <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent</SideLink>
             <SideLink to="/agent/inbox" icon={<Inbox className="h-4 w-4" />}>Inbox</SideLink>
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
