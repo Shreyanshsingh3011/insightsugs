@@ -35,6 +35,7 @@ const REQUIRED = [
   { pattern: /to="\/agent\/stage\/\$key"/,       label: "Bottleneck/Anomaly → /agent/stage/$key" },
   { pattern: /to="\/agent\/person\/\$key"/,      label: "Top performers / Efficiency → /agent/person/$key" },
   { pattern: /to="\/agent\/project\/\$projectId"/, label: "Project workspace → /agent/project/$projectId" },
+  { pattern: /"\/agent\/row\/\$key"/,            label: "Overdue queue / Filtered report → /agent/row/$key" },
 ];
 for (const r of REQUIRED) {
   if (r.pattern.test(src)) ok.push(r.label);
@@ -47,6 +48,7 @@ const ROUTE_FILES = [
   "src/routes/_authenticated/agent.stage.$key.tsx",
   "src/routes/_authenticated/agent.person.$key.tsx",
   "src/routes/_authenticated/agent.project.$projectId.tsx",
+  "src/routes/_authenticated/agent.row.$key.tsx",
   "src/routes/_authenticated/agent.detail.$payload.tsx",
 ];
 for (const f of ROUTE_FILES) {
