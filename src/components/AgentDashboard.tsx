@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
+import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,8 @@ import {
   Flame, Gauge, Radar, Layers,
 } from "lucide-react";
 
-// ────────────────── FIXED SOURCES (auto-refreshed) ──────────────────
-const PROJECTS: { id: string; label: string; url: string }[] = [
+// ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
+const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
   { id: "pspcl", label: "PSPCL Kharar",  url: "https://sheet2api-bypassed-login.vercel.app/api/public/80d914878c5b9a85de90b59f5eaec11a" },
   { id: "hp",    label: "Himachal",      url: "https://sheet2api-bypassed-login.vercel.app/api/public/f0fc62c15a274dc4c149c2b0a69e2f86" },
@@ -30,6 +31,7 @@ const PROJECTS: { id: string; label: string; url: string }[] = [
   { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
 const AUTO_REFRESH_MS = 60_000;
+const REGISTRY_REFRESH_MS = 5 * 60_000;
 
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
@@ -251,13 +253,29 @@ function derive(payload: Payload | undefined) {
 // ────────────────── COMPONENT ──────────────────
 export default function AgentDashboard() {
   const fetchUrl = useServerFn(fetchInsightUrl);
+  const fetchRegistry = useServerFn(fetchAgentProjects);
   const genFn = useServerFn(generateGeminiFn);
 
   const [selected, setSelected] = useState<string>("all");
 
+  // Live registry pulled from the master Google Sheet — falls back if unavailable.
+  const registryQ = useQuery({
+    queryKey: ["agent-registry"],
+    queryFn: () => fetchRegistry(),
+    staleTime: REGISTRY_REFRESH_MS,
+    refetchInterval: REGISTRY_REFRESH_MS,
+    refetchOnWindowFocus: false,
+  });
+
+  const projects: AgentProject[] = useMemo(() => {
+    const live = registryQ.data?.projects;
+    return live && live.length ? live : FALLBACK_PROJECTS;
+  }, [registryQ.data]);
+  const registryLive = !!registryQ.data?.projects?.length;
+
   const queries = useQueries({
-    queries: PROJECTS.map(p => ({
-      queryKey: ["agent-src", p.id],
+    queries: projects.map(p => ({
+      queryKey: ["agent-src", p.id, p.url],
       queryFn: async () => {
         const res = await fetchUrl({ data: { url: p.url } });
         return { project: p, payload: (res as { payload?: SourcePayload }).payload };
@@ -269,8 +287,8 @@ export default function AgentDashboard() {
   });
 
   const sources = queries.map((q, i) => ({
-    project: PROJECTS[i],
-    payload: q.data?.payload,
+    project: projects[i],
+    payload: (q.data as { payload?: SourcePayload } | undefined)?.payload,
     isFetching: q.isFetching,
     isLoading: q.isLoading,
     isError: q.isError,
@@ -312,7 +330,7 @@ export default function AgentDashboard() {
 
   const d = useMemo(() => derive(payload), [payload]);
 
-  const refetchAll = () => queries.forEach(q => q.refetch());
+  const refetchAll = () => { registryQ.refetch(); queries.forEach(q => q.refetch()); };
 
 
   // AI Executive Brief
@@ -390,7 +408,8 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Auto-syncs from 5 live sheet APIs every {Math.round(AUTO_REFRESH_MS / 1000)}s. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
+              Auto-syncs {projects.length} live source{projects.length === 1 ? "" : "s"} every {Math.round(AUTO_REFRESH_MS / 1000)}s
+              {registryLive ? " · project list pulled from master sheet" : " · using built-in list (master sheet unreachable)"}.
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
