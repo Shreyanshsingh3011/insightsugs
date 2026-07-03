@@ -19,8 +19,11 @@ import {
 import {
   Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
   CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
-  Flame, Gauge, Radar, Layers,
+  Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon,
 } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 // ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
 const FALLBACK_PROJECTS: AgentProject[] = [
