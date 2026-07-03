@@ -1157,17 +1157,7 @@ export default function AgentDashboard() {
                     onClick={(e: { activeLabel?: string } | null) => {
                       const stage = e?.activeLabel;
                       if (!stage) return;
-                      const st = d.stages.find(s => s.stage === stage);
-                      if (!st) return;
-                      const link = detailLink({
-                        kind: "aggregate",
-                        title: `Stage · ${stage}`,
-                        stage,
-                        source: "Bottleneck map",
-                        severity: st.delayDays > 60 ? "high" : st.delayDays > 20 ? "med" : "low",
-                        detail: `${st.delayed} delayed items · ${st.delayDays}d cumulative delay across ${st.total} activities in this stage.`,
-                      });
-                      nav({ to: link.to, params: link.params });
+                      nav({ to: "/agent/stage/$key", params: { key: encodeEntityKey(stage) } });
                     }}
                   >
                     <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
