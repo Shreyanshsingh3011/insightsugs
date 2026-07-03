@@ -224,14 +224,21 @@ function derive(payload: Payload | undefined) {
 
   // Anomalies: activities where taken >> tat
   const anomalies = rows
-    .map(r => ({
-      activity: r["Activity List"] || "(unnamed)", person: r["Responsible Person"] || "—",
-      stage: r["Stages"] || "—", tat: num(r["TAT"]), taken: num(r["Days Taken"]),
-      ratio: num(r["TAT"]) > 0 ? num(r["Days Taken"]) / num(r["TAT"]) : 0,
-    }))
+    .map(r => {
+      const tat = num(r["TAT"]);
+      const taken = num(r["Days Taken"]);
+      return {
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        person: pick(r, "Responsible Person", "Responsibility", "approvers name") || "—",
+        stage: pick(r, "Stages", "Stages of Process") || "—",
+        tat, taken,
+        ratio: tat > 0 ? taken / tat : 0,
+      };
+    })
     .filter(a => a.tat > 0 && a.ratio >= 1.8)
     .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 6);
+
 
   return {
     n, status, critAgg, persons, personsByBurden, topPerformers, stages, processes, overdue, anomalies,
