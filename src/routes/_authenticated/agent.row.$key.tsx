@@ -114,20 +114,29 @@ function RowPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 md:py-8 space-y-6">
-      {/* Nav */}
+      {/* Nav + breadcrumbs + export */}
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/agent" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" aria-hidden /> Back to dashboard
-        </Link>
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-500/10 text-slate-700 px-2.5 py-0.5 text-[11px] font-semibold">
-          <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
-          <span className="uppercase tracking-wider">activity</span>
-          <span className="opacity-70">·</span>
-          <span className="max-w-[280px] truncate normal-case tracking-normal">{activity}</span>
+        <DetailBreadcrumbs
+          kind="row"
+          title={activity}
+          parent={{ label: project, to: "/agent/project/$projectId", params: { projectId: encodeEntityKey(project) } }}
+        />
+        <div className="ml-auto flex items-center gap-2">
+          <DetailExportMenu
+            rows={[toScopedRow(row, 0, project)]}
+            totalInScope={1}
+            ctx={{
+              kind: "row",
+              title: activity,
+              subtitle: `${project} · ${status}`,
+              windowTimestamps,
+            }}
+            ownerEmail={email || null}
+          />
+          <Button size="sm" variant="outline" onClick={() => refetchAll()}>
+            <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} /> Sync
+          </Button>
         </div>
-        <Button size="sm" variant="outline" className="ml-auto" onClick={() => refetchAll()}>
-          <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} /> Sync
-        </Button>
       </div>
 
       {/* Header */}
