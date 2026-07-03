@@ -1185,6 +1185,13 @@ export default function AgentDashboard() {
         </Card>
       )}
 
+      {/* PERSON RESOLUTION DEBUG — surfaces rows where the source "person"
+          field was actually a job title, and shows how each row was mapped
+          to a real person. Only shown to admins/super admins. */}
+      {scope.isAdmin && payload && personDiagnostics.total > 0 && (
+        <PersonResolutionPanel diagnostics={personDiagnostics} />
+      )}
+
       {/* PERSONAL EFFICIENCY — regular users only */}
       {!scope.isAdmin && payload && myPerf && (
         <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-transparent">
