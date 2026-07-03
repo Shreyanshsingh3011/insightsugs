@@ -631,6 +631,20 @@ export default function AgentDashboard() {
   }
 
 
+  // Every card/row on the dashboard deep-links to /agent/detail/$payload so
+  // the user can read AI suggestions and dispatch a mail/message from there.
+  const detailLink = (p: Partial<DetailPayload> & { title: string }) => {
+    const payloadStr = encodeDetailPayload({
+      kind: p.kind ?? "aggregate",
+      projectId: selected === "all" ? undefined : selected,
+      projectLabel: payload?.project,
+      severity: p.severity ?? "med",
+      source: p.source ?? "Dashboard",
+      ...p,
+    });
+    return { to: "/agent/detail/$payload" as const, params: { payload: payloadStr } };
+  };
+
   return (
     <div className="space-y-6">
       {/* HERO */}
