@@ -27,6 +27,7 @@ import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent.index'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
+import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
@@ -134,6 +135,11 @@ const AuthenticatedAlertsIdRoute = AuthenticatedAlertsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedAlertsRoute,
 } as any)
+const AuthenticatedAgentInboxRoute = AuthenticatedAgentInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => AuthenticatedAgentRoute,
+} as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -226,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
@@ -256,6 +263,7 @@ export interface FileRoutesByTo {
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
@@ -290,6 +298,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
@@ -324,6 +333,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/email-groups'
     | '/admin/users'
+    | '/agent/inbox'
     | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/agent/'
@@ -354,6 +364,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/email-groups'
     | '/admin/users'
+    | '/agent/inbox'
     | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/agent'
@@ -387,6 +398,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/users'
+    | '/_authenticated/agent/inbox'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
     | '/_authenticated/agent/'
@@ -541,6 +553,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsIdRouteImport
       parentRoute: typeof AuthenticatedAlertsRoute
     }
+    '/_authenticated/agent/inbox': {
+      id: '/_authenticated/agent/inbox'
+      path: '/inbox'
+      fullPath: '/agent/inbox'
+      preLoaderRoute: typeof AuthenticatedAgentInboxRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/admin/users'
@@ -636,6 +655,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAgentRouteChildren {
+  AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
   AuthenticatedAgentDetailPayloadRoute: typeof AuthenticatedAgentDetailPayloadRoute
   AuthenticatedAgentKpiIdRoute: typeof AuthenticatedAgentKpiIdRoute
@@ -646,6 +666,7 @@ interface AuthenticatedAgentRouteChildren {
 }
 
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
+  AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
   AuthenticatedAgentDetailPayloadRoute: AuthenticatedAgentDetailPayloadRoute,
   AuthenticatedAgentKpiIdRoute: AuthenticatedAgentKpiIdRoute,
