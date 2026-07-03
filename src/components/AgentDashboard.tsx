@@ -82,7 +82,7 @@ function derive(payload: Payload | undefined) {
   const processAgg: Record<string, { total: number; delayed: number; delayDays: number }> = {};
   let totalDelay = 0, delayedCount = 0, overdueCount = 0, completedCount = 0;
   let sumTat = 0, sumTaken = 0, tatCounted = 0;
-  const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string }[] = [];
+  const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
     const st = bucket(pick(r, "Status Category", "Status as on Date"));
