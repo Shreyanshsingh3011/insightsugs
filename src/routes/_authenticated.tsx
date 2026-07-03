@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect, Link, useRouter } from "@tanstack/react-router";
 import { useSession, useRoles } from "@/hooks/useSession";
+import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
@@ -26,6 +27,9 @@ function AuthLayout() {
   }
   if (!session) {
     throw redirect({ to: "/login" });
+  }
+  if (!rolesLoading && roles && roles.length === 0) {
+    return <PendingApprovalScreen email={session.user.email ?? ""} />;
   }
 
   const signOut = async () => {

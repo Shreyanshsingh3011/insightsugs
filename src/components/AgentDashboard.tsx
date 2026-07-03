@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { Link } from "@tanstack/react-router";
+import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
@@ -82,7 +84,7 @@ function derive(payload: Payload | undefined) {
   const processAgg: Record<string, { total: number; delayed: number; delayDays: number }> = {};
   let totalDelay = 0, delayedCount = 0, overdueCount = 0, completedCount = 0;
   let sumTat = 0, sumTaken = 0, tatCounted = 0;
-  const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string }[] = [];
+  const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
     const st = bucket(pick(r, "Status Category", "Status as on Date"));
@@ -121,6 +123,7 @@ function derive(payload: Payload | undefined) {
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
         status: pick(r, "Status Category", "Status as on Date"), criticality: crit,
+        email, row: r,
       });
     }
   }
@@ -177,7 +180,11 @@ function derive(payload: Payload | undefined) {
     : 0;
 
   // ── AGENTIC RULES: Next Best Actions
-  type Action = { id: string; title: string; detail: string; severity: keyof typeof TONE; source: string; impact: number };
+  type Action = {
+    id: string; title: string; detail: string;
+    severity: keyof typeof TONE; source: string; impact: number;
+    row?: Row; person?: string; stage?: string; email?: string;
+  };
   const actions: Action[] = [];
   overdue.slice(0, 6).forEach((o, i) => {
     const sev = o.criticality === "Critical" || o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low";
@@ -186,6 +193,7 @@ function derive(payload: Payload | undefined) {
       title: `Unblock "${o.activity}"`,
       detail: `${o.delay}d overdue · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Escalate + commit recovery date.`,
       severity: sev, source: "Overdue", impact: o.delay,
+      row: o.row, person: o.person, stage: o.stage, email: o.email,
     });
   });
   personsByBurden.slice(0, 3).forEach((p, i) => {
@@ -195,6 +203,7 @@ function derive(payload: Payload | undefined) {
         title: `Rebalance ${p.person}`,
         detail: `${p.delayed}/${p.total} delayed (${p.riskScore}%). Efficiency ${p.efficiency}. Redistribute or pair up.`,
         severity: p.riskScore >= 60 ? "high" : "med", impact: p.delayDays,
+        person: p.person, email: p.email,
       });
     }
   });
@@ -205,6 +214,7 @@ function derive(payload: Payload | undefined) {
         title: `Fix ${s.stage}`,
         detail: `Only ${s.healthPct}% healthy · ${s.delayed}/${s.total} delayed · ${s.delayDays}d cumulative. Audit handoffs and dependencies.`,
         severity: s.healthPct < 40 ? "high" : "med", impact: s.delayDays,
+        stage: s.stage,
       });
     }
   });
@@ -654,18 +664,35 @@ export default function AgentDashboard() {
               {d.actions.length === 0 && (
                 <p className="text-sm text-muted-foreground">Nothing urgent. The agent will resurface work as data changes.</p>
               )}
-              {d.actions.slice(0, 8).map(a => (
-                <div key={a.id} className={`rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-sm ${TONE[a.severity]}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
-                      <div className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</div>
-                      <div className="mt-1 text-xs opacity-90">{a.detail}</div>
+              {d.actions.slice(0, 8).map(a => {
+                const payloadStr = encodeDetailPayload({
+                  kind: a.row ? "row" : "aggregate",
+                  projectId: selected === "all" ? undefined : selected,
+                  projectLabel: payload?.project,
+                  title: a.title, detail: a.detail, severity: a.severity, source: a.source,
+                  person: a.person, stage: a.stage, email: a.email, row: a.row,
+                });
+                return (
+                  <Link
+                    key={a.id}
+                    to="/agent/detail/$payload"
+                    params={{ payload: payloadStr }}
+                    className={`group block rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-md ${TONE[a.severity]}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
+                        <div className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</div>
+                        <div className="mt-1 text-xs opacity-90">{a.detail}</div>
+                        <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium opacity-80 group-hover:opacity-100">
+                          Open source & take action <ArrowRight className="h-3 w-3" />
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
                     </div>
-                    <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
-                  </div>
-                </div>
-              ))}
+                  </Link>
+                );
+              })}
             </CardContent>
           </Card>
 
