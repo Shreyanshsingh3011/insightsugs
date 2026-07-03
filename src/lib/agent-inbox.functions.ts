@@ -387,8 +387,8 @@ export const approveAgentDraft = createServerFn({ method: "POST" })
         approved_by: userId,
         approved_at: nowIso,
         sent_at: nowIso,
-        send_result,
-      })
+        send_result: send_result as any,
+      } as any)
       .eq("id", draft.id);
     if (updErr) throw new Error(updErr.message);
 
@@ -406,7 +406,7 @@ export const approveAgentDraft = createServerFn({ method: "POST" })
       },
     });
 
-    return { ok: true, delivery, send_result };
+    return { ok: true as const, delivery, send_result: send_result as any };
   });
 
 // ---------- UNSNOOZE (admin / reviewer can restore a snoozed draft) ----------
