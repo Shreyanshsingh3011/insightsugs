@@ -1396,10 +1396,17 @@ export default function AgentDashboard() {
 }
 
 // ────────────────── KPI ──────────────────
+type KpiLink =
+  | { to: "/agent/detail/$payload"; params: { payload: string } }
+  | { to: "/agent/kpi/$id"; params: { id: string } }
+  | { to: "/agent/person/$key"; params: { key: string } }
+  | { to: "/agent/stage/$key"; params: { key: string } }
+  | { to: "/agent/project/$projectId"; params: { projectId: string } };
+
 function Kpi({ icon, label, value, sub, tone = "default", to }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
   tone?: "default" | "ok" | "med" | "high" | "low";
-  to?: { to: "/agent/detail/$payload"; params: { payload: string } };
+  to?: KpiLink;
 }) {
   const cls =
     tone === "ok" ? TONE.ok :
@@ -1419,7 +1426,17 @@ function Kpi({ icon, label, value, sub, tone = "default", to }: {
       </CardContent>
     </Card>
   );
-  return to ? <Link to={to.to} params={to.params} className="block">{body}</Link> : body;
+  if (!to) return body;
+  // Discriminated Link so TS accepts every param shape.
+  if (to.to === "/agent/detail/$payload")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/kpi/$id")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/person/$key")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/stage/$key")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  return <Link to={to.to} params={to.params} className="block">{body}</Link>;
 }
 
 function ProjectChip({ label, count, active, loading, error, onClick }: {
