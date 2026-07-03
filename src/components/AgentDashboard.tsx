@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
+import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,8 +22,8 @@ import {
   Flame, Gauge, Radar, Layers,
 } from "lucide-react";
 
-// ────────────────── FIXED SOURCES (auto-refreshed) ──────────────────
-const PROJECTS: { id: string; label: string; url: string }[] = [
+// ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
+const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
   { id: "pspcl", label: "PSPCL Kharar",  url: "https://sheet2api-bypassed-login.vercel.app/api/public/80d914878c5b9a85de90b59f5eaec11a" },
   { id: "hp",    label: "Himachal",      url: "https://sheet2api-bypassed-login.vercel.app/api/public/f0fc62c15a274dc4c149c2b0a69e2f86" },
@@ -30,6 +31,7 @@ const PROJECTS: { id: string; label: string; url: string }[] = [
   { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
 const AUTO_REFRESH_MS = 60_000;
+const REGISTRY_REFRESH_MS = 5 * 60_000;
 
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
