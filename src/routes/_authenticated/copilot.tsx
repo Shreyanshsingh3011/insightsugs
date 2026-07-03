@@ -62,7 +62,22 @@ type Turn = {
   sources: Source[];
   suggestions: string[];
   charts?: ChartSpec[];
+  citationsMissing?: boolean;
+  retriedForCitations?: boolean;
 };
+
+// A response is grounded when it contains at least one inline [...] marker AND
+// a "Sources:" section — matches GROUNDING_RULES in src/lib/gemini-client.ts.
+// Ignore the "I don't have that in the current dashboard data." fallback.
+function validateCitations(answer: string): boolean {
+  const t = answer.trim();
+  if (!t) return false;
+  if (/^i don'?t have that in the current dashboard data/i.test(t)) return true;
+  const hasInline = /\[[^\]\n]{2,}\]/.test(t);
+  const hasSources = /(^|\n)\s*sources\s*:/i.test(t);
+  return hasInline && hasSources;
+}
+
 type Insight = { title: string; detail: string; severity: "info" | "warning" | "critical" };
 
 const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
@@ -100,26 +115,55 @@ function CopilotPage() {
   };
 
   const askMut = useMutation({
-    mutationFn: (vars: { question: string; history: { role: "user" | "assistant"; content: string }[] }) =>
-      ask({
+    mutationFn: (vars: {
+      question: string;
+      history: { role: "user" | "assistant"; content: string }[];
+      retryForCitations?: boolean;
+      originalQuestion?: string;
+    }) => {
+      const q = vars.retryForCitations
+        ? `REMINDER: your previous answer was rejected because it lacked citations. Repeat your answer for the question below, but every factual sentence MUST have an inline citation marker like [flags[F-0003]] or [sheet:<name> row <n>], and the answer MUST end with a "Sources:" list. If a fact can't be cited from the provided data, say "I don't have that in the current dashboard data." instead.\n\nQuestion: ${vars.originalQuestion ?? vars.question}`
+        : vars.question;
+      return ask({
         data: {
-          question: vars.question,
+          question: q,
           sheetIds: Array.from(selected),
           documentIds: Array.from(selectedDocs),
           history: vars.history,
         },
-      }),
-    onMutate: () => setQuestion(""),
+      });
+    },
+    onMutate: (vars) => {
+      if (!vars.retryForCitations) setQuestion("");
+    },
     onSuccess: (res, vars) => {
+      const displayedQuestion = vars.originalQuestion ?? vars.question;
+      const ok = validateCitations(res.answer);
+      if (!ok && !vars.retryForCitations) {
+        // First failure — auto-retry once with a stronger cite instruction.
+        toast.info("Answer missing citations — retrying…");
+        askMut.mutate({
+          question: displayedQuestion,
+          history: vars.history,
+          retryForCitations: true,
+          originalQuestion: displayedQuestion,
+        });
+        return;
+      }
       setHistory((h) => [
         ...h,
         {
-          question: vars.question,
+          question: displayedQuestion,
           answer: res.answer,
           sources: res.sources,
           suggestions: (res as any).suggestions ?? [],
+          citationsMissing: !ok,
+          retriedForCitations: vars.retryForCitations,
         },
       ]);
+      if (!ok && vars.retryForCitations) {
+        toast.warning("Copilot still didn't cite sources — flagged inline.");
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "AI request failed"),
   });
@@ -421,9 +465,44 @@ function CopilotPage() {
                         </div>
                       )}
                     </div>
+                    {t.citationsMissing && (
+                      <div className="mb-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                        <div className="flex-1">
+                          <div className="font-medium text-destructive">
+                            Citations missing — treat this answer as ungrounded.
+                          </div>
+                          <div className="mt-0.5 text-muted-foreground">
+                            Copilot didn't include inline <code className="rounded bg-background px-1">[…]</code>
+                            {" "}markers or a <span className="font-medium">Sources:</span> list.
+                            {t.retriedForCitations ? " Automatic retry also failed." : ""}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs"
+                          disabled={askMut.isPending}
+                          onClick={() =>
+                            askMut.mutate({
+                              question: t.question,
+                              history: history.slice(0, i).flatMap((x) => [
+                                { role: "user" as const, content: x.question },
+                                { role: "assistant" as const, content: x.answer },
+                              ]),
+                              retryForCitations: true,
+                              originalQuestion: t.question,
+                            })
+                          }
+                        >
+                          <RefreshCw className="mr-1 h-3 w-3" /> Re-ask with citations
+                        </Button>
+                      </div>
+                    )}
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-table:my-2 prose-p:my-1.5 prose-headings:my-2">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.answer}</ReactMarkdown>
                     </div>
+
                     {t.charts && t.charts.length > 0 && (
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         {t.charts.map((c, ci) => (
