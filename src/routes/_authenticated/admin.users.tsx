@@ -295,7 +295,7 @@ function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string
   const view = filtered.slice(start, start + pageSize);
 
   // Reset to first page when filter changes.
-  useMemo(() => { setPage(1); return null; }, [q, roleFilter]);
+  useEffect(() => { setPage(1); }, [q, roleFilter]);
 
   return (
     <section aria-labelledby="all-users-heading">
