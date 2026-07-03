@@ -328,7 +328,7 @@ export default function AgentDashboard() {
     })),
   });
 
-  const sources = queries.map((q, i) => ({
+  const rawSources = queries.map((q, i) => ({
     project: projects[i],
     payload: (q.data as { payload?: SourcePayload } | undefined)?.payload,
     isFetching: q.isFetching,
@@ -336,6 +336,33 @@ export default function AgentDashboard() {
     isError: q.isError,
     error: q.error as Error | undefined,
   }));
+
+  // Decorate every source row with the resolved person (real name, email,
+  // resolution source). Overwrites the "Responsible Person" column value so
+  // every downstream picker — focus filters, chatbot, rankings, exports —
+  // automatically speaks the resolved name instead of a role/title.
+  const sources = useMemo(() => {
+    const decorate = (row: Row): Row => {
+      const r = resolvePersonForRow(row, profileDir);
+      return {
+        ...row,
+        "Responsible Person": r.displayName,
+        __personKey: r.key,
+        __personDisplay: r.displayName,
+        __personRaw: r.roleTitle
+          || String(row["Responsible Person"] ?? row["Responsibility"] ?? row["approvers name"] ?? ""),
+        __personEmail: r.email,
+        __personSource: r.source,
+        __personIsTitleFallback: r.isTitleFallback,
+      };
+    };
+    return rawSources.map((s) => (
+      s.payload?.data
+        ? { ...s, payload: { ...s.payload, data: s.payload.data.map(decorate) } }
+        : s
+    ));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir]);
 
   const anyLoading = queries.some(q => q.isLoading);
   const anyFetching = queries.some(q => q.isFetching);
