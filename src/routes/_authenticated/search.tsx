@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { semanticSearch, type SearchHit } from "@/lib/search.functions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Search, FileText, Sheet as SheetIcon, ListChecks, Loader2 } from "lucide-react";
+import { Search, FileText, Sheet as SheetIcon, ListChecks, Loader2, ArrowUpRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/search")({
   component: SearchPage,
@@ -18,6 +18,36 @@ function iconFor(kind: SearchHit["kind"]) {
   if (kind === "sheet") return <SheetIcon className="h-4 w-4" />;
   return <ListChecks className="h-4 w-4" />;
 }
+
+// Build a case-insensitive regex from the query tokens, escaping regex metacharacters.
+function buildHighlightRegex(query: string): RegExp | null {
+  const tokens = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .filter((t) => t.length >= 2);
+  if (tokens.length === 0) return null;
+  return new RegExp(`(${tokens.join("|")})`, "gi");
+}
+
+function Highlighted({ text, regex }: { text: string; regex: RegExp | null }) {
+  if (!regex) return <>{text}</>;
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="rounded bg-yellow-200 px-0.5 text-foreground dark:bg-yellow-500/40">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 
 function SearchPage() {
   const [q, setQ] = useState("");
