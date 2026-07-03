@@ -3,7 +3,7 @@ import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { encodeDetailPayload, type DetailPayload } from "@/lib/agent-detail-payload";
-import { encodeKey as encodeEntityKey } from "@/lib/entity-scope";
+import { encodeKey as encodeEntityKey, encodeRowKey } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
