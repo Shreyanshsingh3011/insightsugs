@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
+import { fetchSheetRows } from "@/lib/gsheets-agent.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,15 +15,17 @@ import {
 } from "@/components/ui/table";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, LineChart, Line, Legend,
+  PieChart, Pie, Cell, Legend,
 } from "recharts";
 import {
   Sparkles, RefreshCw, AlertTriangle, TrendingUp, Users, Activity,
-  Target, Zap, CheckCircle2, Clock, Loader2, Link2,
+  Target, Zap, CheckCircle2, Clock, Loader2, Link2, Sheet as SheetIcon,
 } from "lucide-react";
 
 const DEFAULT_URL =
   "https://delaybridgesugs.vercel.app/api/public/PeuOiqTX8Suly1enDV4X68reUe6zkBrh/export?fields=summary,totals,risk_score,status_breakdown,sheets,flags,forecast,anomalies,digest,recommendations,trends,top_delay_reasons,dependency_chains,person_ranking,correlation_matrix,department_ranking,timeline_correlation,tat_performance";
+const DEFAULT_SHEET =
+  "https://docs.google.com/spreadsheets/d/1U2CkhrRBSv6VLbri_ROwhqCvXJvOKbqbWzJDrc4q-DQ/edit?gid=2069956310#gid=2069956310";
 
 type Row = Record<string, string>;
 type Payload = {
@@ -201,17 +204,45 @@ function derive(payload: Payload | undefined) {
 
 export default function AgentDashboard() {
   const [url, setUrl] = useState(DEFAULT_URL);
+  const [sheetUrl, setSheetUrl] = useState(DEFAULT_SHEET);
   const [activeUrl, setActiveUrl] = useState(DEFAULT_URL);
+  const [activeSheet, setActiveSheet] = useState(DEFAULT_SHEET);
   const fetchFn = useServerFn(fetchInsightUrl);
+  const fetchSheetFn = useServerFn(fetchSheetRows);
   const genFn = useServerFn(generateGeminiFn);
 
   const q = useQuery({
     queryKey: ["agent-export", activeUrl],
     queryFn: async () => fetchFn({ data: { url: activeUrl } }),
+    enabled: !!activeUrl,
     staleTime: 60_000,
   });
 
-  const payload: Payload | undefined = (q.data as { payload?: Payload })?.payload;
+  const sheetQ = useQuery({
+    queryKey: ["agent-sheet", activeSheet],
+    queryFn: async () => fetchSheetFn({ data: { spreadsheetId: activeSheet } }),
+    enabled: !!activeSheet,
+    staleTime: 60_000,
+  });
+
+  const exportPayload: Payload | undefined = (q.data as { payload?: Payload })?.payload;
+  const sheetResult = sheetQ.data as { title?: string; sheetName?: string; columns?: string[]; rows?: Row[] } | undefined;
+
+  // Sheet rows are authoritative when present; fall back to export.
+  const payload: Payload | undefined = useMemo(() => {
+    if (sheetResult?.rows?.length) {
+      return {
+        ...(exportPayload ?? {}),
+        project: sheetResult.title || exportPayload?.project,
+        sheet: sheetResult.sheetName || exportPayload?.sheet,
+        columns: sheetResult.columns,
+        count: sheetResult.rows.length,
+        data: sheetResult.rows,
+      };
+    }
+    return exportPayload;
+  }, [exportPayload, sheetResult]);
+
   const d = useMemo(() => derive(payload), [payload]);
 
   const [brief, setBrief] = useState<string>("");
@@ -264,37 +295,60 @@ export default function AgentDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => q.refetch()}>
-            <RefreshCw className={`h-4 w-4 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
+          {sheetResult?.rows?.length ? (
+            <Badge variant="outline" className="gap-1"><SheetIcon className="h-3 w-3" />Sheet · {sheetResult.rows.length} rows</Badge>
+          ) : exportPayload?.data?.length ? (
+            <Badge variant="outline" className="gap-1"><Link2 className="h-3 w-3" />Export · {exportPayload.data.length} rows</Badge>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={() => { q.refetch(); sheetQ.refetch(); }}>
+            <RefreshCw className={`h-4 w-4 ${(q.isFetching || sheetQ.isFetching) ? "animate-spin" : ""}`} /> Refresh
           </Button>
         </div>
       </div>
 
-      {/* Link input */}
+      {/* Data sources */}
       <Card>
-        <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
-          <Link2 className="h-4 w-4 text-muted-foreground" />
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste your /export link…"
-            className="flex-1"
-          />
-          <Button onClick={() => setActiveUrl(url)} disabled={q.isFetching}>
-            {q.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
-          </Button>
+        <CardContent className="space-y-2 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Export link (/export?fields=…)"
+              className="flex-1"
+            />
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <SheetIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Input
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              placeholder="Google Sheet link (authoritative when provided)"
+              className="flex-1"
+            />
+            <Button
+              onClick={() => { setActiveUrl(url); setActiveSheet(sheetUrl); }}
+              disabled={q.isFetching || sheetQ.isFetching}
+            >
+              {(q.isFetching || sheetQ.isFetching) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Sheet rows override the export when available. Leave sheet blank to use only the export link.
+          </p>
         </CardContent>
       </Card>
 
-      {q.isError && (
+      {(q.isError || sheetQ.isError) && (
         <Card className="border-rose-500/40">
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-rose-600">
-            <AlertTriangle className="h-4 w-4" /> {(q.error as Error).message}
+          <CardContent className="space-y-1 p-4 text-sm text-rose-600">
+            {q.isError && <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Export: {(q.error as Error).message}</div>}
+            {sheetQ.isError && <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Sheet: {(sheetQ.error as Error).message}</div>}
           </CardContent>
         </Card>
       )}
 
-      {q.isLoading && (
+      {(q.isLoading || sheetQ.isLoading) && !payload && (
         <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" /> Pulling insights…
         </div>
