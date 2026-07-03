@@ -769,3 +769,27 @@ function Kpi({ icon, label, value, sub, tone = "default" }: {
     </Card>
   );
 }
+
+function ProjectChip({ label, count, active, loading, error, onClick }: {
+  label: string; count: number; active: boolean;
+  loading?: boolean; error?: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      className={[
+        "group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+        active
+          ? "border-primary/50 bg-primary/10 text-primary shadow-sm"
+          : "border-border/60 bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground",
+      ].join(" ")}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${error ? "bg-rose-500" : loading ? "bg-amber-400 animate-pulse" : "bg-emerald-500"}`} />
+      {label}
+      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+        {count}
+      </span>
+    </button>
+  );
+}
+
