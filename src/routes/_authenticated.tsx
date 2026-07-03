@@ -7,7 +7,7 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, Activity, FileText, Sparkles, Sheet as SheetIcon,
-  AlertTriangle, Mail, MessageSquareWarning, Bot,
+  AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -51,6 +51,7 @@ function AuthLayout() {
         <nav className="flex-1 space-y-0.5 p-3 text-sm">
           <SideLink to="/insights" icon={<LayoutDashboard className="h-4 w-4" />}>Insights</SideLink>
           <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent Dashboard</SideLink>
+          <SideLink to="/agent/inbox" icon={<Inbox className="h-4 w-4" />}>Agent Inbox</SideLink>
           <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
           <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
           <SideLink to="/alerts" icon={<AlertTriangle className="h-4 w-4" />}>Alerts</SideLink>
@@ -76,6 +77,7 @@ function AuthLayout() {
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm md:hidden">
             <SideLink to="/insights" icon={<LayoutDashboard className="h-4 w-4" />}>Insights</SideLink>
             <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent</SideLink>
+            <SideLink to="/agent/inbox" icon={<Inbox className="h-4 w-4" />}>Inbox</SideLink>
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
             <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
             <SideLink to="/alerts" icon={<AlertTriangle className="h-4 w-4" />}>Alerts</SideLink>
