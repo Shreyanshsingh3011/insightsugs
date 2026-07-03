@@ -1093,15 +1093,13 @@ export default function AgentDashboard() {
                   </TableHeader>
                   <TableBody>
                     {filteredRows.slice(0, 200).map(r => {
-                      const link = detailLink({
-                        kind: "row",
-                        title: r.activity || "Activity",
-                        source: "Filtered report",
-                        severity: r.delay > 30 ? "high" : r.delay > 0 ? "med" : "low",
-                        person: r.person, stage: r.stage, email: r.email,
-                        detail: `${r.status || "—"} · TAT ${r.tat}d / taken ${r.taken}d${r.delay > 0 ? ` · ${r.delay}d late` : ""}`,
-                        row: rowsAll[r.i] as Record<string, unknown>,
+                      const src = rowsAll[r.i] as Row;
+                      const rowKey = encodeRowKey({
+                        project: String(src["__project"] ?? payload?.project ?? ""),
+                        srNo: String(src["Sr. No."] ?? src["Sr No"] ?? src["ID"] ?? ""),
+                        activity: r.activity || "",
                       });
+                      const link = { to: "/agent/row/$key" as const, params: { key: rowKey } };
                       return (
                         <TableRow key={r.i} className="cursor-pointer hover:bg-muted/40" onClick={(e) => {
                           // Router-safe navigation via a hidden Link inside the row.
