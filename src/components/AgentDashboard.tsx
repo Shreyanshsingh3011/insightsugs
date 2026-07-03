@@ -913,18 +913,28 @@ export default function AgentDashboard() {
                 <p className="text-sm text-muted-foreground">Nothing urgent. The agent will resurface work as data changes.</p>
               )}
               {d.actions.slice(0, 8).map(a => {
-                const payloadStr = encodeDetailPayload({
-                  kind: a.row ? "row" : "aggregate",
-                  projectId: selected === "all" ? undefined : selected,
-                  projectLabel: payload?.project,
-                  title: a.title, detail: a.detail, severity: a.severity, source: a.source,
-                  person: a.person, stage: a.stage, email: a.email, row: a.row,
-                });
+                // Route each action to its most specific detail page.
+                // Prefer the row page when the action ties to one activity, else fall back to the person page.
+                let to: "/agent/row/$key" | "/agent/person/$key";
+                let params: { key: string };
+                if (a.row) {
+                  to = "/agent/row/$key";
+                  params = {
+                    key: encodeRowKey({
+                      project: String((a.row as Row)["__project"] ?? payload?.project ?? ""),
+                      srNo: String((a.row as Row)["Sr. No."] ?? (a.row as Row)["Sr No"] ?? (a.row as Row)["ID"] ?? ""),
+                      activity: String(a.row["Activity List"] ?? a.row["Process Descriptions"] ?? a.row["Process"] ?? a.title ?? ""),
+                    }),
+                  };
+                } else {
+                  to = "/agent/person/$key";
+                  params = { key: encodeEntityKey(a.person || a.title) };
+                }
                 return (
                   <Link
                     key={a.id}
-                    to="/agent/detail/$payload"
-                    params={{ payload: payloadStr }}
+                    to={to}
+                    params={params}
                     className={`group block rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-md ${TONE[a.severity]}`}
                   >
                     <div className="flex items-start justify-between gap-2">
