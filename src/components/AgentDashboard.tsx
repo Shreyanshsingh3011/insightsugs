@@ -966,9 +966,9 @@ export default function AgentDashboard() {
                   variant="ghost" size="sm"
                   className="h-8 gap-1 rounded-none px-2.5 text-xs"
                   onClick={exportScopedCSV}
-                  disabled={!payload || rowIndex.length === 0}
-                  aria-label="Export scoped data as CSV"
-                  title={`Export ${rowIndex.length} scoped rows as CSV`}
+                  disabled={!payload || filteredRows.length === 0}
+                  aria-label="Export current filtered view as CSV"
+                  title={`Export ${filteredRows.length} of ${rowIndex.length} rows (current filters) as CSV`}
                 >
                   <Download className="h-3.5 w-3.5" /> CSV
                 </Button>
@@ -977,13 +977,14 @@ export default function AgentDashboard() {
                   variant="ghost" size="sm"
                   className="h-8 gap-1 rounded-none px-2.5 text-xs"
                   onClick={exportScopedPDF}
-                  disabled={!payload || rowIndex.length === 0}
-                  aria-label="Export scoped data as PDF"
-                  title={`Export scoped KPIs + ${rowIndex.length} rows as PDF`}
+                  disabled={!payload || filteredRows.length === 0}
+                  aria-label="Export current filtered view as PDF"
+                  title={`Export KPIs + ${filteredRows.length} of ${rowIndex.length} rows (current filters) as PDF`}
                 >
                   <Download className="h-3.5 w-3.5" /> PDF
                 </Button>
               </div>
+
 
             </div>
             {lastSyncedAt && (
