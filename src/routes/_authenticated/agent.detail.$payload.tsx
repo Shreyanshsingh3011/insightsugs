@@ -572,33 +572,47 @@ function Chip({ icon, children }: { icon: React.ReactNode; children: React.React
   );
 }
 
-function ScopeRowsTable({ rows }: { rows: DetailContextRow[] }) {
+function rowKey(r: DetailContextRow) {
+  return `${(r.activity || "").slice(0, 40)}|${r.person ?? ""}|${r.stage ?? ""}`
+    .replace(/[^a-z0-9|]+/gi, "-").toLowerCase();
+}
+
+function ScopeRowsTable({ rows, highlightId }: { rows: DetailContextRow[]; highlightId: string | null }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border/60">
       <table className="w-full text-sm">
+        <caption className="sr-only">Records in scope, sorted by delay.</caption>
         <thead className="bg-muted/40 text-xs">
           <tr>
-            <th className="px-2 py-1.5 text-left font-medium">#</th>
-            <th className="px-2 py-1.5 text-left font-medium">Activity</th>
-            <th className="px-2 py-1.5 text-left font-medium">Person</th>
-            <th className="px-2 py-1.5 text-left font-medium">Stage</th>
-            <th className="px-2 py-1.5 text-left font-medium">Status</th>
-            <th className="px-2 py-1.5 text-right font-medium">Delay</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">#</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Activity</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Person</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Stage</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Status</th>
+            <th scope="col" className="px-2 py-1.5 text-right font-medium">Delay</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-border/60">
-              <td className="px-2 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
-              <td className="max-w-[280px] truncate px-2 py-1.5" title={r.activity}>{r.activity}</td>
-              <td className="px-2 py-1.5 text-xs">{r.person ?? "—"}</td>
-              <td className="px-2 py-1.5 text-xs">{r.stage ?? "—"}</td>
-              <td className="px-2 py-1.5 text-xs">{r.status ?? "—"}</td>
-              <td className={`px-2 py-1.5 text-right tabular-nums ${(r.delay ?? 0) > 0 ? "text-rose-600 font-semibold" : ""}`}>
-                {r.delay ?? 0}d
-              </td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const key = rowKey(r);
+            const hit = highlightId === key;
+            return (
+              <tr
+                key={i}
+                id={`scope-row-${key}`}
+                className={`border-t border-border/60 transition-colors ${hit ? "bg-amber-500/20 ring-2 ring-amber-500/60" : ""}`}
+              >
+                <td className="px-2 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
+                <td className="max-w-[280px] truncate px-2 py-1.5" title={r.activity}>{r.activity}</td>
+                <td className="px-2 py-1.5 text-xs">{r.person ?? "—"}</td>
+                <td className="px-2 py-1.5 text-xs">{r.stage ?? "—"}</td>
+                <td className="px-2 py-1.5 text-xs">{r.status ?? "—"}</td>
+                <td className={`px-2 py-1.5 text-right tabular-nums ${(r.delay ?? 0) > 0 ? "text-rose-600 font-semibold" : ""}`}>
+                  {r.delay ?? 0}d
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
