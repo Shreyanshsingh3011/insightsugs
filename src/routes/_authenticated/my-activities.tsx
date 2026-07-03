@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet, Activity as ActivityIcon } from "lucide-react";
 import { getMyDependentActivities } from "@/lib/sheets.functions";
 
 
@@ -61,6 +61,21 @@ function MyActivitiesPage() {
     queryKey: ["my-sheet-activities", userId],
     enabled: !!userId,
     queryFn: () => fetchSheetActs(),
+  });
+
+  const { data: feed } = useQuery({
+    queryKey: ["my-activity-feed", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audit_log")
+        .select("id, event_type, details, created_at, activity_id")
+        .eq("actor_id", userId!)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data as { id: string; event_type: string; details: any; created_at: string; activity_id: string | null }[];
+    },
   });
 
 
