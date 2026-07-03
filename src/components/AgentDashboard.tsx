@@ -343,12 +343,52 @@ export default function AgentDashboard() {
     .sort()
     .pop();
 
+  // ── ADMIN / SUPER FOCUS FILTERS ────────────────────────────────────────────
+  // Regular users are already row-scoped by name. Admin & super_admin see the
+  // full data of their assigned/all projects, so give them focus controls that
+  // reshape the ENTIRE dashboard (KPIs, health, efficiency, chart, brief) by
+  // Person and Department/Team. Persisted in sessionStorage so drill-downs
+  // return to the same focus.
+  const [focusPerson, setFocusPerson] = useState<string>(() => {
+    if (typeof window === "undefined") return "all";
+    return sessionStorage.getItem("agent:focus:person") ?? "all";
+  });
+  const [focusDept, setFocusDept] = useState<string>(() => {
+    if (typeof window === "undefined") return "all";
+    return sessionStorage.getItem("agent:focus:dept") ?? "all";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("agent:focus:person", focusPerson);
+  }, [focusPerson]);
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("agent:focus:dept", focusDept);
+  }, [focusDept]);
+  const canFocus = scope.isAdmin; // includes super_admin
+
   const payload: Payload | undefined = useMemo(() => {
     const nameFilter = (rows: Row[] | undefined): Row[] => {
       if (!rows) return [];
       if (scope.mode !== "name-scoped") return rows;
       if (scope.nameNeedles.length === 0) return [];
       return rows.filter((r) => rowMatchesUser(r, scope.nameNeedles));
+    };
+    const focusFilter = (rows: Row[]): Row[] => {
+      if (!canFocus) return rows;
+      if (focusPerson === "all" && focusDept === "all") return rows;
+      const p = focusPerson.toLowerCase();
+      const dep = focusDept.toLowerCase();
+      return rows.filter((r) => {
+        if (focusPerson !== "all") {
+          const person = String(r["Responsible Person"] ?? r["Responsibility"] ?? r["approvers name"] ?? "").toLowerCase();
+          const email = String(r["Responsible Person Mail ID"] ?? r["approvers email id"] ?? "").toLowerCase();
+          if (person !== p && email !== p) return false;
+        }
+        if (focusDept !== "all") {
+          const rowDept = String(r["Department"] ?? r["Vertical"] ?? r["Team"] ?? r["__department"] ?? "").toLowerCase();
+          if (rowDept !== dep) return false;
+        }
+        return true;
+      });
     };
     if (selected === "all") {
       const merged: Row[] = [];
@@ -357,16 +397,20 @@ export default function AgentDashboard() {
         const filtered = nameFilter(s.payload?.data);
         if (filtered.length) {
           const label = s.project.label;
-          for (const r of filtered) merged.push({ ...r, __project: label });
+          const dept = s.payload?.department;
+          for (const r of filtered) merged.push({ ...r, __project: label, __department: dept });
           if (s.payload?.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
         }
       }
-      return merged.length ? { project: scope.mode === "name-scoped" ? "My work · all projects" : "All projects", data: merged, generated_at: latest } : undefined;
+      const finalRows = focusFilter(merged);
+      return finalRows.length ? { project: scope.mode === "name-scoped" ? "My work · all projects" : "All projects", data: finalRows, generated_at: latest } : undefined;
     }
     const s = sources.find(x => x.project.id === selected);
     if (!s?.payload) return undefined;
-    const data = nameFilter(s.payload.data);
-    if (!data.length && scope.mode === "name-scoped") return undefined;
+    const scoped = nameFilter(s.payload.data);
+    if (!scoped.length && scope.mode === "name-scoped") return undefined;
+    const tagged = scoped.map((r) => ({ ...r, __department: s.payload?.department }));
+    const data = focusFilter(tagged);
     return {
       project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
       department: s.payload.department,
@@ -374,9 +418,44 @@ export default function AgentDashboard() {
       generated_at: s.payload.generated_at,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|")]);
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept]);
 
   const d = useMemo(() => derive(payload), [payload]);
+
+  // Options for the admin focus bar — derived from the UNFILTERED scoped rows
+  // so admins can always pivot back and see the full option list.
+  const focusOptions = useMemo(() => {
+    const persons = new Set<string>();
+    const depts = new Set<string>();
+    for (const s of sources) {
+      const rows = s.payload?.data ?? [];
+      for (const r of rows) {
+        const person = String(r["Responsible Person"] ?? r["Responsibility"] ?? r["approvers name"] ?? "").trim();
+        if (person && person.toLowerCase() !== "unassigned") persons.add(person);
+        const dept = String(r["Department"] ?? r["Vertical"] ?? r["Team"] ?? s.payload?.department ?? "").trim();
+        if (dept) depts.add(dept);
+      }
+    }
+    return {
+      persons: Array.from(persons).sort((a, b) => a.localeCompare(b)),
+      depts: Array.from(depts).sort((a, b) => a.localeCompare(b)),
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queries.map(q => q.dataUpdatedAt).join(",")]);
+
+  // Personal efficiency (regular user view) — derived from `d.persons` matched
+  // to the signed-in user via nameNeedles.
+  const myPerf = useMemo(() => {
+    if (scope.isAdmin) return null;
+    if (!scope.nameNeedles.length) return null;
+    const mine = d.persons.find((p) => {
+      const hay = `${p.person} ${p.email}`.toLowerCase();
+      return scope.nameNeedles.some((n) => hay.includes(n));
+    });
+    return mine ?? null;
+  }, [d.persons, scope.isAdmin, scope.nameNeedles]);
+
+
 
   const refetchAll = () => { registryQ.refetch(); queries.forEach(q => q.refetch()); };
 
