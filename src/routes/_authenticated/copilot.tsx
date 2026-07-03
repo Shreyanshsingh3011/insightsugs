@@ -330,10 +330,9 @@ function CopilotPage() {
     },
     onSuccess: (res, vars) => {
       const displayedQuestion = vars.originalQuestion ?? vars.question;
-      const ok = validateCitations(res.answer);
-      if (!ok && !vars.retryForCitations) {
-        // First failure — auto-retry once with a stronger cite instruction.
-        toast.info("Answer missing citations — retrying…");
+      const validation = validateCitationsDetailed(res.answer);
+      if (!validation.ok && !vars.retryForCitations) {
+        toast.info("Answer rejected — missing citations. Retrying…");
         askMut.mutate({
           question: displayedQuestion,
           history: vars.history,
@@ -349,14 +348,16 @@ function CopilotPage() {
           answer: res.answer,
           sources: res.sources,
           suggestions: (res as any).suggestions ?? [],
-          citationsMissing: !ok,
+          citationsMissing: !validation.ok,
+          citationValidation: validation,
           retriedForCitations: vars.retryForCitations,
         },
       ]);
-      if (!ok && vars.retryForCitations) {
+      if (!validation.ok && vars.retryForCitations) {
         toast.warning("Copilot still didn't cite sources — flagged inline.");
       }
     },
+
     onError: (e) => toast.error(e instanceof Error ? e.message : "AI request failed"),
   });
 
