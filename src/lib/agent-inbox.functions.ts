@@ -372,9 +372,36 @@ export const approveAgentDraft = createServerFn({ method: "POST" })
         /* non-fatal */
       }
     } else if (draft.recipient_email) {
-      // Email-only recipient (unknown user). Mirror sendAlert's pending pattern.
+      // Email-only recipient (unknown user). Actually send the email via the
+      // transactional queue (rendered from the agent-notification template).
+      const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+      const payload = (draft.payload ?? {}) as Record<string, unknown>;
+      const ctxParts = [
+        payload.project ? `Project ${payload.project}` : "",
+        payload.stage ? `Stage ${payload.stage}` : "",
+        payload.activity ? `Activity ${payload.activity}` : "",
+      ].filter(Boolean);
+      const r = await enqueueAppEmail({
+        templateName: "agent-notification",
+        recipientEmail: draft.recipient_email,
+        idempotencyKey: `agent-draft-${draft.id}`,
+        templateData: {
+          recipientName: undefined,
+          senderName: "InsightSugs Agent",
+          subject: draft.subject ?? draft.title,
+          message: draft.body,
+          context: ctxParts.join(" · ") || undefined,
+          reasonWhy: draft.why ?? undefined,
+        },
+      });
       send_result.email = draft.recipient_email;
-      send_result.status = "email_pending_setup";
+      if (r.ok) {
+        send_result.status = "email_queued";
+        send_result.message_id = r.messageId;
+      } else {
+        send_result.status = `email_${r.reason}`;
+        if (r.error) send_result.email_error = r.error;
+      }
       delivery = "email_pending";
     }
 

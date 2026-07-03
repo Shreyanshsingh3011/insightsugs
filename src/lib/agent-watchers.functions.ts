@@ -11,6 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { resolvePersonForRow } from "@/lib/person-resolver";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -92,15 +93,22 @@ type DraftSeed = {
   _recipient_email_norm: string | null;
 };
 
-function ruleSeeds(row: Row, projectLabel: string): DraftSeed[] {
+function ruleSeeds(
+  row: Row,
+  projectLabel: string,
+  directory?: Map<string, string>,
+): DraftSeed[] {
   const seeds: DraftSeed[] = [];
   const status = pick(row, "Status Category", "Status as on Date");
   if (isCompleted(status)) return seeds;
 
   const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
   const stage    = pick(row, "Stages", "Stages of Process") || "—";
-  const person   = pick(row, "Responsible Person", "Responsibility", "approvers name") || "the responsible person";
-  const email    = pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase() || null;
+  // Resolve person via the shared resolver so titles like "Project Manager"
+  // become the actual human name whenever we can find one.
+  const resolved = resolvePersonForRow(row, directory);
+  const person   = resolved.displayName || "the responsible person";
+  const email    = (resolved.email || pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase()) || null;
   const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
   const delay    = num(row["Delay in Days"]);
   const tat      = num(row["TAT"]);
@@ -111,7 +119,9 @@ function ruleSeeds(row: Row, projectLabel: string): DraftSeed[] {
   const sourceKey = `${projectLabel}::${srNo || activity}`.slice(0, 400);
   const firstName = person.split(/\s+/)[0] || "there";
   const ctxLine   = `Project: ${projectLabel} · Stage: ${stage} · Activity: ${activity}${srNo ? ` (Sr ${srNo})` : ""}`;
-  const channel: DraftSeed["channel"] = email ? "direct_message" : "direct_message";
+  // Prefer email when the recipient has a known address; fall back to in-app
+  // direct message for unknown recipients (queued to the fallback triager).
+  const channel: DraftSeed["channel"] = email ? "email" : "direct_message";
   const basePayload = { project: projectLabel, stage, activity, srNo, status, delay, tat, taken, criticality: crit, reason };
 
   // Rule 1 — Overdue task (delay > 2 days, not completed)
