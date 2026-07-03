@@ -855,13 +855,8 @@ export default function AgentDashboard() {
             </Card>
 
             <Link
-              {...detailLink({
-                kind: "aggregate",
-                title: `Project health · ${payload?.project ?? "All projects"}`,
-                source: "Health",
-                severity: d.healthScore > 70 ? "ok" : d.healthScore > 40 ? "med" : "high",
-                detail: `Health ${d.healthScore}/100 · on-time ${d.onTimeRate}% · completion ${d.completionRate}% · pace ${d.paceRatio}% of TAT.`,
-              })}
+              to="/agent/kpi/$id"
+              params={{ id: "health" }}
               className="block"
             >
               <Card className="overflow-hidden transition hover:shadow-md">
@@ -896,12 +891,12 @@ export default function AgentDashboard() {
 
           {/* KPI STRIP */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-            <Kpi to={detailLink({ title: "All activities", source: "KPI", detail: `${d.totals.total} activities across the current scope.` })} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
-            <Kpi to={detailLink({ title: "Completed activities", source: "KPI", severity: "ok", detail: `${d.totals.completed} of ${d.totals.total} completed (${d.completionRate}%).` })} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
-            <Kpi to={detailLink({ title: "Delayed activities", source: "KPI", severity: d.delayRate > 15 ? "high" : "med", detail: `${d.totals.delayed} activities are delayed (${d.delayRate}%). Top offender: ${d.overdue[0]?.activity ?? "n/a"} — ${d.overdue[0]?.person ?? ""}.` })} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
-            <Kpi to={detailLink({ title: "Average delay", source: "KPI", severity: d.avgDelay > 30 ? "high" : "med", detail: `Team is running ${d.avgDelay} days late on average across delayed items.` })} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
-            <Kpi to={detailLink({ title: "Not started", source: "KPI", severity: "low", detail: `${d.totals.notStarted} activities have not been started yet.` })} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
-            <Kpi to={detailLink({ title: "Projected finish", source: "KPI", detail: d.projectedDaysToFinish ? `At current pace the remaining work needs ~${d.projectedDaysToFinish} more days.` : "Not enough completions yet to project a finish date." })} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "health" } }} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "ontime" } }} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
           </div>
 
           {/* NEXT BEST ACTIONS */}
@@ -1162,17 +1157,7 @@ export default function AgentDashboard() {
                     onClick={(e: { activeLabel?: string } | null) => {
                       const stage = e?.activeLabel;
                       if (!stage) return;
-                      const st = d.stages.find(s => s.stage === stage);
-                      if (!st) return;
-                      const link = detailLink({
-                        kind: "aggregate",
-                        title: `Stage · ${stage}`,
-                        stage,
-                        source: "Bottleneck map",
-                        severity: st.delayDays > 60 ? "high" : st.delayDays > 20 ? "med" : "low",
-                        detail: `${st.delayed} delayed items · ${st.delayDays}d cumulative delay across ${st.total} activities in this stage.`,
-                      });
-                      nav({ to: link.to, params: link.params });
+                      nav({ to: "/agent/stage/$key", params: { key: encodeEntityKey(stage) } });
                     }}
                   >
                     <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
@@ -1200,30 +1185,15 @@ export default function AgentDashboard() {
                 {d.topPerformers.slice(0, 5).map((p, i) => (
                   <Link
                     key={p.person}
-                    {...detailLink({
-                      kind: "aggregate",
-                      title: `Top performer · ${p.person}`,
-                      person: p.person,
-                      source: "Top performers",
-                      severity: "ok",
-                      detail: `${p.person} completed ${p.completed}/${p.total} activities · efficiency ${p.efficiency}. Consider a thank-you note or asking them to mentor others.`,
-                    })}
+                    to="/agent/person/$key"
+                    params={{ key: encodeEntityKey(p.person) }}
                     className="block"
                   >
                     <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
                       <div className="flex items-center gap-2">
                         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <div className="truncate text-sm font-medium">{p.person}</div>
-                            <Link
-                              to="/agent/person/$key"
-                              params={{ key: encodeEntityKey(p.person) }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
-                              title="Open person profile"
-                            >Profile</Link>
-                          </div>
+                          <div className="truncate text-sm font-medium">{p.person}</div>
                           <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
                         </div>
                         <div className="text-right">
@@ -1265,28 +1235,11 @@ export default function AgentDashboard() {
                 </TableHeader>
                 <TableBody>
                   {d.personsByBurden.slice(0, 12).map(p => {
-                    const link = detailLink({
-                      kind: "aggregate",
-                      title: `Person · ${p.person}`,
-                      person: p.person,
-                      source: "Efficiency ranking",
-                      severity: p.riskScore > 50 ? "high" : p.riskScore > 25 ? "med" : "ok",
-                      detail: `${p.person} — ${p.total} activities, ${p.completed} done, ${p.delayed} delayed (${p.delayDays}d). Efficiency ${p.efficiency}, risk ${p.riskScore}%.`,
-                    });
+                    const to = { to: "/agent/person/$key" as const, params: { key: encodeEntityKey(p.person) } };
                     return (
-                      <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav({ to: link.to, params: link.params })}>
+                      <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav(to)}>
                         <TableCell className="font-medium">
-                          <div className="flex items-center gap-1.5">
-                            <Link {...link} className="hover:underline">{p.person}</Link>
-                            <Link
-                              to="/agent/person/$key"
-                              params={{ key: encodeEntityKey(p.person) }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
-                              title="Open person profile"
-                              aria-label={`Open profile for ${p.person}`}
-                            >Profile →</Link>
-                          </div>
+                          <Link {...to} className="hover:underline">{p.person}</Link>
                         </TableCell>
                         <TableCell className="text-right">{p.total}</TableCell>
                         <TableCell className="text-right">{p.completed}</TableCell>
@@ -1360,31 +1313,26 @@ export default function AgentDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.anomalies.map((a, i) => {
-                  const link = detailLink({
-                    kind: "aggregate",
-                    title: `Anomaly · ${a.activity}`,
-                    person: a.person, stage: a.stage,
-                    source: "Anomalies",
-                    severity: a.ratio >= 3 ? "high" : "med",
-                    detail: `${a.activity} took ${a.taken}d against a TAT of ${a.tat}d (${a.ratio.toFixed(1)}× budget). Review scope, blockers, or estimate accuracy with ${a.person}.`,
-                  });
-                  return (
-                    <Link key={i} {...link} className="block">
-                      <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
-                        <div className="flex items-start gap-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">{a.activity}</div>
-                            <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
-                          </div>
-                          <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
-                            {a.ratio.toFixed(1)}×
-                          </Badge>
+                {d.anomalies.map((a, i) => (
+                  <Link
+                    key={i}
+                    to="/agent/stage/$key"
+                    params={{ key: encodeEntityKey(a.stage) }}
+                    className="block"
+                  >
+                    <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{a.activity}</div>
+                          <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
                         </div>
+                        <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
+                          {a.ratio.toFixed(1)}×
+                        </Badge>
                       </div>
-                    </Link>
-                  );
-                })}
+                    </div>
+                  </Link>
+                ))}
                 {d.anomalies.length === 0 && <p className="text-xs text-muted-foreground">No anomalies detected.</p>}
               </CardContent>
             </Card>
@@ -1396,10 +1344,17 @@ export default function AgentDashboard() {
 }
 
 // ────────────────── KPI ──────────────────
+type KpiLink =
+  | { to: "/agent/detail/$payload"; params: { payload: string } }
+  | { to: "/agent/kpi/$id"; params: { id: string } }
+  | { to: "/agent/person/$key"; params: { key: string } }
+  | { to: "/agent/stage/$key"; params: { key: string } }
+  | { to: "/agent/project/$projectId"; params: { projectId: string } };
+
 function Kpi({ icon, label, value, sub, tone = "default", to }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
   tone?: "default" | "ok" | "med" | "high" | "low";
-  to?: { to: "/agent/detail/$payload"; params: { payload: string } };
+  to?: KpiLink;
 }) {
   const cls =
     tone === "ok" ? TONE.ok :
@@ -1419,7 +1374,17 @@ function Kpi({ icon, label, value, sub, tone = "default", to }: {
       </CardContent>
     </Card>
   );
-  return to ? <Link to={to.to} params={to.params} className="block">{body}</Link> : body;
+  if (!to) return body;
+  // Discriminated Link so TS accepts every param shape.
+  if (to.to === "/agent/detail/$payload")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/kpi/$id")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/person/$key")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/stage/$key")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  return <Link to={to.to} params={to.params} className="block">{body}</Link>;
 }
 
 function ProjectChip({ label, count, active, loading, error, onClick }: {
