@@ -115,26 +115,55 @@ function CopilotPage() {
   };
 
   const askMut = useMutation({
-    mutationFn: (vars: { question: string; history: { role: "user" | "assistant"; content: string }[] }) =>
-      ask({
+    mutationFn: (vars: {
+      question: string;
+      history: { role: "user" | "assistant"; content: string }[];
+      retryForCitations?: boolean;
+      originalQuestion?: string;
+    }) => {
+      const q = vars.retryForCitations
+        ? `REMINDER: your previous answer was rejected because it lacked citations. Repeat your answer for the question below, but every factual sentence MUST have an inline citation marker like [flags[F-0003]] or [sheet:<name> row <n>], and the answer MUST end with a "Sources:" list. If a fact can't be cited from the provided data, say "I don't have that in the current dashboard data." instead.\n\nQuestion: ${vars.originalQuestion ?? vars.question}`
+        : vars.question;
+      return ask({
         data: {
-          question: vars.question,
+          question: q,
           sheetIds: Array.from(selected),
           documentIds: Array.from(selectedDocs),
           history: vars.history,
         },
-      }),
-    onMutate: () => setQuestion(""),
+      });
+    },
+    onMutate: (vars) => {
+      if (!vars.retryForCitations) setQuestion("");
+    },
     onSuccess: (res, vars) => {
+      const displayedQuestion = vars.originalQuestion ?? vars.question;
+      const ok = validateCitations(res.answer);
+      if (!ok && !vars.retryForCitations) {
+        // First failure — auto-retry once with a stronger cite instruction.
+        toast.info("Answer missing citations — retrying…");
+        askMut.mutate({
+          question: displayedQuestion,
+          history: vars.history,
+          retryForCitations: true,
+          originalQuestion: displayedQuestion,
+        });
+        return;
+      }
       setHistory((h) => [
         ...h,
         {
-          question: vars.question,
+          question: displayedQuestion,
           answer: res.answer,
           sources: res.sources,
           suggestions: (res as any).suggestions ?? [],
+          citationsMissing: !ok,
+          retriedForCitations: vars.retryForCitations,
         },
       ]);
+      if (!ok && vars.retryForCitations) {
+        toast.warning("Copilot still didn't cite sources — flagged inline.");
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "AI request failed"),
   });
