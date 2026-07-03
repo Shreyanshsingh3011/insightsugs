@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
-import { fetchSheetRows } from "@/lib/gsheets-agent.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,15 +21,20 @@ import {
   Flame, Gauge, Radar, Layers,
 } from "lucide-react";
 
-// ────────────────── FIXED SOURCES ──────────────────
-const FIXED_URL =
-  "https://delaybridgesugs.vercel.app/api/public/PeuOiqTX8Suly1enDV4X68reUe6zkBrh/export?fields=summary,totals,risk_score,status_breakdown,sheets,flags,forecast,anomalies,digest,recommendations,trends,top_delay_reasons,dependency_chains,person_ranking,correlation_matrix,department_ranking,timeline_correlation,tat_performance";
-const FIXED_SHEET =
-  "https://docs.google.com/spreadsheets/d/1U2CkhrRBSv6VLbri_ROwhqCvXJvOKbqbWzJDrc4q-DQ/edit?gid=2069956310#gid=2069956310";
+// ────────────────── FIXED SOURCES (auto-refreshed) ──────────────────
+const PROJECTS: { id: string; label: string; url: string }[] = [
+  { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
+  { id: "pspcl", label: "PSPCL Kharar",  url: "https://sheet2api-bypassed-login.vercel.app/api/public/80d914878c5b9a85de90b59f5eaec11a" },
+  { id: "hp",    label: "Himachal",      url: "https://sheet2api-bypassed-login.vercel.app/api/public/f0fc62c15a274dc4c149c2b0a69e2f86" },
+  { id: "ula",   label: "ULA 1.1 Bihar", url: "https://sheet2api-bypassed-login.vercel.app/api/public/f84b4f7ebb2380bc85f27cba8a676a1d" },
+  { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
+];
+const AUTO_REFRESH_MS = 60_000;
 
 // ────────────────── TYPES ──────────────────
-type Row = Record<string, string>;
-type Payload = { project?: string; data?: Row[]; columns?: string[] };
+type Row = Record<string, unknown>;
+type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string };
+type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
 
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
@@ -39,6 +43,14 @@ const TONE = {
   ok: "text-emerald-700 bg-emerald-500/10 border-emerald-500/30",
 } as const;
 
+// Alias-tolerant field access — projects use different column names.
+function pick(r: Row, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+  }
+  return "";
+}
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
@@ -52,6 +64,7 @@ function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Start
   if (/not start|yet|pending/.test(x)) return "Not Started";
   return "Other";
 }
+
 
 // ────────────────── DERIVE ──────────────────
 function derive(payload: Payload | undefined) {
@@ -67,12 +80,13 @@ function derive(payload: Payload | undefined) {
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string }[] = [];
 
   for (const r of rows) {
-    const st = bucket(r["Status Category"] || r["Status as on Date"] || "");
+    const st = bucket(pick(r, "Status Category", "Status as on Date"));
     status[st] = (status[st] || 0) + 1;
-    const stage = r["Stages"] || "—";
-    const person = r["Responsible Person"] || "Unassigned";
-    const crit = r["Criticality"] || "—";
-    const process = r["Process"] || "—";
+    const stage = pick(r, "Stages", "Stages of Process") || "—";
+    const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
+    const crit = pick(r, "Criticality") || "—";
+    const process = pick(r, "Process", "Process Descriptions") || "—";
+    const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const delay = num(r["Delay in Days"]);
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
@@ -82,7 +96,7 @@ function derive(payload: Payload | undefined) {
     stageAgg[stage].total++;
     processAgg[process] ??= { total: 0, delayed: 0, delayDays: 0 };
     processAgg[process].total++;
-    personAgg[person] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0, tat: 0, taken: 0, email: r["Responsible Person Mail ID"] };
+    personAgg[person] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0, tat: 0, taken: 0, email };
     personAgg[person].total++;
     personAgg[person].tat += tat;
     personAgg[person].taken += taken;
@@ -99,12 +113,13 @@ function derive(payload: Payload | undefined) {
     if (st !== "Completed" && delay > 0) overdueCount++;
     if (st !== "Completed" && (delay > 0 || (tat > 0 && taken > tat))) {
       overdue.push({
-        activity: r["Activity List"] || r["Process"] || "(unnamed)",
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
-        status: r["Status Category"] || "", criticality: crit,
+        status: pick(r, "Status Category", "Status as on Date"), criticality: crit,
       });
     }
   }
+
 
   const persons = Object.entries(personAgg)
     .filter(([k]) => k && k !== "Unassigned")
@@ -209,14 +224,21 @@ function derive(payload: Payload | undefined) {
 
   // Anomalies: activities where taken >> tat
   const anomalies = rows
-    .map(r => ({
-      activity: r["Activity List"] || "(unnamed)", person: r["Responsible Person"] || "—",
-      stage: r["Stages"] || "—", tat: num(r["TAT"]), taken: num(r["Days Taken"]),
-      ratio: num(r["TAT"]) > 0 ? num(r["Days Taken"]) / num(r["TAT"]) : 0,
-    }))
+    .map(r => {
+      const tat = num(r["TAT"]);
+      const taken = num(r["Days Taken"]);
+      return {
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        person: pick(r, "Responsible Person", "Responsibility", "approvers name") || "—",
+        stage: pick(r, "Stages", "Stages of Process") || "—",
+        tat, taken,
+        ratio: tat > 0 ? taken / tat : 0,
+      };
+    })
     .filter(a => a.tat > 0 && a.ratio >= 1.8)
     .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 6);
+
 
   return {
     n, status, critAgg, persons, personsByBurden, topPerformers, stages, processes, overdue, anomalies,
@@ -229,33 +251,69 @@ function derive(payload: Payload | undefined) {
 // ────────────────── COMPONENT ──────────────────
 export default function AgentDashboard() {
   const fetchUrl = useServerFn(fetchInsightUrl);
-  const fetchSheet = useServerFn(fetchSheetRows);
   const genFn = useServerFn(generateGeminiFn);
 
-  const urlQ = useQuery({
-    queryKey: ["agent-fixed-url"],
-    queryFn: async () => fetchUrl({ data: { url: FIXED_URL } }),
-    staleTime: 60_000,
-  });
-  const sheetQ = useQuery({
-    queryKey: ["agent-fixed-sheet"],
-    queryFn: async () => fetchSheet({ data: { spreadsheetId: FIXED_SHEET } }),
-    staleTime: 60_000,
+  const [selected, setSelected] = useState<string>("all");
+
+  const queries = useQueries({
+    queries: PROJECTS.map(p => ({
+      queryKey: ["agent-src", p.id],
+      queryFn: async () => {
+        const res = await fetchUrl({ data: { url: p.url } });
+        return { project: p, payload: (res as { payload?: SourcePayload }).payload };
+      },
+      staleTime: AUTO_REFRESH_MS,
+      refetchInterval: AUTO_REFRESH_MS,
+      refetchOnWindowFocus: true,
+    })),
   });
 
-  const urlPayload = (urlQ.data as { payload?: Payload })?.payload;
-  const sheetPayload = sheetQ.data as { title?: string; sheetName?: string; columns?: string[]; rows?: Row[] } | undefined;
+  const sources = queries.map((q, i) => ({
+    project: PROJECTS[i],
+    payload: q.data?.payload,
+    isFetching: q.isFetching,
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error as Error | undefined,
+  }));
+
+  const anyLoading = queries.some(q => q.isLoading);
+  const anyFetching = queries.some(q => q.isFetching);
+  const allError = queries.every(q => q.isError);
+  const lastSyncedAt = sources
+    .map(s => s.payload?.generated_at)
+    .filter((x): x is string => !!x)
+    .sort()
+    .pop();
 
   const payload: Payload | undefined = useMemo(() => {
-    if (sheetPayload?.rows?.length) {
-      return { project: sheetPayload.title, columns: sheetPayload.columns, data: sheetPayload.rows };
+    if (selected === "all") {
+      const merged: Row[] = [];
+      let latest: string | undefined;
+      for (const s of sources) {
+        if (s.payload?.data?.length) {
+          const label = s.project.label;
+          for (const r of s.payload.data) merged.push({ ...r, __project: label });
+          if (s.payload.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
+        }
+      }
+      return merged.length ? { project: "All projects", data: merged, generated_at: latest } : undefined;
     }
-    return urlPayload;
-  }, [sheetPayload, urlPayload]);
+    const s = sources.find(x => x.project.id === selected);
+    if (!s?.payload) return undefined;
+    return {
+      project: s.payload.connector || s.project.label,
+      department: s.payload.department,
+      data: s.payload.data,
+      generated_at: s.payload.generated_at,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(",")]);
 
   const d = useMemo(() => derive(payload), [payload]);
-  const loading = urlQ.isLoading || sheetQ.isLoading;
-  const anyError = (urlQ.isError && !sheetPayload?.rows?.length) || sheetQ.isError;
+
+  const refetchAll = () => queries.forEach(q => q.refetch());
+
 
   // AI Executive Brief
   const [brief, setBrief] = useState("");
@@ -332,35 +390,64 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Live from the connected sheet & export link. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
+              Auto-syncs from 5 live sheet APIs every {Math.round(AUTO_REFRESH_MS / 1000)}s. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="gap-1">
-              <Layers className="h-3 w-3" />
-              {sheetPayload?.rows?.length ?? urlPayload?.data?.length ?? 0} rows
-            </Badge>
-            <Button variant="outline" size="sm" onClick={() => { urlQ.refetch(); sheetQ.refetch(); }}>
-              <RefreshCw className={`h-4 w-4 ${(urlQ.isFetching || sheetQ.isFetching) ? "animate-spin" : ""}`} />
-              Sync
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="gap-1">
+                <Layers className="h-3 w-3" />
+                {payload?.data?.length ?? 0} rows
+              </Badge>
+              <Button variant="outline" size="sm" onClick={refetchAll}>
+                <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
+                Sync
+              </Button>
+            </div>
+            {lastSyncedAt && (
+              <div className="text-[10px] text-muted-foreground">
+                Data as of {new Date(lastSyncedAt).toLocaleString()}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {loading && !payload && (
+      {/* PROJECT SWITCHER */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <ProjectChip
+          label="All merged" active={selected === "all"}
+          count={sources.reduce((a, s) => a + (s.payload?.data?.length ?? 0), 0)}
+          loading={anyFetching && selected === "all"}
+          onClick={() => setSelected("all")}
+        />
+        {sources.map(s => (
+          <ProjectChip
+            key={s.project.id}
+            label={s.payload?.connector?.replace(" — view", "") || s.project.label}
+            active={selected === s.project.id}
+            count={s.payload?.data?.length ?? 0}
+            loading={s.isFetching}
+            error={s.isError}
+            onClick={() => setSelected(s.project.id)}
+          />
+        ))}
+      </div>
+
+      {anyLoading && !payload && (
         <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" /> Loading live data…
         </div>
       )}
 
-      {anyError && !payload && (
+      {allError && !payload && (
         <Card className="border-rose-500/40">
           <CardContent className="flex items-center gap-2 p-4 text-sm text-rose-600">
-            <AlertTriangle className="h-4 w-4" /> Couldn't load either data source. Retry Sync.
+            <AlertTriangle className="h-4 w-4" /> Couldn't load any source. Retry Sync.
           </CardContent>
         </Card>
       )}
+
 
       {payload && (
         <>
@@ -682,3 +769,27 @@ function Kpi({ icon, label, value, sub, tone = "default" }: {
     </Card>
   );
 }
+
+function ProjectChip({ label, count, active, loading, error, onClick }: {
+  label: string; count: number; active: boolean;
+  loading?: boolean; error?: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      className={[
+        "group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+        active
+          ? "border-primary/50 bg-primary/10 text-primary shadow-sm"
+          : "border-border/60 bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground",
+      ].join(" ")}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${error ? "bg-rose-500" : loading ? "bg-amber-400 animate-pulse" : "bg-emerald-500"}`} />
+      {label}
+      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+        {count}
+      </span>
+    </button>
+  );
+}
+
