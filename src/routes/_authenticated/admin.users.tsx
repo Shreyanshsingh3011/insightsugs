@@ -373,9 +373,6 @@ function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string
     </section>
   );
 }
-    </div>
-  );
-}
 
 function PendingRow({ req, onApprove, onReject, onResend, resendPending }: {
   req: PendingRequest;
