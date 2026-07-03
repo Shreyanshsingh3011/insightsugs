@@ -390,35 +390,64 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Live from the connected sheet & export link. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
+              Auto-syncs from 5 live sheet APIs every {Math.round(AUTO_REFRESH_MS / 1000)}s. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="gap-1">
-              <Layers className="h-3 w-3" />
-              {sheetPayload?.rows?.length ?? urlPayload?.data?.length ?? 0} rows
-            </Badge>
-            <Button variant="outline" size="sm" onClick={() => { urlQ.refetch(); sheetQ.refetch(); }}>
-              <RefreshCw className={`h-4 w-4 ${(urlQ.isFetching || sheetQ.isFetching) ? "animate-spin" : ""}`} />
-              Sync
-            </Button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="gap-1">
+                <Layers className="h-3 w-3" />
+                {payload?.data?.length ?? 0} rows
+              </Badge>
+              <Button variant="outline" size="sm" onClick={refetchAll}>
+                <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
+                Sync
+              </Button>
+            </div>
+            {lastSyncedAt && (
+              <div className="text-[10px] text-muted-foreground">
+                Data as of {new Date(lastSyncedAt).toLocaleString()}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {loading && !payload && (
+      {/* PROJECT SWITCHER */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <ProjectChip
+          label="All merged" active={selected === "all"}
+          count={sources.reduce((a, s) => a + (s.payload?.data?.length ?? 0), 0)}
+          loading={anyFetching && selected === "all"}
+          onClick={() => setSelected("all")}
+        />
+        {sources.map(s => (
+          <ProjectChip
+            key={s.project.id}
+            label={s.payload?.connector?.replace(" — view", "") || s.project.label}
+            active={selected === s.project.id}
+            count={s.payload?.data?.length ?? 0}
+            loading={s.isFetching}
+            error={s.isError}
+            onClick={() => setSelected(s.project.id)}
+          />
+        ))}
+      </div>
+
+      {anyLoading && !payload && (
         <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" /> Loading live data…
         </div>
       )}
 
-      {anyError && !payload && (
+      {allError && !payload && (
         <Card className="border-rose-500/40">
           <CardContent className="flex items-center gap-2 p-4 text-sm text-rose-600">
-            <AlertTriangle className="h-4 w-4" /> Couldn't load either data source. Retry Sync.
+            <AlertTriangle className="h-4 w-4" /> Couldn't load any source. Retry Sync.
           </CardContent>
         </Card>
       )}
+
 
       {payload && (
         <>
