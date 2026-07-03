@@ -37,7 +37,7 @@ const TONE: Record<string, string> = {
   ok: "text-emerald-700 bg-emerald-500/10 border-emerald-500/30",
 };
 
-type ChatMsg = { role: "user" | "assistant"; content: string; citations?: number[] };
+type ChatMsg = { role: "user" | "assistant"; content: string; citations?: number[]; ranked?: DetailContextRow[] };
 
 function DetailPage() {
   const { payload: encoded } = Route.useParams();
