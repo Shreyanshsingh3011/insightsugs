@@ -1,9 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { ArrowLeft, Mail, Send, User as UserIcon, Layers, AlertTriangle, ExternalLink, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft, Mail, Send, User as UserIcon, Layers, AlertTriangle,
+  ExternalLink, MessageSquare, History, CheckCircle2, MessageCircle,
+} from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +15,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { decodeDetailPayload, type DetailPayload } from "@/lib/agent-detail-payload";
 import { sendAlert } from "@/lib/alerts.functions";
+import { getSourceTimeline, type TimelineEvent } from "@/lib/source-timeline.functions";
+import { fetchMyRoles } from "@/lib/route-guards";
 
 export const Route = createFileRoute("/_authenticated/agent/detail/$payload")({
   head: () => ({ meta: [{ title: "Action detail — DelayLens" }] }),
+  beforeLoad: async () => {
+    const roles = await fetchMyRoles();
+    if (roles.length === 0) {
+      // Unverified account — bounce to home instead of exposing action data.
+      throw redirect({ to: "/" });
+    }
+  },
   component: DetailPage,
 });
 
@@ -32,6 +44,8 @@ function DetailPage() {
   }, [encoded]);
 
   const sendFn = useServerFn(sendAlert);
+  const timelineFn = useServerFn(getSourceTimeline);
+  const qc = useQueryClient();
 
   const activityTitle = (data?.row && (data.row["Activity List"] || data.row["Process Descriptions"] || data.row["Process"])) as string | undefined
     ?? data?.title
@@ -80,8 +94,16 @@ function DetailPage() {
     },
     onSuccess: (_res, channel) => {
       toast.success(channel === "email" ? "Email dispatched" : "Message sent");
+      qc.invalidateQueries({ queryKey: ["source-timeline", activityTitle, data?.stage ?? null] });
     },
     onError: (e) => toast.error((e as Error).message),
+  });
+
+  const timelineQ = useQuery({
+    queryKey: ["source-timeline", activityTitle, data?.stage ?? null],
+    queryFn: () => timelineFn({ data: { activity: activityTitle, stage: data?.stage ?? null } }),
+    enabled: !!activityTitle,
+    refetchInterval: 30_000,
   });
 
   if (!data) {
@@ -211,6 +233,64 @@ function DetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* TIMELINE */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm">
+            <History className="h-4 w-4 text-primary" /> Communication &amp; flag timeline
+            {timelineQ.data && <Badge variant="secondary">{timelineQ.data.length}</Badge>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TimelineList events={timelineQ.data ?? []} loading={timelineQ.isLoading} />
+        </CardContent>
+      </Card>
     </div>
+  );
+}
+
+function TimelineList({ events, loading }: { events: TimelineEvent[]; loading: boolean }) {
+  if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (!events.length) {
+    return (
+      <div className="rounded-md border border-dashed border-border/60 p-4 text-sm text-muted-foreground">
+        No mails, messages, or flag changes recorded for this source record yet. Any alert you dispatch above will show up
+        here automatically.
+      </div>
+    );
+  }
+  return (
+    <ol className="relative space-y-3 pl-5 before:absolute before:left-2 before:top-1 before:bottom-1 before:w-px before:bg-border/70">
+      {events.map((e) => (
+        <li key={e.id} className="relative">
+          <span className={`absolute -left-[13px] top-1.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-background ${
+            e.kind === "alert_sent" ? "bg-amber-500"
+            : e.kind === "alert_reply" ? "bg-sky-500"
+            : e.kind === "alert_status" ? "bg-emerald-500"
+            : "bg-muted-foreground"
+          }`} />
+          <div className="text-xs text-muted-foreground">{new Date(e.at).toLocaleString()}</div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-sm font-medium">
+            {e.kind === "alert_sent" && <Mail className="h-3.5 w-3.5 text-amber-500" />}
+            {e.kind === "alert_reply" && <MessageCircle className="h-3.5 w-3.5 text-sky-500" />}
+            {e.kind === "alert_status" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+            {e.title}
+            {e.severity && <Badge variant="outline" className="ml-1 h-4 px-1 text-[10px] uppercase">{e.severity}</Badge>}
+            {e.status && <Badge variant="secondary" className="h-4 px-1 text-[10px]">{e.status}</Badge>}
+          </div>
+          {(e.actor.name || e.actor.email) && (
+            <div className="text-[11px] text-muted-foreground">
+              by <b>{e.actor.name || e.actor.email}</b>
+            </div>
+          )}
+          {e.body && (
+            <div className="mt-1 whitespace-pre-wrap rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-xs text-foreground/90">
+              {e.body}
+            </div>
+          )}
+        </li>
+      ))}
+    </ol>
   );
 }

@@ -96,8 +96,13 @@ export type PendingRequest = {
   requested_role: "super_admin" | "admin" | "user";
   status: "pending" | "approved" | "rejected";
   verified_via: string | null; granted_role: string | null;
+  reviewed_by: string | null;
   reviewed_at: string | null; created_at: string;
-  reject_reason?: string | null;
+  reject_reason: string | null;
+  last_notified_at: string | null;
+  notify_count: number | null;
+  reviewer_name?: string | null;
+  reviewer_email?: string | null;
 };
 
 export const listSignupRequests = createServerFn({ method: "GET" })
@@ -106,10 +111,24 @@ export const listSignupRequests = createServerFn({ method: "GET" })
     const { supabase } = context;
     const { data, error } = await supabase
       .from("signup_requests")
-      .select("id, user_id, email, full_name, requested_role, status, verified_via, granted_role, reviewed_at, created_at")
+      .select("id, user_id, email, full_name, requested_role, status, verified_via, granted_role, reviewed_by, reviewed_at, created_at, reject_reason, last_notified_at, notify_count")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return (data ?? []) as PendingRequest[];
+    const rows = (data ?? []) as PendingRequest[];
+    const reviewerIds = Array.from(new Set(rows.map(r => r.reviewed_by).filter((x): x is string => !!x)));
+    if (reviewerIds.length) {
+      const { data: profs } = await supabase
+        .from("profiles").select("id, full_name, email").in("id", reviewerIds);
+      const byId = new Map((profs ?? []).map(p => [p.id, p]));
+      rows.forEach(r => {
+        if (r.reviewed_by) {
+          const p = byId.get(r.reviewed_by);
+          r.reviewer_name = p?.full_name ?? null;
+          r.reviewer_email = p?.email ?? null;
+        }
+      });
+    }
+    return rows;
   });
 
 export const approveSignupFn = createServerFn({ method: "POST" })
@@ -130,12 +149,24 @@ export const rejectSignupFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const resendVerificationFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { requestId: string; note?: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { error } = await context.supabase.rpc("resend_signup_verification", {
+      _request_id: data.requestId,
+      _note: data.note ?? undefined,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const mySignupStatus = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<PendingRequest | null> => {
     const { data } = await context.supabase
       .from("signup_requests")
-      .select("id, user_id, email, full_name, requested_role, status, verified_via, granted_role, reviewed_at, created_at")
+      .select("id, user_id, email, full_name, requested_role, status, verified_via, granted_role, reviewed_by, reviewed_at, created_at, reject_reason, last_notified_at, notify_count")
       .eq("user_id", context.userId)
       .maybeSingle();
     return (data as PendingRequest) ?? null;

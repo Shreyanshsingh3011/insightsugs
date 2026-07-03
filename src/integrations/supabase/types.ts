@@ -1107,6 +1107,41 @@ export type Database = {
           },
         ]
       }
+      signup_notifications: {
+        Row: {
+          channel: string
+          created_at: string
+          id: string
+          note: string | null
+          request_id: string
+          sent_by: string | null
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          request_id: string
+          sent_by?: string | null
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          request_id?: string
+          sent_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signup_notifications_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "signup_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       signup_requests: {
         Row: {
           created_at: string
@@ -1114,6 +1149,8 @@ export type Database = {
           full_name: string | null
           granted_role: Database["public"]["Enums"]["app_role"] | null
           id: string
+          last_notified_at: string | null
+          notify_count: number
           reject_reason: string | null
           requested_role: Database["public"]["Enums"]["app_role"]
           reviewed_at: string | null
@@ -1128,6 +1165,8 @@ export type Database = {
           full_name?: string | null
           granted_role?: Database["public"]["Enums"]["app_role"] | null
           id?: string
+          last_notified_at?: string | null
+          notify_count?: number
           reject_reason?: string | null
           requested_role?: Database["public"]["Enums"]["app_role"]
           reviewed_at?: string | null
@@ -1142,6 +1181,8 @@ export type Database = {
           full_name?: string | null
           granted_role?: Database["public"]["Enums"]["app_role"] | null
           id?: string
+          last_notified_at?: string | null
+          notify_count?: number
           reject_reason?: string | null
           requested_role?: Database["public"]["Enums"]["app_role"]
           reviewed_at?: string | null
@@ -1322,6 +1363,10 @@ export type Database = {
       }
       reject_signup: {
         Args: { _reason: string; _request_id: string }
+        Returns: undefined
+      }
+      resend_signup_verification: {
+        Args: { _note?: string; _request_id: string }
         Returns: undefined
       }
       seed_default_doc_folders: {
