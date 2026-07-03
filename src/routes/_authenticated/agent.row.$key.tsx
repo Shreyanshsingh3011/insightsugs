@@ -15,9 +15,11 @@ import { Button } from "@/components/ui/button";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import {
   decodeRowKey, rowMatchesIdent, personName, personEmail, stageName,
-  activityName, statusText, num, encodeKey as encodeEntityKey,
+  activityName, statusText, num, encodeKey as encodeEntityKey, toScopedRow,
 } from "@/lib/entity-scope";
 import { EntityActionsBar } from "@/components/EntityActionsBar";
+import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
+import { DetailExportMenu } from "@/components/DetailExportMenu";
 
 export const Route = createFileRoute("/_authenticated/agent/row/$key")({
   head: () => ({ meta: [{ title: "Activity detail — DelayLens" }] }),
