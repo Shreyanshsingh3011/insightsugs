@@ -104,6 +104,32 @@ function normalizeRow(
   const breachFlag = /^(true|yes|1|breach|y)$/i.test(merged.breach || "");
   const isDelayed = !isCompleted && (status === "Delayed" || overdue > 0 || breachFlag);
 
+  // Resolve the row's person using the shared resolver (title → name mapping).
+  const rawRole =
+    merged.responsible_person ||
+    merged.responsibility ||
+    merged.approvers_name ||
+    merged.owner ||
+    merged.approver ||
+    merged.vendor ||
+    merged.contractor ||
+    "";
+  const altName =
+    merged.owner_name || merged.assignee || merged.assigned_to || "";
+  const email = (
+    merged.responsible_person_mail_id ||
+    merged.approvers_email_id ||
+    merged.owner_email ||
+    ""
+  ).toLowerCase();
+  const resolution = resolvePerson(
+    { raw: rawRole, alt: altName, email },
+    directory,
+  );
+  const ownerLabel = resolution.displayName && resolution.source !== "unassigned"
+    ? resolution.displayName
+    : undefined;
+
   return {
     sheetName,
     sheetType,
@@ -113,12 +139,17 @@ function normalizeRow(
     isCompleted,
     isBlocked,
     overdue,
-    owner: merged.owner || merged.approver || merged.vendor || merged.contractor || undefined,
+    owner: ownerLabel,
+    ownerEmail: resolution.email || undefined,
+    ownerKey: resolution.key,
+    ownerSource: resolution.source,
+    ownerIsTitleFallback: resolution.isTitleFallback,
     dept: merged.dept || merged.department || undefined,
     activity: merged.activity || merged.item || merged.material || merged.kpi || merged.bill_no || merged.po_no || undefined,
     reason: (merged.remarks || merged.reason || "").trim() || undefined,
     tat,
     daysTaken,
+
   };
 }
 
