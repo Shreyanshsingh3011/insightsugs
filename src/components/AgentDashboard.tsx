@@ -80,12 +80,13 @@ function derive(payload: Payload | undefined) {
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string }[] = [];
 
   for (const r of rows) {
-    const st = bucket(r["Status Category"] || r["Status as on Date"] || "");
+    const st = bucket(pick(r, "Status Category", "Status as on Date"));
     status[st] = (status[st] || 0) + 1;
-    const stage = r["Stages"] || "—";
-    const person = r["Responsible Person"] || "Unassigned";
-    const crit = r["Criticality"] || "—";
-    const process = r["Process"] || "—";
+    const stage = pick(r, "Stages", "Stages of Process") || "—";
+    const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
+    const crit = pick(r, "Criticality") || "—";
+    const process = pick(r, "Process", "Process Descriptions") || "—";
+    const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const delay = num(r["Delay in Days"]);
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
@@ -95,7 +96,7 @@ function derive(payload: Payload | undefined) {
     stageAgg[stage].total++;
     processAgg[process] ??= { total: 0, delayed: 0, delayDays: 0 };
     processAgg[process].total++;
-    personAgg[person] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0, tat: 0, taken: 0, email: r["Responsible Person Mail ID"] };
+    personAgg[person] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0, tat: 0, taken: 0, email };
     personAgg[person].total++;
     personAgg[person].tat += tat;
     personAgg[person].taken += taken;
@@ -112,12 +113,13 @@ function derive(payload: Payload | undefined) {
     if (st !== "Completed" && delay > 0) overdueCount++;
     if (st !== "Completed" && (delay > 0 || (tat > 0 && taken > tat))) {
       overdue.push({
-        activity: r["Activity List"] || r["Process"] || "(unnamed)",
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
-        status: r["Status Category"] || "", criticality: crit,
+        status: pick(r, "Status Category", "Status as on Date"), criticality: crit,
       });
     }
   }
+
 
   const persons = Object.entries(personAgg)
     .filter(([k]) => k && k !== "Unassigned")
