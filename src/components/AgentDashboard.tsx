@@ -1209,9 +1209,10 @@ export default function AgentDashboard() {
 }
 
 // ────────────────── KPI ──────────────────
-function Kpi({ icon, label, value, sub, tone = "default" }: {
+function Kpi({ icon, label, value, sub, tone = "default", to }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
   tone?: "default" | "ok" | "med" | "high" | "low";
+  to?: { to: "/agent/detail/$payload"; params: { payload: string } };
 }) {
   const cls =
     tone === "ok" ? TONE.ok :
@@ -1219,17 +1220,19 @@ function Kpi({ icon, label, value, sub, tone = "default" }: {
     tone === "high" ? TONE.high :
     tone === "low" ? TONE.low :
     "border-border/60 bg-card";
-  return (
-    <Card className={`border ${cls}`}>
+  const body = (
+    <Card className={`border transition ${cls} ${to ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5" : ""}`}>
       <CardContent className="p-3.5">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest opacity-70">
           {icon}{label}
+          {to && <ArrowRight className="ml-auto h-3 w-3 opacity-40" />}
         </div>
         <div className="mt-1 text-2xl font-semibold leading-none">{value}</div>
         {sub && <div className="mt-1 text-[11px] opacity-70">{sub}</div>}
       </CardContent>
     </Card>
   );
+  return to ? <Link to={to.to} params={to.params} className="block">{body}</Link> : body;
 }
 
 function ProjectChip({ label, count, active, loading, error, onClick }: {
