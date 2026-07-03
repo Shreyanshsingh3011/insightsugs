@@ -17,10 +17,14 @@ export function num(v: unknown): number {
 }
 
 export function personName(r: Row) {
-  return pick(r, "Responsible Person", "Responsibility", "approvers name");
+  // Prefer the resolved display name stamped onto decorated rows by the
+  // AgentDashboard's person resolver. Falls back to the raw source columns.
+  const decorated = pick(r, "__personDisplay");
+  if (decorated) return decorated;
+  return pick(r, "Responsible Person", "Responsibility", "approvers name", "Owner Name", "Assignee");
 }
 export function personEmail(r: Row) {
-  return pick(r, "Responsible Person Mail ID", "approvers email id");
+  return pick(r, "__personEmail", "Responsible Person Mail ID", "approvers email id");
 }
 export function stageName(r: Row) {
   return pick(r, "Stages", "Stages of Process");
