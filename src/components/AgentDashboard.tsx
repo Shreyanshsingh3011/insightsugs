@@ -271,6 +271,8 @@ export default function AgentDashboard() {
   const fetchRegistry = useServerFn(fetchAgentProjects);
   const genFn = useServerFn(generateGeminiFn);
 
+  const scope = useAgentScope();
+
   const [selected, setSelected] = useState<string>("all");
 
   // Live registry pulled from the master Google Sheet — falls back if unavailable.
@@ -282,11 +284,24 @@ export default function AgentDashboard() {
     refetchOnWindowFocus: false,
   });
 
-  const projects: AgentProject[] = useMemo(() => {
+  const allProjects: AgentProject[] = useMemo(() => {
     const live = registryQ.data?.projects;
     return live && live.length ? live : FALLBACK_PROJECTS;
   }, [registryQ.data]);
   const registryLive = !!registryQ.data?.projects?.length;
+
+  // Super admins (MD, VH) see every project. Everyone else sees only assigned.
+  const projects: AgentProject[] = useMemo(() => {
+    if (scope.mode === "all") return allProjects;
+    if (!scope.allowedProjectKeys) return allProjects;
+    return allProjects.filter((p) => scope.allowedProjectKeys!.has(p.id));
+  }, [allProjects, scope.mode, scope.allowedProjectKeys]);
+
+  const assignedKeys = useMemo(
+    () => scope.assignments.map((a) => a.project_key),
+    [scope.assignments],
+  );
+  const needsOnboarding = scope.mode !== "all" && !scope.loading && projects.length === 0;
 
   const queries = useQueries({
     queries: projects.map(p => ({
