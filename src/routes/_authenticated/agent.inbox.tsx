@@ -730,6 +730,17 @@ function DialogFooterActions({
 function SourceLink({ kind, keyStr }: { kind: string; keyStr: string }) {
   // Best-effort deep-link into the existing detail pages.
   const encoded = encodeURIComponent(keyStr);
+  if (kind.startsWith("row.")) {
+    return (
+      <Link
+        to="/agent/row/$key"
+        params={{ key: encoded }}
+        className="text-xs text-primary hover:underline"
+      >
+        Open row
+      </Link>
+    );
+  }
   switch (kind) {
     case "person":
       return (
