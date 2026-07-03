@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.can_see_project(uuid, uuid) TO authenticated, anon;

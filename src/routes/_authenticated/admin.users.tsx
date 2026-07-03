@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchMyRoles } from "@/lib/route-guards";
+import { useIsSuper, useRoles } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,14 +23,9 @@ import {
 import { usePersistedState } from "@/hooks/usePersistedState";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
+  ssr: false,
   head: () => ({ meta: [{ title: "Users — DelayLens" }] }),
-  beforeLoad: async () => {
-    const roles = await fetchMyRoles();
-    if (!roles.includes("super_admin")) {
-      throw redirect({ to: "/" });
-    }
-  },
-  component: UsersPage,
+  component: UsersGate,
 });
 
 type AppRole = "super_admin" | "admin" | "user";
@@ -38,6 +33,18 @@ type Row = { id: string; full_name: string; email: string; roles: AppRole[] };
 
 function ageDays(iso: string) {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+}
+
+function UsersGate() {
+  const { data: roles, isLoading } = useRoles();
+  const isSuper = useIsSuper();
+  if (isLoading) {
+    return <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+  }
+  if (!isSuper) {
+    throw redirect({ to: "/" });
+  }
+  return <UsersPage />;
 }
 
 function UsersPage() {
