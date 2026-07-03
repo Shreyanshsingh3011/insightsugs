@@ -504,7 +504,7 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
           const { data: matches, error } = await supabase.rpc("match_doc_chunks", {
             _user_id: userId,
             _query: qvec as any,
-            _scope_folder: null,
+            _scope_folder: null as unknown as string,
             _scope_document: document_id,
             _match_count: k,
           });
