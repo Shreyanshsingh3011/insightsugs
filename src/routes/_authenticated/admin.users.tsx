@@ -25,6 +25,9 @@ import { usePersistedState } from "@/hooks/usePersistedState";
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({ meta: [{ title: "Users — DelayLens" }] }),
   beforeLoad: async () => {
+    // Skip during SSR — no browser session available; the client will re-run
+    // this guard on hydration and the layout also gates via useSession/useRoles.
+    if (typeof window === "undefined") return;
     const roles = await fetchMyRoles();
     if (!roles.includes("super_admin")) {
       throw redirect({ to: "/" });
