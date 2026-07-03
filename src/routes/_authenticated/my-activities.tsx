@@ -204,6 +204,36 @@ function MyActivitiesPage() {
         </div>
       )}
 
+      <div className="mt-10">
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
+          <ActivityIcon className="h-5 w-5" /> Recent activity
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Actions you've taken — status changes, notes, and system events.
+        </p>
+        <Card className="mt-4 divide-y divide-border/60">
+          {(feed?.length ?? 0) === 0 && (
+            <p className="p-6 text-center text-sm text-muted-foreground">No recorded activity yet.</p>
+          )}
+          {feed?.map((e) => {
+            const to = e.details?.to as string | undefined;
+            const note = e.details?.note as string | undefined;
+            return (
+              <div key={e.id} className="p-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <Badge variant="outline" className="text-[10px] uppercase">{e.event_type.replace(/_/g, " ")}</Badge>
+                  {to && <span>Status → <span className="font-medium">{to.replace("_", " ")}</span></span>}
+                  <span className="ml-auto text-xs text-muted-foreground">{new Date(e.created_at).toLocaleString()}</span>
+                </div>
+                {note && <p className="mt-1 text-sm text-muted-foreground">{note}</p>}
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+
+
+
 
       <Dialog open={!!delayDialog} onOpenChange={(o) => !o && setDelayDialog(null)}>
         <DialogContent>
