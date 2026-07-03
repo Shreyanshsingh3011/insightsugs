@@ -330,7 +330,7 @@ export default function AgentDashboard() {
 
   const d = useMemo(() => derive(payload), [payload]);
 
-  const refetchAll = () => queries.forEach(q => q.refetch());
+  const refetchAll = () => { registryQ.refetch(); queries.forEach(q => q.refetch()); };
 
 
   // AI Executive Brief
