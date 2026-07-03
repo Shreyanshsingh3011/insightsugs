@@ -1120,20 +1120,33 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {d.topPerformers.slice(0, 5).map((p, i) => (
-                  <div key={p.person} className="rounded-lg border border-border/60 p-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{p.person}</div>
-                        <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
+                  <Link
+                    key={p.person}
+                    {...detailLink({
+                      kind: "aggregate",
+                      title: `Top performer · ${p.person}`,
+                      person: p.person,
+                      source: "Top performers",
+                      severity: "ok",
+                      detail: `${p.person} completed ${p.completed}/${p.total} activities · efficiency ${p.efficiency}. Consider a thank-you note or asking them to mentor others.`,
+                    })}
+                    className="block"
+                  >
+                    <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{p.person}</div>
+                          <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-semibold">{p.efficiency}</div>
+                          <div className="text-[10px] text-muted-foreground">EFF</div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold">{p.efficiency}</div>
-                        <div className="text-[10px] text-muted-foreground">EFF</div>
-                      </div>
+                      <Progress value={p.efficiency} className="mt-1.5 h-1" />
                     </div>
-                    <Progress value={p.efficiency} className="mt-1.5 h-1" />
-                  </div>
+                  </Link>
                 ))}
                 {d.topPerformers.length === 0 && <p className="text-xs text-muted-foreground">Not enough completions yet.</p>}
               </CardContent>
