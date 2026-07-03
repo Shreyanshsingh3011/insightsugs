@@ -430,24 +430,62 @@ export default function AgentDashboard() {
     return { i, activity, person, email, stage, status, crit, proj, tat, taken, delay, hay };
   }), [rowsAll]);
 
-  function retrieveRows(q: string, limit = 30) {
+  // Build a directory of every unique person that appears in the data so we
+  // can detect when a question is about a specific manager / owner even when
+  // it is only a first-name or an email fragment.
+  const personDirectory = useMemo(() => {
+    const seen = new Map<string, { name: string; email: string; tokens: string[] }>();
+    for (const r of rowsAll) {
+      const name = r.person || "";
+      const email = r.email || "";
+      const key = (name || email).toLowerCase().trim();
+      if (!key || seen.has(key)) continue;
+      const tokens = [
+        ...name.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2),
+        ...email.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2),
+      ];
+      seen.set(key, { name, email, tokens });
+    }
+    return Array.from(seen.values());
+  }, [rowsAll]);
+
+  /** Find every person mentioned by name or email fragment inside a question. */
+  function detectPersons(q: string) {
+    const ql = q.toLowerCase();
+    return personDirectory.filter(p => p.tokens.some(t => ql.includes(t))).slice(0, 5);
+  }
+
+  function retrieveRows(q: string, limit = 30, focusPersons: { name: string; email: string }[] = []) {
     const terms = q.toLowerCase().split(/[^a-z0-9@._-]+/).filter(t => t.length > 2);
-    if (terms.length === 0) return rowIndex.slice(0, limit);
     const scored = rowIndex.map(r => {
       let s = 0;
       for (const t of terms) if (r.hay.includes(t)) s += 1;
-      // prefer overdue / delayed items when question hints so
+      // Big boost when the row belongs to a person the question is asking about.
+      for (const p of focusPersons) {
+        const hay = `${r.person} ${r.email}`.toLowerCase();
+        if (p.name && hay.includes(p.name.toLowerCase())) s += 5;
+        else if (p.email && hay.includes(p.email.toLowerCase())) s += 5;
+      }
       if (/overdue|delay|late|breach/.test(q) && r.delay > 0) s += 0.5;
       if (/complete|done/.test(q) && /complete|done/i.test(r.status)) s += 0.5;
       return { r, s };
     }).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, limit);
-    return (scored.length ? scored.map(x => x.r) : rowIndex.slice(0, limit));
+    if (scored.length) return scored.map(x => x.r);
+    if (focusPersons.length) {
+      // Fallback: any row belonging to the focus person, even if no term matched.
+      const fallback = rowIndex.filter(r => {
+        const hay = `${r.person} ${r.email}`.toLowerCase();
+        return focusPersons.some(p => (p.name && hay.includes(p.name.toLowerCase())) || (p.email && hay.includes(p.email.toLowerCase())));
+      }).slice(0, limit);
+      if (fallback.length) return fallback;
+    }
+    return rowIndex.slice(0, limit);
   }
 
   const askMut = useMutation({
     mutationFn: async (q: string) => {
-      // If the user is asking about "me / my / mine", prioritise rows owned by them.
       const isSelfQ = /\b(my|mine|me|i)\b/i.test(q);
+      const focusPersons = detectPersons(q);
       let pool = rowIndex;
       if (isSelfQ && scope.nameNeedles.length) {
         const mine = rowIndex.filter((r) => {
@@ -456,12 +494,47 @@ export default function AgentDashboard() {
         });
         if (mine.length) pool = mine;
       }
-      const matches = (isSelfQ ? pool.slice(0, 30) : retrieveRows(q, 30))
+      const matches = (isSelfQ ? pool.slice(0, 30) : retrieveRows(q, 30, focusPersons))
         .map(r => ({
           activity: r.activity, person: r.person, email: r.email,
           stage: r.stage, status: r.status, criticality: r.crit,
           project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
         }));
+
+      // Person-specific rollups so the model can answer "why is X delayed"
+      // without having to re-aggregate the raw rows itself.
+      const personRollups = (focusPersons.length ? focusPersons : []).map(fp => {
+        const owned = rowsAll.filter(r => {
+          const hay = `${r.person} ${r.email}`.toLowerCase();
+          return (fp.name && hay.includes(fp.name.toLowerCase())) || (fp.email && hay.includes(fp.email.toLowerCase()));
+        });
+        const overdue = owned.filter(r => r.delay > 0);
+        const done = owned.filter(r => /complete|done/i.test(r.status));
+        const byProj: Record<string, number> = {};
+        const byStage: Record<string, number> = {};
+        for (const r of owned) {
+          if (r.proj) byProj[r.proj] = (byProj[r.proj] ?? 0) + 1;
+          if (r.stage) byStage[r.stage] = (byStage[r.stage] ?? 0) + 1;
+        }
+        const avgDelay = overdue.length
+          ? Math.round((overdue.reduce((s, r) => s + r.delay, 0) / overdue.length) * 10) / 10
+          : 0;
+        return {
+          person: fp.name || fp.email,
+          email: fp.email,
+          total_activities: owned.length,
+          overdue: overdue.length,
+          completed: done.length,
+          avg_delay_days_when_overdue: avgDelay,
+          projects: byProj,
+          stages: byStage,
+          worst_activities: overdue
+            .sort((a, b) => b.delay - a.delay)
+            .slice(0, 5)
+            .map(r => ({ activity: r.activity, stage: r.stage, project: r.proj, delay_days: r.delay, status: r.status })),
+        };
+      });
+
       const you = {
         name: scope.profile?.full_name || "(unknown)",
         email: scope.profile?.email || "(unknown)",
@@ -481,8 +554,8 @@ export default function AgentDashboard() {
       const history = chat.slice(-6).map(m => `${m.role === "user" ? "USER" : "AGENT"}: ${m.text}`).join("\n");
       const res = await genFn({
         data: {
-          system: "You are the user's personal project agent. Answer using ONLY YOU (the user's identity), FACTS, and MATCHING_ROWS. When the user says 'me / my / mine', treat that as referring to YOU.name / YOU.email. Cite concrete activity names, stages, people, and numbers from the data. Never invent rows, dates, or people. If the data doesn't cover it, say 'not in the data'. Prefer 2-6 sentences; use short bullets only for lists, rankings, or step plans.",
-          prompt: `YOU:\n${JSON.stringify(you)}\n\nFACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total${isSelfQ ? ", filtered to YOU when possible" : ""}):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
+          system: "You are the user's personal project agent. Answers must be PERSON-CONCENTRATED: whenever the question is about a specific person, or a specific reason for delay, name the person(s) explicitly by full name and cite their exact activities, stages, projects, delay-days, and status from MATCHING_ROWS or PERSON_ROLLUPS. Never conflate people, never invent people, and never return generic team-level averages when a person is named. If the user says 'me / my / mine', treat that as YOU.name / YOU.email. If the data doesn't cover it, say 'not in the data'. Prefer 2-6 sentences; use short bullets for per-person lists or step plans.",
+          prompt: `YOU:\n${JSON.stringify(you)}\n\nFACTS:\n${JSON.stringify(facts)}\n\nPERSON_ROLLUPS (focused on people mentioned in the question):\n${JSON.stringify(personRollups)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total${isSelfQ ? ", filtered to YOU when possible" : focusPersons.length ? `, boosted for ${focusPersons.map(p => p.name || p.email).join(", ")}` : ""}):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
           temperature: 0.15,
         },
       });
