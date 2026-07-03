@@ -570,16 +570,25 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Auto-syncs {projects.length} live source{projects.length === 1 ? "" : "s"} every {Math.round(AUTO_REFRESH_MS / 1000)}s
-              {registryLive ? " · project list pulled from master sheet" : " · using built-in list (master sheet unreachable)"}.
+              {scope.isSuper
+                ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 1000)}s${registryLive ? " · project list pulled from master sheet" : " · using built-in list"}.`
+                : scope.isAdmin
+                ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · syncing every ${Math.round(AUTO_REFRESH_MS / 1000)}s.`
+                : `Showing only work assigned to ${scope.profile?.full_name || "you"} across your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Badge variant="outline" className="gap-1">
                 <Layers className="h-3 w-3" />
                 {payload?.data?.length ?? 0} rows
               </Badge>
+              {!scope.isSuper && (
+                <ProjectAssignmentPicker
+                  projects={allProjects}
+                  current={assignedKeys}
+                />
+              )}
               <Button variant="outline" size="sm" onClick={refetchAll}>
                 <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
                 Sync
@@ -593,6 +602,27 @@ export default function AgentDashboard() {
           </div>
         </div>
       </div>
+
+      {needsOnboarding && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-col items-start gap-3 p-5 md:flex-row md:items-center">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary">
+              <FolderKanban className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-semibold">Pick your projects to get started</div>
+              <p className="text-xs text-muted-foreground">
+                Your dashboard, tasks, and Ask-the-Agent will focus on the projects you select.
+              </p>
+            </div>
+            <ProjectAssignmentPicker
+              projects={allProjects}
+              current={assignedKeys}
+              trigger={<Button size="sm">Select projects</Button>}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* PROJECT SWITCHER */}
       <div className="flex flex-wrap items-center gap-1.5">
