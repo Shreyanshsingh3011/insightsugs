@@ -354,6 +354,8 @@ function CopilotPage() {
           citationsMissing: !validation.ok,
           citationValidation: validation,
           retriedForCitations: vars.retryForCitations,
+          toolTrace: (res as any).toolTrace ?? [],
+          citationOk: (res as any).citationOk ?? validation.ok,
         },
       ]);
       if (!validation.ok && vars.retryForCitations) {
