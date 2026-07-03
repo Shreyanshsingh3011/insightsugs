@@ -251,33 +251,69 @@ function derive(payload: Payload | undefined) {
 // ────────────────── COMPONENT ──────────────────
 export default function AgentDashboard() {
   const fetchUrl = useServerFn(fetchInsightUrl);
-  const fetchSheet = useServerFn(fetchSheetRows);
   const genFn = useServerFn(generateGeminiFn);
 
-  const urlQ = useQuery({
-    queryKey: ["agent-fixed-url"],
-    queryFn: async () => fetchUrl({ data: { url: FIXED_URL } }),
-    staleTime: 60_000,
-  });
-  const sheetQ = useQuery({
-    queryKey: ["agent-fixed-sheet"],
-    queryFn: async () => fetchSheet({ data: { spreadsheetId: FIXED_SHEET } }),
-    staleTime: 60_000,
+  const [selected, setSelected] = useState<string>("all");
+
+  const queries = useQueries({
+    queries: PROJECTS.map(p => ({
+      queryKey: ["agent-src", p.id],
+      queryFn: async () => {
+        const res = await fetchUrl({ data: { url: p.url } });
+        return { project: p, payload: (res as { payload?: SourcePayload }).payload };
+      },
+      staleTime: AUTO_REFRESH_MS,
+      refetchInterval: AUTO_REFRESH_MS,
+      refetchOnWindowFocus: true,
+    })),
   });
 
-  const urlPayload = (urlQ.data as { payload?: Payload })?.payload;
-  const sheetPayload = sheetQ.data as { title?: string; sheetName?: string; columns?: string[]; rows?: Row[] } | undefined;
+  const sources = queries.map((q, i) => ({
+    project: PROJECTS[i],
+    payload: q.data?.payload,
+    isFetching: q.isFetching,
+    isLoading: q.isLoading,
+    isError: q.isError,
+    error: q.error as Error | undefined,
+  }));
+
+  const anyLoading = queries.some(q => q.isLoading);
+  const anyFetching = queries.some(q => q.isFetching);
+  const allError = queries.every(q => q.isError);
+  const lastSyncedAt = sources
+    .map(s => s.payload?.generated_at)
+    .filter((x): x is string => !!x)
+    .sort()
+    .pop();
 
   const payload: Payload | undefined = useMemo(() => {
-    if (sheetPayload?.rows?.length) {
-      return { project: sheetPayload.title, columns: sheetPayload.columns, data: sheetPayload.rows };
+    if (selected === "all") {
+      const merged: Row[] = [];
+      let latest: string | undefined;
+      for (const s of sources) {
+        if (s.payload?.data?.length) {
+          const label = s.project.label;
+          for (const r of s.payload.data) merged.push({ ...r, __project: label });
+          if (s.payload.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
+        }
+      }
+      return merged.length ? { project: "All projects", data: merged, generated_at: latest } : undefined;
     }
-    return urlPayload;
-  }, [sheetPayload, urlPayload]);
+    const s = sources.find(x => x.project.id === selected);
+    if (!s?.payload) return undefined;
+    return {
+      project: s.payload.connector || s.project.label,
+      department: s.payload.department,
+      data: s.payload.data,
+      generated_at: s.payload.generated_at,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(",")]);
 
   const d = useMemo(() => derive(payload), [payload]);
-  const loading = urlQ.isLoading || sheetQ.isLoading;
-  const anyError = (urlQ.isError && !sheetPayload?.rows?.length) || sheetQ.isError;
+
+  const refetchAll = () => queries.forEach(q => q.refetch());
+
 
   // AI Executive Brief
   const [brief, setBrief] = useState("");
