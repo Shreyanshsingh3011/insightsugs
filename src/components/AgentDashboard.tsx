@@ -371,31 +371,137 @@ export default function AgentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
-  // Ask Agent
+  // Ask Agent — grounded chat with history + retrieval over raw rows
+  type ChatMsg = { role: "user" | "assistant"; text: string };
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  useEffect(() => { setChat([]); }, [payload]);
+
+  const rowsAll: Row[] = payload?.data ?? [];
+  // Build a compact, LLM-friendly row projection with the columns we care about.
+  const rowIndex = useMemo(() => rowsAll.map((r, i) => {
+    const activity = pick(r, "Activity List", "Process Descriptions", "Process");
+    const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
+    const email = pick(r, "Responsible Person Mail ID", "approvers email id");
+    const stage = pick(r, "Stages", "Stages of Process");
+    const status = pick(r, "Status Category", "Status as on Date");
+    const crit = pick(r, "Criticality");
+    const proj = pick(r, "__project");
+    const tat = num(r["TAT"]);
+    const taken = num(r["Days Taken"]);
+    const delay = num(r["Delay in Days"]);
+    const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
+    return { i, activity, person, email, stage, status, crit, proj, tat, taken, delay, hay };
+  }), [rowsAll]);
+
+  function retrieveRows(q: string, limit = 30) {
+    const terms = q.toLowerCase().split(/[^a-z0-9@._-]+/).filter(t => t.length > 2);
+    if (terms.length === 0) return rowIndex.slice(0, limit);
+    const scored = rowIndex.map(r => {
+      let s = 0;
+      for (const t of terms) if (r.hay.includes(t)) s += 1;
+      // prefer overdue / delayed items when question hints so
+      if (/overdue|delay|late|breach/.test(q) && r.delay > 0) s += 0.5;
+      if (/complete|done/.test(q) && /complete|done/i.test(r.status)) s += 0.5;
+      return { r, s };
+    }).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, limit);
+    return (scored.length ? scored.map(x => x.r) : rowIndex.slice(0, limit));
+  }
+
   const askMut = useMutation({
     mutationFn: async (q: string) => {
+      const matches = retrieveRows(q, 30).map(r => ({
+        activity: r.activity, person: r.person, email: r.email,
+        stage: r.stage, status: r.status, criticality: r.crit,
+        project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
+      }));
       const facts = {
-        totals: d.totals, health: d.healthScore, completion: d.completionRate,
-        pace_pct_of_tat: d.paceRatio, avg_delay: d.avgDelay,
-        stages: d.stages.slice(0, 6),
-        persons: d.personsByBurden.slice(0, 8),
-        overdue_top: d.overdue.slice(0, 8),
+        project: payload?.project,
+        totals: d.totals, health: d.healthScore, completion_pct: d.completionRate,
+        on_time_pct: d.onTimeRate, avg_delay_days: d.avgDelay, pace_pct_of_tat: d.paceRatio,
+        stages: d.stages, // full list
+        persons: d.personsByBurden.slice(0, 20),
+        overdue_top: d.overdue.slice(0, 15),
         anomalies: d.anomalies,
         status_mix: d.status, criticality_mix: d.critAgg,
       };
+      const history = chat.slice(-6).map(m => `${m.role === "user" ? "USER" : "AGENT"}: ${m.text}`).join("\n");
       const res = await genFn({
         data: {
-          system: "You are the project's autonomous agent. Answer using ONLY the FACTS. Reply in 2-4 sentences with concrete numbers and names. If a fact is not present, say 'not in the data'.",
-          prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}\n\nQUESTION: ${q}`,
+          system: "You are the project's autonomous agent. Answer using ONLY the FACTS and MATCHING_ROWS provided. Cite concrete numbers, activity names, people, or stages from the data. If the answer is not derivable from the data, say 'not in the data'. Prefer 2-6 sentences; use a short bullet list only when the user asks for a list, ranking, or plan. Never invent rows, dates, or people.",
+          prompt: `FACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
           temperature: 0.15,
         },
       });
       return res.text;
     },
-    onSuccess: (t) => setAnswer(t),
+    onSuccess: (t, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: t }]),
   });
+
+  function ask(q: string) {
+    const t = q.trim();
+    if (!t) return;
+    setQuestion("");
+    askMut.mutate(t);
+  }
+
+  // ── FILTERED REPORT / EXPORT
+  type Filters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
+  const [filters, setFilters] = useState<Filters>({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false });
+  useEffect(() => { setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false }); }, [payload?.project]);
+
+  const filterOptions = useMemo(() => {
+    const s = new Set<string>(), c = new Set<string>(), st = new Set<string>(), p = new Set<string>();
+    for (const r of rowIndex) {
+      if (r.status) s.add(bucket(r.status));
+      if (r.crit) c.add(r.crit);
+      if (r.stage) st.add(r.stage);
+      if (r.person) p.add(r.person);
+    }
+    return {
+      status: Array.from(s).sort(),
+      crit: Array.from(c).sort(),
+      stage: Array.from(st).sort(),
+      person: Array.from(p).sort(),
+    };
+  }, [rowIndex]);
+
+  const filteredRows = useMemo(() => {
+    const min = Number(filters.minDelay) || 0;
+    const q = filters.q.trim().toLowerCase();
+    return rowIndex.filter(r => {
+      if (filters.status !== "all" && bucket(r.status) !== filters.status) return false;
+      if (filters.crit !== "all" && r.crit !== filters.crit) return false;
+      if (filters.stage !== "all" && r.stage !== filters.stage) return false;
+      if (filters.person !== "all" && r.person !== filters.person) return false;
+      if (min > 0 && r.delay < min) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && !/complete|done/i.test(r.status))) return false;
+      if (q && !r.hay.includes(q)) return false;
+      return true;
+    });
+  }, [rowIndex, filters]);
+
+  function downloadCSV() {
+    const cols = ["project", "activity", "person", "email", "stage", "status", "criticality", "tat", "taken", "delay"];
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [cols.join(",")];
+    for (const r of filteredRows) {
+      lines.push([r.proj, r.activity, r.person, r.email, r.stage, r.status, r.crit, r.tat, r.taken, r.delay].map(esc).join(","));
+    }
+    const meta = `# Filtered report · ${payload?.project ?? "project"} · ${filteredRows.length}/${rowIndex.length} rows · generated ${new Date().toISOString()}\n`;
+    const blob = new Blob([meta + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = (payload?.project ?? "report").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    a.download = `${safe}-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
 
   return (
     <div className="space-y-6">
