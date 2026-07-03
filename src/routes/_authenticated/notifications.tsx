@@ -159,9 +159,6 @@ function InboxPage() {
             messages={currentMessages}
             emptyText="No messages. Start a conversation with a colleague."
             perspective="inbox"
-            onOpen={(id) => qc.invalidateQueries({ queryKey: ["inbox-messages"] }).then(() => {
-              // fire and forget mark-read
-            })}
           />
         </TabsContent>
         <TabsContent value="sent" className="mt-4">
