@@ -279,7 +279,10 @@ function CopilotPage() {
             </ul>
           )}
         </Card>
+
+        <ChatGroundingHint />
       </aside>
+
 
 
       {/* Conversation */}
