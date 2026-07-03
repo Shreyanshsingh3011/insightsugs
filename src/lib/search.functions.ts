@@ -55,7 +55,7 @@ export const semanticSearch = createServerFn({ method: "POST" })
         title: r.sheet_name,
         snippet: String(r.snippet ?? "").slice(0, 400),
         similarity: Number(r.similarity ?? 0),
-        href: `/sheets/${r.sheet_registry_id}`,
+        href: `/sheets/${r.sheet_registry_id}?highlight=${r.row_index}`,
         meta: `Row ${r.row_index}`,
       });
     }
