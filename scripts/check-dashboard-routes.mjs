@@ -107,7 +107,7 @@ if (!overdueRegion) {
 }
 
 // ── 7. Filtered report rows must link to /agent/row/$key ────────────────────
-const filteredRegion = src.match(/Filtered report[\s\S]{0,3500}?<\/Table>/);
+const filteredRegion = src.match(/Filtered report[\s\S]{0,8000}?<\/Table>/);
 if (!filteredRegion) {
   errors.push("Could not locate Filtered report block.");
 } else if (!/\/agent\/row\/\$key/.test(filteredRegion[0])) {
