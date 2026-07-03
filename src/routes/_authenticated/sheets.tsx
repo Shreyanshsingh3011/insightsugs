@@ -427,7 +427,18 @@ function AddSheetDialog({ open, onOpenChange, isAdmin }: { open: boolean; onOpen
                 </span>
               </div>
             </div>
+            {isAdmin && (
+              <div className="rounded-md border border-border p-3">
+                <VisibilityPicker
+                  visibility={visibility}
+                  onVisibilityChange={setVisibility}
+                  sharedUserIds={sharedIds}
+                  onSharedUserIdsChange={setSharedIds}
+                />
+              </div>
+            )}
           </div>
+
         ) : inspectResult ? (
           <div className="space-y-3">
             <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
