@@ -14,13 +14,17 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle, ExternalLink, Link2 } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Trash2, Sheet as SheetIcon, AlertTriangle, ExternalLink, Link2, Shield } from "lucide-react";
 import {
   listSheets, inspectSheet, registerAndSyncSheet, refreshSheet, deleteSheet, updateSheetMeta,
 } from "@/lib/sheets.functions";
 import {
   SHEET_TYPE_LABELS, SHEET_TYPES, CANONICAL_FIELDS, type SheetType,
 } from "@/lib/sheets-schemas";
+import { useIsAdmin } from "@/hooks/useSession";
+import { VisibilityPicker, VisibilityBadge, type Visibility } from "@/components/VisibilityPicker";
+import { ChangeVisibilityDialog } from "@/components/ChangeVisibilityDialog";
+
 
 export const Route = createFileRoute("/_authenticated/sheets")({
   component: SheetsPage,
@@ -35,6 +39,9 @@ function SheetsPage() {
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<null | { id: string; display_name: string; apps_script_url: string; source_url: string | null }>(null);
+  const [visEditing, setVisEditing] = useState<null | { id: string; name: string; visibility: Visibility }>(null);
+  const isAdmin = useIsAdmin();
+
 
   const refreshMut = useMutation({
     mutationFn: (id: string) => refresh({ data: { registryId: id } }),

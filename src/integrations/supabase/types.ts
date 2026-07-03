@@ -627,6 +627,35 @@ export type Database = {
           },
         ]
       }
+      document_shares: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          document_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          document_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          document_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_shares_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           created_at: string
@@ -643,6 +672,7 @@ export type Database = {
           storage_path: string
           summary: string | null
           updated_at: string
+          visibility: Database["public"]["Enums"]["content_visibility"]
         }
         Insert: {
           created_at?: string
@@ -659,6 +689,7 @@ export type Database = {
           storage_path: string
           summary?: string | null
           updated_at?: string
+          visibility?: Database["public"]["Enums"]["content_visibility"]
         }
         Update: {
           created_at?: string
@@ -675,6 +706,7 @@ export type Database = {
           storage_path?: string
           summary?: string | null
           updated_at?: string
+          visibility?: Database["public"]["Enums"]["content_visibility"]
         }
         Relationships: [
           {
@@ -1171,6 +1203,7 @@ export type Database = {
           source_url: string | null
           updated_at: string
           user_id: string
+          visibility: Database["public"]["Enums"]["content_visibility"]
         }
         Insert: {
           apps_script_url: string
@@ -1183,6 +1216,7 @@ export type Database = {
           source_url?: string | null
           updated_at?: string
           user_id: string
+          visibility?: Database["public"]["Enums"]["content_visibility"]
         }
         Update: {
           apps_script_url?: string
@@ -1195,8 +1229,38 @@ export type Database = {
           source_url?: string | null
           updated_at?: string
           user_id?: string
+          visibility?: Database["public"]["Enums"]["content_visibility"]
         }
         Relationships: []
+      }
+      sheet_registry_shares: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          sheet_registry_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          sheet_registry_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          sheet_registry_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_registry_shares_sheet_registry_id_fkey"
+            columns: ["sheet_registry_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_registry"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sheet_row_embeddings: {
         Row: {
@@ -1465,6 +1529,24 @@ export type Database = {
         }
         Returns: undefined
       }
+      can_read_document: {
+        Args: {
+          _doc_id: string
+          _owner_id: string
+          _user_id: string
+          _visibility: Database["public"]["Enums"]["content_visibility"]
+        }
+        Returns: boolean
+      }
+      can_read_sheet: {
+        Args: {
+          _owner_id: string
+          _registry_id: string
+          _user_id: string
+          _visibility: Database["public"]["Enums"]["content_visibility"]
+        }
+        Returns: boolean
+      }
       can_see_project: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
@@ -1567,6 +1649,7 @@ export type Database = {
         | "blocked"
         | "overdue"
       app_role: "super_admin" | "admin" | "user"
+      content_visibility: "private" | "public" | "shared"
       document_status: "pending" | "processing" | "ready" | "failed"
       sheet_type:
         | "progress"
@@ -1712,6 +1795,7 @@ export const Constants = {
         "overdue",
       ],
       app_role: ["super_admin", "admin", "user"],
+      content_visibility: ["private", "public", "shared"],
       document_status: ["pending", "processing", "ready", "failed"],
       sheet_type: [
         "progress",

@@ -16,9 +16,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import { VisibilityPicker, VisibilityBadge, type Visibility } from "@/components/VisibilityPicker";
+
+import { ChangeVisibilityDialog } from "@/components/ChangeVisibilityDialog";
+import {
   Folder, FolderPlus, FileText, Upload, Trash2, Loader2, Sparkles, X,
-  ChevronRight, ChevronDown, FolderTree,
+  ChevronRight, ChevronDown, FolderTree, Shield,
 } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/documents")({
   component: DocumentsPage,
@@ -112,6 +119,9 @@ function DocumentsPage() {
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [visEditing, setVisEditing] = useState<null | { id: string; name: string; visibility: Visibility }>(null);
+
 
   const foldersFn = useServerFn(listFolders);
   const docsFn = useServerFn(listDocuments);
@@ -167,14 +177,15 @@ function DocumentsPage() {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<{ name: string; status: string }[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [uploadVisibility, setUploadVisibility] = useState<Visibility>("private");
+  const [uploadSharedIds, setUploadSharedIds] = useState<string[]>([]);
 
-  async function handleFiles(files: FileList | null) {
-    if (!isAdmin) return;
-    if (!files || !userId) return;
-    const arr = Array.from(files);
-    setUploading(arr.map((f) => ({ name: f.name, status: "uploading" })));
-    for (let i = 0; i < arr.length; i++) {
-      const f = arr[i];
+  async function processFiles(files: File[], visibility: Visibility, sharedIds: string[]) {
+    if (!isAdmin || !userId || files.length === 0) return;
+    setUploading(files.map((f) => ({ name: f.name, status: "uploading" })));
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
       try {
         const ext = f.name.split(".").pop() ?? "bin";
         const path = `${userId}/${activeFolder ?? "root"}/${crypto.randomUUID()}.${ext}`;
@@ -190,6 +201,8 @@ function DocumentsPage() {
             size_bytes: f.size,
             storage_path: path,
             folder_id: activeFolder,
+            visibility,
+            shared_user_ids: sharedIds,
           },
         });
         setUploading((u) => u.map((x, j) => (j === i ? { ...x, status: "done" } : x)));
@@ -202,6 +215,17 @@ function DocumentsPage() {
     qc.invalidateQueries({ queryKey: ["documents"] });
     setTimeout(() => setUploading([]), 2500);
   }
+
+  function handleFiles(files: FileList | null) {
+    if (!isAdmin || !files) return;
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    setPendingFiles(arr);
+    setUploadVisibility("private");
+    setUploadSharedIds([]);
+    setUploadOpen(true);
+  }
+
 
   const promptNewChild = (parentId: string | null) => {
     const n = window.prompt("Folder name");
@@ -324,14 +348,13 @@ function DocumentsPage() {
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {docs.data?.documents.map((d: any) => (
-                <button
+                <div
                   key={d.id}
-                  onClick={() => setSelectedDocId(d.id)}
-                  className={`group rounded-lg border border-border bg-card p-3 text-left transition hover:border-primary/40 hover:shadow-sm ${
+                  className={`group rounded-lg border border-border bg-card p-3 transition hover:border-primary/40 hover:shadow-sm ${
                     selectedDocId === d.id ? "border-primary/60 ring-1 ring-primary/30" : ""
                   }`}
                 >
-                  <div className="flex items-start gap-2">
+                  <button onClick={() => setSelectedDocId(d.id)} className="flex w-full items-start gap-2 text-left">
                     <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{d.name}</p>
@@ -341,9 +364,25 @@ function DocumentsPage() {
                       </p>
                     </div>
                     <StatusBadge status={d.status} />
+                  </button>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <VisibilityBadge visibility={d.visibility} shareCount={d.share_count} size="xs" />
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVisEditing({ id: d.id, name: d.name, visibility: d.visibility });
+                        }}
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                      >
+                        <Shield className="h-3 w-3" /> Change
+                      </button>
+                    )}
                   </div>
-                </button>
+                </div>
               ))}
+
             </div>
           )}
         </div>
@@ -423,9 +462,77 @@ function DocumentsPage() {
           </>
         ) : null}
       </aside>
+
+      <UploadVisibilityDialog
+        open={uploadOpen}
+        onOpenChange={(v) => {
+          setUploadOpen(v);
+          if (!v) setPendingFiles(null);
+        }}
+        fileCount={pendingFiles?.length ?? 0}
+        visibility={uploadVisibility}
+        onVisibilityChange={setUploadVisibility}
+        sharedIds={uploadSharedIds}
+        onSharedIdsChange={setUploadSharedIds}
+        onConfirm={() => {
+          const files = pendingFiles ?? [];
+          setUploadOpen(false);
+          void processFiles(files, uploadVisibility, uploadSharedIds);
+          setPendingFiles(null);
+        }}
+      />
+
+      <ChangeVisibilityDialog
+        open={!!visEditing}
+        onOpenChange={(v) => { if (!v) setVisEditing(null); }}
+        kind="document"
+        id={visEditing?.id ?? null}
+        name={visEditing?.name ?? ""}
+        currentVisibility={visEditing?.visibility ?? "private"}
+      />
     </main>
   );
 }
+
+function UploadVisibilityDialog({
+  open, onOpenChange, fileCount, visibility, onVisibilityChange,
+  sharedIds, onSharedIdsChange, onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  fileCount: number;
+  visibility: Visibility;
+  onVisibilityChange: (v: Visibility) => void;
+  sharedIds: string[];
+  onSharedIdsChange: (ids: string[]) => void;
+  onConfirm: () => void;
+}) {
+  return (
+
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            Upload {fileCount} file{fileCount === 1 ? "" : "s"}
+          </DialogTitle>
+        </DialogHeader>
+        <VisibilityPicker
+          visibility={visibility}
+          onVisibilityChange={onVisibilityChange}
+          sharedUserIds={sharedIds}
+          onSharedUserIdsChange={onSharedIdsChange}
+        />
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={onConfirm}>
+            <Upload className="mr-1.5 h-4 w-4" /> Upload
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "ready") return <Badge variant="secondary">Ready</Badge>;
