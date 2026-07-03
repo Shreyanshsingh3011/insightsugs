@@ -22,6 +22,7 @@ import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticated/concerns'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
+import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
@@ -99,6 +100,11 @@ const AuthenticatedAlertsRoute = AuthenticatedAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAgentRoute = AuthenticatedAgentRouteImport.update({
+  id: '/agent',
+  path: '/agent',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAlertsIndexRoute =
   AuthenticatedAlertsIndexRouteImport.update({
     id: '/',
@@ -159,6 +165,7 @@ const ApiPublicHooksConcernNudgesRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/agent': typeof AuthenticatedAgentRoute
   '/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
@@ -183,6 +190,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/agent': typeof AuthenticatedAgentRoute
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
@@ -208,6 +216,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/login': typeof LoginRoute
+  '/_authenticated/agent': typeof AuthenticatedAgentRoute
   '/_authenticated/alerts': typeof AuthenticatedAlertsRouteWithChildren
   '/_authenticated/concerns': typeof AuthenticatedConcernsRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
@@ -234,6 +243,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/agent'
     | '/alerts'
     | '/concerns'
     | '/copilot'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/agent'
     | '/concerns'
     | '/copilot'
     | '/documents'
@@ -282,6 +293,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/login'
+    | '/_authenticated/agent'
     | '/_authenticated/alerts'
     | '/_authenticated/concerns'
     | '/_authenticated/copilot'
@@ -407,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/agent': {
+      id: '/_authenticated/agent'
+      path: '/agent'
+      fullPath: '/agent'
+      preLoaderRoute: typeof AuthenticatedAgentRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/alerts/': {
       id: '/_authenticated/alerts/'
       path: '/'
@@ -505,6 +524,7 @@ const AuthenticatedSheetsRouteWithChildren =
   AuthenticatedSheetsRoute._addFileChildren(AuthenticatedSheetsRouteChildren)
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedAgentRoute: typeof AuthenticatedAgentRoute
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
   AuthenticatedConcernsRoute: typeof AuthenticatedConcernsRoute
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
@@ -521,6 +541,7 @@ interface AuthenticatedRouteChildren {
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedAgentRoute: AuthenticatedAgentRoute,
   AuthenticatedAlertsRoute: AuthenticatedAlertsRouteWithChildren,
   AuthenticatedConcernsRoute: AuthenticatedConcernsRoute,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
