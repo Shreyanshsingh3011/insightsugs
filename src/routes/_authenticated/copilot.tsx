@@ -757,8 +757,28 @@ function CopilotPage() {
                       </div>
                     )}
 
+                    {t.toolTrace && t.toolTrace.length > 0 && (
+                      <ToolCallTrace trace={t.toolTrace} />
+                    )}
+
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-table:my-2 prose-p:my-1.5 prose-headings:my-2">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.answer}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // Replace bare text nodes with citation-aware React nodes.
+                          p: ({ children, ...props }) => (
+                            <p {...props}>{decorateChildren(children, t.sources)}</p>
+                          ),
+                          li: ({ children, ...props }) => (
+                            <li {...props}>{decorateChildren(children, t.sources)}</li>
+                          ),
+                          td: ({ children, ...props }) => (
+                            <td {...props}>{decorateChildren(children, t.sources)}</td>
+                          ),
+                        }}
+                      >
+                        {t.answer}
+                      </ReactMarkdown>
                     </div>
 
                     {t.charts && t.charts.length > 0 && (
