@@ -755,6 +755,123 @@ export default function AgentDashboard() {
     URL.revokeObjectURL(url);
   }
 
+  // ─── EXPORT SCOPED DATA ─────────────────────────────────────────────────────
+  // Downloads KPIs + every scoped activity (personal scope for users, admin
+  // Focus selection for admins) as CSV or PDF. Uses the same `payload` +
+  // derived KPIs the dashboard renders, so the export mirrors the on-screen
+  // state exactly.
+  function scopeSummary() {
+    const parts: string[] = [];
+    if (!scope.isAdmin) parts.push(`Personal · ${scope.profile?.full_name || scope.profile?.email || "you"}`);
+    else if (scope.isSuper) parts.push("Super admin · all projects");
+    else parts.push(`Admin · ${scope.assignments.length} assigned project(s)`);
+    if (selected !== "all") {
+      const proj = sources.find(s => s.project.id === selected)?.project.label;
+      if (proj) parts.push(`Project: ${proj}`);
+    } else parts.push("Project: All");
+    if (canFocus && focusPerson !== "all") parts.push(`Person: ${focusPerson}`);
+    if (canFocus && focusDept !== "all") parts.push(`Team: ${focusDept}`);
+    return parts.join(" · ");
+  }
+
+  function exportScopedCSV() {
+    const kpiLines = [
+      "# Scope," + JSON.stringify(scopeSummary()),
+      "# Generated," + new Date().toISOString(),
+      "# Rows in scope," + rowIndex.length,
+      "",
+      "KPI,Value",
+      `Activities,${d.n}`,
+      `Health score,${d.healthScore}`,
+      `Completion %,${d.completionRate}`,
+      `On-time %,${d.onTimeRate}`,
+      `Avg delay (days),${d.avgDelay}`,
+      `Pace (% of TAT),${d.paceRatio}`,
+      `Overdue count,${d.overdue.length}`,
+      "",
+      "Project,Activity,Person,Email,Stage,Status,Criticality,TAT,Days Taken,Delay Days",
+    ];
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    for (const r of rowIndex) {
+      kpiLines.push([r.proj, r.activity, r.person, r.email, r.stage, r.status, r.crit, r.tat, r.taken, r.delay].map(esc).join(","));
+    }
+    const blob = new Blob([kpiLines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = (payload?.project ?? "scope").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    a.download = `${safe}-scoped-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportScopedPDF() {
+    const { default: JsPDF } = await import("jspdf");
+    const doc = new JsPDF({ unit: "pt", format: "a4" });
+    const margin = 40;
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    let y = margin;
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(16);
+    doc.text("Scoped agent report", margin, y); y += 20;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+    doc.setTextColor(90);
+    const scopeText = doc.splitTextToSize(`Scope: ${scopeSummary()}`, pageW - margin * 2);
+    doc.text(scopeText, margin, y); y += scopeText.length * 12;
+    doc.text(`Generated ${new Date().toLocaleString()} · ${rowIndex.length} rows in scope`, margin, y); y += 18;
+    doc.setTextColor(0);
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+    doc.text("Key metrics", margin, y); y += 14;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    const kpis: Array<[string, string]> = [
+      ["Activities", String(d.n)],
+      ["Health score", `${d.healthScore} / 100`],
+      ["Completion", `${d.completionRate}%`],
+      ["On-time", `${d.onTimeRate}%`],
+      ["Avg delay", `${d.avgDelay} d`],
+      ["Pace vs TAT", `${d.paceRatio}%`],
+      ["Overdue", String(d.overdue.length)],
+    ];
+    const colW = (pageW - margin * 2) / 2;
+    kpis.forEach((k, i) => {
+      const col = i % 2, row = Math.floor(i / 2);
+      const x = margin + col * colW;
+      const yy = y + row * 14;
+      doc.setTextColor(110); doc.text(k[0], x, yy);
+      doc.setTextColor(0); doc.text(k[1], x + 110, yy);
+    });
+    y += Math.ceil(kpis.length / 2) * 14 + 10;
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11);
+    doc.text("Activities in scope", margin, y); y += 12;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+    const headers = ["Project", "Activity", "Person", "Stage", "Status", "Delay"];
+    const widths = [80, 150, 90, 80, 70, 45];
+    let x = margin;
+    headers.forEach((h, i) => { doc.text(h, x, y); x += widths[i]; });
+    y += 4; doc.setDrawColor(200); doc.line(margin, y, pageW - margin, y); y += 10;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    const clip = (s: string, w: number) => {
+      const line = doc.splitTextToSize(s || "-", w - 4);
+      return String(line[0] ?? "");
+    };
+    for (const r of rowIndex) {
+      if (y > pageH - margin) { doc.addPage(); y = margin; }
+      x = margin;
+      const cells = [r.proj, r.activity, r.person, r.stage, r.status, `${r.delay}d`];
+      cells.forEach((c, i) => { doc.text(clip(String(c ?? ""), widths[i]), x, y); x += widths[i]; });
+      y += 11;
+    }
+    const safe = (payload?.project ?? "scope").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    doc.save(`${safe}-scoped-${new Date().toISOString().slice(0, 10)}.pdf`);
+  }
+
+
   // Programmatic navigation is still used for row-click table handlers below.
   const nav = useNavigate();
 
@@ -796,6 +913,30 @@ export default function AgentDashboard() {
                 <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
                 Sync
               </Button>
+              <div className="inline-flex overflow-hidden rounded-md border border-border/60">
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-8 gap-1 rounded-none px-2.5 text-xs"
+                  onClick={exportScopedCSV}
+                  disabled={!payload || rowIndex.length === 0}
+                  aria-label="Export scoped data as CSV"
+                  title={`Export ${rowIndex.length} scoped rows as CSV`}
+                >
+                  <Download className="h-3.5 w-3.5" /> CSV
+                </Button>
+                <div className="w-px bg-border/60" aria-hidden />
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-8 gap-1 rounded-none px-2.5 text-xs"
+                  onClick={exportScopedPDF}
+                  disabled={!payload || rowIndex.length === 0}
+                  aria-label="Export scoped data as PDF"
+                  title={`Export scoped KPIs + ${rowIndex.length} rows as PDF`}
+                >
+                  <Download className="h-3.5 w-3.5" /> PDF
+                </Button>
+              </div>
+
             </div>
             {lastSyncedAt && (
               <div className="text-[10px] text-muted-foreground">
