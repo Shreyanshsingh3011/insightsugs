@@ -19,8 +19,11 @@ import {
 import {
   Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
   CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
-  Flame, Gauge, Radar, Layers,
+  Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon,
 } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 // ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
 const FALLBACK_PROJECTS: AgentProject[] = [
@@ -368,31 +371,137 @@ export default function AgentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
-  // Ask Agent
+  // Ask Agent — grounded chat with history + retrieval over raw rows
+  type ChatMsg = { role: "user" | "assistant"; text: string };
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  useEffect(() => { setChat([]); }, [payload]);
+
+  const rowsAll: Row[] = payload?.data ?? [];
+  // Build a compact, LLM-friendly row projection with the columns we care about.
+  const rowIndex = useMemo(() => rowsAll.map((r, i) => {
+    const activity = pick(r, "Activity List", "Process Descriptions", "Process");
+    const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
+    const email = pick(r, "Responsible Person Mail ID", "approvers email id");
+    const stage = pick(r, "Stages", "Stages of Process");
+    const status = pick(r, "Status Category", "Status as on Date");
+    const crit = pick(r, "Criticality");
+    const proj = pick(r, "__project");
+    const tat = num(r["TAT"]);
+    const taken = num(r["Days Taken"]);
+    const delay = num(r["Delay in Days"]);
+    const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
+    return { i, activity, person, email, stage, status, crit, proj, tat, taken, delay, hay };
+  }), [rowsAll]);
+
+  function retrieveRows(q: string, limit = 30) {
+    const terms = q.toLowerCase().split(/[^a-z0-9@._-]+/).filter(t => t.length > 2);
+    if (terms.length === 0) return rowIndex.slice(0, limit);
+    const scored = rowIndex.map(r => {
+      let s = 0;
+      for (const t of terms) if (r.hay.includes(t)) s += 1;
+      // prefer overdue / delayed items when question hints so
+      if (/overdue|delay|late|breach/.test(q) && r.delay > 0) s += 0.5;
+      if (/complete|done/.test(q) && /complete|done/i.test(r.status)) s += 0.5;
+      return { r, s };
+    }).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, limit);
+    return (scored.length ? scored.map(x => x.r) : rowIndex.slice(0, limit));
+  }
+
   const askMut = useMutation({
     mutationFn: async (q: string) => {
+      const matches = retrieveRows(q, 30).map(r => ({
+        activity: r.activity, person: r.person, email: r.email,
+        stage: r.stage, status: r.status, criticality: r.crit,
+        project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
+      }));
       const facts = {
-        totals: d.totals, health: d.healthScore, completion: d.completionRate,
-        pace_pct_of_tat: d.paceRatio, avg_delay: d.avgDelay,
-        stages: d.stages.slice(0, 6),
-        persons: d.personsByBurden.slice(0, 8),
-        overdue_top: d.overdue.slice(0, 8),
+        project: payload?.project,
+        totals: d.totals, health: d.healthScore, completion_pct: d.completionRate,
+        on_time_pct: d.onTimeRate, avg_delay_days: d.avgDelay, pace_pct_of_tat: d.paceRatio,
+        stages: d.stages, // full list
+        persons: d.personsByBurden.slice(0, 20),
+        overdue_top: d.overdue.slice(0, 15),
         anomalies: d.anomalies,
         status_mix: d.status, criticality_mix: d.critAgg,
       };
+      const history = chat.slice(-6).map(m => `${m.role === "user" ? "USER" : "AGENT"}: ${m.text}`).join("\n");
       const res = await genFn({
         data: {
-          system: "You are the project's autonomous agent. Answer using ONLY the FACTS. Reply in 2-4 sentences with concrete numbers and names. If a fact is not present, say 'not in the data'.",
-          prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}\n\nQUESTION: ${q}`,
+          system: "You are the project's autonomous agent. Answer using ONLY the FACTS and MATCHING_ROWS provided. Cite concrete numbers, activity names, people, or stages from the data. If the answer is not derivable from the data, say 'not in the data'. Prefer 2-6 sentences; use a short bullet list only when the user asks for a list, ranking, or plan. Never invent rows, dates, or people.",
+          prompt: `FACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
           temperature: 0.15,
         },
       });
       return res.text;
     },
-    onSuccess: (t) => setAnswer(t),
+    onSuccess: (t, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: t }]),
   });
+
+  function ask(q: string) {
+    const t = q.trim();
+    if (!t) return;
+    setQuestion("");
+    askMut.mutate(t);
+  }
+
+  // ── FILTERED REPORT / EXPORT
+  type Filters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
+  const [filters, setFilters] = useState<Filters>({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false });
+  useEffect(() => { setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false }); }, [payload?.project]);
+
+  const filterOptions = useMemo(() => {
+    const s = new Set<string>(), c = new Set<string>(), st = new Set<string>(), p = new Set<string>();
+    for (const r of rowIndex) {
+      if (r.status) s.add(bucket(r.status));
+      if (r.crit) c.add(r.crit);
+      if (r.stage) st.add(r.stage);
+      if (r.person) p.add(r.person);
+    }
+    return {
+      status: Array.from(s).sort(),
+      crit: Array.from(c).sort(),
+      stage: Array.from(st).sort(),
+      person: Array.from(p).sort(),
+    };
+  }, [rowIndex]);
+
+  const filteredRows = useMemo(() => {
+    const min = Number(filters.minDelay) || 0;
+    const q = filters.q.trim().toLowerCase();
+    return rowIndex.filter(r => {
+      if (filters.status !== "all" && bucket(r.status) !== filters.status) return false;
+      if (filters.crit !== "all" && r.crit !== filters.crit) return false;
+      if (filters.stage !== "all" && r.stage !== filters.stage) return false;
+      if (filters.person !== "all" && r.person !== filters.person) return false;
+      if (min > 0 && r.delay < min) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && !/complete|done/i.test(r.status))) return false;
+      if (q && !r.hay.includes(q)) return false;
+      return true;
+    });
+  }, [rowIndex, filters]);
+
+  function downloadCSV() {
+    const cols = ["project", "activity", "person", "email", "stage", "status", "criticality", "tat", "taken", "delay"];
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [cols.join(",")];
+    for (const r of filteredRows) {
+      lines.push([r.proj, r.activity, r.person, r.email, r.stage, r.status, r.crit, r.tat, r.taken, r.delay].map(esc).join(","));
+    }
+    const meta = `# Filtered report · ${payload?.project ?? "project"} · ${filteredRows.length}/${rowIndex.length} rows · generated ${new Date().toISOString()}\n`;
+    const blob = new Blob([meta + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = (payload?.project ?? "report").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    a.download = `${safe}-filtered-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
 
   return (
     <div className="space-y-6">
@@ -560,21 +669,49 @@ export default function AgentDashboard() {
             </CardContent>
           </Card>
 
-          {/* ASK THE AGENT */}
+          {/* ASK THE AGENT — grounded chat */}
           <Card className="border-primary/30">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Bot className="h-4 w-4 text-primary" /> Ask the agent
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                  Grounded on {rowsAll.length} rows · retrieval + facts
+                </span>
+                {chat.length > 0 && (
+                  <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => setChat([])}>
+                    Clear
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {chat.length > 0 && (
+                <div className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-2">
+                  {chat.map((m, i) => (
+                    <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {m.role === "assistant" && <Bot className="mt-1 h-4 w-4 shrink-0 text-primary" />}
+                      <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                        m.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-primary/20 bg-background"
+                      }`}>{m.text}</div>
+                      {m.role === "user" && <UserIcon className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
+                    </div>
+                  ))}
+                  {askMut.isPending && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> thinking…
+                    </div>
+                  )}
+                </div>
+              )}
               <form
-                onSubmit={(e) => { e.preventDefault(); if (question.trim()) askMut.mutate(question.trim()); }}
+                onSubmit={(e) => { e.preventDefault(); ask(question); }}
                 className="flex flex-col gap-2 md:flex-row"
               >
                 <Input
                   value={question} onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="e.g. Who is blocking the most work? What's the fastest fix this week?"
+                  placeholder="Ask anything about this data — people, activities, delays, stages…"
                   className="flex-1"
                 />
                 <Button type="submit" disabled={askMut.isPending || !question.trim()}>
@@ -585,25 +722,130 @@ export default function AgentDashboard() {
               <div className="flex flex-wrap gap-1.5">
                 {[
                   "What's the biggest bottleneck?",
-                  "Who should I reassign work from?",
-                  "Which stage is dragging the timeline?",
-                  "Give me a 3-step recovery plan.",
+                  "Who has the most overdue work and by how much?",
+                  "List the 5 most critical activities to unblock this week.",
+                  "Which stage is dragging the timeline and why?",
+                  "Give me a 3-step recovery plan with owners.",
                 ].map(sug => (
                   <button key={sug} type="button"
-                    onClick={() => { setQuestion(sug); askMut.mutate(sug); }}
+                    onClick={() => ask(sug)}
                     className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
                   >
                     {sug}
                   </button>
                 ))}
               </div>
-              {answer && (
-                <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 text-sm leading-relaxed">
-                  {answer}
-                </div>
+            </CardContent>
+          </Card>
+
+          {/* FILTERED REPORT / EXPORT */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Filter className="h-4 w-4 text-primary" /> Filtered report
+                <Badge variant="secondary" className="ml-2">{filteredRows.length} / {rowIndex.length}</Badge>
+                <Button
+                  size="sm" variant="outline" className="ml-auto h-8"
+                  onClick={downloadCSV} disabled={filteredRows.length === 0}
+                >
+                  <Download className="h-4 w-4" /> Export CSV
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2 md:grid-cols-6">
+                <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {filterOptions.status.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.crit} onValueChange={(v) => setFilters(f => ({ ...f, crit: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Criticality" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All criticality</SelectItem>
+                    {filterOptions.crit.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.stage} onValueChange={(v) => setFilters(f => ({ ...f, stage: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Stage" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All stages</SelectItem>
+                    {filterOptions.stage.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.person} onValueChange={(v) => setFilters(f => ({ ...f, person: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Person" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All people</SelectItem>
+                    {filterOptions.person.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="h-9 text-xs" placeholder="Min delay days" inputMode="numeric"
+                  value={filters.minDelay} onChange={e => setFilters(f => ({ ...f, minDelay: e.target.value.replace(/[^\d]/g, "") }))}
+                />
+                <Input
+                  className="h-9 text-xs" placeholder="Search text…"
+                  value={filters.q} onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
+                />
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <label className="inline-flex cursor-pointer items-center gap-1.5">
+                  <input type="checkbox" checked={filters.onlyOverdue}
+                    onChange={e => setFilters(f => ({ ...f, onlyOverdue: e.target.checked }))} />
+                  Only overdue (not completed & delay &gt; 0)
+                </label>
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs ml-auto"
+                  onClick={() => setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false })}>
+                  Reset filters
+                </Button>
+              </div>
+
+              <div className="max-h-96 overflow-auto rounded-lg border border-border/60">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead>Activity</TableHead>
+                      <TableHead>Person</TableHead>
+                      <TableHead>Stage</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">TAT</TableHead>
+                      <TableHead className="text-right">Taken</TableHead>
+                      <TableHead className="text-right">Delay</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRows.slice(0, 200).map(r => (
+                      <TableRow key={r.i}>
+                        <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>{r.activity || "—"}</TableCell>
+                        <TableCell className="text-xs">{r.person || "—"}</TableCell>
+                        <TableCell className="text-xs">{r.stage || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={
+                            /complete|done/i.test(r.status) ? TONE.ok :
+                            /delay|late|overdue/i.test(r.status) ? TONE.high :
+                            /progress/i.test(r.status) ? TONE.med : TONE.low
+                          }>{r.status || "—"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{r.taken || "—"}</TableCell>
+                        <TableCell className={`text-right tabular-nums ${r.delay > 0 ? "text-rose-600 font-semibold" : ""}`}>{r.delay || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredRows.length === 0 && (
+                      <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {filteredRows.length > 200 && (
+                <p className="text-[11px] text-muted-foreground">Showing first 200 rows. Export CSV to get all {filteredRows.length}.</p>
               )}
             </CardContent>
           </Card>
+
 
           {/* BOTTOM BENTO: bottlenecks · people · anomalies */}
           <div className="grid gap-4 md:grid-cols-3">
