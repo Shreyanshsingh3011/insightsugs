@@ -295,37 +295,60 @@ export default function AgentDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => q.refetch()}>
-            <RefreshCw className={`h-4 w-4 ${q.isFetching ? "animate-spin" : ""}`} /> Refresh
+          {sheetResult?.rows?.length ? (
+            <Badge variant="outline" className="gap-1"><SheetIcon className="h-3 w-3" />Sheet · {sheetResult.rows.length} rows</Badge>
+          ) : exportPayload?.data?.length ? (
+            <Badge variant="outline" className="gap-1"><Link2 className="h-3 w-3" />Export · {exportPayload.data.length} rows</Badge>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={() => { q.refetch(); sheetQ.refetch(); }}>
+            <RefreshCw className={`h-4 w-4 ${(q.isFetching || sheetQ.isFetching) ? "animate-spin" : ""}`} /> Refresh
           </Button>
         </div>
       </div>
 
-      {/* Link input */}
+      {/* Data sources */}
       <Card>
-        <CardContent className="flex flex-col gap-2 p-4 md:flex-row md:items-center">
-          <Link2 className="h-4 w-4 text-muted-foreground" />
-          <Input
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste your /export link…"
-            className="flex-1"
-          />
-          <Button onClick={() => setActiveUrl(url)} disabled={q.isFetching}>
-            {q.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
-          </Button>
+        <CardContent className="space-y-2 p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Input
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Export link (/export?fields=…)"
+              className="flex-1"
+            />
+          </div>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <SheetIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Input
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              placeholder="Google Sheet link (authoritative when provided)"
+              className="flex-1"
+            />
+            <Button
+              onClick={() => { setActiveUrl(url); setActiveSheet(sheetUrl); }}
+              disabled={q.isFetching || sheetQ.isFetching}
+            >
+              {(q.isFetching || sheetQ.isFetching) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Sheet rows override the export when available. Leave sheet blank to use only the export link.
+          </p>
         </CardContent>
       </Card>
 
-      {q.isError && (
+      {(q.isError || sheetQ.isError) && (
         <Card className="border-rose-500/40">
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-rose-600">
-            <AlertTriangle className="h-4 w-4" /> {(q.error as Error).message}
+          <CardContent className="space-y-1 p-4 text-sm text-rose-600">
+            {q.isError && <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Export: {(q.error as Error).message}</div>}
+            {sheetQ.isError && <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Sheet: {(sheetQ.error as Error).message}</div>}
           </CardContent>
         </Card>
       )}
 
-      {q.isLoading && (
+      {(q.isLoading || sheetQ.isLoading) && !payload && (
         <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" /> Pulling insights…
         </div>
