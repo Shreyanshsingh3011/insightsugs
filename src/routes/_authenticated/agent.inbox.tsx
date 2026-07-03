@@ -12,6 +12,8 @@ import {
   unsnoozeAgentDraft,
   type AgentDraft,
 } from "@/lib/agent-inbox.functions";
+import { runAgentWatchers } from "@/lib/agent-watchers.functions";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -222,6 +224,7 @@ function AgentInboxPage() {
           {drafts.length}
         </Badge>
         <div className="ml-auto flex items-center gap-2">
+          <RunWatchersButton onDone={invalidate} />
           <Button
             variant="outline"
             size="sm"
@@ -232,6 +235,7 @@ function AgentInboxPage() {
             <span className="ml-1.5">Refresh</span>
           </Button>
         </div>
+
       </div>
 
       {/* Filters */}
