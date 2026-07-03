@@ -6,7 +6,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  ArrowLeft, RefreshCw, Layers, User as UserIcon, FolderKanban,
+  RefreshCw, Layers, User as UserIcon, FolderKanban,
   AlertTriangle, Loader2, TrendingUp, Clock, CheckCircle2, Gauge,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +17,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { EntityActionsBar, type EntityActionContext } from "@/components/EntityActionsBar";
+import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
+import { DetailExportMenu } from "@/components/DetailExportMenu";
 import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { summarize, type ScopedRow, encodeRowKey } from "@/lib/entity-scope";
+import { useAgentSources } from "@/hooks/useAgentSources";
 
 export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
@@ -80,24 +83,37 @@ export function EntityDetailShell({
     );
   }, [rows, q]);
 
+  const { sources } = useAgentSources();
+  const windowTimestamps = useMemo(
+    () => sources.map((s) => s.payload?.generated_at).filter(Boolean) as string[],
+    [sources],
+  );
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 md:py-8 space-y-6">
-      {/* Top nav + breadcrumb */}
+      {/* Top nav + breadcrumbs + export */}
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/agent" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" aria-hidden /> Back to dashboard
-        </Link>
-        <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${CHIP_TONE[kindIcon]}`}>
-          <Icon kind={kindIcon} />
-          <span className="uppercase tracking-wider">{kindIcon}</span>
-          <span className="opacity-70">·</span>
-          <span className="max-w-[240px] truncate normal-case tracking-normal">{title}</span>
+        <DetailBreadcrumbs kind={kindIcon} title={title} />
+        <div className="ml-auto flex items-center gap-2">
+          <DetailExportMenu
+            rows={filtered}
+            totalInScope={rows.length}
+            ctx={{
+              kind: kindIcon,
+              title,
+              subtitle,
+              appliedFilter: q.trim() ? `search="${q.trim()}"` : "none",
+              windowTimestamps,
+            }}
+            targetDept={actionContext.defaultDept}
+            ownerEmail={actionContext.responsibleEmail}
+          />
+          {onRefresh && (
+            <Button size="sm" variant="outline" onClick={onRefresh}>
+              <RefreshCw className={`h-4 w-4 ${refetching ? "animate-spin" : ""}`} /> Sync
+            </Button>
+          )}
         </div>
-        {onRefresh && (
-          <Button size="sm" variant="outline" className="ml-auto" onClick={onRefresh}>
-            <RefreshCw className={`h-4 w-4 ${refetching ? "animate-spin" : ""}`} /> Sync
-          </Button>
-        )}
       </div>
 
       {/* Header */}
