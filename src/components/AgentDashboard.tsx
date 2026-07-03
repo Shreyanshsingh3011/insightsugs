@@ -913,6 +913,30 @@ export default function AgentDashboard() {
                 <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
                 Sync
               </Button>
+              <div className="inline-flex overflow-hidden rounded-md border border-border/60">
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-8 gap-1 rounded-none px-2.5 text-xs"
+                  onClick={exportScopedCSV}
+                  disabled={!payload || rowIndex.length === 0}
+                  aria-label="Export scoped data as CSV"
+                  title={`Export ${rowIndex.length} scoped rows as CSV`}
+                >
+                  <Download className="h-3.5 w-3.5" /> CSV
+                </Button>
+                <div className="w-px bg-border/60" aria-hidden />
+                <Button
+                  variant="ghost" size="sm"
+                  className="h-8 gap-1 rounded-none px-2.5 text-xs"
+                  onClick={exportScopedPDF}
+                  disabled={!payload || rowIndex.length === 0}
+                  aria-label="Export scoped data as PDF"
+                  title={`Export scoped KPIs + ${rowIndex.length} rows as PDF`}
+                >
+                  <Download className="h-3.5 w-3.5" /> PDF
+                </Button>
+              </div>
+
             </div>
             {lastSyncedAt && (
               <div className="text-[10px] text-muted-foreground">
