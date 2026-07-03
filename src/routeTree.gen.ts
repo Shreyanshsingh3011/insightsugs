@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as AuthenticatedSheetsRouteImport } from './routes/_authenticated/sheets'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
@@ -25,12 +26,15 @@ import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent.index'
+import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
+import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
+import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
@@ -55,6 +59,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmailUnsubscribeRoute = EmailUnsubscribeRouteImport.update({
+  id: '/email/unsubscribe',
+  path: '/email/unsubscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedSheetsRoute = AuthenticatedSheetsRouteImport.update({
@@ -125,6 +134,11 @@ const AuthenticatedAgentIndexRoute = AuthenticatedAgentIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
+const LovableEmailSuppressionRoute = LovableEmailSuppressionRouteImport.update({
+  id: '/lovable/email/suppression',
+  path: '/lovable/email/suppression',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedSheetsSheetIdRoute =
   AuthenticatedSheetsSheetIdRouteImport.update({
     id: '/$sheetId',
@@ -157,6 +171,18 @@ const AuthenticatedAdminAuditRoute = AuthenticatedAdminAuditRouteImport.update({
   path: '/admin/audit',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const LovableEmailTransactionalSendRoute =
+  LovableEmailTransactionalSendRouteImport.update({
+    id: '/lovable/email/transactional/send',
+    path: '/lovable/email/transactional/send',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const LovableEmailTransactionalPreviewRoute =
+  LovableEmailTransactionalPreviewRouteImport.update({
+    id: '/lovable/email/transactional/preview',
+    path: '/lovable/email/transactional/preview',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const LovableEmailQueueProcessRoute =
   LovableEmailQueueProcessRouteImport.update({
     id: '/lovable/email/queue/process',
@@ -236,12 +262,14 @@ export interface FileRoutesByFullPath {
   '/projects': typeof AuthenticatedProjectsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
+  '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
@@ -255,6 +283,8 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
+  '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -268,12 +298,14 @@ export interface FileRoutesByTo {
   '/projects': typeof AuthenticatedProjectsRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
+  '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
@@ -287,6 +319,8 @@ export interface FileRoutesByTo {
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
+  '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -304,12 +338,14 @@ export interface FileRoutesById {
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
+  '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/_authenticated/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
@@ -323,6 +359,8 @@ export interface FileRoutesById {
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
+  '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
+  '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -340,12 +378,14 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/sheets'
+    | '/email/unsubscribe'
     | '/admin/audit'
     | '/admin/email-groups'
     | '/admin/users'
     | '/agent/inbox'
     | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/lovable/email/suppression'
     | '/agent/'
     | '/alerts/'
     | '/agent/detail/$payload'
@@ -359,6 +399,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
+    | '/lovable/email/transactional/preview'
+    | '/lovable/email/transactional/send'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -372,12 +414,14 @@ export interface FileRouteTypes {
     | '/projects'
     | '/settings'
     | '/sheets'
+    | '/email/unsubscribe'
     | '/admin/audit'
     | '/admin/email-groups'
     | '/admin/users'
     | '/agent/inbox'
     | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/lovable/email/suppression'
     | '/agent'
     | '/alerts'
     | '/agent/detail/$payload'
@@ -391,6 +435,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
+    | '/lovable/email/transactional/preview'
+    | '/lovable/email/transactional/send'
   id:
     | '__root__'
     | '/'
@@ -407,12 +453,14 @@ export interface FileRouteTypes {
     | '/_authenticated/projects'
     | '/_authenticated/settings'
     | '/_authenticated/sheets'
+    | '/email/unsubscribe'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/users'
     | '/_authenticated/agent/inbox'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
+    | '/lovable/email/suppression'
     | '/_authenticated/agent/'
     | '/_authenticated/alerts/'
     | '/_authenticated/agent/detail/$payload'
@@ -426,17 +474,23 @@ export interface FileRouteTypes {
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
+    | '/lovable/email/transactional/preview'
+    | '/lovable/email/transactional/send'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
+  LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
   ApiPublicHooksWeeklyReportRoute: typeof ApiPublicHooksWeeklyReportRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
+  LovableEmailTransactionalPreviewRoute: typeof LovableEmailTransactionalPreviewRoute
+  LovableEmailTransactionalSendRoute: typeof LovableEmailTransactionalSendRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -460,6 +514,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/email/unsubscribe': {
+      id: '/email/unsubscribe'
+      path: '/email/unsubscribe'
+      fullPath: '/email/unsubscribe'
+      preLoaderRoute: typeof EmailUnsubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/sheets': {
@@ -553,6 +614,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentIndexRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/lovable/email/suppression': {
+      id: '/lovable/email/suppression'
+      path: '/lovable/email/suppression'
+      fullPath: '/lovable/email/suppression'
+      preLoaderRoute: typeof LovableEmailSuppressionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/sheets/$sheetId': {
       id: '/_authenticated/sheets/$sheetId'
       path: '/$sheetId'
@@ -594,6 +662,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/audit'
       preLoaderRoute: typeof AuthenticatedAdminAuditRouteImport
       parentRoute: typeof AuthenticatedRoute
+    }
+    '/lovable/email/transactional/send': {
+      id: '/lovable/email/transactional/send'
+      path: '/lovable/email/transactional/send'
+      fullPath: '/lovable/email/transactional/send'
+      preLoaderRoute: typeof LovableEmailTransactionalSendRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/lovable/email/transactional/preview': {
+      id: '/lovable/email/transactional/preview'
+      path: '/lovable/email/transactional/preview'
+      fullPath: '/lovable/email/transactional/preview'
+      preLoaderRoute: typeof LovableEmailTransactionalPreviewRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/lovable/email/queue/process': {
       id: '/lovable/email/queue/process'
@@ -767,11 +849,15 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
+  EmailUnsubscribeRoute: EmailUnsubscribeRoute,
+  LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
   ApiPublicHooksWeeklyReportRoute: ApiPublicHooksWeeklyReportRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
+  LovableEmailTransactionalPreviewRoute: LovableEmailTransactionalPreviewRoute,
+  LovableEmailTransactionalSendRoute: LovableEmailTransactionalSendRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
