@@ -925,8 +925,16 @@ export default function AgentDashboard() {
             <MiniStat label="Activities" value={String(myPerf.total)} sub={`${myPerf.completed} done`} />
             <MiniStat label="Delayed" value={String(myPerf.delayed)} sub={`${myPerf.delayDays}d total`} tone={myPerf.delayed > 0 ? "high" : "ok"} />
           </CardContent>
+          <div className="border-t border-emerald-500/20 bg-emerald-500/[0.04] px-4 py-2 text-[10.5px] leading-relaxed text-emerald-900/80">
+            <span className="font-semibold uppercase tracking-widest text-emerald-700/90">Formula ·</span>{" "}
+            Efficiency = 0.5 × Completion% + 0.5 × On-time% − 0.3 × max(0, Pace−100),
+            where <b>On-time%</b> = 100 − (delayed ÷ total × 100),
+            <b> Pace</b> = Days Taken ÷ TAT × 100, and <b>Delay days</b> sums <i>Delay in Days</i> across your rows.
+            Computed from <b>{myPerf.total}</b> activities scoped to <b>{scope.profile?.full_name || scope.profile?.email || "you"}</b>.
+          </div>
         </Card>
       )}
+
 
       {payload && (
         <>
