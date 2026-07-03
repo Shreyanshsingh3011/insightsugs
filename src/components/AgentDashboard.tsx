@@ -12,6 +12,7 @@ import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
+import { EmailQueuePanel } from "@/components/EmailQueuePanel";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1086,6 +1087,10 @@ export default function AgentDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {(scope.isAdmin || scope.isSuper) && <EmailQueuePanel />}
+
+
 
       {/* PROJECT SWITCHER */}
       <div className="flex flex-wrap items-center gap-1.5">

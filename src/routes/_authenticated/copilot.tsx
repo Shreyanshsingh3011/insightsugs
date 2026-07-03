@@ -24,6 +24,7 @@ import {
 import { listSheets, askCopilot, generateAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
+import { ChatGroundingHint } from "@/components/ChatGroundingHint";
 import {
   ResponsiveContainer,
   BarChart,
@@ -279,7 +280,10 @@ function CopilotPage() {
             </ul>
           )}
         </Card>
+
+        <ChatGroundingHint />
       </aside>
+
 
 
       {/* Conversation */}
