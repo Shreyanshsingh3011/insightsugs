@@ -122,6 +122,7 @@ export const registerAndProcessDocument = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
+    await assertAdmin(supabase, userId);
 
     const { data: inserted, error: ierr } = await supabase
       .from("documents")
