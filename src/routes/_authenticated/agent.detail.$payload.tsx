@@ -381,7 +381,7 @@ QUESTION: ${q}`;
 
       <div className="grid gap-6 lg:grid-cols-5">
         {/* SOURCE ROW / CONTEXT ROWS */}
-        <Card className="lg:col-span-3">
+        <Card className="lg:col-span-3" ref={scopeTableRef as never}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <ExternalLink className="h-4 w-4" aria-hidden /> {rowEntries.length ? "Source record" : "Records in scope"}
