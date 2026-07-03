@@ -20,6 +20,8 @@ import {
 import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
+import { DraftActionButton } from "@/components/DraftActionButton";
+
 
 export const Route = createFileRoute("/_authenticated/agent/row/$key")({
   head: () => ({ meta: [{ title: "Activity detail — DelayLens" }] }),
