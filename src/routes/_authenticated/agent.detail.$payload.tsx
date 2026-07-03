@@ -44,6 +44,8 @@ function DetailPage() {
   }, [encoded]);
 
   const sendFn = useServerFn(sendAlert);
+  const timelineFn = useServerFn(getSourceTimeline);
+  const qc = useQueryClient();
 
   const activityTitle = (data?.row && (data.row["Activity List"] || data.row["Process Descriptions"] || data.row["Process"])) as string | undefined
     ?? data?.title
