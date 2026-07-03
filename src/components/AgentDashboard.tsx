@@ -664,18 +664,35 @@ export default function AgentDashboard() {
               {d.actions.length === 0 && (
                 <p className="text-sm text-muted-foreground">Nothing urgent. The agent will resurface work as data changes.</p>
               )}
-              {d.actions.slice(0, 8).map(a => (
-                <div key={a.id} className={`rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-sm ${TONE[a.severity]}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
-                      <div className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</div>
-                      <div className="mt-1 text-xs opacity-90">{a.detail}</div>
+              {d.actions.slice(0, 8).map(a => {
+                const payloadStr = encodeDetailPayload({
+                  kind: a.row ? "row" : "aggregate",
+                  projectId: selected === "all" ? undefined : selected,
+                  projectLabel: payload?.project,
+                  title: a.title, detail: a.detail, severity: a.severity, source: a.source,
+                  person: a.person, stage: a.stage, email: a.email, row: a.row,
+                });
+                return (
+                  <Link
+                    key={a.id}
+                    to="/agent/detail/$payload"
+                    params={{ payload: payloadStr }}
+                    className={`group block rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-md ${TONE[a.severity]}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
+                        <div className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</div>
+                        <div className="mt-1 text-xs opacity-90">{a.detail}</div>
+                        <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium opacity-80 group-hover:opacity-100">
+                          Open source & take action <ArrowRight className="h-3 w-3" />
+                        </div>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
                     </div>
-                    <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
-                  </div>
-                </div>
-              ))}
+                  </Link>
+                );
+              })}
             </CardContent>
           </Card>
 
