@@ -642,13 +642,35 @@ export default function AgentDashboard() {
         status_mix: d.status, criticality_mix: d.critAgg,
       };
       const history = chat.slice(-6).map(m => `${m.role === "user" ? "USER" : "AGENT"}: ${m.text}`).join("\n");
+      // Compact human label describing exactly which slice of data the answer
+      // is grounded on. Regular users see personal scope; admins see the
+      // project + focus filters currently applied on the dashboard.
+      const scopeLabel = (() => {
+        const parts: string[] = [];
+        if (!scope.isAdmin) {
+          parts.push(`personal · ${scope.profile?.full_name || scope.profile?.email || "you"}`);
+        } else if (scope.isSuper) {
+          parts.push("super_admin · all projects");
+        } else {
+          parts.push(`admin · ${scope.assignments.length} assigned project${scope.assignments.length === 1 ? "" : "s"}`);
+        }
+        if (selected !== "all") {
+          const proj = sources.find(s => s.project.id === selected)?.project.label;
+          if (proj) parts.push(`project=${proj}`);
+        }
+        if (canFocus && focusPerson !== "all") parts.push(`person=${focusPerson}`);
+        if (canFocus && focusDept !== "all") parts.push(`team=${focusDept}`);
+        parts.push(`${rowsAll.length} rows in scope`);
+        return parts.join(" · ");
+      })();
       const res = await genFn({
         data: {
-          system: "You are the user's personal project agent. Answers must be PERSON-CONCENTRATED: whenever the question is about a specific person, or a specific reason for delay, name the person(s) explicitly by full name and cite their exact activities, stages, projects, delay-days, and status from MATCHING_ROWS or PERSON_ROLLUPS. Never conflate people, never invent people, and never return generic team-level averages when a person is named. If the user says 'me / my / mine', treat that as YOU.name / YOU.email. If the data doesn't cover it, say 'not in the data'. Prefer 2-6 sentences; use short bullets for per-person lists or step plans.",
-          prompt: `YOU:\n${JSON.stringify(you)}\n\nFACTS:\n${JSON.stringify(facts)}\n\nPERSON_ROLLUPS (focused on people mentioned in the question):\n${JSON.stringify(personRollups)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total${isSelfQ ? ", filtered to YOU when possible" : focusPersons.length ? `, boosted for ${focusPersons.map(p => p.name || p.email).join(", ")}` : ""}):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
+          system: "You are the user's personal project agent. Answers MUST be strictly grounded in the SCOPED_DATA provided below — never invent people, projects, activities, or numbers, and never reach outside the scope. Answers must be PERSON-CONCENTRATED: whenever the question is about a specific person, or a specific reason for delay, name the person(s) explicitly by full name and cite their exact activities, stages, projects, delay-days, and status from MATCHING_ROWS or PERSON_ROLLUPS. Never conflate people. If the user says 'me / my / mine', treat that as YOU.name / YOU.email. If the answer isn't in SCOPED_DATA, say 'not in the current scope' and suggest widening the filter. ALWAYS end your reply with a single short italic line beginning with 'Scope:' that repeats SCOPE_LABEL verbatim. Prefer 2-6 sentences; short bullets for per-person lists or steps.",
+          prompt: `SCOPE_LABEL: ${scopeLabel}\n\nYOU:\n${JSON.stringify(you)}\n\nFACTS (aggregates over SCOPED_DATA):\n${JSON.stringify(facts)}\n\nPERSON_ROLLUPS (focused on people mentioned in the question, computed over SCOPED_DATA):\n${JSON.stringify(personRollups)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} in-scope rows${isSelfQ ? ", filtered to YOU when possible" : focusPersons.length ? `, boosted for ${focusPersons.map(p => p.name || p.email).join(", ")}` : ""}):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
           temperature: 0.15,
         },
       });
+
       return res.text;
     },
     onSuccess: (t, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: t }]),
