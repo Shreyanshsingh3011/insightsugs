@@ -67,7 +67,7 @@ function SearchPage() {
   };
 
   const hits = mut.data?.hits ?? [];
-  const regex = useMemo(() => buildHighlightRegex(lastQuery), [lastQuery]);
+  const tokens = useMemo(() => buildHighlightTokens(lastQuery), [lastQuery]);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8 md:px-6">
