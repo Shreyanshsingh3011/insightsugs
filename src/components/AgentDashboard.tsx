@@ -121,6 +121,7 @@ function derive(payload: Payload | undefined) {
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
         status: pick(r, "Status Category", "Status as on Date"), criticality: crit,
+        email, row: r,
       });
     }
   }
