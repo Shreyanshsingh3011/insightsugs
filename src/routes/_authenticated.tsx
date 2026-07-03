@@ -7,7 +7,7 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, Activity, FileText, Sparkles, Sheet as SheetIcon,
-  AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar,
+  AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({

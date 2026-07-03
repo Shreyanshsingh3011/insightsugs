@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as AuthenticatedSheetsRouteImport } from './routes/_authenticated/sheets'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
+import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authenticated/my-activities'
@@ -77,6 +78,11 @@ const AuthenticatedSheetsRoute = AuthenticatedSheetsRouteImport.update({
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedSearchRoute = AuthenticatedSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedProjectsRoute = AuthenticatedProjectsRouteImport.update({
@@ -281,6 +287,7 @@ export interface FileRoutesByFullPath {
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
+  '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -320,6 +327,7 @@ export interface FileRoutesByTo {
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
   '/projects': typeof AuthenticatedProjectsRoute
+  '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/_authenticated/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
+  '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -406,6 +415,7 @@ export interface FileRouteTypes {
     | '/my-activities'
     | '/notifications'
     | '/projects'
+    | '/search'
     | '/settings'
     | '/sheets'
     | '/email/unsubscribe'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/my-activities'
     | '/notifications'
     | '/projects'
+    | '/search'
     | '/settings'
     | '/sheets'
     | '/email/unsubscribe'
@@ -487,6 +498,7 @@ export interface FileRouteTypes {
     | '/_authenticated/my-activities'
     | '/_authenticated/notifications'
     | '/_authenticated/projects'
+    | '/_authenticated/search'
     | '/_authenticated/settings'
     | '/_authenticated/sheets'
     | '/email/unsubscribe'
@@ -575,6 +587,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/search': {
+      id: '/_authenticated/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof AuthenticatedSearchRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/projects': {
@@ -877,6 +896,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMyActivitiesRoute: typeof AuthenticatedMyActivitiesRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
+  AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
@@ -896,6 +916,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMyActivitiesRoute: AuthenticatedMyActivitiesRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
+  AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
