@@ -34,6 +34,7 @@ import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/pub
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
 import { Route as AuthenticatedAgentStageKeyRouteImport } from './routes/_authenticated/agent.stage.$key'
+import { Route as AuthenticatedAgentRowKeyRouteImport } from './routes/_authenticated/agent.row.$key'
 import { Route as AuthenticatedAgentProjectProjectIdRouteImport } from './routes/_authenticated/agent.project.$projectId'
 import { Route as AuthenticatedAgentPersonKeyRouteImport } from './routes/_authenticated/agent.person.$key'
 import { Route as AuthenticatedAgentKpiIdRouteImport } from './routes/_authenticated/agent.kpi.$id'
@@ -172,6 +173,12 @@ const AuthenticatedAgentStageKeyRoute =
     path: '/stage/$key',
     getParentRoute: () => AuthenticatedAgentRoute,
   } as any)
+const AuthenticatedAgentRowKeyRoute =
+  AuthenticatedAgentRowKeyRouteImport.update({
+    id: '/row/$key',
+    path: '/row/$key',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 const AuthenticatedAgentProjectProjectIdRoute =
   AuthenticatedAgentProjectProjectIdRouteImport.update({
     id: '/project/$projectId',
@@ -220,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
+  '/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
@@ -249,6 +257,7 @@ export interface FileRoutesByTo {
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
+  '/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
@@ -281,6 +290,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/_authenticated/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/_authenticated/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
+  '/_authenticated/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/_authenticated/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/agent/kpi/$id'
     | '/agent/person/$key'
     | '/agent/project/$projectId'
+    | '/agent/row/$key'
     | '/agent/stage/$key'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
@@ -342,6 +353,7 @@ export interface FileRouteTypes {
     | '/agent/kpi/$id'
     | '/agent/person/$key'
     | '/agent/project/$projectId'
+    | '/agent/row/$key'
     | '/agent/stage/$key'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
@@ -373,6 +385,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/kpi/$id'
     | '/_authenticated/agent/person/$key'
     | '/_authenticated/agent/project/$projectId'
+    | '/_authenticated/agent/row/$key'
     | '/_authenticated/agent/stage/$key'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
@@ -567,6 +580,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentStageKeyRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/_authenticated/agent/row/$key': {
+      id: '/_authenticated/agent/row/$key'
+      path: '/row/$key'
+      fullPath: '/agent/row/$key'
+      preLoaderRoute: typeof AuthenticatedAgentRowKeyRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/agent/project/$projectId': {
       id: '/_authenticated/agent/project/$projectId'
       path: '/project/$projectId'
@@ -603,6 +623,7 @@ interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentKpiIdRoute: typeof AuthenticatedAgentKpiIdRoute
   AuthenticatedAgentPersonKeyRoute: typeof AuthenticatedAgentPersonKeyRoute
   AuthenticatedAgentProjectProjectIdRoute: typeof AuthenticatedAgentProjectProjectIdRoute
+  AuthenticatedAgentRowKeyRoute: typeof AuthenticatedAgentRowKeyRoute
   AuthenticatedAgentStageKeyRoute: typeof AuthenticatedAgentStageKeyRoute
 }
 
@@ -612,6 +633,7 @@ const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentPersonKeyRoute: AuthenticatedAgentPersonKeyRoute,
   AuthenticatedAgentProjectProjectIdRoute:
     AuthenticatedAgentProjectProjectIdRoute,
+  AuthenticatedAgentRowKeyRoute: AuthenticatedAgentRowKeyRoute,
   AuthenticatedAgentStageKeyRoute: AuthenticatedAgentStageKeyRoute,
 }
 

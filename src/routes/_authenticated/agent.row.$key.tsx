@@ -160,7 +160,7 @@ function RowPage() {
           <div className="mt-4">
             <EntityActionsBar
               ctx={{
-                scopeKind: "activity",
+                scopeKind: "stage",
                 scopeLabel: activity,
                 scopeRef: `row:${key}`,
                 responsibleName: person,
