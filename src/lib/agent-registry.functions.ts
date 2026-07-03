@@ -99,6 +99,17 @@ async function fetchPublicCSV(): Promise<string[][]> {
   throw new Error(`Public sheet unreachable: ${lastErr || "no data"}`);
 }
 
+// Built-in fallback — kept in sync with AgentDashboard.FALLBACK_PROJECTS and
+// useAgentSources.FALLBACK_PROJECTS. Used when the master sheet is empty or
+// unreachable so watchers/cron still have something to scan.
+export const FALLBACK_PROJECTS: AgentProject[] = [
+  { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
+  { id: "pspcl", label: "PSPCL Kharar",  url: "https://sheet2api-bypassed-login.vercel.app/api/public/80d914878c5b9a85de90b59f5eaec11a" },
+  { id: "hp",    label: "Himachal",      url: "https://sheet2api-bypassed-login.vercel.app/api/public/f0fc62c15a274dc4c149c2b0a69e2f86" },
+  { id: "ula",   label: "ULA 1.1 Bihar", url: "https://sheet2api-bypassed-login.vercel.app/api/public/f84b4f7ebb2380bc85f27cba8a676a1d" },
+  { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
+];
+
 // Pure server-side helper — safe to import from other server code
 // (webhooks, cron endpoints) that doesn't have a Supabase auth context.
 export async function loadAgentProjects(): Promise<{ projects: AgentProject[]; source: string; fetched_at: string }> {
@@ -135,10 +146,14 @@ export async function loadAgentProjects(): Promise<{ projects: AgentProject[]; s
       }
     } catch { /* fall through */ }
   }
-  const values = await fetchPublicCSV();
-  const projects = buildProjects(values);
-  return { projects, source: "public-csv", fetched_at: now() };
+  try {
+    const values = await fetchPublicCSV();
+    const projects = buildProjects(values);
+    if (projects.length) return { projects, source: "public-csv", fetched_at: now() };
+  } catch { /* fall through to built-in fallback */ }
+  return { projects: FALLBACK_PROJECTS, source: "fallback:builtin", fetched_at: now() };
 }
+
 
 export const fetchAgentProjects = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
