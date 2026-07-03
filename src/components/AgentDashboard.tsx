@@ -633,6 +633,7 @@ export default function AgentDashboard() {
 
   // Every card/row on the dashboard deep-links to /agent/detail/$payload so
   // the user can read AI suggestions and dispatch a mail/message from there.
+  const nav = useNavigate();
   const detailLink = (p: Partial<DetailPayload> & { title: string }) => {
     const payloadStr = encodeDetailPayload({
       kind: p.kind ?? "aggregate",
