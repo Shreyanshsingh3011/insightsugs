@@ -101,6 +101,20 @@ export type CitationValidation = {
 };
 
 const INLINE_RE = /\[([^\]\n]{2,}?)\]/g;
+
+// Walk react-markdown children and replace any string containing inline [..]
+// citation markers with clickable citation links.
+function decorateChildren(children: React.ReactNode, sources: Source[]): React.ReactNode {
+  const walk = (node: React.ReactNode, key: string): React.ReactNode => {
+    if (typeof node === "string") {
+      if (!/\[[^\]\n]{2,}?\]/.test(node)) return node;
+      return <>{renderWithCitations(node, sources)}</>;
+    }
+    if (Array.isArray(node)) return node.map((c, i) => walk(c, `${key}-${i}`));
+    return node;
+  };
+  return walk(children, "d");
+}
 const KNOWN_SHAPES = [
   /^sheet:\s*[^,\s]+(?:\s+row\s+\d+)?$/i,
   /^flags?\[.+\]$/i,
