@@ -1107,6 +1107,51 @@ export type Database = {
           },
         ]
       }
+      signup_requests: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string | null
+          granted_role: Database["public"]["Enums"]["app_role"] | null
+          id: string
+          reject_reason: string | null
+          requested_role: Database["public"]["Enums"]["app_role"]
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          user_id: string
+          verified_via: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string | null
+          granted_role?: Database["public"]["Enums"]["app_role"] | null
+          id?: string
+          reject_reason?: string | null
+          requested_role?: Database["public"]["Enums"]["app_role"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          user_id: string
+          verified_via?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          granted_role?: Database["public"]["Enums"]["app_role"] | null
+          id?: string
+          reject_reason?: string | null
+          requested_role?: Database["public"]["Enums"]["app_role"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          user_id?: string
+          verified_via?: string | null
+        }
+        Relationships: []
+      }
       suppressed_emails: {
         Row: {
           created_at: string
@@ -1181,6 +1226,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      approve_signup: {
+        Args: {
+          _request_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+        }
+        Returns: undefined
+      }
       can_see_project: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
@@ -1240,8 +1292,16 @@ export type Database = {
           read_ct: number
         }[]
       }
+      reject_signup: {
+        Args: { _reason: string; _request_id: string }
+        Returns: undefined
+      }
       seed_default_doc_folders: {
         Args: { _user_id: string }
+        Returns: undefined
+      }
+      self_verify_signup: {
+        Args: { _role: Database["public"]["Enums"]["app_role"] }
         Returns: undefined
       }
     }
