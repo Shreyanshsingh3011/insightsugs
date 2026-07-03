@@ -60,12 +60,17 @@ interface NormalizedRow {
   isBlocked: boolean;
   overdue: number;
   owner?: string;
+  ownerEmail?: string;
+  ownerKey?: string;
+  ownerSource?: string;
+  ownerIsTitleFallback?: boolean;
   dept?: string;
   activity?: string;
   reason?: string;
   tat?: number;
   daysTaken?: number;
 }
+
 
 function normalizeRow(sheetName: string, sheetType: string, merged: Row): NormalizedRow {
   const now = new Date();
