@@ -68,9 +68,8 @@ for (const m of kpiUsages) {
 ok.push(`inspected ${kpiUsages.length} KPI tiles`);
 
 
-// ── 4. Bottleneck onClick handler must navigate to stage page ────────────────
-// Look for the BarChart onClick region — must contain /agent/stage/
-const bottleneckRegion = src.match(/Bottleneck[\s\S]{0,1200}?<\/BarChart>/);
+// ── 4. Bottleneck chart must navigate to stage page ─────────────────────────
+const bottleneckRegion = src.match(/Bottleneck map \(stages\)[\s\S]{0,2000}?<\/BarChart>/);
 if (!bottleneckRegion) {
   errors.push("Could not locate Bottleneck chart block.");
 } else if (!/\/agent\/stage\/\$key/.test(bottleneckRegion[0])) {
