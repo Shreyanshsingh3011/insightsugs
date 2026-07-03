@@ -3,6 +3,7 @@ import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { encodeDetailPayload, type DetailPayload } from "@/lib/agent-detail-payload";
+import { encodeKey as encodeEntityKey } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
@@ -802,6 +803,14 @@ export default function AgentDashboard() {
             onClick={() => setSelected(s.project.id)}
           />
         ))}
+        {selected !== "all" && (
+          <Link
+            to="/agent/project/$projectId"
+            params={{ projectId: selected }}
+            className="ml-1 rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+            title="Open full project workspace"
+          >Open workspace →</Link>
+        )}
       </div>
 
       {anyLoading && !payload && (
@@ -1205,7 +1214,16 @@ export default function AgentDashboard() {
                       <div className="flex items-center gap-2">
                         <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{p.person}</div>
+                          <div className="flex items-center gap-1.5">
+                            <div className="truncate text-sm font-medium">{p.person}</div>
+                            <Link
+                              to="/agent/person/$key"
+                              params={{ key: encodeEntityKey(p.person) }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              title="Open person profile"
+                            >Profile</Link>
+                          </div>
                           <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
                         </div>
                         <div className="text-right">
@@ -1258,7 +1276,17 @@ export default function AgentDashboard() {
                     return (
                       <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav({ to: link.to, params: link.params })}>
                         <TableCell className="font-medium">
-                          <Link {...link} className="hover:underline">{p.person}</Link>
+                          <div className="flex items-center gap-1.5">
+                            <Link {...link} className="hover:underline">{p.person}</Link>
+                            <Link
+                              to="/agent/person/$key"
+                              params={{ key: encodeEntityKey(p.person) }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              title="Open person profile"
+                              aria-label={`Open profile for ${p.person}`}
+                            >Profile →</Link>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">{p.total}</TableCell>
                         <TableCell className="text-right">{p.completed}</TableCell>

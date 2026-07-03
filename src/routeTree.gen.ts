@@ -33,6 +33,9 @@ import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/e
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
+import { Route as AuthenticatedAgentStageKeyRouteImport } from './routes/_authenticated/agent.stage.$key'
+import { Route as AuthenticatedAgentProjectProjectIdRouteImport } from './routes/_authenticated/agent.project.$projectId'
+import { Route as AuthenticatedAgentPersonKeyRouteImport } from './routes/_authenticated/agent.person.$key'
 import { Route as AuthenticatedAgentDetailPayloadRouteImport } from './routes/_authenticated/agent.detail.$payload'
 
 const LoginRoute = LoginRouteImport.update({
@@ -162,6 +165,24 @@ const ApiPublicHooksConcernNudgesRoute =
     path: '/api/public/hooks/concern-nudges',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedAgentStageKeyRoute =
+  AuthenticatedAgentStageKeyRouteImport.update({
+    id: '/stage/$key',
+    path: '/stage/$key',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
+const AuthenticatedAgentProjectProjectIdRoute =
+  AuthenticatedAgentProjectProjectIdRouteImport.update({
+    id: '/project/$projectId',
+    path: '/project/$projectId',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
+const AuthenticatedAgentPersonKeyRoute =
+  AuthenticatedAgentPersonKeyRouteImport.update({
+    id: '/person/$key',
+    path: '/person/$key',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 const AuthenticatedAgentDetailPayloadRoute =
   AuthenticatedAgentDetailPayloadRouteImport.update({
     id: '/detail/$payload',
@@ -190,6 +211,9 @@ export interface FileRoutesByFullPath {
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
+  '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
+  '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
+  '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -215,6 +239,9 @@ export interface FileRoutesByTo {
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
+  '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
+  '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
+  '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -243,6 +270,9 @@ export interface FileRoutesById {
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/_authenticated/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
+  '/_authenticated/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
+  '/_authenticated/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
+  '/_authenticated/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -271,6 +301,9 @@ export interface FileRouteTypes {
     | '/sheets/$sheetId'
     | '/alerts/'
     | '/agent/detail/$payload'
+    | '/agent/person/$key'
+    | '/agent/project/$projectId'
+    | '/agent/stage/$key'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -296,6 +329,9 @@ export interface FileRouteTypes {
     | '/sheets/$sheetId'
     | '/alerts'
     | '/agent/detail/$payload'
+    | '/agent/person/$key'
+    | '/agent/project/$projectId'
+    | '/agent/stage/$key'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -323,6 +359,9 @@ export interface FileRouteTypes {
     | '/_authenticated/sheets/$sheetId'
     | '/_authenticated/alerts/'
     | '/_authenticated/agent/detail/$payload'
+    | '/_authenticated/agent/person/$key'
+    | '/_authenticated/agent/project/$projectId'
+    | '/_authenticated/agent/stage/$key'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -509,6 +548,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksConcernNudgesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/agent/stage/$key': {
+      id: '/_authenticated/agent/stage/$key'
+      path: '/stage/$key'
+      fullPath: '/agent/stage/$key'
+      preLoaderRoute: typeof AuthenticatedAgentStageKeyRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/agent/project/$projectId': {
+      id: '/_authenticated/agent/project/$projectId'
+      path: '/project/$projectId'
+      fullPath: '/agent/project/$projectId'
+      preLoaderRoute: typeof AuthenticatedAgentProjectProjectIdRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/agent/person/$key': {
+      id: '/_authenticated/agent/person/$key'
+      path: '/person/$key'
+      fullPath: '/agent/person/$key'
+      preLoaderRoute: typeof AuthenticatedAgentPersonKeyRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/agent/detail/$payload': {
       id: '/_authenticated/agent/detail/$payload'
       path: '/detail/$payload'
@@ -521,10 +581,17 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentDetailPayloadRoute: typeof AuthenticatedAgentDetailPayloadRoute
+  AuthenticatedAgentPersonKeyRoute: typeof AuthenticatedAgentPersonKeyRoute
+  AuthenticatedAgentProjectProjectIdRoute: typeof AuthenticatedAgentProjectProjectIdRoute
+  AuthenticatedAgentStageKeyRoute: typeof AuthenticatedAgentStageKeyRoute
 }
 
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentDetailPayloadRoute: AuthenticatedAgentDetailPayloadRoute,
+  AuthenticatedAgentPersonKeyRoute: AuthenticatedAgentPersonKeyRoute,
+  AuthenticatedAgentProjectProjectIdRoute:
+    AuthenticatedAgentProjectProjectIdRoute,
+  AuthenticatedAgentStageKeyRoute: AuthenticatedAgentStageKeyRoute,
 }
 
 const AuthenticatedAgentRouteWithChildren =
