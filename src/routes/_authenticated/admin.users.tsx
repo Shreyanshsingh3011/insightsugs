@@ -361,11 +361,11 @@ function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string
             Showing <b className="tabular-nums">{start + 1}</b>–<b className="tabular-nums">{Math.min(start + pageSize, filtered.length)}</b> of <b className="tabular-nums">{filtered.length}</b>
           </div>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((p: number) => Math.max(1, p - 1))}>
               Previous
             </Button>
             <span className="tabular-nums">Page {currentPage} / {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+            <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}>
               Next
             </Button>
           </div>
