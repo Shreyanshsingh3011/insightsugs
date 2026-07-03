@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
-import { fetchSheetRows } from "@/lib/gsheets-agent.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,15 +21,20 @@ import {
   Flame, Gauge, Radar, Layers,
 } from "lucide-react";
 
-// ────────────────── FIXED SOURCES ──────────────────
-const FIXED_URL =
-  "https://delaybridgesugs.vercel.app/api/public/PeuOiqTX8Suly1enDV4X68reUe6zkBrh/export?fields=summary,totals,risk_score,status_breakdown,sheets,flags,forecast,anomalies,digest,recommendations,trends,top_delay_reasons,dependency_chains,person_ranking,correlation_matrix,department_ranking,timeline_correlation,tat_performance";
-const FIXED_SHEET =
-  "https://docs.google.com/spreadsheets/d/1U2CkhrRBSv6VLbri_ROwhqCvXJvOKbqbWzJDrc4q-DQ/edit?gid=2069956310#gid=2069956310";
+// ────────────────── FIXED SOURCES (auto-refreshed) ──────────────────
+const PROJECTS: { id: string; label: string; url: string }[] = [
+  { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
+  { id: "pspcl", label: "PSPCL Kharar",  url: "https://sheet2api-bypassed-login.vercel.app/api/public/80d914878c5b9a85de90b59f5eaec11a" },
+  { id: "hp",    label: "Himachal",      url: "https://sheet2api-bypassed-login.vercel.app/api/public/f0fc62c15a274dc4c149c2b0a69e2f86" },
+  { id: "ula",   label: "ULA 1.1 Bihar", url: "https://sheet2api-bypassed-login.vercel.app/api/public/f84b4f7ebb2380bc85f27cba8a676a1d" },
+  { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
+];
+const AUTO_REFRESH_MS = 60_000;
 
 // ────────────────── TYPES ──────────────────
-type Row = Record<string, string>;
-type Payload = { project?: string; data?: Row[]; columns?: string[] };
+type Row = Record<string, unknown>;
+type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string };
+type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
 
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
@@ -39,6 +43,14 @@ const TONE = {
   ok: "text-emerald-700 bg-emerald-500/10 border-emerald-500/30",
 } as const;
 
+// Alias-tolerant field access — projects use different column names.
+function pick(r: Row, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+  }
+  return "";
+}
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
@@ -52,6 +64,7 @@ function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Start
   if (/not start|yet|pending/.test(x)) return "Not Started";
   return "Other";
 }
+
 
 // ────────────────── DERIVE ──────────────────
 function derive(payload: Payload | undefined) {
