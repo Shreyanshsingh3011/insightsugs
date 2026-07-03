@@ -20,7 +20,11 @@ import {
   Info,
   AlertCircle,
   Trash2,
+  ShieldCheck,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+
 import { listSheets, askCopilot, generateAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
