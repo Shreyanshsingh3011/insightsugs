@@ -756,10 +756,11 @@ export default function AgentDashboard() {
   }
 
   // ─── EXPORT SCOPED DATA ─────────────────────────────────────────────────────
-  // Downloads KPIs + every scoped activity (personal scope for users, admin
-  // Focus selection for admins) as CSV or PDF. Uses the same `payload` +
-  // derived KPIs the dashboard renders, so the export mirrors the on-screen
-  // state exactly.
+  // Exports the currently active view — i.e. the rows the user is looking at
+  // after applying the dashboard search + filter controls, not just the full
+  // in-scope dataset. Every export is stamped with the exact scope
+  // (person/team/project), the applied filters, timezone, data window, and
+  // both counts (filtered vs. total in-scope).
   function scopeSummary() {
     const parts: string[] = [];
     if (!scope.isAdmin) parts.push(`Personal · ${scope.profile?.full_name || scope.profile?.email || "you"}`);
@@ -774,11 +775,44 @@ export default function AgentDashboard() {
     return parts.join(" · ");
   }
 
+  function activeFilterSummary() {
+    const parts: string[] = [];
+    if (filters.q.trim()) parts.push(`search="${filters.q.trim()}"`);
+    if (filters.status !== "all") parts.push(`status=${filters.status}`);
+    if (filters.crit !== "all") parts.push(`criticality=${filters.crit}`);
+    if (filters.stage !== "all") parts.push(`stage=${filters.stage}`);
+    if (filters.person !== "all") parts.push(`person=${filters.person}`);
+    if (Number(filters.minDelay) > 0) parts.push(`min-delay≥${filters.minDelay}d`);
+    if (filters.onlyOverdue) parts.push("only-overdue");
+    return parts.length ? parts.join(" · ") : "none";
+  }
+
+  function dataWindow() {
+    const stamps = sources
+      .map((s) => s.payload?.generated_at)
+      .filter((v): v is string => !!v)
+      .map((v) => new Date(v).getTime())
+      .filter((n) => Number.isFinite(n));
+    if (!stamps.length) return { from: null as string | null, to: null as string | null };
+    return {
+      from: new Date(Math.min(...stamps)).toISOString(),
+      to: new Date(Math.max(...stamps)).toISOString(),
+    };
+  }
+
   function exportScopedCSV() {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const win = dataWindow();
+    const rows = filteredRows;
     const kpiLines = [
       "# Scope," + JSON.stringify(scopeSummary()),
-      "# Generated," + new Date().toISOString(),
-      "# Rows in scope," + rowIndex.length,
+      "# Applied filters," + JSON.stringify(activeFilterSummary()),
+      "# Generated at," + new Date().toISOString(),
+      "# Timezone," + tz,
+      "# Data window from," + (win.from ?? "n/a"),
+      "# Data window to," + (win.to ?? "n/a"),
+      "# Rows exported," + rows.length,
+      "# Rows in scope (unfiltered)," + rowIndex.length,
       "",
       "KPI,Value",
       `Activities,${d.n}`,
@@ -795,7 +829,7 @@ export default function AgentDashboard() {
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    for (const r of rowIndex) {
+    for (const r of rows) {
       kpiLines.push([r.proj, r.activity, r.person, r.email, r.stage, r.status, r.crit, r.tat, r.taken, r.delay].map(esc).join(","));
     }
     const blob = new Blob([kpiLines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -803,7 +837,7 @@ export default function AgentDashboard() {
     const a = document.createElement("a");
     a.href = url;
     const safe = (payload?.project ?? "scope").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-    a.download = `${safe}-scoped-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `${safe}-scoped-${rows.length}of${rowIndex.length}-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
   }
@@ -814,15 +848,27 @@ export default function AgentDashboard() {
     const margin = 40;
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const win = dataWindow();
+    const rows = filteredRows;
     let y = margin;
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(16);
     doc.text("Scoped agent report", margin, y); y += 20;
     doc.setFont("helvetica", "normal"); doc.setFontSize(9);
     doc.setTextColor(90);
-    const scopeText = doc.splitTextToSize(`Scope: ${scopeSummary()}`, pageW - margin * 2);
-    doc.text(scopeText, margin, y); y += scopeText.length * 12;
-    doc.text(`Generated ${new Date().toLocaleString()} · ${rowIndex.length} rows in scope`, margin, y); y += 18;
+    const stampLines = [
+      `Scope: ${scopeSummary()}`,
+      `Applied filters: ${activeFilterSummary()}`,
+      `Generated: ${new Date().toLocaleString()} (${tz})`,
+      `Data window: ${win.from ? new Date(win.from).toLocaleString() : "n/a"} → ${win.to ? new Date(win.to).toLocaleString() : "n/a"}`,
+      `Records: ${rows.length} exported of ${rowIndex.length} in scope`,
+    ];
+    for (const line of stampLines) {
+      const wrapped = doc.splitTextToSize(line, pageW - margin * 2);
+      doc.text(wrapped, margin, y); y += wrapped.length * 12;
+    }
+    y += 4;
     doc.setTextColor(0);
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(11);
@@ -848,7 +894,7 @@ export default function AgentDashboard() {
     y += Math.ceil(kpis.length / 2) * 14 + 10;
 
     doc.setFont("helvetica", "bold"); doc.setFontSize(11);
-    doc.text("Activities in scope", margin, y); y += 12;
+    doc.text(`Activities in view (${rows.length})`, margin, y); y += 12;
     doc.setFont("helvetica", "bold"); doc.setFontSize(8);
     const headers = ["Project", "Activity", "Person", "Stage", "Status", "Delay"];
     const widths = [80, 150, 90, 80, 70, 45];
@@ -860,7 +906,7 @@ export default function AgentDashboard() {
       const line = doc.splitTextToSize(s || "-", w - 4);
       return String(line[0] ?? "");
     };
-    for (const r of rowIndex) {
+    for (const r of rows) {
       if (y > pageH - margin) { doc.addPage(); y = margin; }
       x = margin;
       const cells = [r.proj, r.activity, r.person, r.stage, r.status, `${r.delay}d`];
@@ -868,8 +914,10 @@ export default function AgentDashboard() {
       y += 11;
     }
     const safe = (payload?.project ?? "scope").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-    doc.save(`${safe}-scoped-${new Date().toISOString().slice(0, 10)}.pdf`);
+    doc.save(`${safe}-scoped-${rows.length}of${rowIndex.length}-${new Date().toISOString().slice(0, 10)}.pdf`);
   }
+
+
 
 
   // Programmatic navigation is still used for row-click table handlers below.
@@ -918,9 +966,9 @@ export default function AgentDashboard() {
                   variant="ghost" size="sm"
                   className="h-8 gap-1 rounded-none px-2.5 text-xs"
                   onClick={exportScopedCSV}
-                  disabled={!payload || rowIndex.length === 0}
-                  aria-label="Export scoped data as CSV"
-                  title={`Export ${rowIndex.length} scoped rows as CSV`}
+                  disabled={!payload || filteredRows.length === 0}
+                  aria-label="Export current filtered view as CSV"
+                  title={`Export ${filteredRows.length} of ${rowIndex.length} rows (current filters) as CSV`}
                 >
                   <Download className="h-3.5 w-3.5" /> CSV
                 </Button>
@@ -929,13 +977,14 @@ export default function AgentDashboard() {
                   variant="ghost" size="sm"
                   className="h-8 gap-1 rounded-none px-2.5 text-xs"
                   onClick={exportScopedPDF}
-                  disabled={!payload || rowIndex.length === 0}
-                  aria-label="Export scoped data as PDF"
-                  title={`Export scoped KPIs + ${rowIndex.length} rows as PDF`}
+                  disabled={!payload || filteredRows.length === 0}
+                  aria-label="Export current filtered view as PDF"
+                  title={`Export KPIs + ${filteredRows.length} of ${rowIndex.length} rows (current filters) as PDF`}
                 >
                   <Download className="h-3.5 w-3.5" /> PDF
                 </Button>
               </div>
+
 
             </div>
             {lastSyncedAt && (
