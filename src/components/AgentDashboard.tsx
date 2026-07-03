@@ -1259,7 +1259,17 @@ export default function AgentDashboard() {
                     return (
                       <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav({ to: link.to, params: link.params })}>
                         <TableCell className="font-medium">
-                          <Link {...link} className="hover:underline">{p.person}</Link>
+                          <div className="flex items-center gap-1.5">
+                            <Link {...link} className="hover:underline">{p.person}</Link>
+                            <Link
+                              to="/agent/person/$key"
+                              params={{ key: encodeEntityKey(p.person) }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
+                              title="Open person profile"
+                              aria-label={`Open profile for ${p.person}`}
+                            >Profile →</Link>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">{p.total}</TableCell>
                         <TableCell className="text-right">{p.completed}</TableCell>
