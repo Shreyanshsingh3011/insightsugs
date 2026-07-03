@@ -20,6 +20,7 @@ import {
   resendVerificationFn,
   type PendingRequest,
 } from "@/lib/signup-verify.functions";
+import { usePersistedState } from "@/hooks/usePersistedState";
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   head: () => ({ meta: [{ title: "Users — DelayLens" }] }),
@@ -113,10 +114,10 @@ function UsersPage() {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  // ────── Pending filters
-  const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
-  const [ageBucket, setAgeBucket] = useState<"any" | "24h" | "3d" | "7d" | "gt7">("any");
+  // ────── Pending filters (persisted across drill-downs)
+  const [q, setQ] = usePersistedState<string>("admin.users.pending.q", "");
+  const [statusFilter, setStatusFilter] = usePersistedState<"pending" | "approved" | "rejected" | "all">("admin.users.pending.status", "pending");
+  const [ageBucket, setAgeBucket] = usePersistedState<"any" | "24h" | "3d" | "7d" | "gt7">("admin.users.pending.age", "any");
 
   const allRequests = requestsQ.data ?? [];
 
@@ -271,9 +272,9 @@ function UsersPage() {
 }
 
 function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string, role: AppRole) => void }) {
-  const [q, setQ] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | AppRole>("all");
-  const [page, setPage] = useState(1);
+  const [q, setQ] = usePersistedState<string>("admin.users.all.q", "");
+  const [roleFilter, setRoleFilter] = usePersistedState<"all" | AppRole>("admin.users.all.role", "all");
+  const [page, setPage] = usePersistedState<number>("admin.users.all.page", 1);
   const pageSize = 20;
 
   const filtered = useMemo(() => {
@@ -360,11 +361,11 @@ function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string
             Showing <b className="tabular-nums">{start + 1}</b>–<b className="tabular-nums">{Math.min(start + pageSize, filtered.length)}</b> of <b className="tabular-nums">{filtered.length}</b>
           </div>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((p: number) => Math.max(1, p - 1))}>
               Previous
             </Button>
             <span className="tabular-nums">Page {currentPage} / {totalPages}</span>
-            <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+            <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage((p: number) => Math.min(totalPages, p + 1))}>
               Next
             </Button>
           </div>

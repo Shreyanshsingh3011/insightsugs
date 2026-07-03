@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Mail, Send, User as UserIcon, Layers, AlertTriangle,
   ExternalLink, MessageSquare, History, CheckCircle2, MessageCircle,
-  Sparkles, Save, Bot, Copy, Lightbulb, ListChecks,
+  Sparkles, Save, Bot, Copy, Lightbulb, ListChecks, Download, Pencil,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,7 +37,7 @@ const TONE: Record<string, string> = {
   ok: "text-emerald-700 bg-emerald-500/10 border-emerald-500/30",
 };
 
-type ChatMsg = { role: "user" | "assistant"; content: string; citations?: number[] };
+type ChatMsg = { role: "user" | "assistant"; content: string; citations?: number[]; ranked?: DetailContextRow[] };
 
 function DetailPage() {
   const { payload: encoded } = Route.useParams();
@@ -154,11 +154,23 @@ Return the JSON now.`;
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [question, setQuestion] = useState("");
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const scopeTableRef = useRef<HTMLDivElement | null>(null);
+  const draftPanelRef = useRef<HTMLDivElement | null>(null);
+  const [highlightRow, setHighlightRow] = useState<string | null>(null);
+
+  // Jump a chat citation to its row in the scope table and flash-highlight it.
+  const jumpToRow = (row: DetailContextRow) => {
+    const key = rowKey(row);
+    setHighlightRow(key);
+    const el = document.getElementById(`scope-row-${key}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    else scopeTableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => setHighlightRow((h) => (h === key ? null : h)), 2400);
+  };
 
   const askMut = useMutation({
     mutationFn: async (q: string) => {
       if (!data) throw new Error("No context");
-      // Local ranking of context rows for citations
       const ranked = rankRows(context, q).slice(0, 8);
       const numbered = ranked.map((r, i) => `[${i + 1}] ${r.activity} · person: ${r.person ?? "—"} · stage: ${r.stage ?? "—"} · status: ${r.status ?? "—"} · TAT ${r.tat ?? "—"} / took ${r.taken ?? "—"} · delay ${r.delay ?? 0}d`).join("\n");
       const sys = `You are a scoped analyst. You may ONLY use the FACTS and RECORDS below. If the answer is not derivable from them, say so plainly. Cite records inline like [1], [2] whenever you state a fact from them. Keep answers under 120 words.`;
@@ -178,7 +190,7 @@ QUESTION: ${q}`;
       return { text, citations: cites, ranked };
     },
     onSuccess: (r) => {
-      setChat(c => [...c, { role: "assistant", content: r.text, citations: r.citations }]);
+      setChat(c => [...c, { role: "assistant", content: r.text, citations: r.citations, ranked: r.ranked }]);
       requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     },
     onError: (e) => {
@@ -192,6 +204,67 @@ QUESTION: ${q}`;
     setChat(c => [...c, { role: "user", content: t }]);
     setQuestion("");
     askMut.mutate(t);
+  }
+
+  // ── One-click actions on recommendations
+  function draftFromRecommendation(rec: string) {
+    setSubject(`Action needed: ${String(activityTitle).slice(0, 120)}`);
+    setBody(
+      [
+        `Hi${responsibleName ? " " + responsibleName : ""},`,
+        "",
+        rec,
+        "",
+        `Context: ${data?.title ?? ""}`,
+        data?.stage ? `Stage: ${data.stage}` : "",
+        data?.projectLabel ? `Project: ${data.projectLabel}` : "",
+        "",
+        "Please confirm a recovery date and any blockers. Reply to this alert directly.",
+      ].filter(Boolean).join("\n")
+    );
+    draftPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    toast.success("Draft prefilled from recommendation");
+  }
+
+  // ── Export the whole detail as CSV (metrics, recommendations, timeline, chat + citations)
+  function exportCsv() {
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines: string[] = [];
+    lines.push(`# Detail export · ${new Date().toISOString()}`);
+    lines.push(`# Title,${esc(data?.title ?? "")}`);
+    lines.push(`# Project,${esc(data?.projectLabel ?? "")}`);
+    lines.push(`# Person,${esc(data?.person ?? "")}`);
+    lines.push(`# Stage,${esc(data?.stage ?? "")}`);
+    lines.push(`# Severity,${esc(data?.severity ?? "")}`);
+    lines.push("");
+    lines.push("Section,Label,Value");
+    metrics.forEach((m) => lines.push(`metric,${esc(m.label)},${esc(String(m.value))}`));
+    derivedRecs.forEach((r, i) => lines.push(`recommendation,#${i + 1},${esc(r)}`));
+    (timelineQ.data ?? []).forEach((e) => {
+      lines.push(`timeline,${esc(new Date(e.at).toLocaleString())},${esc(`${e.kind} · ${e.title}${e.actor.name || e.actor.email ? ` (by ${e.actor.name || e.actor.email})` : ""}${e.body ? " — " + e.body : ""}`)}`);
+    });
+    chat.forEach((m, i) => {
+      lines.push(`chat,${esc(m.role + " #" + (i + 1))},${esc(m.content)}`);
+      (m.citations ?? []).forEach((n) => {
+        const src = m.ranked?.[n - 1];
+        if (src) lines.push(`citation,${esc(`[${n}] from chat #${i + 1}`)},${esc(`${src.activity} · ${src.person ?? "—"} · ${src.stage ?? "—"} · delay ${src.delay ?? 0}d`)}`);
+      });
+    });
+    (context.length ? context : []).forEach((r, i) => {
+      lines.push(`scope-record,#${i + 1},${esc(`${r.activity} · ${r.person ?? "—"} · ${r.stage ?? "—"} · ${r.status ?? "—"} · TAT ${r.tat ?? "—"} / took ${r.taken ?? "—"} · delay ${r.delay ?? 0}d`)}`);
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = (data?.title ?? "detail").replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 60);
+    a.download = `${safe}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Exported");
   }
 
   if (!data) {
@@ -213,7 +286,7 @@ QUESTION: ${q}`;
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <Link
           to="/agent"
-          className="inline-flex min-w-0 items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+          className="inline-flex min-w-0 items-center gap-1 rounded text-sm text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
           <span className="truncate">Back to dashboard</span>
@@ -222,6 +295,9 @@ QUESTION: ${q}`;
           {data.projectLabel && <Badge variant="outline" className="max-w-[220px] truncate">{data.projectLabel}</Badge>}
           {data.source && <Badge variant="secondary">{data.source}</Badge>}
           <Badge variant="outline" className="capitalize">{data.kind}</Badge>
+          <Button size="sm" variant="outline" onClick={exportCsv} aria-label="Export detail as CSV">
+            <Download className="h-4 w-4" aria-hidden /> Export CSV
+          </Button>
         </div>
       </div>
 
@@ -272,9 +348,30 @@ QUESTION: ${q}`;
           <CardContent>
             <ul className="space-y-2">
               {derivedRecs.map((r, i) => (
-                <li key={i} className="flex gap-2 text-sm">
+                <li key={i} className="flex items-start gap-2 text-sm">
                   <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                  <span>{r}</span>
+                  <span className="flex-1">{r}</span>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => draftFromRecommendation(r)}
+                      aria-label={`Draft message from recommendation ${i + 1}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden /> Draft
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => { draftFromRecommendation(r); alertMut.mutate("message"); }}
+                      disabled={alertMut.isPending}
+                      aria-label={`Send in-app message for recommendation ${i + 1}`}
+                    >
+                      <Send className="h-3.5 w-3.5" aria-hidden /> Send
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -284,7 +381,7 @@ QUESTION: ${q}`;
 
       <div className="grid gap-6 lg:grid-cols-5">
         {/* SOURCE ROW / CONTEXT ROWS */}
-        <Card className="lg:col-span-3">
+        <Card className="lg:col-span-3" ref={scopeTableRef as never}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <ExternalLink className="h-4 w-4" aria-hidden /> {rowEntries.length ? "Source record" : "Records in scope"}
@@ -304,7 +401,7 @@ QUESTION: ${q}`;
                 ))}
               </div>
             ) : context.length > 0 ? (
-              <ScopeRowsTable rows={context} />
+              <ScopeRowsTable rows={context} highlightId={highlightRow} />
             ) : (
               <p className="text-sm text-muted-foreground">
                 This action was derived from aggregated metrics ({data.source}). Use the email drafter to notify the owner.
@@ -314,7 +411,7 @@ QUESTION: ${q}`;
         </Card>
 
         {/* ACTION PANEL */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" ref={draftPanelRef as never}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <MessageSquare className="h-4 w-4 text-primary" aria-hidden /> Draft &amp; send email
@@ -431,7 +528,7 @@ QUESTION: ${q}`;
                 </div>
               </div>
             ) : (
-              <ul className="space-y-3">
+              <ul className="space-y-3" role="log" aria-live="polite" aria-relevant="additions">
                 {chat.map((m, i) => (
                   <li key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                     <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
@@ -439,10 +536,26 @@ QUESTION: ${q}`;
                     }`}>
                       <div className="whitespace-pre-wrap break-words">{m.content}</div>
                       {m.citations && m.citations.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {m.citations.map(n => (
-                            <Badge key={n} variant="outline" className="h-4 px-1 text-[10px]">[{n}]</Badge>
-                          ))}
+                        <div className="mt-2 flex flex-wrap gap-1" aria-label="Citations">
+                          {m.citations.map(n => {
+                            const src = m.ranked?.[n - 1];
+                            const label = src
+                              ? `Citation ${n}: ${src.activity}${src.person ? " — " + src.person : ""}`
+                              : `Citation ${n}`;
+                            return (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => src && jumpToRow(src)}
+                                title={label}
+                                aria-label={`Jump to ${label}`}
+                                disabled={!src}
+                                className="inline-flex h-5 items-center rounded border border-border/60 bg-background px-1 text-[10px] font-medium text-foreground hover:bg-amber-500/20 hover:border-amber-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                [{n}]
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -499,33 +612,47 @@ function Chip({ icon, children }: { icon: React.ReactNode; children: React.React
   );
 }
 
-function ScopeRowsTable({ rows }: { rows: DetailContextRow[] }) {
+function rowKey(r: DetailContextRow) {
+  return `${(r.activity || "").slice(0, 40)}|${r.person ?? ""}|${r.stage ?? ""}`
+    .replace(/[^a-z0-9|]+/gi, "-").toLowerCase();
+}
+
+function ScopeRowsTable({ rows, highlightId }: { rows: DetailContextRow[]; highlightId: string | null }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border/60">
       <table className="w-full text-sm">
+        <caption className="sr-only">Records in scope, sorted by delay.</caption>
         <thead className="bg-muted/40 text-xs">
           <tr>
-            <th className="px-2 py-1.5 text-left font-medium">#</th>
-            <th className="px-2 py-1.5 text-left font-medium">Activity</th>
-            <th className="px-2 py-1.5 text-left font-medium">Person</th>
-            <th className="px-2 py-1.5 text-left font-medium">Stage</th>
-            <th className="px-2 py-1.5 text-left font-medium">Status</th>
-            <th className="px-2 py-1.5 text-right font-medium">Delay</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">#</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Activity</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Person</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Stage</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium">Status</th>
+            <th scope="col" className="px-2 py-1.5 text-right font-medium">Delay</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-border/60">
-              <td className="px-2 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
-              <td className="max-w-[280px] truncate px-2 py-1.5" title={r.activity}>{r.activity}</td>
-              <td className="px-2 py-1.5 text-xs">{r.person ?? "—"}</td>
-              <td className="px-2 py-1.5 text-xs">{r.stage ?? "—"}</td>
-              <td className="px-2 py-1.5 text-xs">{r.status ?? "—"}</td>
-              <td className={`px-2 py-1.5 text-right tabular-nums ${(r.delay ?? 0) > 0 ? "text-rose-600 font-semibold" : ""}`}>
-                {r.delay ?? 0}d
-              </td>
-            </tr>
-          ))}
+          {rows.map((r, i) => {
+            const key = rowKey(r);
+            const hit = highlightId === key;
+            return (
+              <tr
+                key={i}
+                id={`scope-row-${key}`}
+                className={`border-t border-border/60 transition-colors ${hit ? "bg-amber-500/20 ring-2 ring-amber-500/60" : ""}`}
+              >
+                <td className="px-2 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
+                <td className="max-w-[280px] truncate px-2 py-1.5" title={r.activity}>{r.activity}</td>
+                <td className="px-2 py-1.5 text-xs">{r.person ?? "—"}</td>
+                <td className="px-2 py-1.5 text-xs">{r.stage ?? "—"}</td>
+                <td className="px-2 py-1.5 text-xs">{r.status ?? "—"}</td>
+                <td className={`px-2 py-1.5 text-right tabular-nums ${(r.delay ?? 0) > 0 ? "text-rose-600 font-semibold" : ""}`}>
+                  {r.delay ?? 0}d
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
