@@ -342,15 +342,11 @@ export const runAgentWatchers = createServerFn({ method: "POST" })
  */
 export async function runAgentWatchersFromHook(): Promise<WatcherRunResult> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { fetchAgentProjects } = await import("@/lib/agent-registry.functions");
-  // Bypass the requireSupabaseAuth middleware; call the underlying loader.
-  // fetchAgentProjects is a server fn — invoking it here still works because
-  // it's imported as a plain module reference on the server side.
+  const { loadAgentProjects } = await import("@/lib/agent-registry.functions");
   let projects: { label: string; url: string }[] = [];
   try {
-    // @ts-expect-error — server-side invocation of the raw handler payload.
-    const reg = await fetchAgentProjects();
-    projects = reg.projects.map((p: any) => ({ label: p.label, url: p.url }));
+    const reg = await loadAgentProjects();
+    projects = reg.projects.map((p) => ({ label: p.label, url: p.url }));
   } catch (e) {
     return {
       projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0,
@@ -359,3 +355,4 @@ export async function runAgentWatchersFromHook(): Promise<WatcherRunResult> {
   }
   return runWatchersCore(projects, supabaseAdmin, null);
 }
+
