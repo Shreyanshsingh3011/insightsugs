@@ -51,6 +51,7 @@ function Highlighted({ text, regex }: { text: string; regex: RegExp | null }) {
 
 function SearchPage() {
   const [q, setQ] = useState("");
+  const [lastQuery, setLastQuery] = useState("");
   const search = useServerFn(semanticSearch);
   const mut = useMutation({
     mutationFn: async (query: string) => search({ data: { query } }),
@@ -58,17 +59,21 @@ function SearchPage() {
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (q.trim()) mut.mutate(q.trim());
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    setLastQuery(trimmed);
+    mut.mutate(trimmed);
   };
 
   const hits = mut.data?.hits ?? [];
+  const regex = useMemo(() => buildHighlightRegex(lastQuery), [lastQuery]);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-8 md:px-6">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Semantic search</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Ask a question across your documents, sheets, and activities. Ranked by AI relevance.
+          Ask a question across your documents, sheets, and activities. Ranked by AI relevance, with matched terms highlighted.
         </p>
       </div>
 
@@ -96,14 +101,15 @@ function SearchPage() {
           <p className="text-sm text-muted-foreground">No results. Try a different phrasing.</p>
         )}
         {hits.map((h, i) => (
-          <Card key={i} className="p-4">
+          <Card key={i} className="p-4 transition hover:border-primary/50">
             <div className="flex items-start justify-between gap-3">
               <Link
                 to={h.href as never}
-                className="flex items-center gap-2 text-sm font-medium hover:underline"
+                className="group flex min-w-0 items-center gap-2 text-sm font-medium hover:underline"
               >
                 {iconFor(h.kind)}
-                <span>{h.title}</span>
+                <span className="truncate"><Highlighted text={h.title} regex={regex} /></span>
+                <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover:opacity-70" />
               </Link>
               <div className="flex shrink-0 items-center gap-2">
                 <Badge variant="secondary" className="capitalize">{h.kind}</Badge>
@@ -111,10 +117,20 @@ function SearchPage() {
               </div>
             </div>
             {h.snippet && (
-              <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{h.snippet}</p>
+              <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
+                <Highlighted text={h.snippet} regex={regex} />
+              </p>
             )}
-            <div className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-              relevance {(h.similarity * 100).toFixed(0)}%
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                relevance {(h.similarity * 100).toFixed(0)}%
+              </span>
+              <Link
+                to={h.href as never}
+                className="text-xs text-primary hover:underline"
+              >
+                Open {h.kind === "sheet" ? "row" : h.kind === "document" ? "document" : "activity"} →
+              </Link>
             </div>
           </Card>
         ))}
@@ -122,3 +138,4 @@ function SearchPage() {
     </main>
   );
 }
+
