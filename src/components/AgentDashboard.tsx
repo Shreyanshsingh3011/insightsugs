@@ -1273,15 +1273,12 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {d.overdue.slice(0, 8).map((o, i) => {
-                  const link = detailLink({
-                    kind: "row",
-                    title: o.activity || "Overdue activity",
-                    person: o.person, stage: o.stage, email: o.email,
-                    source: "Overdue queue",
-                    severity: o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low",
-                    detail: `${o.delay}d late · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Draft an escalation and commit a recovery date.`,
-                    row: o.row as Record<string, unknown>,
+                  const rowKey = encodeRowKey({
+                    project: String((o.row as Row)?.["__project"] ?? payload?.project ?? ""),
+                    srNo: String((o.row as Row)?.["Sr. No."] ?? (o.row as Row)?.["Sr No"] ?? (o.row as Row)?.["ID"] ?? ""),
+                    activity: o.activity || "",
                   });
+                  const link = { to: "/agent/row/$key" as const, params: { key: rowKey } };
                   return (
                     <Link key={i} {...link} className="block">
                       <div className={`rounded-lg border p-2.5 transition hover:shadow-sm ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
