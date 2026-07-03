@@ -1263,19 +1263,31 @@ export default function AgentDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.anomalies.map((a, i) => (
-                  <div key={i} className="rounded-lg border border-border/60 p-2.5">
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{a.activity}</div>
-                        <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                {d.anomalies.map((a, i) => {
+                  const link = detailLink({
+                    kind: "aggregate",
+                    title: `Anomaly · ${a.activity}`,
+                    person: a.person, stage: a.stage,
+                    source: "Anomalies",
+                    severity: a.ratio >= 3 ? "high" : "med",
+                    detail: `${a.activity} took ${a.taken}d against a TAT of ${a.tat}d (${a.ratio.toFixed(1)}× budget). Review scope, blockers, or estimate accuracy with ${a.person}.`,
+                  });
+                  return (
+                    <Link key={i} {...link} className="block">
+                      <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{a.activity}</div>
+                            <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                          </div>
+                          <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
+                            {a.ratio.toFixed(1)}×
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
-                        {a.ratio.toFixed(1)}×
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                    </Link>
+                  );
+                })}
                 {d.anomalies.length === 0 && <p className="text-xs text-muted-foreground">No anomalies detected.</p>}
               </CardContent>
             </Card>
