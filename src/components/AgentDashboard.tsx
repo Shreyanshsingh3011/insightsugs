@@ -1076,13 +1076,35 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="h-72">
                 <ResponsiveContainer>
-                  <BarChart data={d.stages.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 10 }}>
+                  <BarChart
+                    data={d.stages.slice(0, 8)}
+                    layout="vertical"
+                    margin={{ left: 10, right: 10 }}
+                    onClick={(e: { activeLabel?: string } | null) => {
+                      const stage = e?.activeLabel;
+                      if (!stage) return;
+                      const st = d.stages.find(s => s.stage === stage);
+                      if (!st) return;
+                      const link = detailLink({
+                        kind: "aggregate",
+                        title: `Stage · ${stage}`,
+                        stage,
+                        source: "Bottleneck map",
+                        severity: st.delayDays > 60 ? "high" : st.delayDays > 20 ? "med" : "low",
+                        detail: `${st.delayed} delayed items · ${st.delayDays}d cumulative delay across ${st.total} activities in this stage.`,
+                      });
+                      nav({ to: link.to, params: link.params });
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
                     <XAxis type="number" fontSize={11} />
-                    <YAxis type="category" dataKey="stage" fontSize={11} width={130} />
+                    <YAxis
+                      type="category" dataKey="stage" fontSize={11} width={130}
+                      style={{ cursor: "pointer" }}
+                    />
                     <Tooltip cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }} />
-                    <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" radius={[0, 6, 6, 0]} />
-                    <Bar dataKey="delayed" fill="#f59e0b" name="Delayed items" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }} />
+                    <Bar dataKey="delayed" fill="#f59e0b" name="Delayed items" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }} />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
