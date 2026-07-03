@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { encodeDetailPayload, type DetailPayload } from "@/lib/agent-detail-payload";
-import { encodeKey as encodeEntityKey } from "@/lib/entity-scope";
+// (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
+import { encodeKey as encodeEntityKey, encodeRowKey } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
@@ -654,67 +654,9 @@ export default function AgentDashboard() {
     URL.revokeObjectURL(url);
   }
 
-
-  // Every card/row on the dashboard deep-links to /agent/detail/$payload so
-  // the user can read AI suggestions and dispatch a mail/message from there.
-  // We ship a compact context (metrics + up to 40 related rows) so the
-  // detail page's chatbot and email drafter can ground answers on the exact
-  // slice of data the user clicked.
+  // Programmatic navigation is still used for row-click table handlers below.
   const nav = useNavigate();
-  const detailLink = (p: Partial<DetailPayload> & { title: string }) => {
-    const norm = (s?: string) => (s ?? "").trim().toLowerCase();
-    const targetPerson = norm(p.person);
-    const targetStage = norm(p.stage);
-    const rowMatches = rowIndex.filter(r => {
-      if (targetPerson && norm(r.person) !== targetPerson) return false;
-      if (targetStage && norm(r.stage) !== targetStage) return false;
-      return true;
-    });
-    const contextRows: DetailPayload["contextRows"] = rowMatches
-      .slice(0, 40)
-      .map(r => ({
-        activity: r.activity,
-        person: r.person, stage: r.stage, status: r.status,
-        tat: r.tat, taken: r.taken, delay: r.delay, email: r.email,
-      }));
 
-    let metrics: DetailPayload["metrics"] = [];
-    if (p.kind !== "row" && rowMatches.length) {
-      const total = rowMatches.length;
-      const done = rowMatches.filter(r => /complete|done/i.test(r.status)).length;
-      const delayed = rowMatches.filter(r => r.delay > 0 && !/complete|done/i.test(r.status)).length;
-      const totalDelay = rowMatches.reduce((s, r) => s + Math.max(0, r.delay), 0);
-      const avgDelay = delayed ? Math.round(totalDelay / delayed) : 0;
-      metrics = [
-        { label: "Activities", value: total },
-        { label: "Completed", value: `${done} (${Math.round((done / total) * 100)}%)`, tone: done / total > 0.7 ? "ok" : "med" },
-        { label: "Delayed", value: delayed, tone: delayed / Math.max(1, total) > 0.2 ? "high" : "med" },
-        { label: "Avg delay (delayed)", value: `${avgDelay}d`, tone: avgDelay > 20 ? "high" : "med" },
-      ];
-    } else if (p.row) {
-      const tat = Number(p.row["TAT"] ?? 0) || 0;
-      const taken = Number(p.row["Days Taken"] ?? 0) || 0;
-      const delay = Math.max(0, taken - tat);
-      metrics = [
-        { label: "TAT", value: `${tat}d` },
-        { label: "Days taken", value: `${taken}d`, tone: taken > tat ? "high" : "ok" },
-        { label: "Delay", value: `${delay}d`, tone: delay > 30 ? "high" : delay > 0 ? "med" : "ok" },
-        { label: "Status", value: String(p.row["Status"] ?? "—") },
-      ];
-    }
-
-    const payloadStr = encodeDetailPayload({
-      kind: p.kind ?? "aggregate",
-      projectId: selected === "all" ? undefined : selected,
-      projectLabel: payload?.project,
-      severity: p.severity ?? "med",
-      source: p.source ?? "Dashboard",
-      metrics,
-      contextRows,
-      ...p,
-    });
-    return { to: "/agent/detail/$payload" as const, params: { payload: payloadStr } };
-  };
 
   return (
     <div className="space-y-6">
@@ -913,18 +855,28 @@ export default function AgentDashboard() {
                 <p className="text-sm text-muted-foreground">Nothing urgent. The agent will resurface work as data changes.</p>
               )}
               {d.actions.slice(0, 8).map(a => {
-                const payloadStr = encodeDetailPayload({
-                  kind: a.row ? "row" : "aggregate",
-                  projectId: selected === "all" ? undefined : selected,
-                  projectLabel: payload?.project,
-                  title: a.title, detail: a.detail, severity: a.severity, source: a.source,
-                  person: a.person, stage: a.stage, email: a.email, row: a.row,
-                });
+                // Route each action to its most specific detail page.
+                // Prefer the row page when the action ties to one activity, else fall back to the person page.
+                let to: "/agent/row/$key" | "/agent/person/$key";
+                let params: { key: string };
+                if (a.row) {
+                  to = "/agent/row/$key";
+                  params = {
+                    key: encodeRowKey({
+                      project: String((a.row as Row)["__project"] ?? payload?.project ?? ""),
+                      srNo: String((a.row as Row)["Sr. No."] ?? (a.row as Row)["Sr No"] ?? (a.row as Row)["ID"] ?? ""),
+                      activity: String(a.row["Activity List"] ?? a.row["Process Descriptions"] ?? a.row["Process"] ?? a.title ?? ""),
+                    }),
+                  };
+                } else {
+                  to = "/agent/person/$key";
+                  params = { key: encodeEntityKey(a.person || a.title) };
+                }
                 return (
                   <Link
                     key={a.id}
-                    to="/agent/detail/$payload"
-                    params={{ payload: payloadStr }}
+                    to={to}
+                    params={params}
                     className={`group block rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-md ${TONE[a.severity]}`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -1093,15 +1045,13 @@ export default function AgentDashboard() {
                   </TableHeader>
                   <TableBody>
                     {filteredRows.slice(0, 200).map(r => {
-                      const link = detailLink({
-                        kind: "row",
-                        title: r.activity || "Activity",
-                        source: "Filtered report",
-                        severity: r.delay > 30 ? "high" : r.delay > 0 ? "med" : "low",
-                        person: r.person, stage: r.stage, email: r.email,
-                        detail: `${r.status || "—"} · TAT ${r.tat}d / taken ${r.taken}d${r.delay > 0 ? ` · ${r.delay}d late` : ""}`,
-                        row: rowsAll[r.i] as Record<string, unknown>,
+                      const src = rowsAll[r.i] as Row;
+                      const rowKey = encodeRowKey({
+                        project: String(src["__project"] ?? payload?.project ?? ""),
+                        srNo: String(src["Sr. No."] ?? src["Sr No"] ?? src["ID"] ?? ""),
+                        activity: r.activity || "",
                       });
+                      const link = { to: "/agent/row/$key" as const, params: { key: rowKey } };
                       return (
                         <TableRow key={r.i} className="cursor-pointer hover:bg-muted/40" onClick={(e) => {
                           // Router-safe navigation via a hidden Link inside the row.
@@ -1275,15 +1225,12 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {d.overdue.slice(0, 8).map((o, i) => {
-                  const link = detailLink({
-                    kind: "row",
-                    title: o.activity || "Overdue activity",
-                    person: o.person, stage: o.stage, email: o.email,
-                    source: "Overdue queue",
-                    severity: o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low",
-                    detail: `${o.delay}d late · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Draft an escalation and commit a recovery date.`,
-                    row: o.row as Record<string, unknown>,
+                  const rowKey = encodeRowKey({
+                    project: String((o.row as Row)?.["__project"] ?? payload?.project ?? ""),
+                    srNo: String((o.row as Row)?.["Sr. No."] ?? (o.row as Row)?.["Sr No"] ?? (o.row as Row)?.["ID"] ?? ""),
+                    activity: o.activity || "",
                   });
+                  const link = { to: "/agent/row/$key" as const, params: { key: rowKey } };
                   return (
                     <Link key={i} {...link} className="block">
                       <div className={`rounded-lg border p-2.5 transition hover:shadow-sm ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
@@ -1345,8 +1292,8 @@ export default function AgentDashboard() {
 
 // ────────────────── KPI ──────────────────
 type KpiLink =
-  | { to: "/agent/detail/$payload"; params: { payload: string } }
   | { to: "/agent/kpi/$id"; params: { id: string } }
+  | { to: "/agent/row/$key"; params: { key: string } }
   | { to: "/agent/person/$key"; params: { key: string } }
   | { to: "/agent/stage/$key"; params: { key: string } }
   | { to: "/agent/project/$projectId"; params: { projectId: string } };
@@ -1376,9 +1323,9 @@ function Kpi({ icon, label, value, sub, tone = "default", to }: {
   );
   if (!to) return body;
   // Discriminated Link so TS accepts every param shape.
-  if (to.to === "/agent/detail/$payload")
-    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
   if (to.to === "/agent/kpi/$id")
+    return <Link to={to.to} params={to.params} className="block">{body}</Link>;
+  if (to.to === "/agent/row/$key")
     return <Link to={to.to} params={to.params} className="block">{body}</Link>;
   if (to.to === "/agent/person/$key")
     return <Link to={to.to} params={to.params} className="block">{body}</Link>;

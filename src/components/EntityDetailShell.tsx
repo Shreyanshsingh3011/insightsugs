@@ -18,9 +18,9 @@ import {
 } from "@/components/ui/table";
 import { EntityActionsBar, type EntityActionContext } from "@/components/EntityActionsBar";
 import { encodeDetailPayload } from "@/lib/agent-detail-payload";
-import { summarize, type ScopedRow } from "@/lib/entity-scope";
+import { summarize, type ScopedRow, encodeRowKey } from "@/lib/entity-scope";
 
-export type EntityKind = "person" | "stage" | "project" | "kpi";
+export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
   title: string;
   subtitle?: string;
@@ -48,18 +48,21 @@ const HEADER_TONE: Record<EntityKind, string> = {
   stage:   "border-amber-500/30 bg-gradient-to-br from-amber-500/[0.08] to-transparent",
   project: "border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-transparent",
   kpi:     "border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-500/[0.08] to-transparent",
+  row:     "border-slate-500/30 bg-gradient-to-br from-slate-500/[0.08] to-rose-500/[0.05]",
 };
 const CHIP_TONE: Record<EntityKind, string> = {
   person:  "bg-indigo-500/10 text-indigo-700",
   stage:   "bg-amber-500/10 text-amber-800",
   project: "bg-emerald-500/10 text-emerald-700",
   kpi:     "bg-fuchsia-500/10 text-fuchsia-700",
+  row:     "bg-slate-500/10 text-slate-700",
 };
 
 function Icon({ kind }: { kind: EntityKind }) {
   const C = kind === "person" ? UserIcon
     : kind === "stage" ? Layers
     : kind === "project" ? FolderKanban
+    : kind === "row" ? AlertTriangle
     : Gauge;
   return <C className="h-5 w-5" aria-hidden />;
 }
@@ -176,20 +179,17 @@ export function EntityDetailShell({
                 </TableHeader>
                 <TableBody>
                   {filtered.slice(0, 200).map((r) => {
-                    const payloadStr = encodeDetailPayload({
-                      kind: "row",
-                      projectLabel: r.project,
-                      title: r.activity,
-                      source: kindIcon === "person" ? "Person profile" : kindIcon === "stage" ? "Stage detail" : "Project workspace",
-                      severity: r.delay > 30 ? "high" : r.delay > 0 ? "med" : "low",
-                      person: r.person, stage: r.stage, email: r.email,
-                      detail: `${r.status || "—"} · TAT ${r.tat}d / taken ${r.taken}d${r.delay > 0 ? ` · ${r.delay}d late` : ""}`,
-                      row: r.row as Record<string, unknown>,
+                    const rowKey = encodeRowKey({
+                      project: r.project,
+                      srNo: String(r.row["Sr. No."] ?? r.row["Sr No"] ?? r.row["ID"] ?? ""),
+                      activity: r.activity,
                     });
+                    // Legacy aggregate payload kept for the redirect fallback.
+                    void encodeDetailPayload;
                     return (
                       <TableRow key={`${r.project}-${r.i}`} className="cursor-pointer hover:bg-muted/40">
                         <TableCell className="max-w-[260px] truncate font-medium" title={r.activity}>
-                          <Link to="/agent/detail/$payload" params={{ payload: payloadStr }} className="hover:underline">
+                          <Link to="/agent/row/$key" params={{ key: rowKey }} className="hover:underline">
                             {r.activity}
                           </Link>
                         </TableCell>

@@ -35,6 +35,7 @@ const REQUIRED = [
   { pattern: /to="\/agent\/stage\/\$key"/,       label: "Bottleneck/Anomaly → /agent/stage/$key" },
   { pattern: /to="\/agent\/person\/\$key"/,      label: "Top performers / Efficiency → /agent/person/$key" },
   { pattern: /to="\/agent\/project\/\$projectId"/, label: "Project workspace → /agent/project/$projectId" },
+  { pattern: /"\/agent\/row\/\$key"/,            label: "Overdue queue / Filtered report → /agent/row/$key" },
 ];
 for (const r of REQUIRED) {
   if (r.pattern.test(src)) ok.push(r.label);
@@ -47,6 +48,7 @@ const ROUTE_FILES = [
   "src/routes/_authenticated/agent.stage.$key.tsx",
   "src/routes/_authenticated/agent.person.$key.tsx",
   "src/routes/_authenticated/agent.project.$projectId.tsx",
+  "src/routes/_authenticated/agent.row.$key.tsx",
   "src/routes/_authenticated/agent.detail.$payload.tsx",
 ];
 for (const f of ROUTE_FILES) {
@@ -90,6 +92,37 @@ if (!anomaliesRegion) {
   } else {
     ok.push("Anomalies card wired to /agent/stage/$key");
   }
+}
+
+// ── 6. Overdue queue must link to /agent/row/$key ───────────────────────────
+const overdueRegion = src.match(/Overdue queue[\s\S]{0,2000}?<\/Card>/);
+if (!overdueRegion) {
+  errors.push("Could not locate Overdue queue block.");
+} else if (!/\/agent\/row\/\$key/.test(overdueRegion[0])) {
+  errors.push("Overdue queue does not link to /agent/row/$key.");
+} else if (/\/agent\/detail\/\$payload/.test(overdueRegion[0])) {
+  errors.push("Overdue queue still links to aggregate /agent/detail/$payload.");
+} else {
+  ok.push("Overdue queue wired to /agent/row/$key");
+}
+
+// ── 7. Filtered report rows must link to /agent/row/$key ────────────────────
+const filteredRegion = src.match(/Filtered report[\s\S]{0,8000}?<\/Table>/);
+if (!filteredRegion) {
+  errors.push("Could not locate Filtered report block.");
+} else if (!/\/agent\/row\/\$key/.test(filteredRegion[0])) {
+  errors.push("Filtered report rows do not link to /agent/row/$key.");
+} else if (/\/agent\/detail\/\$payload/.test(filteredRegion[0])) {
+  errors.push("Filtered report rows still link to aggregate /agent/detail/$payload.");
+} else {
+  ok.push("Filtered report rows wired to /agent/row/$key");
+}
+
+// ── 8. No detailLink( call sites remain ─────────────────────────────────────
+if (/\bdetailLink\s*\(/.test(src)) {
+  errors.push("`detailLink(` call sites still remain in AgentDashboard.tsx.");
+} else {
+  ok.push("no detailLink() call sites remain");
 }
 
 // ── Report ───────────────────────────────────────────────────────────────────
