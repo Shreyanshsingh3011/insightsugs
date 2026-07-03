@@ -271,9 +271,9 @@ function UsersPage() {
 }
 
 function AllUsers({ data, onSetRole }: { data: Row[]; onSetRole: (userId: string, role: AppRole) => void }) {
-  const [q, setQ] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | AppRole>("all");
-  const [page, setPage] = useState(1);
+  const [q, setQ] = usePersistedState<string>("admin.users.all.q", "");
+  const [roleFilter, setRoleFilter] = usePersistedState<"all" | AppRole>("admin.users.all.role", "all");
+  const [page, setPage] = usePersistedState<number>("admin.users.all.page", 1);
   const pageSize = 20;
 
   const filtered = useMemo(() => {
