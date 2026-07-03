@@ -34,61 +34,113 @@ function pickLabel(headers: string[], row: string[]): string {
   return "";
 }
 
+// Minimal CSV parser (handles quoted fields with commas / escaped quotes / CRLF).
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQ = false; }
+      } else field += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ",") { row.push(field); field = ""; }
+      else if (ch === "\n" || ch === "\r") {
+        if (ch === "\r" && text[i + 1] === "\n") i++;
+        row.push(field); field = "";
+        if (row.some(c => c.length)) rows.push(row);
+        row = [];
+      } else field += ch;
+    }
+  }
+  if (field.length || row.length) { row.push(field); if (row.some(c => c.length)) rows.push(row); }
+  return rows;
+}
+
+function buildProjects(values: string[][]): AgentProject[] {
+  if (values.length < 2) return [];
+  const hdrs = values[0].map(h => String(h || "").trim());
+  const seen = new Set<string>();
+  const projects: AgentProject[] = [];
+  for (const row of values.slice(1)) {
+    if (!row || row.every(c => !String(c || "").trim())) continue;
+    const url = extractUrl(row);
+    if (!url) continue;
+    const label = pickLabel(hdrs, row) || `Project ${projects.length + 1}`;
+    let id = slug(label);
+    let n = 2;
+    while (seen.has(id)) id = `${slug(label)}-${n++}`;
+    seen.add(id);
+    projects.push({ id, label, url });
+  }
+  return projects;
+}
+
+// Public fallback — works when the sheet is shared "Anyone with the link" and
+// the Google Sheets connector is unavailable or lacks access.
+async function fetchPublicCSV(): Promise<string[][]> {
+  const urls = [
+    `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/gviz/tq?tqx=out:csv`,
+    `https://docs.google.com/spreadsheets/d/${MASTER_SHEET_ID}/export?format=csv`,
+  ];
+  let lastErr = "";
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { headers: { Accept: "text/csv,*/*" }, redirect: "follow" });
+      if (!r.ok) { lastErr = `HTTP ${r.status}`; continue; }
+      const t = await r.text();
+      if (t.trim().length) return parseCSV(t);
+    } catch (e) { lastErr = e instanceof Error ? e.message : String(e); }
+  }
+  throw new Error(`Public sheet unreachable: ${lastErr || "no data"}`);
+}
+
 export const fetchAgentProjects = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async (): Promise<{ projects: AgentProject[]; source: string; fetched_at: string }> => {
     const lovable = process.env.LOVABLE_API_KEY;
     const key = process.env.GOOGLE_SHEETS_API_KEY;
-    if (!lovable || !key) throw new Error("Google Sheets connector not configured.");
+    const now = () => new Date().toISOString();
 
-    const headers = {
-      Authorization: `Bearer ${lovable}`,
-      "X-Connection-Api-Key": key,
-      Accept: "application/json",
-    };
-
-    // Discover first tab
-    const metaRes = await fetch(
-      `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}?fields=properties.title,sheets.properties(sheetId,title,index)`,
-      { headers },
-    );
-    if (!metaRes.ok) {
-      const body = await metaRes.text().catch(() => "");
-      throw new Error(`Master sheet HTTP ${metaRes.status}: ${body.slice(0, 200)}`);
-    }
-    const meta = (await metaRes.json()) as {
-      sheets?: { properties: { sheetId: number; title: string; index: number } }[];
-    };
-    const first = meta.sheets?.sort((a, b) => a.properties.index - b.properties.index)[0];
-    const tab = first?.properties.title ?? "Sheet1";
-
-    const valRes = await fetch(
-      `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}/values/${tab}!A1:Z500?valueRenderOption=FORMATTED_VALUE`,
-      { headers },
-    );
-    if (!valRes.ok) {
-      const body = await valRes.text().catch(() => "");
-      throw new Error(`Master sheet values HTTP ${valRes.status}: ${body.slice(0, 200)}`);
-    }
-    const vjson = (await valRes.json()) as { values?: string[][] };
-    const values = vjson.values ?? [];
-    if (values.length < 2) return { projects: [], source: tab, fetched_at: new Date().toISOString() };
-
-    const hdrs = values[0].map(h => String(h || "").trim());
-    const seen = new Set<string>();
-    const projects: AgentProject[] = [];
-
-    for (const row of values.slice(1)) {
-      if (!row || row.every(c => !String(c || "").trim())) continue;
-      const url = extractUrl(row);
-      if (!url) continue;
-      const label = pickLabel(hdrs, row) || `Project ${projects.length + 1}`;
-      let id = slug(label);
-      let n = 2;
-      while (seen.has(id)) id = `${slug(label)}-${n++}`;
-      seen.add(id);
-      projects.push({ id, label, url });
+    // 1) Try authenticated Google Sheets connector first.
+    if (lovable && key) {
+      try {
+        const headers = {
+          Authorization: `Bearer ${lovable}`,
+          "X-Connection-Api-Key": key,
+          Accept: "application/json",
+        };
+        const metaRes = await fetch(
+          `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}?fields=properties.title,sheets.properties(sheetId,title,index)`,
+          { headers },
+        );
+        if (metaRes.ok) {
+          const meta = (await metaRes.json()) as {
+            sheets?: { properties: { sheetId: number; title: string; index: number } }[];
+          };
+          const first = meta.sheets?.sort((a, b) => a.properties.index - b.properties.index)[0];
+          const tab = first?.properties.title ?? "Sheet1";
+          const valRes = await fetch(
+            `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}/values/${tab}!A1:Z500?valueRenderOption=FORMATTED_VALUE`,
+            { headers },
+          );
+          if (valRes.ok) {
+            const vjson = (await valRes.json()) as { values?: string[][] };
+            const projects = buildProjects(vjson.values ?? []);
+            if (projects.length) return { projects, source: `gateway:${tab}`, fetched_at: now() };
+          }
+        }
+      } catch {
+        // fall through to public CSV
+      }
     }
 
-    return { projects, source: tab, fetched_at: new Date().toISOString() };
+    // 2) Fallback — the sheet is "Anyone with the link (Viewer)".
+    const values = await fetchPublicCSV();
+    const projects = buildProjects(values);
+    return { projects, source: "public-csv", fetched_at: now() };
   });
