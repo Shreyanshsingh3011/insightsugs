@@ -401,7 +401,7 @@ QUESTION: ${q}`;
                 ))}
               </div>
             ) : context.length > 0 ? (
-              <ScopeRowsTable rows={context} />
+              <ScopeRowsTable rows={context} highlightId={highlightRow} />
             ) : (
               <p className="text-sm text-muted-foreground">
                 This action was derived from aggregated metrics ({data.source}). Use the email drafter to notify the owner.
