@@ -18,9 +18,9 @@ import {
 } from "@/components/ui/table";
 import { EntityActionsBar, type EntityActionContext } from "@/components/EntityActionsBar";
 import { encodeDetailPayload } from "@/lib/agent-detail-payload";
-import { summarize, type ScopedRow } from "@/lib/entity-scope";
+import { summarize, type ScopedRow, encodeRowKey } from "@/lib/entity-scope";
 
-export type EntityKind = "person" | "stage" | "project" | "kpi";
+export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
   title: string;
   subtitle?: string;
@@ -48,12 +48,14 @@ const HEADER_TONE: Record<EntityKind, string> = {
   stage:   "border-amber-500/30 bg-gradient-to-br from-amber-500/[0.08] to-transparent",
   project: "border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-transparent",
   kpi:     "border-fuchsia-500/30 bg-gradient-to-br from-fuchsia-500/[0.08] to-transparent",
+  row:     "border-slate-500/30 bg-gradient-to-br from-slate-500/[0.08] to-rose-500/[0.05]",
 };
 const CHIP_TONE: Record<EntityKind, string> = {
   person:  "bg-indigo-500/10 text-indigo-700",
   stage:   "bg-amber-500/10 text-amber-800",
   project: "bg-emerald-500/10 text-emerald-700",
   kpi:     "bg-fuchsia-500/10 text-fuchsia-700",
+  row:     "bg-slate-500/10 text-slate-700",
 };
 
 function Icon({ kind }: { kind: EntityKind }) {
