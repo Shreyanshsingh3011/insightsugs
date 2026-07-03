@@ -150,8 +150,9 @@ export const resendAgentDraftEmail = createServerFn({ method: "POST" })
       },
     });
 
+    const prev = (draft.send_result && typeof draft.send_result === "object" ? draft.send_result : {}) as Record<string, unknown>;
     const send_result: Record<string, unknown> = {
-      ...(draft.send_result ?? {}),
+      ...prev,
       channel: draft.channel,
       email: draft.recipient_email,
       retried_at: new Date().toISOString(),
@@ -163,7 +164,7 @@ export const resendAgentDraftEmail = createServerFn({ method: "POST" })
       send_result.status = `email_${r.reason}`;
       if (r.error) send_result.email_error = r.error;
     }
-    await supabaseAdmin.from("agent_drafts").update({ send_result }).eq("id", draft.id);
+    await supabaseAdmin.from("agent_drafts").update({ send_result: send_result as any }).eq("id", draft.id);
 
     return { ok: r.ok, reason: r.ok ? "queued" : r.reason, messageId: r.ok ? r.messageId : null };
   });
