@@ -9,6 +9,22 @@ import {
   toPgVector,
 } from "./documents.server";
 
+async function assertAdmin(supabase: any, userId: string) {
+  const { data, error } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Only admins can perform this action");
+}
+
+export const deleteFolder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { supabase } = context as { supabase: any };
+    const { error } = await supabase.rpc("delete_doc_folder", { _folder_id: data.id });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 // ----- Folders ---------------------------------------------------------------
 
 export const listFolders = createServerFn({ method: "POST" })

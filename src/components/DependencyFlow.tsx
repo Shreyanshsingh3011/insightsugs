@@ -1,17 +1,6 @@
 import { useMemo } from "react";
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  Handle,
-  Position,
-  MarkerType,
-  type Node,
-  type Edge,
-  type NodeProps,
-} from "@xyflow/react";
-import dagre from "dagre";
-import "@xyflow/react/dist/style.css";
+import { Badge } from "@/components/ui/badge";
+import { ArrowRight, User as UserIcon, Circle, CheckCircle2, Clock } from "lucide-react";
 
 export type Activity = {
   uid: string;
@@ -22,98 +11,81 @@ export type Activity = {
   status: string;
   dependsOn: number[];
   assignee?: string;
+  eta?: string;
 };
 
-const NODE_W = 240;
-const NODE_H = 90;
-const ACCENT = "oklch(0.7 0.18 25)";
-
-type ActivityNodeData = Activity & Record<string, unknown>;
-
-function ActivityNode({ data }: NodeProps<Node<ActivityNodeData, "activity">>) {
-  return (
-    <div className="w-[240px] rounded-xl border border-cyan-500/40 bg-card/95 p-3 shadow-[0_0_20px_-8px_rgb(34,211,238)] backdrop-blur transition-transform duration-150 hover:scale-[1.02]">
-      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-cyan-400" />
-      <div className="line-clamp-2 text-[13px] font-semibold text-foreground">
-        {data.description}
-      </div>
-      {data.assignee && (
-        <div className="mt-1.5 text-[11px] text-muted-foreground">
-          <span className="text-cyan-400/80">Assigned:</span> {data.assignee}
-        </div>
-      )}
-      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !bg-cyan-400" />
-    </div>
-  );
+function statusIcon(s: string) {
+  if (/complete|done/i.test(s)) return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+  if (/progress|ongoing/i.test(s)) return <Clock className="h-3.5 w-3.5 text-amber-500" />;
+  return <Circle className="h-3.5 w-3.5 text-muted-foreground" />;
 }
 
-
-const nodeTypes = { activity: ActivityNode };
-
-function layoutNodes(nodes: Node[], edges: Edge[]): Node[] {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "TB", nodesep: 40, ranksep: 80 });
-  g.setDefaultEdgeLabel(() => ({}));
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
-  edges.forEach((e) => g.setEdge(e.source, e.target));
-  dagre.layout(g);
-  return nodes.map((n) => {
-    const p = g.node(n.id);
-    return { ...n, position: { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 } };
-  });
-}
-
+// Simplistic, source-dependent dependency resolver: renders only the direct
+// "A waits on B" chains found in the provided activities. No graph library,
+// no zoom — just a scannable list grouped by blocked activity.
 export function DependencyFlow({ activities }: { activities: Activity[] }) {
-  const { nodes, edges } = useMemo(() => {
+  const rows = useMemo(() => {
     const byId = new Map(activities.map((a) => [a.id, a]));
-    const rawNodes: Node[] = activities.map((a) => ({
-      id: a.uid,
-      type: "activity",
-      position: { x: 0, y: 0 },
-      data: a as unknown as ActivityNodeData,
-    }));
-    const rawEdges: Edge[] = [];
-    activities.forEach((a) => {
-      a.dependsOn.forEach((pid) => {
-        const parent = byId.get(pid);
-        if (!parent) return;
-        rawEdges.push({
-          id: `${a.uid}->${parent.uid}`,
-          source: a.uid,
-          target: parent.uid,
-          type: "smoothstep",
-          animated: true,
-          style: { stroke: ACCENT, strokeWidth: 1.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: ACCENT, width: 18, height: 18 },
-        });
-      });
-    });
-    return { nodes: layoutNodes(rawNodes, rawEdges), edges: rawEdges };
+    return activities
+      .filter((a) => a.dependsOn.length > 0)
+      .map((a) => ({
+        activity: a,
+        blockers: a.dependsOn.map((pid) => byId.get(pid)).filter(Boolean) as Activity[],
+      }))
+      .sort((a, b) => (b.activity.criticality === "Critical" ? 1 : 0) - (a.activity.criticality === "Critical" ? 1 : 0));
   }, [activities]);
 
   if (!activities.length) {
     return (
-      <div className="flex h-[560px] items-center justify-center rounded-xl border border-border bg-background/40 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
         No activities to graph.
       </div>
     );
   }
 
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-xl border border-border bg-card/40 p-6 text-center text-sm text-muted-foreground">
+        No dependencies declared in the current source.
+      </div>
+    );
+  }
+
   return (
-    <div className="h-[560px] overflow-hidden rounded-xl border border-border bg-background/40">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
-        maxZoom={1.5}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background color="oklch(0.3 0.02 260)" gap={24} />
-        <Controls className="!border !border-border !bg-card !text-foreground [&_button]:!border-border [&_button]:!bg-card [&_button]:!text-foreground [&_button:hover]:!bg-secondary" />
-      </ReactFlow>
+    <div className="space-y-2">
+      {rows.map(({ activity, blockers }) => (
+        <div
+          key={activity.uid}
+          className="rounded-xl border border-border bg-card/60 p-3 shadow-sm"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            {statusIcon(activity.status)}
+            <span className="text-sm font-semibold">{activity.description}</span>
+            {activity.criticality === "Critical" && (
+              <Badge variant="outline" className="border-rose-500/40 bg-rose-500/10 text-rose-600">
+                Critical
+              </Badge>
+            )}
+            {activity.assignee && (
+              <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <UserIcon className="h-3 w-3" /> {activity.assignee}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 space-y-1 pl-5">
+            {blockers.map((b) => (
+              <div key={b.uid} className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <ArrowRight className="h-3 w-3" />
+                <span className="text-foreground/80">waits on</span>
+                <span className="font-medium text-foreground">{b.description}</span>
+                {b.assignee && <span>· {b.assignee}</span>}
+                {b.status && <span>· {b.status}</span>}
+                {b.eta && <span>· ETA {b.eta}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
