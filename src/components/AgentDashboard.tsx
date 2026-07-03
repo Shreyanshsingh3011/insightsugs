@@ -473,6 +473,42 @@ export default function AgentDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queries.map(q => q.dataUpdatedAt).join(",")]);
 
+  // Diagnostics: rows whose "person" field looks like a job title / role
+  // string, plus per-source counts of how the display name was resolved.
+  // Fuels the debug panel so admins can spot bad source data at a glance.
+  const personDiagnostics = useMemo(() => {
+    type SrcCount = { source: string; count: number };
+    const bySource = new Map<string, number>();
+    const titleRows: Array<{
+      project: string; raw: string; resolved: string; source: string; email: string; activity: string;
+    }> = [];
+    let total = 0;
+    for (const s of sources) {
+      for (const r of s.payload?.data ?? []) {
+        total++;
+        const src = String(r["__personSource"] ?? "unknown");
+        bySource.set(src, (bySource.get(src) ?? 0) + 1);
+        if (r["__personIsTitleFallback"]) {
+          titleRows.push({
+            project: s.project.label,
+            raw: String(r["__personRaw"] ?? ""),
+            resolved: String(r["__personDisplay"] ?? ""),
+            source: src,
+            email: String(r["__personEmail"] ?? ""),
+            activity: String(r["Activity List"] ?? r["Process Descriptions"] ?? r["Process"] ?? ""),
+          });
+        }
+      }
+    }
+    const counts: SrcCount[] = Array.from(bySource.entries())
+      .map(([source, count]) => ({ source, count }))
+      .sort((a, b) => b.count - a.count);
+    return { total, counts, titleRows };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queries.map(q => q.dataUpdatedAt).join(",")]);
+
+
+
   // Personal efficiency (regular user view) — derived from `d.persons` matched
   // to the signed-in user via nameNeedles.
   const myPerf = useMemo(() => {
