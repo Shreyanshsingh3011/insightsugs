@@ -669,21 +669,49 @@ export default function AgentDashboard() {
             </CardContent>
           </Card>
 
-          {/* ASK THE AGENT */}
+          {/* ASK THE AGENT — grounded chat */}
           <Card className="border-primary/30">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Bot className="h-4 w-4 text-primary" /> Ask the agent
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                  Grounded on {rowsAll.length} rows · retrieval + facts
+                </span>
+                {chat.length > 0 && (
+                  <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => setChat([])}>
+                    Clear
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {chat.length > 0 && (
+                <div className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-2">
+                  {chat.map((m, i) => (
+                    <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {m.role === "assistant" && <Bot className="mt-1 h-4 w-4 shrink-0 text-primary" />}
+                      <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                        m.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-primary/20 bg-background"
+                      }`}>{m.text}</div>
+                      {m.role === "user" && <UserIcon className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
+                    </div>
+                  ))}
+                  {askMut.isPending && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> thinking…
+                    </div>
+                  )}
+                </div>
+              )}
               <form
-                onSubmit={(e) => { e.preventDefault(); if (question.trim()) askMut.mutate(question.trim()); }}
+                onSubmit={(e) => { e.preventDefault(); ask(question); }}
                 className="flex flex-col gap-2 md:flex-row"
               >
                 <Input
                   value={question} onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="e.g. Who is blocking the most work? What's the fastest fix this week?"
+                  placeholder="Ask anything about this data — people, activities, delays, stages…"
                   className="flex-1"
                 />
                 <Button type="submit" disabled={askMut.isPending || !question.trim()}>
@@ -694,25 +722,130 @@ export default function AgentDashboard() {
               <div className="flex flex-wrap gap-1.5">
                 {[
                   "What's the biggest bottleneck?",
-                  "Who should I reassign work from?",
-                  "Which stage is dragging the timeline?",
-                  "Give me a 3-step recovery plan.",
+                  "Who has the most overdue work and by how much?",
+                  "List the 5 most critical activities to unblock this week.",
+                  "Which stage is dragging the timeline and why?",
+                  "Give me a 3-step recovery plan with owners.",
                 ].map(sug => (
                   <button key={sug} type="button"
-                    onClick={() => { setQuestion(sug); askMut.mutate(sug); }}
+                    onClick={() => ask(sug)}
                     className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
                   >
                     {sug}
                   </button>
                 ))}
               </div>
-              {answer && (
-                <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 text-sm leading-relaxed">
-                  {answer}
-                </div>
+            </CardContent>
+          </Card>
+
+          {/* FILTERED REPORT / EXPORT */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Filter className="h-4 w-4 text-primary" /> Filtered report
+                <Badge variant="secondary" className="ml-2">{filteredRows.length} / {rowIndex.length}</Badge>
+                <Button
+                  size="sm" variant="outline" className="ml-auto h-8"
+                  onClick={downloadCSV} disabled={filteredRows.length === 0}
+                >
+                  <Download className="h-4 w-4" /> Export CSV
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2 md:grid-cols-6">
+                <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {filterOptions.status.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.crit} onValueChange={(v) => setFilters(f => ({ ...f, crit: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Criticality" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All criticality</SelectItem>
+                    {filterOptions.crit.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.stage} onValueChange={(v) => setFilters(f => ({ ...f, stage: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Stage" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All stages</SelectItem>
+                    {filterOptions.stage.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.person} onValueChange={(v) => setFilters(f => ({ ...f, person: v }))}>
+                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Person" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All people</SelectItem>
+                    {filterOptions.person.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="h-9 text-xs" placeholder="Min delay days" inputMode="numeric"
+                  value={filters.minDelay} onChange={e => setFilters(f => ({ ...f, minDelay: e.target.value.replace(/[^\d]/g, "") }))}
+                />
+                <Input
+                  className="h-9 text-xs" placeholder="Search text…"
+                  value={filters.q} onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
+                />
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <label className="inline-flex cursor-pointer items-center gap-1.5">
+                  <input type="checkbox" checked={filters.onlyOverdue}
+                    onChange={e => setFilters(f => ({ ...f, onlyOverdue: e.target.checked }))} />
+                  Only overdue (not completed & delay &gt; 0)
+                </label>
+                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs ml-auto"
+                  onClick={() => setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false })}>
+                  Reset filters
+                </Button>
+              </div>
+
+              <div className="max-h-96 overflow-auto rounded-lg border border-border/60">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead>Activity</TableHead>
+                      <TableHead>Person</TableHead>
+                      <TableHead>Stage</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">TAT</TableHead>
+                      <TableHead className="text-right">Taken</TableHead>
+                      <TableHead className="text-right">Delay</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRows.slice(0, 200).map(r => (
+                      <TableRow key={r.i}>
+                        <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>{r.activity || "—"}</TableCell>
+                        <TableCell className="text-xs">{r.person || "—"}</TableCell>
+                        <TableCell className="text-xs">{r.stage || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={
+                            /complete|done/i.test(r.status) ? TONE.ok :
+                            /delay|late|overdue/i.test(r.status) ? TONE.high :
+                            /progress/i.test(r.status) ? TONE.med : TONE.low
+                          }>{r.status || "—"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{r.taken || "—"}</TableCell>
+                        <TableCell className={`text-right tabular-nums ${r.delay > 0 ? "text-rose-600 font-semibold" : ""}`}>{r.delay || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredRows.length === 0 && (
+                      <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {filteredRows.length > 200 && (
+                <p className="text-[11px] text-muted-foreground">Showing first 200 rows. Export CSV to get all {filteredRows.length}.</p>
               )}
             </CardContent>
           </Card>
+
 
           {/* BOTTOM BENTO: bottlenecks · people · anomalies */}
           <div className="grid gap-4 md:grid-cols-3">
