@@ -1,6 +1,20 @@
 // Small pure helpers shared by the Agent Dashboard and its detail route.
 // Encodes a JSON payload to a URL-safe base64 string.
 
+export type DetailMetric = { label: string; value: string | number; tone?: "ok" | "med" | "high" | "low" };
+
+export type DetailContextRow = {
+  activity: string;
+  person?: string;
+  stage?: string;
+  status?: string;
+  tat?: number;
+  taken?: number;
+  delay?: number;
+  email?: string;
+  fields?: Record<string, string | number | null>;
+};
+
 export type DetailPayload = {
   kind: "row" | "aggregate";
   projectId?: string;
@@ -13,6 +27,9 @@ export type DetailPayload = {
   stage?: string;
   email?: string;
   row?: Record<string, unknown>;
+  metrics?: DetailMetric[];
+  contextRows?: DetailContextRow[];
+  recommendations?: string[];
 };
 
 function b64UrlEncode(str: string): string {
