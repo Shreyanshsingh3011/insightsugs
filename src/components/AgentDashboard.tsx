@@ -1177,26 +1177,38 @@ export default function AgentDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {d.personsByBurden.slice(0, 12).map(p => (
-                    <TableRow key={p.person}>
-                      <TableCell className="font-medium">{p.person}</TableCell>
-                      <TableCell className="text-right">{p.total}</TableCell>
-                      <TableCell className="text-right">{p.completed}</TableCell>
-                      <TableCell className="text-right">{p.delayed}</TableCell>
-                      <TableCell className="text-right">{p.delayDays}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Progress value={p.efficiency} className="h-1.5" />
-                          <span className="w-8 text-xs text-muted-foreground">{p.efficiency}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={p.riskScore > 50 ? TONE.high : p.riskScore > 25 ? TONE.med : TONE.ok}>
-                          {p.riskScore}%
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {d.personsByBurden.slice(0, 12).map(p => {
+                    const link = detailLink({
+                      kind: "aggregate",
+                      title: `Person · ${p.person}`,
+                      person: p.person,
+                      source: "Efficiency ranking",
+                      severity: p.riskScore > 50 ? "high" : p.riskScore > 25 ? "med" : "ok",
+                      detail: `${p.person} — ${p.total} activities, ${p.completed} done, ${p.delayed} delayed (${p.delayDays}d). Efficiency ${p.efficiency}, risk ${p.riskScore}%.`,
+                    });
+                    return (
+                      <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav({ to: link.to, params: link.params })}>
+                        <TableCell className="font-medium">
+                          <Link {...link} className="hover:underline">{p.person}</Link>
+                        </TableCell>
+                        <TableCell className="text-right">{p.total}</TableCell>
+                        <TableCell className="text-right">{p.completed}</TableCell>
+                        <TableCell className="text-right">{p.delayed}</TableCell>
+                        <TableCell className="text-right">{p.delayDays}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress value={p.efficiency} className="h-1.5" />
+                            <span className="w-8 text-xs text-muted-foreground">{p.efficiency}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={p.riskScore > 50 ? TONE.high : p.riskScore > 25 ? TONE.med : TONE.ok}>
+                            {p.riskScore}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
