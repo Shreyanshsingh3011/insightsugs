@@ -528,7 +528,7 @@ QUESTION: ${q}`;
                 </div>
               </div>
             ) : (
-              <ul className="space-y-3">
+              <ul className="space-y-3" role="log" aria-live="polite" aria-relevant="additions">
                 {chat.map((m, i) => (
                   <li key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                     <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
@@ -536,10 +536,26 @@ QUESTION: ${q}`;
                     }`}>
                       <div className="whitespace-pre-wrap break-words">{m.content}</div>
                       {m.citations && m.citations.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {m.citations.map(n => (
-                            <Badge key={n} variant="outline" className="h-4 px-1 text-[10px]">[{n}]</Badge>
-                          ))}
+                        <div className="mt-2 flex flex-wrap gap-1" aria-label="Citations">
+                          {m.citations.map(n => {
+                            const src = m.ranked?.[n - 1];
+                            const label = src
+                              ? `Citation ${n}: ${src.activity}${src.person ? " — " + src.person : ""}`
+                              : `Citation ${n}`;
+                            return (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => src && jumpToRow(src)}
+                                title={label}
+                                aria-label={`Jump to ${label}`}
+                                disabled={!src}
+                                className="inline-flex h-5 items-center rounded border border-border/60 bg-background px-1 text-[10px] font-medium text-foreground hover:bg-amber-500/20 hover:border-amber-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                [{n}]
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
