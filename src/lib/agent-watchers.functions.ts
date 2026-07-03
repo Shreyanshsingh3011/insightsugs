@@ -21,6 +21,7 @@ export type WatcherRunResult = {
   rows_scanned: number;
   created: number;
   skipped_dedupe: number;
+  surfaced_existing: number;
   errors: string[];
   by_rule: Record<string, number>;
 };
@@ -201,17 +202,21 @@ function ruleSeeds(row: Row, projectLabel: string): DraftSeed[] {
 
 // ── Assignee resolution ────────────────────────────────────────────────
 
-async function buildAssigneeResolver(supabaseAdmin: any) {
+async function buildAssigneeResolver(supabaseAdmin: any, preferredFallbackUserId: string | null) {
   const [{ data: profiles }, { data: supers }] = await Promise.all([
     supabaseAdmin.from("profiles").select("id, email"),
     supabaseAdmin.from("user_roles").select("user_id").eq("role", "super_admin"),
   ]);
   const emailToId = new Map<string, string>();
+  const profileIds = new Set<string>();
   for (const p of profiles ?? []) {
+    if (p.id) profileIds.add(p.id);
     const e = (p.email ?? "").toLowerCase().trim();
     if (e) emailToId.set(e, p.id);
   }
-  const fallback = (supers ?? [])[0]?.user_id ?? null;
+  const fallback = preferredFallbackUserId && profileIds.has(preferredFallbackUserId)
+    ? preferredFallbackUserId
+    : (supers ?? [])[0]?.user_id ?? null;
   return (email: string | null): { assigned_to: string | null; recipient_user_id: string | null } => {
     if (email) {
       const id = emailToId.get(email.toLowerCase());
@@ -228,17 +233,19 @@ async function runWatchersCore(
   projects: { label: string; url: string }[],
   supabaseAdmin: any,
   runBy: string | null,
+  preferredFallbackUserId: string | null = null,
 ): Promise<WatcherRunResult> {
   const result: WatcherRunResult = {
     projects_scanned: 0,
     rows_scanned: 0,
     created: 0,
     skipped_dedupe: 0,
+    surfaced_existing: 0,
     errors: [],
     by_rule: {},
   };
 
-  const resolve = await buildAssigneeResolver(supabaseAdmin);
+  const resolve = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
 
   for (const proj of projects) {
     let rows: Row[] = [];
@@ -276,6 +283,16 @@ async function runWatchersCore(
         if (error) {
           if ((error as any).code === "23505") {
             result.skipped_dedupe++;
+            const { data: existing } = await supabaseAdmin
+              .from("agent_drafts")
+              .select("id")
+              .eq("draft_type", s.draft_type)
+              .eq("source_kind", s.source_kind)
+              .eq("source_key", s.source_key)
+              .in("state", ["pending", "snoozed"])
+              .limit(1)
+              .maybeSingle();
+            if (existing?.id) result.surfaced_existing++;
           } else {
             result.errors.push(`${s.source_key}: ${error.message}`);
           }
@@ -327,12 +344,14 @@ export const runAgentWatchers = createServerFn({ method: "POST" })
         projects = reg.projects.map((p) => ({ label: p.label, url: p.url }));
       } catch (e) {
         return {
-          projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0,
+          projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0, surfaced_existing: 0,
           by_rule: {}, errors: [`registry: ${(e as Error).message}`],
         } as WatcherRunResult;
       }
     }
-    return runWatchersCore(projects, supabaseAdmin, userId);
+    const { data: canOwnFallback } = await (context as { supabase: any }).supabase
+      .rpc("is_admin_or_super", { _user_id: userId });
+    return runWatchersCore(projects, supabaseAdmin, userId, canOwnFallback ? userId : null);
   });
 
 
@@ -349,7 +368,7 @@ export async function runAgentWatchersFromHook(): Promise<WatcherRunResult> {
     projects = reg.projects.map((p) => ({ label: p.label, url: p.url }));
   } catch (e) {
     return {
-      projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0,
+      projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0, surfaced_existing: 0,
       by_rule: {}, errors: [`registry: ${(e as Error).message}`],
     };
   }
