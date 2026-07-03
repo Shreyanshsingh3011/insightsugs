@@ -348,9 +348,30 @@ QUESTION: ${q}`;
           <CardContent>
             <ul className="space-y-2">
               {derivedRecs.map((r, i) => (
-                <li key={i} className="flex gap-2 text-sm">
+                <li key={i} className="flex items-start gap-2 text-sm">
                   <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                  <span>{r}</span>
+                  <span className="flex-1">{r}</span>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => draftFromRecommendation(r)}
+                      aria-label={`Draft message from recommendation ${i + 1}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden /> Draft
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => { draftFromRecommendation(r); alertMut.mutate("message"); }}
+                      disabled={alertMut.isPending}
+                      aria-label={`Send in-app message for recommendation ${i + 1}`}
+                    >
+                      <Send className="h-3.5 w-3.5" aria-hidden /> Send
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>
