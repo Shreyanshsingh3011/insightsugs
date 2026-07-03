@@ -849,8 +849,88 @@ export default function AgentDashboard() {
       )}
 
 
+      {/* ADMIN / SUPER FOCUS BAR — filter the whole dashboard by person or team */}
+      {canFocus && payload && (
+        <Card className="border-primary/30 bg-primary/[0.03]">
+          <CardContent className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:gap-4">
+            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <Filter className="h-3.5 w-3.5 text-primary" aria-hidden />
+              <span className="uppercase tracking-wider">Focus</span>
+            </div>
+            <div className="flex flex-1 flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <UserIcon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                <Select value={focusPerson} onValueChange={setFocusPerson}>
+                  <SelectTrigger className="h-8 w-[200px] text-xs" aria-label="Focus by person">
+                    <SelectValue placeholder="All people" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All people ({focusOptions.persons.length})</SelectItem>
+                    {focusOptions.persons.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {focusOptions.depts.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                  <Select value={focusDept} onValueChange={setFocusDept}>
+                    <SelectTrigger className="h-8 w-[180px] text-xs" aria-label="Focus by team or department">
+                      <SelectValue placeholder="All teams" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All teams</SelectItem>
+                      {focusOptions.depts.map((d) => (
+                        <SelectItem key={d} value={d}>{d}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {(focusPerson !== "all" || focusDept !== "all") && (
+                <>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {payload.data?.length ?? 0} rows in focus
+                  </Badge>
+                  <Button
+                    size="sm" variant="ghost" className="h-7 px-2 text-xs"
+                    onClick={() => { setFocusPerson("all"); setFocusDept("all"); }}
+                  >Clear</Button>
+                </>
+              )}
+            </div>
+            <div className="text-[10px] text-muted-foreground md:ml-auto">
+              KPIs, health, efficiency, and the brief all recompute from the focus.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PERSONAL EFFICIENCY — regular users only */}
+      {!scope.isAdmin && payload && myPerf && (
+        <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.08] to-transparent">
+          <CardContent className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-5">
+            <div className="col-span-2 flex items-center gap-3 sm:col-span-1">
+              <div className="grid h-11 w-11 place-items-center rounded-full bg-emerald-500/15 text-emerald-700">
+                <Zap className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-emerald-700/80">Your efficiency</div>
+                <div className="truncate text-sm font-semibold" title={myPerf.person}>{myPerf.person}</div>
+              </div>
+            </div>
+            <MiniStat label="Efficiency" value={`${myPerf.efficiency}`} sub="/ 100" tone={myPerf.efficiency >= 70 ? "ok" : myPerf.efficiency >= 40 ? "med" : "high"} />
+            <MiniStat label="On-time" value={`${Math.max(0, 100 - myPerf.riskScore)}%`} tone={myPerf.riskScore <= 20 ? "ok" : "med"} />
+            <MiniStat label="Activities" value={String(myPerf.total)} sub={`${myPerf.completed} done`} />
+            <MiniStat label="Delayed" value={String(myPerf.delayed)} sub={`${myPerf.delayDays}d total`} tone={myPerf.delayed > 0 ? "high" : "ok"} />
+          </CardContent>
+        </Card>
+      )}
+
       {payload && (
         <>
+
           {/* AI BRIEF + HEALTH RING */}
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="md:col-span-2 overflow-hidden border-primary/30 bg-gradient-to-br from-primary/[0.06] to-transparent">
