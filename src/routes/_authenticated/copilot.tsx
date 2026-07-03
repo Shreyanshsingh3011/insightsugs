@@ -669,6 +669,7 @@ function CopilotPage() {
                         ))}
                       </div>
                     )}
+                    <GroundingInspector answer={t.answer} sources={t.sources} />
                     {t.sources.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {t.sources.map((s) => (
@@ -678,6 +679,7 @@ function CopilotPage() {
                           </Badge>
                         ))}
                       </div>
+
                     )}
                     {isLast && t.suggestions.length > 0 && !askMut.isPending && (
                       <div className="mt-3 border-t pt-3">
