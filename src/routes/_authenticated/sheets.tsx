@@ -178,11 +178,20 @@ function SheetsPage() {
         </div>
       )}
 
-      <AddSheetDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddSheetDialog open={addOpen} onOpenChange={setAddOpen} isAdmin={isAdmin} />
       <EditSheetMetaDialog
         editing={editing}
         onClose={() => setEditing(null)}
       />
+      <ChangeVisibilityDialog
+        open={!!visEditing}
+        onOpenChange={(v) => { if (!v) setVisEditing(null); }}
+        kind="sheet"
+        id={visEditing?.id ?? null}
+        name={visEditing?.name ?? ""}
+        currentVisibility={visEditing?.visibility ?? "private"}
+      />
+
     </div>
   );
 }
