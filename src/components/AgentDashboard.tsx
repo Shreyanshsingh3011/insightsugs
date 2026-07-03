@@ -896,12 +896,12 @@ export default function AgentDashboard() {
 
           {/* KPI STRIP */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-            <Kpi to={detailLink({ title: "All activities", source: "KPI", detail: `${d.totals.total} activities across the current scope.` })} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
-            <Kpi to={detailLink({ title: "Completed activities", source: "KPI", severity: "ok", detail: `${d.totals.completed} of ${d.totals.total} completed (${d.completionRate}%).` })} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
-            <Kpi to={detailLink({ title: "Delayed activities", source: "KPI", severity: d.delayRate > 15 ? "high" : "med", detail: `${d.totals.delayed} activities are delayed (${d.delayRate}%). Top offender: ${d.overdue[0]?.activity ?? "n/a"} — ${d.overdue[0]?.person ?? ""}.` })} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
-            <Kpi to={detailLink({ title: "Average delay", source: "KPI", severity: d.avgDelay > 30 ? "high" : "med", detail: `Team is running ${d.avgDelay} days late on average across delayed items.` })} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
-            <Kpi to={detailLink({ title: "Not started", source: "KPI", severity: "low", detail: `${d.totals.notStarted} activities have not been started yet.` })} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
-            <Kpi to={detailLink({ title: "Projected finish", source: "KPI", detail: d.projectedDaysToFinish ? `At current pace the remaining work needs ~${d.projectedDaysToFinish} more days.` : "Not enough completions yet to project a finish date." })} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "health" } }} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "ontime" } }} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
           </div>
 
           {/* NEXT BEST ACTIONS */}
