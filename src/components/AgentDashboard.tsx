@@ -408,7 +408,8 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Auto-syncs from 5 live sheet APIs every {Math.round(AUTO_REFRESH_MS / 1000)}s. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
+              Auto-syncs {projects.length} live source{projects.length === 1 ? "" : "s"} every {Math.round(AUTO_REFRESH_MS / 1000)}s
+              {registryLive ? " · project list pulled from master sheet" : " · using built-in list (master sheet unreachable)"}.
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
