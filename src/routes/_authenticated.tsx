@@ -50,6 +50,7 @@ function AuthLayout() {
         </div>
         <nav className="flex-1 space-y-0.5 p-3 text-sm">
           <SideLink to="/insights" icon={<LayoutDashboard className="h-4 w-4" />}>Insights</SideLink>
+          <SideLink to="/search" icon={<Search className="h-4 w-4" />}>Search</SideLink>
           <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent Dashboard</SideLink>
           <SideLink to="/agent/inbox" icon={<Inbox className="h-4 w-4" />}>Agent Inbox</SideLink>
           <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
