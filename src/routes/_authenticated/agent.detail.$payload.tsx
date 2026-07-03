@@ -411,7 +411,7 @@ QUESTION: ${q}`;
         </Card>
 
         {/* ACTION PANEL */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2" ref={draftPanelRef as never}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <MessageSquare className="h-4 w-4 text-primary" aria-hidden /> Draft &amp; send email
