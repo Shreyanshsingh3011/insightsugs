@@ -253,13 +253,29 @@ function derive(payload: Payload | undefined) {
 // ────────────────── COMPONENT ──────────────────
 export default function AgentDashboard() {
   const fetchUrl = useServerFn(fetchInsightUrl);
+  const fetchRegistry = useServerFn(fetchAgentProjects);
   const genFn = useServerFn(generateGeminiFn);
 
   const [selected, setSelected] = useState<string>("all");
 
+  // Live registry pulled from the master Google Sheet — falls back if unavailable.
+  const registryQ = useQuery({
+    queryKey: ["agent-registry"],
+    queryFn: () => fetchRegistry(),
+    staleTime: REGISTRY_REFRESH_MS,
+    refetchInterval: REGISTRY_REFRESH_MS,
+    refetchOnWindowFocus: false,
+  });
+
+  const projects: AgentProject[] = useMemo(() => {
+    const live = registryQ.data?.projects;
+    return live && live.length ? live : FALLBACK_PROJECTS;
+  }, [registryQ.data]);
+  const registryLive = !!registryQ.data?.projects?.length;
+
   const queries = useQueries({
-    queries: PROJECTS.map(p => ({
-      queryKey: ["agent-src", p.id],
+    queries: projects.map(p => ({
+      queryKey: ["agent-src", p.id, p.url],
       queryFn: async () => {
         const res = await fetchUrl({ data: { url: p.url } });
         return { project: p, payload: (res as { payload?: SourcePayload }).payload };
@@ -271,8 +287,8 @@ export default function AgentDashboard() {
   });
 
   const sources = queries.map((q, i) => ({
-    project: PROJECTS[i],
-    payload: q.data?.payload,
+    project: projects[i],
+    payload: (q.data as { payload?: SourcePayload } | undefined)?.payload,
     isFetching: q.isFetching,
     isLoading: q.isLoading,
     isError: q.isError,
