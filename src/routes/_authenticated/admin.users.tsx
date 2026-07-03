@@ -113,10 +113,10 @@ function UsersPage() {
     onError: (e) => toast.error((e as Error).message),
   });
 
-  // ────── Pending filters
-  const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
-  const [ageBucket, setAgeBucket] = useState<"any" | "24h" | "3d" | "7d" | "gt7">("any");
+  // ────── Pending filters (persisted across drill-downs)
+  const [q, setQ] = usePersistedState<string>("admin.users.pending.q", "");
+  const [statusFilter, setStatusFilter] = usePersistedState<"pending" | "approved" | "rejected" | "all">("admin.users.pending.status", "pending");
+  const [ageBucket, setAgeBucket] = usePersistedState<"any" | "24h" | "3d" | "7d" | "gt7">("admin.users.pending.age", "any");
 
   const allRequests = requestsQ.data ?? [];
 
