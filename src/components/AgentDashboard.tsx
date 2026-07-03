@@ -204,17 +204,45 @@ function derive(payload: Payload | undefined) {
 
 export default function AgentDashboard() {
   const [url, setUrl] = useState(DEFAULT_URL);
+  const [sheetUrl, setSheetUrl] = useState(DEFAULT_SHEET);
   const [activeUrl, setActiveUrl] = useState(DEFAULT_URL);
+  const [activeSheet, setActiveSheet] = useState(DEFAULT_SHEET);
   const fetchFn = useServerFn(fetchInsightUrl);
+  const fetchSheetFn = useServerFn(fetchSheetRows);
   const genFn = useServerFn(generateGeminiFn);
 
   const q = useQuery({
     queryKey: ["agent-export", activeUrl],
     queryFn: async () => fetchFn({ data: { url: activeUrl } }),
+    enabled: !!activeUrl,
     staleTime: 60_000,
   });
 
-  const payload: Payload | undefined = (q.data as { payload?: Payload })?.payload;
+  const sheetQ = useQuery({
+    queryKey: ["agent-sheet", activeSheet],
+    queryFn: async () => fetchSheetFn({ data: { spreadsheetId: activeSheet } }),
+    enabled: !!activeSheet,
+    staleTime: 60_000,
+  });
+
+  const exportPayload: Payload | undefined = (q.data as { payload?: Payload })?.payload;
+  const sheetResult = sheetQ.data as { title?: string; sheetName?: string; columns?: string[]; rows?: Row[] } | undefined;
+
+  // Sheet rows are authoritative when present; fall back to export.
+  const payload: Payload | undefined = useMemo(() => {
+    if (sheetResult?.rows?.length) {
+      return {
+        ...(exportPayload ?? {}),
+        project: sheetResult.title || exportPayload?.project,
+        sheet: sheetResult.sheetName || exportPayload?.sheet,
+        columns: sheetResult.columns,
+        count: sheetResult.rows.length,
+        data: sheetResult.rows,
+      };
+    }
+    return exportPayload;
+  }, [exportPayload, sheetResult]);
+
   const d = useMemo(() => derive(payload), [payload]);
 
   const [brief, setBrief] = useState<string>("");
