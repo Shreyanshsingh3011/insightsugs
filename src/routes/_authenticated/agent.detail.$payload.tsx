@@ -23,10 +23,11 @@ import { generateGeminiFn } from "@/lib/gemini.functions";
 
 export const Route = createFileRoute("/_authenticated/agent/detail/$payload")({
   head: () => ({ meta: [{ title: "Action detail — DelayLens" }] }),
-  beforeLoad: async () => {
-    const roles = await fetchMyRoles();
-    if (roles.length === 0) throw redirect({ to: "/" });
-  },
+  // Auth is already enforced by the `_authenticated` layout. We intentionally
+  // do NOT re-check roles here: `supabase.auth.getUser()` can transiently fail
+  // during quick client-side navigations and would incorrectly bounce the user
+  // back to the dashboard. Any unauthenticated visitor is redirected to /auth
+  // by the parent guard before this loader ever runs.
   component: DetailPage,
 });
 
