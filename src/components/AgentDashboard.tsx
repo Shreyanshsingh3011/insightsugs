@@ -583,8 +583,23 @@ export default function AgentDashboard() {
 
   // ── FILTERED REPORT / EXPORT
   type Filters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
-  const [filters, setFilters] = useState<Filters>({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false });
-  useEffect(() => { setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false }); }, [payload?.project]);
+  const filterKey = `agent:filters:${selected}`;
+  const [filters, setFilters] = useState<Filters>(() => {
+    if (typeof window === "undefined") return { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
+    try {
+      const raw = sessionStorage.getItem(filterKey);
+      if (raw) return JSON.parse(raw) as Filters;
+    } catch { /* noop */ }
+    return { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem(filterKey, JSON.stringify(filters));
+  }, [filterKey, filters]);
+  // Reset filters when the underlying project payload changes identity.
+  useEffect(() => {
+    const raw = typeof window !== "undefined" ? sessionStorage.getItem(filterKey) : null;
+    if (!raw) setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false });
+  }, [payload?.project, filterKey]);
 
   const filterOptions = useMemo(() => {
     const s = new Set<string>(), c = new Set<string>(), st = new Set<string>(), p = new Set<string>();
