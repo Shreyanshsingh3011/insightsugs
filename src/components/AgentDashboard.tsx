@@ -6,72 +6,64 @@ import { fetchSheetRows } from "@/lib/gsheets-agent.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend,
+  RadialBarChart, RadialBar, PolarAngleAxis,
 } from "recharts";
 import {
-  Sparkles, RefreshCw, AlertTriangle, TrendingUp, Users, Activity,
-  Target, Zap, CheckCircle2, Clock, Loader2, Link2, Sheet as SheetIcon,
+  Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
+  CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
+  Flame, Gauge, Radar, Layers,
 } from "lucide-react";
 
-const DEFAULT_URL =
+// ────────────────── FIXED SOURCES ──────────────────
+const FIXED_URL =
   "https://delaybridgesugs.vercel.app/api/public/PeuOiqTX8Suly1enDV4X68reUe6zkBrh/export?fields=summary,totals,risk_score,status_breakdown,sheets,flags,forecast,anomalies,digest,recommendations,trends,top_delay_reasons,dependency_chains,person_ranking,correlation_matrix,department_ranking,timeline_correlation,tat_performance";
-const DEFAULT_SHEET =
+const FIXED_SHEET =
   "https://docs.google.com/spreadsheets/d/1U2CkhrRBSv6VLbri_ROwhqCvXJvOKbqbWzJDrc4q-DQ/edit?gid=2069956310#gid=2069956310";
 
+// ────────────────── TYPES ──────────────────
 type Row = Record<string, string>;
-type Payload = {
-  project?: string;
-  sheet?: string;
-  sheet_type?: string;
-  columns?: string[];
-  count?: number;
-  type_kpis?: { label: string; value: number }[];
-  data?: Row[];
-};
+type Payload = { project?: string; data?: Row[]; columns?: string[] };
 
-const SEV = {
+const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
-  medium: "text-amber-600 bg-amber-500/10 border-amber-500/30",
+  med: "text-amber-700 bg-amber-500/10 border-amber-500/30",
   low: "text-slate-600 bg-slate-500/10 border-slate-500/30",
-  ok: "text-emerald-600 bg-emerald-500/10 border-emerald-500/30",
-};
-const COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#06b6d4", "#ef4444", "#64748b"];
+  ok: "text-emerald-700 bg-emerald-500/10 border-emerald-500/30",
+} as const;
 
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
-function bucket(status: string): "Completed" | "In Progress" | "Delayed" | "Not Started" | "Other" {
-  const s = (status || "").toLowerCase();
-  if (/complete/.test(s)) return "Completed";
-  if (/progress/.test(s)) return "In Progress";
-  if (/delay|overdue|late|breach/.test(s)) return "Delayed";
-  if (/not start|yet/.test(s)) return "Not Started";
+function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Started" | "Other" {
+  const x = (s || "").toLowerCase();
+  if (/complete|done/.test(x)) return "Completed";
+  if (/progress|ongoing|wip/.test(x)) return "In Progress";
+  if (/delay|overdue|late|breach/.test(x)) return "Delayed";
+  if (/not start|yet|pending/.test(x)) return "Not Started";
   return "Other";
 }
 
+// ────────────────── DERIVE ──────────────────
 function derive(payload: Payload | undefined) {
   const rows = payload?.data ?? [];
   const n = rows.length;
   const status: Record<string, number> = {};
-  const stageAgg: Record<string, { total: number; delayed: number; delayDays: number }> = {};
-  const personAgg: Record<string, { total: number; delayed: number; delayDays: number; completed: number; email?: string }> = {};
+  const stageAgg: Record<string, { total: number; delayed: number; delayDays: number; completed: number }> = {};
+  const personAgg: Record<string, { total: number; delayed: number; delayDays: number; completed: number; tat: number; taken: number; email?: string }> = {};
   const critAgg: Record<string, number> = {};
   const processAgg: Record<string, { total: number; delayed: number; delayDays: number }> = {};
-  let totalDelay = 0;
-  let delayedCount = 0;
-  let overdueCount = 0;
-  let completedCount = 0;
+  let totalDelay = 0, delayedCount = 0, overdueCount = 0, completedCount = 0;
+  let sumTat = 0, sumTaken = 0, tatCounted = 0;
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string }[] = [];
 
   for (const r of rows) {
@@ -86,23 +78,22 @@ function derive(payload: Payload | undefined) {
     const taken = num(r["Days Taken"]);
 
     critAgg[crit] = (critAgg[crit] || 0) + 1;
-    stageAgg[stage] ??= { total: 0, delayed: 0, delayDays: 0 };
+    stageAgg[stage] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0 };
     stageAgg[stage].total++;
     processAgg[process] ??= { total: 0, delayed: 0, delayDays: 0 };
     processAgg[process].total++;
-    personAgg[person] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0, email: r["Responsible Person Mail ID"] };
+    personAgg[person] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0, tat: 0, taken: 0, email: r["Responsible Person Mail ID"] };
     personAgg[person].total++;
+    personAgg[person].tat += tat;
+    personAgg[person].taken += taken;
+    if (tat > 0) { sumTat += tat; sumTaken += taken; tatCounted++; }
 
     const isDelayed = st === "Delayed" || (st !== "Completed" && taken > tat && tat > 0);
-    if (st === "Completed") { completedCount++; personAgg[person].completed++; }
+    if (st === "Completed") { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
     if (isDelayed) {
-      delayedCount++;
-      personAgg[person].delayed++;
-      stageAgg[stage].delayed++;
-      processAgg[process].delayed++;
-      personAgg[person].delayDays += delay;
-      stageAgg[stage].delayDays += delay;
-      processAgg[process].delayDays += delay;
+      delayedCount++; personAgg[person].delayed++; stageAgg[stage].delayed++;
+      processAgg[process].delayed++; personAgg[person].delayDays += delay;
+      stageAgg[stage].delayDays += delay; processAgg[process].delayDays += delay;
       totalDelay += delay;
     }
     if (st !== "Completed" && delay > 0) overdueCount++;
@@ -110,31 +101,35 @@ function derive(payload: Payload | undefined) {
       overdue.push({
         activity: r["Activity List"] || r["Process"] || "(unnamed)",
         person, stage, delay, tat, taken,
-        status: r["Status Category"] || "",
-        criticality: crit,
+        status: r["Status Category"] || "", criticality: crit,
       });
     }
   }
 
   const persons = Object.entries(personAgg)
     .filter(([k]) => k && k !== "Unassigned")
-    .map(([person, v]) => ({
-      person,
-      email: v.email || "",
-      total: v.total,
-      delayed: v.delayed,
-      completed: v.completed,
-      delayDays: v.delayDays,
-      efficiency: v.total ? Math.round((v.completed / v.total) * 100) : 0,
-      riskScore: v.total ? Math.round((v.delayed / v.total) * 100) : 0,
-    }))
-    .sort((a, b) => b.delayDays - a.delayDays);
+    .map(([person, v]) => {
+      const completionPct = v.total ? (v.completed / v.total) * 100 : 0;
+      const onTimePct = v.total ? Math.max(0, 100 - (v.delayed / v.total) * 100) : 100;
+      const paceRatio = v.tat > 0 ? Math.min(200, (v.taken / v.tat) * 100) : 100;
+      // Efficiency Index: completion + on-time weighted, penalized by slow pace
+      const efficiency = Math.max(0, Math.min(100, Math.round(0.5 * completionPct + 0.5 * onTimePct - Math.max(0, paceRatio - 100) * 0.3)));
+      return {
+        person, email: v.email || "",
+        total: v.total, delayed: v.delayed, completed: v.completed,
+        delayDays: v.delayDays,
+        efficiency,
+        riskScore: v.total ? Math.round((v.delayed / v.total) * 100) : 0,
+        paceRatio: Math.round(paceRatio),
+      };
+    });
+
+  const personsByBurden = [...persons].sort((a, b) => b.delayDays - a.delayDays);
+  const topPerformers = [...persons].filter(p => p.total >= 2).sort((a, b) => b.efficiency - a.efficiency);
 
   const stages = Object.entries(stageAgg).map(([stage, v]) => ({
-    stage,
-    total: v.total,
-    delayed: v.delayed,
-    delayDays: v.delayDays,
+    stage, total: v.total, delayed: v.delayed, delayDays: v.delayDays,
+    completed: v.completed,
     healthPct: v.total ? Math.round(((v.total - v.delayed) / v.total) * 100) : 100,
   })).sort((a, b) => b.delayDays - a.delayDays);
 
@@ -146,121 +141,143 @@ function derive(payload: Payload | undefined) {
 
   const completionRate = n ? Math.round((completedCount / n) * 100) : 0;
   const delayRate = n ? Math.round((delayedCount / n) * 100) : 0;
-  const healthScore = Math.max(0, Math.min(100, 100 - delayRate + Math.round(completionRate / 3)));
   const avgDelay = delayedCount ? Math.round(totalDelay / delayedCount) : 0;
+  const paceRatio = tatCounted ? Math.round((sumTaken / Math.max(1, sumTat)) * 100) : 100;
+  const onTimeRate = 100 - delayRate;
+  // Health = 0.4·onTime + 0.4·completion + 0.2·(200-pace) capped
+  const healthScore = Math.max(0, Math.min(100, Math.round(
+    0.4 * onTimeRate + 0.4 * completionRate + 0.2 * Math.max(0, 200 - paceRatio) / 2
+  )));
 
-  // Rule-based Next Best Actions
-  const actions: { id: string; title: string; detail: string; severity: keyof typeof SEV; source: string }[] = [];
-  overdue.slice(0, 5).forEach((o, i) => {
-    const sev = o.criticality === "Critical" || o.delay > 60 ? "high" : o.delay > 20 ? "medium" : "low";
+  // Forecast: at current completion velocity per row, days to finish remaining
+  const remaining = n - completedCount;
+  const avgTat = tatCounted ? sumTat / tatCounted : 0;
+  const projectedDaysToFinish = remaining && avgTat
+    ? Math.round(remaining * avgTat * (paceRatio / 100) / Math.max(1, Object.keys(personAgg).length))
+    : 0;
+
+  // ── AGENTIC RULES: Next Best Actions
+  type Action = { id: string; title: string; detail: string; severity: keyof typeof TONE; source: string; impact: number };
+  const actions: Action[] = [];
+  overdue.slice(0, 6).forEach((o, i) => {
+    const sev = o.criticality === "Critical" || o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low";
     actions.push({
       id: `ov-${i}`,
-      title: `Unblock "${o.activity}" (${o.delay}d overdue)`,
-      detail: `Owned by ${o.person} · Stage ${o.stage} · TAT ${o.tat}d, taken ${o.taken}d. Escalate and set a recovery date.`,
-      severity: sev as keyof typeof SEV,
-      source: "Overdue",
+      title: `Unblock "${o.activity}"`,
+      detail: `${o.delay}d overdue · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Escalate + commit recovery date.`,
+      severity: sev, source: "Overdue", impact: o.delay,
     });
   });
-  persons.slice(0, 3).forEach((p, i) => {
-    if (p.riskScore >= 30) {
+  personsByBurden.slice(0, 3).forEach((p, i) => {
+    if (p.riskScore >= 30 && p.total >= 2) {
       actions.push({
-        id: `p-${i}`,
-        title: `Rebalance workload for ${p.person}`,
-        detail: `${p.delayed}/${p.total} activities delayed (${p.riskScore}%). Redistribute or add support.`,
-        severity: p.riskScore >= 60 ? "high" : "medium",
-        source: "Person risk",
+        id: `p-${i}`, source: "Ownership",
+        title: `Rebalance ${p.person}`,
+        detail: `${p.delayed}/${p.total} delayed (${p.riskScore}%). Efficiency ${p.efficiency}. Redistribute or pair up.`,
+        severity: p.riskScore >= 60 ? "high" : "med", impact: p.delayDays,
       });
     }
   });
-  stages.slice(0, 2).forEach((s, i) => {
+  stages.slice(0, 3).forEach((s, i) => {
     if (s.delayed > 0 && s.healthPct < 70) {
       actions.push({
-        id: `s-${i}`,
-        title: `Fix bottleneck in ${s.stage}`,
-        detail: `${s.delayed}/${s.total} activities delayed (${s.delayDays}d cumulative). Review process and dependencies.`,
-        severity: s.healthPct < 40 ? "high" : "medium",
-        source: "Stage",
+        id: `s-${i}`, source: "Bottleneck",
+        title: `Fix ${s.stage}`,
+        detail: `Only ${s.healthPct}% healthy · ${s.delayed}/${s.total} delayed · ${s.delayDays}d cumulative. Audit handoffs and dependencies.`,
+        severity: s.healthPct < 40 ? "high" : "med", impact: s.delayDays,
       });
     }
   });
   const notStarted = status["Not Started"] || 0;
-  if (notStarted > n * 0.25) {
+  if (n && notStarted / n > 0.25) {
     actions.push({
-      id: "ns-1",
+      id: "ns-1", source: "Backlog",
       title: `Kick off ${notStarted} not-started activities`,
-      detail: `${Math.round((notStarted / n) * 100)}% of activities have not begun. Confirm dependencies are met and assign start dates.`,
-      severity: "medium",
-      source: "Backlog",
+      detail: `${Math.round((notStarted / n) * 100)}% haven't started. Confirm dependencies and assign start dates this week.`,
+      severity: "med", impact: notStarted,
     });
   }
+  if (paceRatio > 130) {
+    actions.push({
+      id: "pace-1", source: "Pace",
+      title: `Compress cycle time (running ${paceRatio}% of TAT)`,
+      detail: `Team is systematically over-shooting TAT. Re-baseline estimates or remove wait-states before scoping new work.`,
+      severity: "med", impact: paceRatio - 100,
+    });
+  }
+  actions.sort((a, b) => (b.severity === "high" ? 2 : b.severity === "med" ? 1 : 0) - (a.severity === "high" ? 2 : a.severity === "med" ? 1 : 0) || b.impact - a.impact);
+
+  // Anomalies: activities where taken >> tat
+  const anomalies = rows
+    .map(r => ({
+      activity: r["Activity List"] || "(unnamed)", person: r["Responsible Person"] || "—",
+      stage: r["Stages"] || "—", tat: num(r["TAT"]), taken: num(r["Days Taken"]),
+      ratio: num(r["TAT"]) > 0 ? num(r["Days Taken"]) / num(r["TAT"]) : 0,
+    }))
+    .filter(a => a.tat > 0 && a.ratio >= 1.8)
+    .sort((a, b) => b.ratio - a.ratio)
+    .slice(0, 6);
 
   return {
-    rows, n, status, critAgg, persons, stages, processes, overdue,
-    completionRate, delayRate, healthScore, avgDelay,
+    n, status, critAgg, persons, personsByBurden, topPerformers, stages, processes, overdue, anomalies,
+    completionRate, delayRate, healthScore, avgDelay, paceRatio, onTimeRate, projectedDaysToFinish,
     totals: { total: n, completed: completedCount, delayed: delayedCount, overdue: overdueCount, notStarted },
     actions,
   };
 }
 
+// ────────────────── COMPONENT ──────────────────
 export default function AgentDashboard() {
-  const [url, setUrl] = useState(DEFAULT_URL);
-  const [sheetUrl, setSheetUrl] = useState(DEFAULT_SHEET);
-  const [activeUrl, setActiveUrl] = useState(DEFAULT_URL);
-  const [activeSheet, setActiveSheet] = useState(DEFAULT_SHEET);
-  const fetchFn = useServerFn(fetchInsightUrl);
-  const fetchSheetFn = useServerFn(fetchSheetRows);
+  const fetchUrl = useServerFn(fetchInsightUrl);
+  const fetchSheet = useServerFn(fetchSheetRows);
   const genFn = useServerFn(generateGeminiFn);
 
-  const q = useQuery({
-    queryKey: ["agent-export", activeUrl],
-    queryFn: async () => fetchFn({ data: { url: activeUrl } }),
-    enabled: !!activeUrl,
+  const urlQ = useQuery({
+    queryKey: ["agent-fixed-url"],
+    queryFn: async () => fetchUrl({ data: { url: FIXED_URL } }),
     staleTime: 60_000,
   });
-
   const sheetQ = useQuery({
-    queryKey: ["agent-sheet", activeSheet],
-    queryFn: async () => fetchSheetFn({ data: { spreadsheetId: activeSheet } }),
-    enabled: !!activeSheet,
+    queryKey: ["agent-fixed-sheet"],
+    queryFn: async () => fetchSheet({ data: { spreadsheetId: FIXED_SHEET } }),
     staleTime: 60_000,
   });
 
-  const exportPayload: Payload | undefined = (q.data as { payload?: Payload })?.payload;
-  const sheetResult = sheetQ.data as { title?: string; sheetName?: string; columns?: string[]; rows?: Row[] } | undefined;
+  const urlPayload = (urlQ.data as { payload?: Payload })?.payload;
+  const sheetPayload = sheetQ.data as { title?: string; sheetName?: string; columns?: string[]; rows?: Row[] } | undefined;
 
-  // Sheet rows are authoritative when present; fall back to export.
   const payload: Payload | undefined = useMemo(() => {
-    if (sheetResult?.rows?.length) {
-      return {
-        ...(exportPayload ?? {}),
-        project: sheetResult.title || exportPayload?.project,
-        sheet: sheetResult.sheetName || exportPayload?.sheet,
-        columns: sheetResult.columns,
-        count: sheetResult.rows.length,
-        data: sheetResult.rows,
-      };
+    if (sheetPayload?.rows?.length) {
+      return { project: sheetPayload.title, columns: sheetPayload.columns, data: sheetPayload.rows };
     }
-    return exportPayload;
-  }, [exportPayload, sheetResult]);
+    return urlPayload;
+  }, [sheetPayload, urlPayload]);
 
   const d = useMemo(() => derive(payload), [payload]);
+  const loading = urlQ.isLoading || sheetQ.isLoading;
+  const anyError = (urlQ.isError && !sheetPayload?.rows?.length) || sheetQ.isError;
 
-  const [brief, setBrief] = useState<string>("");
+  // AI Executive Brief
+  const [brief, setBrief] = useState("");
   const briefMut = useMutation({
     mutationFn: async () => {
       const facts = {
         project: payload?.project,
-        totals: d.totals,
+        activities: d.n,
         health: d.healthScore,
-        avg_delay_days: d.avgDelay,
-        top_overdue: d.overdue.slice(0, 5).map(o => ({ activity: o.activity, person: o.person, delay: o.delay, criticality: o.criticality })),
-        top_persons_at_risk: d.persons.slice(0, 3).map(p => ({ person: p.person, delayed: p.delayed, total: p.total, riskScore: p.riskScore })),
-        worst_stages: d.stages.slice(0, 3).map(s => ({ stage: s.stage, delayed: s.delayed, total: s.total })),
+        completion_pct: d.completionRate,
+        on_time_pct: d.onTimeRate,
+        delayed: d.totals.delayed, avg_delay_days: d.avgDelay,
+        pace_ratio_pct: d.paceRatio,
+        projected_days_to_finish: d.projectedDaysToFinish,
+        worst_stage: d.stages[0]?.stage,
+        top_overdue: d.overdue.slice(0, 4).map(o => ({ activity: o.activity, person: o.person, delay: o.delay })),
+        highest_risk_person: d.personsByBurden[0] && { person: d.personsByBurden[0].person, delayed: d.personsByBurden[0].delayed, total: d.personsByBurden[0].total },
       };
       const res = await genFn({
         data: {
-          system: "You are an operations analyst. Use ONLY the FACTS. 3 crisp sentences. No hedging, no invented numbers.",
-          prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}\n\nWrite an executive brief: (1) overall state, (2) main risk, (3) most impactful next move.`,
+          system: "You are an operations chief-of-staff. Use ONLY the FACTS. Reply with 3 crisp sentences: (1) current state in one line, (2) the single biggest risk, (3) the one move worth making this week. No hedging, no invented numbers, no bullet points.",
+          prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}`,
           temperature: 0.2,
         },
       });
@@ -269,371 +286,398 @@ export default function AgentDashboard() {
     onSuccess: (t) => setBrief(t),
   });
 
-  useEffect(() => { setBrief(""); }, [activeUrl]);
+  useEffect(() => { setBrief(""); }, [payload]);
   useEffect(() => {
     if (payload && !brief && !briefMut.isPending) briefMut.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
-  const statusData = Object.entries(d.status).map(([name, value]) => ({ name, value }));
-  const stageData = d.stages.map(s => ({ name: s.stage, delayed: s.delayed, healthy: s.total - s.delayed }));
-  const personData = d.persons.slice(0, 8).map(p => ({ name: p.person.split(" ")[0], delayDays: p.delayDays, delayed: p.delayed }));
+  // Ask Agent
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const askMut = useMutation({
+    mutationFn: async (q: string) => {
+      const facts = {
+        totals: d.totals, health: d.healthScore, completion: d.completionRate,
+        pace_pct_of_tat: d.paceRatio, avg_delay: d.avgDelay,
+        stages: d.stages.slice(0, 6),
+        persons: d.personsByBurden.slice(0, 8),
+        overdue_top: d.overdue.slice(0, 8),
+        anomalies: d.anomalies,
+        status_mix: d.status, criticality_mix: d.critAgg,
+      };
+      const res = await genFn({
+        data: {
+          system: "You are the project's autonomous agent. Answer using ONLY the FACTS. Reply in 2-4 sentences with concrete numbers and names. If a fact is not present, say 'not in the data'.",
+          prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}\n\nQUESTION: ${q}`,
+          temperature: 0.15,
+        },
+      });
+      return res.text;
+    },
+    onSuccess: (t) => setAnswer(t),
+  });
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-gradient-to-br from-primary/5 via-background to-accent/5 p-5 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
-            <Sparkles className="h-3 w-3" /> Agentic AI
+      {/* HERO */}
+      <div className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-indigo-500/10 via-fuchsia-500/5 to-transparent p-6">
+        <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/10 blur-3xl" />
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
+              <Bot className="h-3 w-3" /> Autonomous Agent
+            </div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
+              {payload?.project ?? "Delay Bridge — Agentic View"}
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Live from the connected sheet & export link. The agent scores health, ranks people, spots bottlenecks, and recommends the next move.
+            </p>
           </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
-            {payload?.project || "Agent Dashboard"}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Live analytics pulled from your export link — recommendations, efficiency and risk grounded in real rows.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {sheetResult?.rows?.length ? (
-            <Badge variant="outline" className="gap-1"><SheetIcon className="h-3 w-3" />Sheet · {sheetResult.rows.length} rows</Badge>
-          ) : exportPayload?.data?.length ? (
-            <Badge variant="outline" className="gap-1"><Link2 className="h-3 w-3" />Export · {exportPayload.data.length} rows</Badge>
-          ) : null}
-          <Button variant="outline" size="sm" onClick={() => { q.refetch(); sheetQ.refetch(); }}>
-            <RefreshCw className={`h-4 w-4 ${(q.isFetching || sheetQ.isFetching) ? "animate-spin" : ""}`} /> Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="gap-1">
+              <Layers className="h-3 w-3" />
+              {sheetPayload?.rows?.length ?? urlPayload?.data?.length ?? 0} rows
+            </Badge>
+            <Button variant="outline" size="sm" onClick={() => { urlQ.refetch(); sheetQ.refetch(); }}>
+              <RefreshCw className={`h-4 w-4 ${(urlQ.isFetching || sheetQ.isFetching) ? "animate-spin" : ""}`} />
+              Sync
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Data sources */}
-      <Card>
-        <CardContent className="space-y-2 p-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <Input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="Export link (/export?fields=…)"
-              className="flex-1"
-            />
-          </div>
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <SheetIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <Input
-              value={sheetUrl}
-              onChange={(e) => setSheetUrl(e.target.value)}
-              placeholder="Google Sheet link (authoritative when provided)"
-              className="flex-1"
-            />
-            <Button
-              onClick={() => { setActiveUrl(url); setActiveSheet(sheetUrl); }}
-              disabled={q.isFetching || sheetQ.isFetching}
-            >
-              {(q.isFetching || sheetQ.isFetching) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
-            </Button>
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            Sheet rows override the export when available. Leave sheet blank to use only the export link.
-          </p>
-        </CardContent>
-      </Card>
+      {loading && !payload && (
+        <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" /> Loading live data…
+        </div>
+      )}
 
-      {(q.isError || sheetQ.isError) && (
+      {anyError && !payload && (
         <Card className="border-rose-500/40">
-          <CardContent className="space-y-1 p-4 text-sm text-rose-600">
-            {q.isError && <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Export: {(q.error as Error).message}</div>}
-            {sheetQ.isError && <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Sheet: {(sheetQ.error as Error).message}</div>}
+          <CardContent className="flex items-center gap-2 p-4 text-sm text-rose-600">
+            <AlertTriangle className="h-4 w-4" /> Couldn't load either data source. Retry Sync.
           </CardContent>
         </Card>
       )}
 
-      {(q.isLoading || sheetQ.isLoading) && !payload && (
-        <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" /> Pulling insights…
-        </div>
-      )}
-
       {payload && (
         <>
-          {/* Executive brief */}
-          <Card className="border-primary/30 bg-gradient-to-br from-primary/[0.04] to-transparent">
+          {/* AI BRIEF + HEALTH RING */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="md:col-span-2 overflow-hidden border-primary/30 bg-gradient-to-br from-primary/[0.06] to-transparent">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Sparkles className="h-4 w-4 text-primary" /> Executive brief
+                  {briefMut.isPending && <Loader2 className="ml-1 h-3 w-3 animate-spin text-muted-foreground" />}
+                  <Button
+                    variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs"
+                    onClick={() => briefMut.mutate()} disabled={briefMut.isPending}
+                  >
+                    Regenerate
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {brief ? (
+                  <p className="text-[15px] leading-relaxed text-foreground/90">{brief}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Analyzing facts…</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Gauge className="h-4 w-4 text-primary" /> Project health
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex items-center gap-3 pb-4">
+                <div className="h-32 w-32 shrink-0">
+                  <ResponsiveContainer>
+                    <RadialBarChart innerRadius="70%" outerRadius="100%" data={[{ name: "h", value: d.healthScore, fill: d.healthScore > 70 ? "#10b981" : d.healthScore > 40 ? "#f59e0b" : "#ef4444" }]} startAngle={90} endAngle={-270}>
+                      <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                      <RadialBar dataKey="value" cornerRadius={12} background={{ fill: "hsl(var(--muted))" }} />
+                    </RadialBarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-4xl font-semibold">{d.healthScore}</div>
+                  <div className="text-xs text-muted-foreground">out of 100</div>
+                  <div className="mt-2 space-y-0.5 text-[11px]">
+                    <div>On-time <b>{d.onTimeRate}%</b></div>
+                    <div>Completion <b>{d.completionRate}%</b></div>
+                    <div>Pace <b>{d.paceRatio}%</b> of TAT</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* KPI STRIP */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+            <Kpi icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
+            <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
+            <Kpi icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
+            <Kpi icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
+            <Kpi icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
+            <Kpi icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
+          </div>
+
+          {/* NEXT BEST ACTIONS */}
+          <Card className="overflow-hidden">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
-                <Sparkles className="h-4 w-4 text-primary" /> Executive brief
+                <Zap className="h-4 w-4 text-amber-500" /> Next best actions
+                <Badge variant="secondary" className="ml-2">{d.actions.length}</Badge>
+                <span className="ml-auto text-[11px] font-normal text-muted-foreground">Ranked by impact</span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              {briefMut.isPending && !brief ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Synthesising from live facts…
-                </div>
-              ) : (
-                <p className="text-sm leading-relaxed">
-                  {brief || "Tap refresh to generate a brief."}
-                </p>
+            <CardContent className="grid gap-2 md:grid-cols-2">
+              {d.actions.length === 0 && (
+                <p className="text-sm text-muted-foreground">Nothing urgent. The agent will resurface work as data changes.</p>
               )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button variant="ghost" size="sm" onClick={() => briefMut.mutate()} disabled={briefMut.isPending}>
-                  <RefreshCw className={`h-3.5 w-3.5 ${briefMut.isPending ? "animate-spin" : ""}`} /> Regenerate
-                </Button>
-              </div>
+              {d.actions.slice(0, 8).map(a => (
+                <div key={a.id} className={`rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-sm ${TONE[a.severity]}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
+                      <div className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</div>
+                      <div className="mt-1 text-xs opacity-90">{a.detail}</div>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
-          {/* Hero KPIs */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            <Kpi icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} tone="default" />
-            <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Completion" value={`${d.completionRate}%`} tone="ok" sub={`${d.totals.completed} done`} />
-            <Kpi icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "medium"} sub={`${d.delayRate}% of total`} />
-            <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "medium"} />
-            <Kpi icon={<Target className="h-4 w-4" />} label="Health" value={`${d.healthScore}`} tone={d.healthScore > 70 ? "ok" : d.healthScore > 40 ? "medium" : "high"} sub="0-100" />
-          </div>
-
-          <Tabs defaultValue="actions" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
-              <TabsTrigger value="actions"><Zap className="mr-1.5 h-3.5 w-3.5" />Actions</TabsTrigger>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="people"><Users className="mr-1.5 h-3.5 w-3.5" />People</TabsTrigger>
-              <TabsTrigger value="stages">Stages</TabsTrigger>
-              <TabsTrigger value="overdue">Overdue</TabsTrigger>
-            </TabsList>
-
-            {/* ACTIONS */}
-            <TabsContent value="actions" className="space-y-3 pt-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Sparkles className="h-4 w-4 text-primary" /> Next best actions
-                    <Badge variant="secondary" className="ml-auto">{d.actions.length}</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {d.actions.length === 0 && <p className="text-sm text-muted-foreground">No urgent actions. Nice.</p>}
-                  {d.actions.map(a => (
-                    <div key={a.id} className={`rounded-lg border p-3 ${SEV[a.severity]}`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
-                          <div className="mt-0.5 text-sm font-semibold">{a.title}</div>
-                          <div className="mt-1 text-xs opacity-90">{a.detail}</div>
-                        </div>
-                        <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* OVERVIEW */}
-            <TabsContent value="overview" className="grid gap-4 pt-4 md:grid-cols-2">
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Status distribution</CardTitle></CardHeader>
-                <CardContent className="h-64">
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={statusData} dataKey="value" nameKey="name" outerRadius={80} label>
-                        {statusData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Delay burden by process (top 8)</CardTitle></CardHeader>
-                <CardContent className="h-64">
-                  <ResponsiveContainer>
-                    <BarChart data={d.processes} layout="vertical" margin={{ left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis type="number" fontSize={11} />
-                      <YAxis type="category" dataKey="process" fontSize={10} width={120} />
-                      <Tooltip />
-                      <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-              <Card className="md:col-span-2">
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Criticality mix</CardTitle></CardHeader>
-                <CardContent className="h-56">
-                  <ResponsiveContainer>
-                    <BarChart data={Object.entries(d.critAgg).map(([name, value]) => ({ name, value }))}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="name" fontSize={12} />
-                      <YAxis fontSize={12} />
-                      <Tooltip />
-                      <Bar dataKey="value" fill="#6366f1" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* PEOPLE */}
-            <TabsContent value="people" className="space-y-4 pt-4">
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Delay burden by owner (top 8)</CardTitle></CardHeader>
-                <CardContent className="h-72">
-                  <ResponsiveContainer>
-                    <BarChart data={personData}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="name" fontSize={11} />
-                      <YAxis fontSize={11} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" />
-                      <Bar dataKey="delayed" fill="#f59e0b" name="Delayed activities" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Efficiency ranking</CardTitle></CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Person</TableHead>
-                        <TableHead className="text-right">Activities</TableHead>
-                        <TableHead className="text-right">Completed</TableHead>
-                        <TableHead className="text-right">Delayed</TableHead>
-                        <TableHead className="text-right">Delay days</TableHead>
-                        <TableHead>Efficiency</TableHead>
-                        <TableHead>Risk</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {d.persons.slice(0, 15).map(p => (
-                        <TableRow key={p.person}>
-                          <TableCell className="font-medium">{p.person}</TableCell>
-                          <TableCell className="text-right">{p.total}</TableCell>
-                          <TableCell className="text-right">{p.completed}</TableCell>
-                          <TableCell className="text-right">{p.delayed}</TableCell>
-                          <TableCell className="text-right">{p.delayDays}</TableCell>
-                          <TableCell className="w-32">
-                            <div className="flex items-center gap-2">
-                              <Progress value={p.efficiency} className="h-1.5" />
-                              <span className="text-xs text-muted-foreground w-8">{p.efficiency}%</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={p.riskScore > 50 ? SEV.high : p.riskScore > 25 ? SEV.medium : SEV.ok}>
-                              {p.riskScore}%
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* STAGES */}
-            <TabsContent value="stages" className="space-y-4 pt-4">
-              <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Stage health</CardTitle></CardHeader>
-                <CardContent className="h-72">
-                  <ResponsiveContainer>
-                    <BarChart data={stageData}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis dataKey="name" fontSize={11} />
-                      <YAxis fontSize={11} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="healthy" stackId="a" fill="#10b981" name="On track" />
-                      <Bar dataKey="delayed" stackId="a" fill="#ef4444" name="Delayed" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-              <div className="grid gap-3 md:grid-cols-2">
-                {d.stages.map(s => (
-                  <Card key={s.stage}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm font-semibold">{s.stage}</div>
-                        <Badge variant="outline" className={s.healthPct > 70 ? SEV.ok : s.healthPct > 40 ? SEV.medium : SEV.high}>
-                          {s.healthPct}% healthy
-                        </Badge>
-                      </div>
-                      <div className="mt-2 text-xs text-muted-foreground">
-                        {s.total} activities · {s.delayed} delayed · {s.delayDays}d cumulative delay
-                      </div>
-                      <Progress value={s.healthPct} className="mt-2 h-1.5" />
-                    </CardContent>
-                  </Card>
+          {/* ASK THE AGENT */}
+          <Card className="border-primary/30">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Bot className="h-4 w-4 text-primary" /> Ask the agent
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <form
+                onSubmit={(e) => { e.preventDefault(); if (question.trim()) askMut.mutate(question.trim()); }}
+                className="flex flex-col gap-2 md:flex-row"
+              >
+                <Input
+                  value={question} onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="e.g. Who is blocking the most work? What's the fastest fix this week?"
+                  className="flex-1"
+                />
+                <Button type="submit" disabled={askMut.isPending || !question.trim()}>
+                  {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Ask
+                </Button>
+              </form>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  "What's the biggest bottleneck?",
+                  "Who should I reassign work from?",
+                  "Which stage is dragging the timeline?",
+                  "Give me a 3-step recovery plan.",
+                ].map(sug => (
+                  <button key={sug} type="button"
+                    onClick={() => { setQuestion(sug); askMut.mutate(sug); }}
+                    className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  >
+                    {sug}
+                  </button>
                 ))}
               </div>
-            </TabsContent>
+              {answer && (
+                <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 text-sm leading-relaxed">
+                  {answer}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-            {/* OVERDUE */}
-            <TabsContent value="overdue" className="pt-4">
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Top overdue activities ({d.overdue.length})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Activity</TableHead>
-                        <TableHead>Owner</TableHead>
-                        <TableHead>Stage</TableHead>
-                        <TableHead>Criticality</TableHead>
-                        <TableHead className="text-right">TAT</TableHead>
-                        <TableHead className="text-right">Taken</TableHead>
-                        <TableHead className="text-right">Delay</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {d.overdue.slice(0, 25).map((o, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="max-w-xs truncate font-medium">{o.activity}</TableCell>
-                          <TableCell>{o.person}</TableCell>
-                          <TableCell>{o.stage}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={o.criticality === "Critical" ? SEV.high : SEV.low}>
-                              {o.criticality}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">{o.tat}</TableCell>
-                          <TableCell className="text-right">{o.taken}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge className={o.delay > 60 ? SEV.high : o.delay > 20 ? SEV.medium : SEV.low}>
-                              {o.delay}d
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+          {/* BOTTOM BENTO: bottlenecks · people · anomalies */}
+          <div className="grid gap-4 md:grid-cols-3">
+            {/* Bottlenecks */}
+            <Card className="md:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Radar className="h-4 w-4 text-rose-500" /> Bottleneck map (stages)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="h-72">
+                <ResponsiveContainer>
+                  <BarChart data={d.stages.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                    <XAxis type="number" fontSize={11} />
+                    <YAxis type="category" dataKey="stage" fontSize={11} width={130} />
+                    <Tooltip cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }} />
+                    <Bar dataKey="delayDays" fill="#f43f5e" name="Delay days" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="delayed" fill="#f59e0b" name="Delayed items" radius={[0, 6, 6, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Top performers */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Users className="h-4 w-4 text-emerald-500" /> Top performers
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {d.topPerformers.slice(0, 5).map((p, i) => (
+                  <div key={p.person} className="rounded-lg border border-border/60 p-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-xs font-bold text-emerald-700">{i + 1}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{p.person}</div>
+                        <div className="text-[11px] text-muted-foreground">{p.completed}/{p.total} done</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-semibold">{p.efficiency}</div>
+                        <div className="text-[10px] text-muted-foreground">EFF</div>
+                      </div>
+                    </div>
+                    <Progress value={p.efficiency} className="mt-1.5 h-1" />
+                  </div>
+                ))}
+                {d.topPerformers.length === 0 && <p className="text-xs text-muted-foreground">Not enough completions yet.</p>}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* PEOPLE TABLE */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Users className="h-4 w-4" /> Efficiency ranking
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                  Score = 0.5·completion + 0.5·on-time − pace penalty
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Person</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Done</TableHead>
+                    <TableHead className="text-right">Delayed</TableHead>
+                    <TableHead className="text-right">Delay·d</TableHead>
+                    <TableHead className="w-40">Efficiency</TableHead>
+                    <TableHead>Risk</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {d.personsByBurden.slice(0, 12).map(p => (
+                    <TableRow key={p.person}>
+                      <TableCell className="font-medium">{p.person}</TableCell>
+                      <TableCell className="text-right">{p.total}</TableCell>
+                      <TableCell className="text-right">{p.completed}</TableCell>
+                      <TableCell className="text-right">{p.delayed}</TableCell>
+                      <TableCell className="text-right">{p.delayDays}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress value={p.efficiency} className="h-1.5" />
+                          <span className="w-8 text-xs text-muted-foreground">{p.efficiency}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={p.riskScore > 50 ? TONE.high : p.riskScore > 25 ? TONE.med : TONE.ok}>
+                          {p.riskScore}%
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* OVERDUE + ANOMALIES */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-rose-500" /> Overdue queue
+                  <Badge variant="secondary" className="ml-auto">{d.overdue.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {d.overdue.slice(0, 8).map((o, i) => (
+                  <div key={i} className={`rounded-lg border p-2.5 ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold">{o.activity}</div>
+                        <div className="mt-0.5 text-[11px] opacity-80">{o.person} · {o.stage}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-bold">{o.delay}d</div>
+                        <div className="text-[10px] opacity-70">TAT {o.tat} / took {o.taken}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {d.overdue.length === 0 && <p className="text-xs text-muted-foreground">No overdue items.</p>}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <ArrowRight className="h-4 w-4 text-fuchsia-500" /> Anomalies
+                  <span className="ml-2 text-[11px] font-normal text-muted-foreground">taken ≥ 1.8× TAT</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {d.anomalies.map((a, i) => (
+                  <div key={i} className="rounded-lg border border-border/60 p-2.5">
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{a.activity}</div>
+                        <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                      </div>
+                      <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
+                        {a.ratio.toFixed(1)}×
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+                {d.anomalies.length === 0 && <p className="text-xs text-muted-foreground">No anomalies detected.</p>}
+              </CardContent>
+            </Card>
+          </div>
         </>
       )}
     </div>
   );
 }
 
-function Kpi({ icon, label, value, sub, tone }: {
+// ────────────────── KPI ──────────────────
+function Kpi({ icon, label, value, sub, tone = "default" }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
-  tone: "default" | "ok" | "medium" | "high";
+  tone?: "default" | "ok" | "med" | "high" | "low";
 }) {
-  const toneCls = tone === "ok" ? SEV.ok : tone === "medium" ? SEV.medium : tone === "high" ? SEV.high : "border-border/60 bg-card";
+  const cls =
+    tone === "ok" ? TONE.ok :
+    tone === "med" ? TONE.med :
+    tone === "high" ? TONE.high :
+    tone === "low" ? TONE.low :
+    "border-border/60 bg-card";
   return (
-    <Card className={`border ${toneCls}`}>
-      <CardContent className="p-4">
+    <Card className={`border ${cls}`}>
+      <CardContent className="p-3.5">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest opacity-70">
-          {icon} {label}
+          {icon}{label}
         </div>
-        <div className="mt-1 text-2xl font-semibold">{value}</div>
-        {sub && <div className="mt-0.5 text-[11px] opacity-70">{sub}</div>}
+        <div className="mt-1 text-2xl font-semibold leading-none">{value}</div>
+        {sub && <div className="mt-1 text-[11px] opacity-70">{sub}</div>}
       </CardContent>
     </Card>
   );
