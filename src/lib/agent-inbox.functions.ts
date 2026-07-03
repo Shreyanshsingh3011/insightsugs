@@ -16,10 +16,11 @@ export type AgentDraft = {
   channel: string; // 'email' | 'direct_message' | 'slack' | 'sheet_writeback'
   recipient_email: string | null;
   recipient_user_id: string | null;
-  cc: Array<{ email: string; name?: string | null }>;
+  // JSON-serializable, kept opaque at the RPC boundary
+  cc: any;
   confidence: number;
   why: string | null;
-  payload: Record<string, unknown>;
+  payload: any;
   state:
     | "pending"
     | "approved"
@@ -36,7 +37,7 @@ export type AgentDraft = {
   approved_by: string | null;
   approved_at: string | null;
   sent_at: string | null;
-  send_result: Record<string, unknown> | null;
+  send_result: any;
   created_at: string;
   updated_at: string;
   // enriched:
@@ -135,7 +136,7 @@ const CreateInput = z.object({
     .optional(),
   confidence: z.number().min(0).max(1).default(0.6),
   why: z.string().max(2000).optional().nullable(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   assigned_to: z.string().uuid().optional().nullable(),
 });
 
@@ -164,25 +165,26 @@ export const createAgentDraft = createServerFn({ method: "POST" })
     }
     if (!assigned) assigned = recipient_user_id ?? userId;
 
+    const insertRow: any = {
+      draft_type: data.draft_type,
+      source_kind: data.source_kind,
+      source_key: data.source_key,
+      title: data.title.slice(0, 400),
+      subject: data.subject?.slice(0, 400) ?? null,
+      body: data.body,
+      channel: data.channel,
+      recipient_email: data.recipient_email ?? null,
+      recipient_user_id,
+      cc: data.cc ?? [],
+      confidence: data.confidence,
+      why: data.why ?? null,
+      payload: data.payload ?? {},
+      assigned_to: assigned,
+      created_by_rule: "user:draft_from_answer",
+    };
     const { data: inserted, error } = await supabaseAdmin
       .from("agent_drafts")
-      .insert({
-        draft_type: data.draft_type,
-        source_kind: data.source_kind,
-        source_key: data.source_key,
-        title: data.title.slice(0, 400),
-        subject: data.subject?.slice(0, 400) ?? null,
-        body: data.body,
-        channel: data.channel,
-        recipient_email: data.recipient_email ?? null,
-        recipient_user_id,
-        cc: data.cc ?? [],
-        confidence: data.confidence,
-        why: data.why ?? null,
-        payload: data.payload ?? {},
-        assigned_to: assigned,
-        created_by_rule: "user:draft_from_answer",
-      })
+      .insert(insertRow)
       .select("id")
       .single();
 
