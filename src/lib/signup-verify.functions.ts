@@ -97,6 +97,7 @@ export type PendingRequest = {
   status: "pending" | "approved" | "rejected";
   verified_via: string | null; granted_role: string | null;
   reviewed_at: string | null; created_at: string;
+  reject_reason?: string | null;
 };
 
 export const listSignupRequests = createServerFn({ method: "GET" })
