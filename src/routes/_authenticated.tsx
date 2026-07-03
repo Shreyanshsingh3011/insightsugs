@@ -29,8 +29,6 @@ function AuthLayout() {
     throw redirect({ to: "/login" });
   }
   if (!rolesLoading && roles && roles.length === 0) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PendingApprovalScreen } = require("@/components/PendingApprovalScreen") as typeof import("@/components/PendingApprovalScreen");
     return <PendingApprovalScreen email={session.user.email ?? ""} />;
   }
 
