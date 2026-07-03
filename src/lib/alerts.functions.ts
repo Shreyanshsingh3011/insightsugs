@@ -132,15 +132,47 @@ export const sendAlert = createServerFn({ method: "POST" })
       .single();
     if (insErr || !alertRow) throw new Error(insErr?.message ?? "Failed to create alert");
 
-    // 3. Insert recipient rows (one inapp + one email per recipient)
+    // 3. Insert recipient rows (one inapp + one email per recipient) and
+    //    enqueue the email via the transactional queue.
     const recList = Array.from(recipients.values());
     const rows: any[] = [];
     const now = new Date().toISOString();
+    const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+    const ctxParts = [flag.stage ? `Stage ${flag.stage}` : "", flag.severity ? `Severity ${flag.severity}` : ""].filter(Boolean);
     for (const r of recList) {
       if (r.user_id) {
         rows.push({ alert_id: alertRow.id, user_id: r.user_id, email: r.email, name: r.name, channel: "inapp", delivered_at: now });
       }
-      rows.push({ alert_id: alertRow.id, user_id: r.user_id, email: r.email, name: r.name, channel: "email", error: "email_pending_setup" });
+      let emailStatus: string | null = null;
+      let emailErr: string | null = null;
+      if (r.email) {
+        const sent = await enqueueAppEmail({
+          templateName: "agent-notification",
+          recipientEmail: r.email,
+          idempotencyKey: `alert-${alertRow.id}-${(r.email || "").toLowerCase()}`,
+          templateData: {
+            recipientName: r.name,
+            senderName: "InsightSugs Alerts",
+            subject: `Alert: ${flag.activity}`,
+            message: flag.root_cause ?? flag.reason ?? `Severity ${flag.severity ?? "—"} · Stage ${flag.stage ?? "—"}`,
+            context: ctxParts.join(" · ") || undefined,
+            reasonWhy: flag.reason ?? undefined,
+          },
+        });
+        emailStatus = sent.ok ? "queued" : `email_${sent.reason}`;
+        emailErr = sent.ok ? null : sent.error ?? sent.reason;
+      } else {
+        emailStatus = "email_missing_address";
+      }
+      rows.push({
+        alert_id: alertRow.id,
+        user_id: r.user_id,
+        email: r.email,
+        name: r.name,
+        channel: "email",
+        delivered_at: emailStatus === "queued" ? now : null,
+        error: emailStatus === "queued" ? null : emailErr,
+      });
     }
     if (rows.length) {
       await supabaseAdmin.from("alert_recipients").insert(rows);

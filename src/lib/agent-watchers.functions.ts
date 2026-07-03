@@ -11,6 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { resolvePersonForRow } from "@/lib/person-resolver";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -92,15 +93,22 @@ type DraftSeed = {
   _recipient_email_norm: string | null;
 };
 
-function ruleSeeds(row: Row, projectLabel: string): DraftSeed[] {
+function ruleSeeds(
+  row: Row,
+  projectLabel: string,
+  directory?: Map<string, string>,
+): DraftSeed[] {
   const seeds: DraftSeed[] = [];
   const status = pick(row, "Status Category", "Status as on Date");
   if (isCompleted(status)) return seeds;
 
   const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
   const stage    = pick(row, "Stages", "Stages of Process") || "—";
-  const person   = pick(row, "Responsible Person", "Responsibility", "approvers name") || "the responsible person";
-  const email    = pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase() || null;
+  // Resolve person via the shared resolver so titles like "Project Manager"
+  // become the actual human name whenever we can find one.
+  const resolved = resolvePersonForRow(row, directory);
+  const person   = resolved.displayName || "the responsible person";
+  const email    = (resolved.email || pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase()) || null;
   const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
   const delay    = num(row["Delay in Days"]);
   const tat      = num(row["TAT"]);
@@ -111,7 +119,9 @@ function ruleSeeds(row: Row, projectLabel: string): DraftSeed[] {
   const sourceKey = `${projectLabel}::${srNo || activity}`.slice(0, 400);
   const firstName = person.split(/\s+/)[0] || "there";
   const ctxLine   = `Project: ${projectLabel} · Stage: ${stage} · Activity: ${activity}${srNo ? ` (Sr ${srNo})` : ""}`;
-  const channel: DraftSeed["channel"] = email ? "direct_message" : "direct_message";
+  // Prefer email when the recipient has a known address; fall back to in-app
+  // direct message for unknown recipients (queued to the fallback triager).
+  const channel: DraftSeed["channel"] = email ? "email" : "direct_message";
   const basePayload = { project: projectLabel, stage, activity, srNo, status, delay, tat, taken, criticality: crit, reason };
 
   // Rule 1 — Overdue task (delay > 2 days, not completed)
@@ -204,20 +214,25 @@ function ruleSeeds(row: Row, projectLabel: string): DraftSeed[] {
 
 async function buildAssigneeResolver(supabaseAdmin: any, preferredFallbackUserId: string | null) {
   const [{ data: profiles }, { data: supers }] = await Promise.all([
-    supabaseAdmin.from("profiles").select("id, email"),
+    supabaseAdmin.from("profiles").select("id, email, full_name"),
     supabaseAdmin.from("user_roles").select("user_id").eq("role", "super_admin"),
   ]);
   const emailToId = new Map<string, string>();
+  const emailToName = new Map<string, string>();
   const profileIds = new Set<string>();
   for (const p of profiles ?? []) {
     if (p.id) profileIds.add(p.id);
     const e = (p.email ?? "").toLowerCase().trim();
-    if (e) emailToId.set(e, p.id);
+    if (e) {
+      emailToId.set(e, p.id);
+      const n = (p.full_name ?? "").trim();
+      if (n) emailToName.set(e, n);
+    }
   }
   const fallback = preferredFallbackUserId && profileIds.has(preferredFallbackUserId)
     ? preferredFallbackUserId
     : (supers ?? [])[0]?.user_id ?? null;
-  return (email: string | null): { assigned_to: string | null; recipient_user_id: string | null } => {
+  const resolve = (email: string | null): { assigned_to: string | null; recipient_user_id: string | null } => {
     if (email) {
       const id = emailToId.get(email.toLowerCase());
       if (id) return { assigned_to: id, recipient_user_id: id };
@@ -225,6 +240,7 @@ async function buildAssigneeResolver(supabaseAdmin: any, preferredFallbackUserId
     // Unknown recipient — queue for a super admin to triage.
     return { assigned_to: fallback, recipient_user_id: null };
   };
+  return { resolve, directory: emailToName };
 }
 
 // ── Core runner ────────────────────────────────────────────────────────
@@ -245,7 +261,7 @@ async function runWatchersCore(
     by_rule: {},
   };
 
-  const resolve = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
+  const { resolve, directory } = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
 
   for (const proj of projects) {
     let rows: Row[] = [];
@@ -259,7 +275,7 @@ async function runWatchersCore(
     result.rows_scanned += rows.length;
 
     for (const row of rows) {
-      const seeds = ruleSeeds(row, proj.label);
+      const seeds = ruleSeeds(row, proj.label, directory);
       for (const s of seeds) {
         const { assigned_to, recipient_user_id } = resolve(s._recipient_email_norm);
         const insertRow = {
