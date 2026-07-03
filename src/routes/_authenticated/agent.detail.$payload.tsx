@@ -154,11 +154,23 @@ Return the JSON now.`;
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [question, setQuestion] = useState("");
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const scopeTableRef = useRef<HTMLDivElement | null>(null);
+  const draftPanelRef = useRef<HTMLDivElement | null>(null);
+  const [highlightRow, setHighlightRow] = useState<string | null>(null);
+
+  // Jump a chat citation to its row in the scope table and flash-highlight it.
+  const jumpToRow = (row: DetailContextRow) => {
+    const key = rowKey(row);
+    setHighlightRow(key);
+    const el = document.getElementById(`scope-row-${key}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    else scopeTableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => setHighlightRow((h) => (h === key ? null : h)), 2400);
+  };
 
   const askMut = useMutation({
     mutationFn: async (q: string) => {
       if (!data) throw new Error("No context");
-      // Local ranking of context rows for citations
       const ranked = rankRows(context, q).slice(0, 8);
       const numbered = ranked.map((r, i) => `[${i + 1}] ${r.activity} · person: ${r.person ?? "—"} · stage: ${r.stage ?? "—"} · status: ${r.status ?? "—"} · TAT ${r.tat ?? "—"} / took ${r.taken ?? "—"} · delay ${r.delay ?? 0}d`).join("\n");
       const sys = `You are a scoped analyst. You may ONLY use the FACTS and RECORDS below. If the answer is not derivable from them, say so plainly. Cite records inline like [1], [2] whenever you state a fact from them. Keep answers under 120 words.`;
@@ -178,7 +190,7 @@ QUESTION: ${q}`;
       return { text, citations: cites, ranked };
     },
     onSuccess: (r) => {
-      setChat(c => [...c, { role: "assistant", content: r.text, citations: r.citations }]);
+      setChat(c => [...c, { role: "assistant", content: r.text, citations: r.citations, ranked: r.ranked }]);
       requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }));
     },
     onError: (e) => {
@@ -192,6 +204,67 @@ QUESTION: ${q}`;
     setChat(c => [...c, { role: "user", content: t }]);
     setQuestion("");
     askMut.mutate(t);
+  }
+
+  // ── One-click actions on recommendations
+  function draftFromRecommendation(rec: string) {
+    setSubject(`Action needed: ${String(activityTitle).slice(0, 120)}`);
+    setBody(
+      [
+        `Hi${responsibleName ? " " + responsibleName : ""},`,
+        "",
+        rec,
+        "",
+        `Context: ${data?.title ?? ""}`,
+        data?.stage ? `Stage: ${data.stage}` : "",
+        data?.projectLabel ? `Project: ${data.projectLabel}` : "",
+        "",
+        "Please confirm a recovery date and any blockers. Reply to this alert directly.",
+      ].filter(Boolean).join("\n")
+    );
+    draftPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    toast.success("Draft prefilled from recommendation");
+  }
+
+  // ── Export the whole detail as CSV (metrics, recommendations, timeline, chat + citations)
+  function exportCsv() {
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines: string[] = [];
+    lines.push(`# Detail export · ${new Date().toISOString()}`);
+    lines.push(`# Title,${esc(data?.title ?? "")}`);
+    lines.push(`# Project,${esc(data?.projectLabel ?? "")}`);
+    lines.push(`# Person,${esc(data?.person ?? "")}`);
+    lines.push(`# Stage,${esc(data?.stage ?? "")}`);
+    lines.push(`# Severity,${esc(data?.severity ?? "")}`);
+    lines.push("");
+    lines.push("Section,Label,Value");
+    metrics.forEach((m) => lines.push(`metric,${esc(m.label)},${esc(String(m.value))}`));
+    derivedRecs.forEach((r, i) => lines.push(`recommendation,#${i + 1},${esc(r)}`));
+    (timelineQ.data ?? []).forEach((e) => {
+      lines.push(`timeline,${esc(new Date(e.at).toLocaleString())},${esc(`${e.kind} · ${e.title}${e.actor.name || e.actor.email ? ` (by ${e.actor.name || e.actor.email})` : ""}${e.body ? " — " + e.body : ""}`)}`);
+    });
+    chat.forEach((m, i) => {
+      lines.push(`chat,${esc(m.role + " #" + (i + 1))},${esc(m.content)}`);
+      (m.citations ?? []).forEach((n) => {
+        const src = m.ranked?.[n - 1];
+        if (src) lines.push(`citation,${esc(`[${n}] from chat #${i + 1}`)},${esc(`${src.activity} · ${src.person ?? "—"} · ${src.stage ?? "—"} · delay ${src.delay ?? 0}d`)}`);
+      });
+    });
+    (context.length ? context : []).forEach((r, i) => {
+      lines.push(`scope-record,#${i + 1},${esc(`${r.activity} · ${r.person ?? "—"} · ${r.stage ?? "—"} · ${r.status ?? "—"} · TAT ${r.tat ?? "—"} / took ${r.taken ?? "—"} · delay ${r.delay ?? 0}d`)}`);
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = (data?.title ?? "detail").replace(/[^a-z0-9]+/gi, "-").toLowerCase().slice(0, 60);
+    a.download = `${safe}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast.success("Exported");
   }
 
   if (!data) {
