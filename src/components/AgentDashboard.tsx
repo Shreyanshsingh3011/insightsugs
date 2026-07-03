@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
+import { fetchSheetRows } from "@/lib/gsheets-agent.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,15 +15,17 @@ import {
 } from "@/components/ui/table";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, LineChart, Line, Legend,
+  PieChart, Pie, Cell, Legend,
 } from "recharts";
 import {
   Sparkles, RefreshCw, AlertTriangle, TrendingUp, Users, Activity,
-  Target, Zap, CheckCircle2, Clock, Loader2, Link2,
+  Target, Zap, CheckCircle2, Clock, Loader2, Link2, Sheet as SheetIcon,
 } from "lucide-react";
 
 const DEFAULT_URL =
   "https://delaybridgesugs.vercel.app/api/public/PeuOiqTX8Suly1enDV4X68reUe6zkBrh/export?fields=summary,totals,risk_score,status_breakdown,sheets,flags,forecast,anomalies,digest,recommendations,trends,top_delay_reasons,dependency_chains,person_ranking,correlation_matrix,department_ranking,timeline_correlation,tat_performance";
+const DEFAULT_SHEET =
+  "https://docs.google.com/spreadsheets/d/1U2CkhrRBSv6VLbri_ROwhqCvXJvOKbqbWzJDrc4q-DQ/edit?gid=2069956310#gid=2069956310";
 
 type Row = Record<string, string>;
 type Payload = {
