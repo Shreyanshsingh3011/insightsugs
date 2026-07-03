@@ -214,20 +214,25 @@ function ruleSeeds(
 
 async function buildAssigneeResolver(supabaseAdmin: any, preferredFallbackUserId: string | null) {
   const [{ data: profiles }, { data: supers }] = await Promise.all([
-    supabaseAdmin.from("profiles").select("id, email"),
+    supabaseAdmin.from("profiles").select("id, email, full_name"),
     supabaseAdmin.from("user_roles").select("user_id").eq("role", "super_admin"),
   ]);
   const emailToId = new Map<string, string>();
+  const emailToName = new Map<string, string>();
   const profileIds = new Set<string>();
   for (const p of profiles ?? []) {
     if (p.id) profileIds.add(p.id);
     const e = (p.email ?? "").toLowerCase().trim();
-    if (e) emailToId.set(e, p.id);
+    if (e) {
+      emailToId.set(e, p.id);
+      const n = (p.full_name ?? "").trim();
+      if (n) emailToName.set(e, n);
+    }
   }
   const fallback = preferredFallbackUserId && profileIds.has(preferredFallbackUserId)
     ? preferredFallbackUserId
     : (supers ?? [])[0]?.user_id ?? null;
-  return (email: string | null): { assigned_to: string | null; recipient_user_id: string | null } => {
+  const resolve = (email: string | null): { assigned_to: string | null; recipient_user_id: string | null } => {
     if (email) {
       const id = emailToId.get(email.toLowerCase());
       if (id) return { assigned_to: id, recipient_user_id: id };
@@ -235,6 +240,7 @@ async function buildAssigneeResolver(supabaseAdmin: any, preferredFallbackUserId
     // Unknown recipient — queue for a super admin to triage.
     return { assigned_to: fallback, recipient_user_id: null };
   };
+  return { resolve, directory: emailToName };
 }
 
 // ── Core runner ────────────────────────────────────────────────────────
@@ -255,7 +261,7 @@ async function runWatchersCore(
     by_rule: {},
   };
 
-  const resolve = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
+  const { resolve, directory } = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
 
   for (const proj of projects) {
     let rows: Row[] = [];
@@ -269,7 +275,7 @@ async function runWatchersCore(
     result.rows_scanned += rows.length;
 
     for (const row of rows) {
-      const seeds = ruleSeeds(row, proj.label);
+      const seeds = ruleSeeds(row, proj.label, directory);
       for (const s of seeds) {
         const { assigned_to, recipient_user_id } = resolve(s._recipient_email_norm);
         const insertRow = {
