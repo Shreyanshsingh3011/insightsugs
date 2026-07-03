@@ -12,6 +12,8 @@ import {
   unsnoozeAgentDraft,
   type AgentDraft,
 } from "@/lib/agent-inbox.functions";
+import { runAgentWatchers } from "@/lib/agent-watchers.functions";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -222,6 +224,7 @@ function AgentInboxPage() {
           {drafts.length}
         </Badge>
         <div className="ml-auto flex items-center gap-2">
+          <RunWatchersButton onDone={invalidate} />
           <Button
             variant="outline"
             size="sm"
@@ -232,6 +235,7 @@ function AgentInboxPage() {
             <span className="ml-1.5">Refresh</span>
           </Button>
         </div>
+
       </div>
 
       {/* Filters */}
@@ -773,4 +777,31 @@ function SourceLink({ kind, keyStr }: { kind: string; keyStr: string }) {
     default:
       return null;
   }
+}
+
+// ── Run watchers ────────────────────────────────────────────────────────
+function RunWatchersButton({ onDone }: { onDone: () => void }) {
+  const runFn = useServerFn(runAgentWatchers);
+  const mut = useMutation({
+    mutationFn: () => runFn({ data: {} }),
+    onSuccess: (r) => {
+      const errs = r.errors?.length ? ` · ${r.errors.length} error${r.errors.length > 1 ? "s" : ""}` : "";
+      toast.success(
+        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${errs}`,
+      );
+      onDone();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  return (
+    <Button
+      size="sm"
+      onClick={() => mut.mutate()}
+      disabled={mut.isPending}
+      title="Scan live data for new drafts"
+    >
+      {mut.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+      <span className="ml-1.5">{mut.isPending ? "Scanning…" : "Run watchers"}</span>
+    </Button>
+  );
 }

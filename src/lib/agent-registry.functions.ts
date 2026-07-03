@@ -99,48 +99,48 @@ async function fetchPublicCSV(): Promise<string[][]> {
   throw new Error(`Public sheet unreachable: ${lastErr || "no data"}`);
 }
 
-export const fetchAgentProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async (): Promise<{ projects: AgentProject[]; source: string; fetched_at: string }> => {
-    const lovable = process.env.LOVABLE_API_KEY;
-    const key = process.env.GOOGLE_SHEETS_API_KEY;
-    const now = () => new Date().toISOString();
+// Pure server-side helper — safe to import from other server code
+// (webhooks, cron endpoints) that doesn't have a Supabase auth context.
+export async function loadAgentProjects(): Promise<{ projects: AgentProject[]; source: string; fetched_at: string }> {
+  const lovable = process.env.LOVABLE_API_KEY;
+  const key = process.env.GOOGLE_SHEETS_API_KEY;
+  const now = () => new Date().toISOString();
 
-    // 1) Try authenticated Google Sheets connector first.
-    if (lovable && key) {
-      try {
-        const headers = {
-          Authorization: `Bearer ${lovable}`,
-          "X-Connection-Api-Key": key,
-          Accept: "application/json",
+  if (lovable && key) {
+    try {
+      const headers = {
+        Authorization: `Bearer ${lovable}`,
+        "X-Connection-Api-Key": key,
+        Accept: "application/json",
+      };
+      const metaRes = await fetch(
+        `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}?fields=properties.title,sheets.properties(sheetId,title,index)`,
+        { headers },
+      );
+      if (metaRes.ok) {
+        const meta = (await metaRes.json()) as {
+          sheets?: { properties: { sheetId: number; title: string; index: number } }[];
         };
-        const metaRes = await fetch(
-          `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}?fields=properties.title,sheets.properties(sheetId,title,index)`,
+        const first = meta.sheets?.sort((a, b) => a.properties.index - b.properties.index)[0];
+        const tab = first?.properties.title ?? "Sheet1";
+        const valRes = await fetch(
+          `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}/values/${tab}!A1:Z500?valueRenderOption=FORMATTED_VALUE`,
           { headers },
         );
-        if (metaRes.ok) {
-          const meta = (await metaRes.json()) as {
-            sheets?: { properties: { sheetId: number; title: string; index: number } }[];
-          };
-          const first = meta.sheets?.sort((a, b) => a.properties.index - b.properties.index)[0];
-          const tab = first?.properties.title ?? "Sheet1";
-          const valRes = await fetch(
-            `${GATEWAY}/spreadsheets/${MASTER_SHEET_ID}/values/${tab}!A1:Z500?valueRenderOption=FORMATTED_VALUE`,
-            { headers },
-          );
-          if (valRes.ok) {
-            const vjson = (await valRes.json()) as { values?: string[][] };
-            const projects = buildProjects(vjson.values ?? []);
-            if (projects.length) return { projects, source: `gateway:${tab}`, fetched_at: now() };
-          }
+        if (valRes.ok) {
+          const vjson = (await valRes.json()) as { values?: string[][] };
+          const projects = buildProjects(vjson.values ?? []);
+          if (projects.length) return { projects, source: `gateway:${tab}`, fetched_at: now() };
         }
-      } catch {
-        // fall through to public CSV
       }
-    }
+    } catch { /* fall through */ }
+  }
+  const values = await fetchPublicCSV();
+  const projects = buildProjects(values);
+  return { projects, source: "public-csv", fetched_at: now() };
+}
 
-    // 2) Fallback — the sheet is "Anyone with the link (Viewer)".
-    const values = await fetchPublicCSV();
-    const projects = buildProjects(values);
-    return { projects, source: "public-csv", fetched_at: now() };
-  });
+export const fetchAgentProjects = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => loadAgentProjects());
+

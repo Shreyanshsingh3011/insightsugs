@@ -35,6 +35,7 @@ import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/e
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
+import { Route as ApiPublicHooksAgentWatchersRouteImport } from './routes/api/public/hooks/agent-watchers'
 import { Route as AuthenticatedAgentStageKeyRouteImport } from './routes/_authenticated/agent.stage.$key'
 import { Route as AuthenticatedAgentRowKeyRouteImport } from './routes/_authenticated/agent.row.$key'
 import { Route as AuthenticatedAgentProjectProjectIdRouteImport } from './routes/_authenticated/agent.project.$projectId'
@@ -179,6 +180,12 @@ const ApiPublicHooksConcernNudgesRoute =
     path: '/api/public/hooks/concern-nudges',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksAgentWatchersRoute =
+  ApiPublicHooksAgentWatchersRouteImport.update({
+    id: '/api/public/hooks/agent-watchers',
+    path: '/api/public/hooks/agent-watchers',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedAgentStageKeyRoute =
   AuthenticatedAgentStageKeyRouteImport.update({
     id: '/stage/$key',
@@ -243,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
   '/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
+  '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -274,6 +282,7 @@ export interface FileRoutesByTo {
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
   '/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
+  '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -309,6 +318,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
   '/_authenticated/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/_authenticated/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
+  '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
@@ -344,6 +354,7 @@ export interface FileRouteTypes {
     | '/agent/project/$projectId'
     | '/agent/row/$key'
     | '/agent/stage/$key'
+    | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -375,6 +386,7 @@ export interface FileRouteTypes {
     | '/agent/project/$projectId'
     | '/agent/row/$key'
     | '/agent/stage/$key'
+    | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -409,6 +421,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/project/$projectId'
     | '/_authenticated/agent/row/$key'
     | '/_authenticated/agent/stage/$key'
+    | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/weekly-report'
@@ -419,6 +432,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
   ApiPublicHooksWeeklyReportRoute: typeof ApiPublicHooksWeeklyReportRoute
@@ -609,6 +623,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksConcernNudgesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/agent-watchers': {
+      id: '/api/public/hooks/agent-watchers'
+      path: '/api/public/hooks/agent-watchers'
+      fullPath: '/api/public/hooks/agent-watchers'
+      preLoaderRoute: typeof ApiPublicHooksAgentWatchersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/agent/stage/$key': {
       id: '/_authenticated/agent/stage/$key'
       path: '/stage/$key'
@@ -746,6 +767,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
   ApiPublicHooksWeeklyReportRoute: ApiPublicHooksWeeklyReportRoute,
