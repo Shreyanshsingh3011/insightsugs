@@ -465,9 +465,44 @@ function CopilotPage() {
                         </div>
                       )}
                     </div>
+                    {t.citationsMissing && (
+                      <div className="mb-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                        <div className="flex-1">
+                          <div className="font-medium text-destructive">
+                            Citations missing — treat this answer as ungrounded.
+                          </div>
+                          <div className="mt-0.5 text-muted-foreground">
+                            Copilot didn't include inline <code className="rounded bg-background px-1">[…]</code>
+                            {" "}markers or a <span className="font-medium">Sources:</span> list.
+                            {t.retriedForCitations ? " Automatic retry also failed." : ""}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs"
+                          disabled={askMut.isPending}
+                          onClick={() =>
+                            askMut.mutate({
+                              question: t.question,
+                              history: history.slice(0, i).flatMap((x) => [
+                                { role: "user" as const, content: x.question },
+                                { role: "assistant" as const, content: x.answer },
+                              ]),
+                              retryForCitations: true,
+                              originalQuestion: t.question,
+                            })
+                          }
+                        >
+                          <RefreshCw className="mr-1 h-3 w-3" /> Re-ask with citations
+                        </Button>
+                      </div>
+                    )}
                     <div className="prose prose-sm dark:prose-invert max-w-none prose-table:my-2 prose-p:my-1.5 prose-headings:my-2">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{t.answer}</ReactMarkdown>
                     </div>
+
                     {t.charts && t.charts.length > 0 && (
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         {t.charts.map((c, ci) => (
