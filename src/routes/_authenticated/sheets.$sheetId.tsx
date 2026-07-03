@@ -138,17 +138,26 @@ function SheetDetailPage() {
                   </td>
                 </tr>
               ) : (
-                detail.data.rows.map((r: any) => (
-                  <tr key={r.row_index} className="border-t border-border">
-                    <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.row_index + 1}</td>
-                    {canonicalCols.map((c) => (
-                      <td key={c} className="px-3 py-1.5">{r.canonical?.[c] ?? ""}</td>
-                    ))}
-                    {extraCols.map((c) => (
-                      <td key={c} className="px-3 py-1.5 text-muted-foreground">{r.extras?.[c] ?? ""}</td>
-                    ))}
-                  </tr>
-                ))
+                detail.data.rows.map((r: any) => {
+                  const isHit = highlight != null && r.row_index === highlight;
+                  return (
+                    <tr
+                      key={r.row_index}
+                      ref={isHit ? highlightRef : undefined}
+                      className={`border-t border-border ${
+                        isHit ? "bg-amber-100 dark:bg-amber-900/40 ring-2 ring-amber-400" : ""
+                      }`}
+                    >
+                      <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.row_index + 1}</td>
+                      {canonicalCols.map((c) => (
+                        <td key={c} className="px-3 py-1.5">{r.canonical?.[c] ?? ""}</td>
+                      ))}
+                      {extraCols.map((c) => (
+                        <td key={c} className="px-3 py-1.5 text-muted-foreground">{r.extras?.[c] ?? ""}</td>
+                      ))}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
