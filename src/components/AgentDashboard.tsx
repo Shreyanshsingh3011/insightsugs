@@ -335,28 +335,37 @@ export default function AgentDashboard() {
     .pop();
 
   const payload: Payload | undefined = useMemo(() => {
+    const nameFilter = (rows: Row[] | undefined): Row[] => {
+      if (!rows) return [];
+      if (scope.mode !== "name-scoped") return rows;
+      if (scope.nameNeedles.length === 0) return [];
+      return rows.filter((r) => rowMatchesUser(r, scope.nameNeedles));
+    };
     if (selected === "all") {
       const merged: Row[] = [];
       let latest: string | undefined;
       for (const s of sources) {
-        if (s.payload?.data?.length) {
+        const filtered = nameFilter(s.payload?.data);
+        if (filtered.length) {
           const label = s.project.label;
-          for (const r of s.payload.data) merged.push({ ...r, __project: label });
-          if (s.payload.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
+          for (const r of filtered) merged.push({ ...r, __project: label });
+          if (s.payload?.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
         }
       }
-      return merged.length ? { project: "All projects", data: merged, generated_at: latest } : undefined;
+      return merged.length ? { project: scope.mode === "name-scoped" ? "My work · all projects" : "All projects", data: merged, generated_at: latest } : undefined;
     }
     const s = sources.find(x => x.project.id === selected);
     if (!s?.payload) return undefined;
+    const data = nameFilter(s.payload.data);
+    if (!data.length && scope.mode === "name-scoped") return undefined;
     return {
-      project: s.payload.connector || s.project.label,
+      project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
       department: s.payload.department,
-      data: s.payload.data,
+      data,
       generated_at: s.payload.generated_at,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, queries.map(q => q.dataUpdatedAt).join(",")]);
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|")]);
 
   const d = useMemo(() => derive(payload), [payload]);
 
