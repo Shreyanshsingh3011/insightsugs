@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useSession } from "@/hooks/useSession";
+import { useSession, useIsAdmin } from "@/hooks/useSession";
 import {
   listFolders,
   createFolder,
@@ -11,12 +11,13 @@ import {
   deleteDocument,
   getDocument,
   registerAndProcessDocument,
+  deleteFolder,
 } from "@/lib/documents.functions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Folder, FolderPlus, FileText, Upload, Trash2, Loader2, Sparkles, X,
+  ChevronRight, ChevronDown, FolderTree,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/documents")({
@@ -26,11 +27,91 @@ export const Route = createFileRoute("/_authenticated/documents")({
 const ACCEPT =
   ".pdf,.docx,.doc,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,application/pdf";
 
+type FolderRow = { id: string; name: string; parent_id: string | null; created_at: string };
+
+function buildTree(folders: FolderRow[]) {
+  const children: Record<string, FolderRow[]> = {};
+  for (const f of folders) {
+    const key = f.parent_id ?? "__root__";
+    (children[key] ||= []).push(f);
+  }
+  for (const k of Object.keys(children)) children[k].sort((a, b) => a.name.localeCompare(b.name));
+  return children;
+}
+
+function FolderTreeNode({
+  folder, depth, activeFolder, setActive, expanded, toggle, tree,
+  onNewChild, onDelete, canDelete,
+}: {
+  folder: FolderRow; depth: number; activeFolder: string | null;
+  setActive: (id: string) => void;
+  expanded: Set<string>; toggle: (id: string) => void;
+  tree: Record<string, FolderRow[]>;
+  onNewChild: (parentId: string) => void;
+  onDelete: (id: string) => void;
+  canDelete: boolean;
+}) {
+  const kids = tree[folder.id] ?? [];
+  const isOpen = expanded.has(folder.id);
+  const isActive = activeFolder === folder.id;
+  return (
+    <div>
+      <div
+        className={`group flex items-center gap-1 rounded-md px-1.5 py-1 text-sm hover:bg-accent ${isActive ? "bg-accent font-medium" : ""}`}
+        style={{ paddingLeft: 6 + depth * 12 }}
+      >
+        <button
+          className="grid h-5 w-5 place-items-center text-muted-foreground hover:text-foreground"
+          onClick={() => toggle(folder.id)}
+          aria-label={isOpen ? "Collapse" : "Expand"}
+        >
+          {kids.length > 0 ? (isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />) : <span className="inline-block h-3.5 w-3.5" />}
+        </button>
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          onClick={() => setActive(folder.id)}
+        >
+          <Folder className="h-4 w-4 shrink-0" />
+          <span className="truncate">{folder.name}</span>
+        </button>
+        <div className="flex opacity-0 transition group-hover:opacity-100">
+          <button
+            className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="New sub-folder"
+            onClick={(e) => { e.stopPropagation(); onNewChild(folder.id); }}
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </button>
+          {canDelete && (
+            <button
+              className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              title="Delete folder"
+              onClick={(e) => { e.stopPropagation(); onDelete(folder.id); }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+      {isOpen && kids.map((k) => (
+        <FolderTreeNode
+          key={k.id} folder={k} depth={depth + 1}
+          activeFolder={activeFolder} setActive={setActive}
+          expanded={expanded} toggle={toggle} tree={tree}
+          onNewChild={onNewChild} onDelete={onDelete} canDelete={canDelete}
+        />
+      ))}
+    </div>
+  );
+}
+
 function DocumentsPage() {
   const { userId } = useSession();
+  const isAdmin = useIsAdmin();
   const qc = useQueryClient();
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const foldersFn = useServerFn(listFolders);
   const docsFn = useServerFn(listDocuments);
@@ -38,6 +119,7 @@ function DocumentsPage() {
   const delFn = useServerFn(deleteDocument);
   const getDocFn = useServerFn(getDocument);
   const registerFn = useServerFn(registerAndProcessDocument);
+  const delFolderFn = useServerFn(deleteFolder);
 
   const folders = useQuery({
     queryKey: ["doc-folders"],
@@ -54,21 +136,40 @@ function DocumentsPage() {
   });
 
   const createMu = useMutation({
-    mutationFn: async (name: string) => newFolderFn({ data: { name } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["doc-folders"] }),
+    mutationFn: async (v: { name: string; parent_id: string | null }) =>
+      newFolderFn({ data: v }),
+    onSuccess: (row: any) => {
+      qc.invalidateQueries({ queryKey: ["doc-folders"] });
+      if (row?.parent_id) setExpanded((s) => new Set(s).add(row.parent_id));
+    },
   });
-  const delMu = useMutation({
+  const delDocMu = useMutation({
     mutationFn: async (id: string) => delFn({ data: { id } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["documents"] });
       setSelectedDocId(null);
     },
   });
+  const delFolderMu = useMutation({
+    mutationFn: async (id: string) => delFolderFn({ data: { id } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["doc-folders"] });
+      setActiveFolder(null);
+    },
+    onError: (e: any) => alert(e?.message ?? "Delete failed"),
+  });
+
+  const tree = useMemo(
+    () => buildTree((folders.data?.folders ?? []) as FolderRow[]),
+    [folders.data],
+  );
+  const roots = tree["__root__"] ?? [];
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<{ name: string; status: string }[]>([]);
 
   async function handleFiles(files: FileList | null) {
+    if (!isAdmin) return;
     if (!files || !userId) return;
     const arr = Array.from(files);
     setUploading(arr.map((f) => ({ name: f.name, status: "uploading" })));
@@ -102,23 +203,36 @@ function DocumentsPage() {
     setTimeout(() => setUploading([]), 2500);
   }
 
+  const promptNewChild = (parentId: string | null) => {
+    const n = window.prompt("Folder name");
+    if (n) createMu.mutate({ name: n, parent_id: parentId });
+  };
+  const confirmDeleteFolder = (id: string) => {
+    if (confirm("Delete this folder? Only empty folders can be deleted.")) {
+      delFolderMu.mutate(id);
+    }
+  };
+  const toggleExpand = (id: string) =>
+    setExpanded((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
   return (
-    <main className="grid h-[calc(100vh-3.5rem)] grid-cols-1 md:grid-cols-[240px_1fr_360px]">
+    <main className="grid h-[calc(100vh-3.5rem)] grid-cols-1 md:grid-cols-[280px_1fr_360px]">
       {/* Folder rail */}
       <aside className="border-r border-border bg-card/40 p-3 overflow-y-auto">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Folders
+          <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <FolderTree className="h-3.5 w-3.5" /> Folders
           </h2>
           <Button
             size="icon"
             variant="ghost"
             className="h-7 w-7"
-            onClick={() => {
-              const n = window.prompt("Folder name");
-              if (n) createMu.mutate(n);
-            }}
-            title="New folder"
+            onClick={() => promptNewChild(null)}
+            title="New top-level folder"
           >
             <FolderPlus className="h-4 w-4" />
           </Button>
@@ -132,17 +246,14 @@ function DocumentsPage() {
           <Folder className="h-4 w-4" /> All documents
         </button>
         <div className="mt-1 space-y-0.5">
-          {folders.data?.folders.map((f: any) => (
-            <button
-              key={f.id}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${
-                activeFolder === f.id ? "bg-accent font-medium" : ""
-              }`}
-              onClick={() => setActiveFolder(f.id)}
-            >
-              <Folder className="h-4 w-4 shrink-0" />
-              <span className="truncate">{f.name}</span>
-            </button>
+          {roots.map((f) => (
+            <FolderTreeNode
+              key={f.id} folder={f} depth={0}
+              activeFolder={activeFolder} setActive={setActiveFolder}
+              expanded={expanded} toggle={toggleExpand} tree={tree}
+              onNewChild={promptNewChild} onDelete={confirmDeleteFolder}
+              canDelete={isAdmin}
+            />
           ))}
         </div>
       </aside>
@@ -151,8 +262,9 @@ function DocumentsPage() {
       <section className="flex min-w-0 flex-col">
         <div
           className="flex items-center justify-between border-b border-border p-4"
-          onDragOver={(e) => e.preventDefault()}
+          onDragOver={(e) => { if (isAdmin) e.preventDefault(); }}
           onDrop={(e) => {
+            if (!isAdmin) return;
             e.preventDefault();
             handleFiles(e.dataTransfer.files);
           }}
@@ -160,22 +272,24 @@ function DocumentsPage() {
           <div>
             <h1 className="text-lg font-semibold">Document hub</h1>
             <p className="text-xs text-muted-foreground">
-              Upload, organize, and chat with your documents.
+              {isAdmin ? "Upload, organize, and chat with your documents." : "Browse and read documents shared by your team."}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              accept={ACCEPT}
-              className="hidden"
-              onChange={(e) => handleFiles(e.target.files)}
-            />
-            <Button onClick={() => fileInput.current?.click()}>
-              <Upload className="mr-2 h-4 w-4" /> Upload
-            </Button>
-          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                accept={ACCEPT}
+                className="hidden"
+                onChange={(e) => handleFiles(e.target.files)}
+              />
+              <Button onClick={() => fileInput.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" /> Upload
+              </Button>
+            </div>
+          )}
         </div>
 
         {uploading.length > 0 && (
@@ -204,7 +318,7 @@ function DocumentsPage() {
               <FileText className="mb-3 h-10 w-10 text-muted-foreground/40" />
               <p className="text-sm font-medium">No documents here yet</p>
               <p className="text-xs text-muted-foreground">
-                Drag & drop files or click Upload.
+                {isAdmin ? "Drag & drop files or click Upload." : "Nothing has been shared in this folder yet."}
               </p>
             </div>
           ) : (
@@ -256,16 +370,18 @@ function DocumentsPage() {
                 </p>
               </div>
               <div className="flex gap-1">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => {
-                    if (confirm("Delete this document?")) delMu.mutate(doc.data.id);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {isAdmin && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      if (confirm("Delete this document?")) delDocMu.mutate(doc.data.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button
                   size="icon"
                   variant="ghost"

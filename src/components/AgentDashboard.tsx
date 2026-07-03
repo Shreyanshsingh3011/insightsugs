@@ -6,6 +6,8 @@ import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
+import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
+import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +23,7 @@ import {
 import {
   Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
   CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
-  Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon,
+  Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon, FolderKanban,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -269,6 +271,8 @@ export default function AgentDashboard() {
   const fetchRegistry = useServerFn(fetchAgentProjects);
   const genFn = useServerFn(generateGeminiFn);
 
+  const scope = useAgentScope();
+
   const [selected, setSelected] = useState<string>("all");
 
   // Live registry pulled from the master Google Sheet — falls back if unavailable.
@@ -280,11 +284,24 @@ export default function AgentDashboard() {
     refetchOnWindowFocus: false,
   });
 
-  const projects: AgentProject[] = useMemo(() => {
+  const allProjects: AgentProject[] = useMemo(() => {
     const live = registryQ.data?.projects;
     return live && live.length ? live : FALLBACK_PROJECTS;
   }, [registryQ.data]);
   const registryLive = !!registryQ.data?.projects?.length;
+
+  // Super admins (MD, VH) see every project. Everyone else sees only assigned.
+  const projects: AgentProject[] = useMemo(() => {
+    if (scope.mode === "all") return allProjects;
+    if (!scope.allowedProjectKeys) return allProjects;
+    return allProjects.filter((p) => scope.allowedProjectKeys!.has(p.id));
+  }, [allProjects, scope.mode, scope.allowedProjectKeys]);
+
+  const assignedKeys = useMemo(
+    () => scope.assignments.map((a) => a.project_key),
+    [scope.assignments],
+  );
+  const needsOnboarding = scope.mode !== "all" && !scope.loading && projects.length === 0;
 
   const queries = useQueries({
     queries: projects.map(p => ({
@@ -318,28 +335,37 @@ export default function AgentDashboard() {
     .pop();
 
   const payload: Payload | undefined = useMemo(() => {
+    const nameFilter = (rows: Row[] | undefined): Row[] => {
+      if (!rows) return [];
+      if (scope.mode !== "name-scoped") return rows;
+      if (scope.nameNeedles.length === 0) return [];
+      return rows.filter((r) => rowMatchesUser(r, scope.nameNeedles));
+    };
     if (selected === "all") {
       const merged: Row[] = [];
       let latest: string | undefined;
       for (const s of sources) {
-        if (s.payload?.data?.length) {
+        const filtered = nameFilter(s.payload?.data);
+        if (filtered.length) {
           const label = s.project.label;
-          for (const r of s.payload.data) merged.push({ ...r, __project: label });
-          if (s.payload.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
+          for (const r of filtered) merged.push({ ...r, __project: label });
+          if (s.payload?.generated_at && (!latest || s.payload.generated_at > latest)) latest = s.payload.generated_at;
         }
       }
-      return merged.length ? { project: "All projects", data: merged, generated_at: latest } : undefined;
+      return merged.length ? { project: scope.mode === "name-scoped" ? "My work · all projects" : "All projects", data: merged, generated_at: latest } : undefined;
     }
     const s = sources.find(x => x.project.id === selected);
     if (!s?.payload) return undefined;
+    const data = nameFilter(s.payload.data);
+    if (!data.length && scope.mode === "name-scoped") return undefined;
     return {
-      project: s.payload.connector || s.project.label,
+      project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
       department: s.payload.department,
-      data: s.payload.data,
+      data,
       generated_at: s.payload.generated_at,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, queries.map(q => q.dataUpdatedAt).join(",")]);
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|")]);
 
   const d = useMemo(() => derive(payload), [payload]);
 
@@ -420,16 +446,33 @@ export default function AgentDashboard() {
 
   const askMut = useMutation({
     mutationFn: async (q: string) => {
-      const matches = retrieveRows(q, 30).map(r => ({
-        activity: r.activity, person: r.person, email: r.email,
-        stage: r.stage, status: r.status, criticality: r.crit,
-        project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
-      }));
+      // If the user is asking about "me / my / mine", prioritise rows owned by them.
+      const isSelfQ = /\b(my|mine|me|i)\b/i.test(q);
+      let pool = rowIndex;
+      if (isSelfQ && scope.nameNeedles.length) {
+        const mine = rowIndex.filter((r) => {
+          const hay = `${r.person} ${r.email}`.toLowerCase();
+          return scope.nameNeedles.some((n) => hay.includes(n));
+        });
+        if (mine.length) pool = mine;
+      }
+      const matches = (isSelfQ ? pool.slice(0, 30) : retrieveRows(q, 30))
+        .map(r => ({
+          activity: r.activity, person: r.person, email: r.email,
+          stage: r.stage, status: r.status, criticality: r.crit,
+          project: r.proj, tat: r.tat, taken: r.taken, delay: r.delay,
+        }));
+      const you = {
+        name: scope.profile?.full_name || "(unknown)",
+        email: scope.profile?.email || "(unknown)",
+        role: scope.isSuper ? "super_admin (MD / Vertical Head)" : scope.isAdmin ? "admin (Reporting Manager)" : "user",
+        assigned_projects: scope.assignments.map((a) => a.project_label),
+      };
       const facts = {
         project: payload?.project,
         totals: d.totals, health: d.healthScore, completion_pct: d.completionRate,
         on_time_pct: d.onTimeRate, avg_delay_days: d.avgDelay, pace_pct_of_tat: d.paceRatio,
-        stages: d.stages, // full list
+        stages: d.stages,
         persons: d.personsByBurden.slice(0, 20),
         overdue_top: d.overdue.slice(0, 15),
         anomalies: d.anomalies,
@@ -438,8 +481,8 @@ export default function AgentDashboard() {
       const history = chat.slice(-6).map(m => `${m.role === "user" ? "USER" : "AGENT"}: ${m.text}`).join("\n");
       const res = await genFn({
         data: {
-          system: "You are the project's autonomous agent. Answer using ONLY the FACTS and MATCHING_ROWS provided. Cite concrete numbers, activity names, people, or stages from the data. If the answer is not derivable from the data, say 'not in the data'. Prefer 2-6 sentences; use a short bullet list only when the user asks for a list, ranking, or plan. Never invent rows, dates, or people.",
-          prompt: `FACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
+          system: "You are the user's personal project agent. Answer using ONLY YOU (the user's identity), FACTS, and MATCHING_ROWS. When the user says 'me / my / mine', treat that as referring to YOU.name / YOU.email. Cite concrete activity names, stages, people, and numbers from the data. Never invent rows, dates, or people. If the data doesn't cover it, say 'not in the data'. Prefer 2-6 sentences; use short bullets only for lists, rankings, or step plans.",
+          prompt: `YOU:\n${JSON.stringify(you)}\n\nFACTS:\n${JSON.stringify(facts)}\n\nMATCHING_ROWS (top-ranked for this question, out of ${rowsAll.length} total${isSelfQ ? ", filtered to YOU when possible" : ""}):\n${JSON.stringify(matches)}\n\nCONVERSATION_SO_FAR:\n${history || "(none)"}\n\nQUESTION: ${q}`,
           temperature: 0.15,
         },
       });
@@ -527,16 +570,25 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Auto-syncs {projects.length} live source{projects.length === 1 ? "" : "s"} every {Math.round(AUTO_REFRESH_MS / 1000)}s
-              {registryLive ? " · project list pulled from master sheet" : " · using built-in list (master sheet unreachable)"}.
+              {scope.isSuper
+                ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 1000)}s${registryLive ? " · project list pulled from master sheet" : " · using built-in list"}.`
+                : scope.isAdmin
+                ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · syncing every ${Math.round(AUTO_REFRESH_MS / 1000)}s.`
+                : `Showing only work assigned to ${scope.profile?.full_name || "you"} across your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Badge variant="outline" className="gap-1">
                 <Layers className="h-3 w-3" />
                 {payload?.data?.length ?? 0} rows
               </Badge>
+              {!scope.isSuper && (
+                <ProjectAssignmentPicker
+                  projects={allProjects}
+                  current={assignedKeys}
+                />
+              )}
               <Button variant="outline" size="sm" onClick={refetchAll}>
                 <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
                 Sync
@@ -550,6 +602,27 @@ export default function AgentDashboard() {
           </div>
         </div>
       </div>
+
+      {needsOnboarding && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-col items-start gap-3 p-5 md:flex-row md:items-center">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary">
+              <FolderKanban className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-semibold">Pick your projects to get started</div>
+              <p className="text-xs text-muted-foreground">
+                Your dashboard, tasks, and Ask-the-Agent will focus on the projects you select.
+              </p>
+            </div>
+            <ProjectAssignmentPicker
+              projects={allProjects}
+              current={assignedKeys}
+              trigger={<Button size="sm">Select projects</Button>}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* PROJECT SWITCHER */}
       <div className="flex flex-wrap items-center gap-1.5">

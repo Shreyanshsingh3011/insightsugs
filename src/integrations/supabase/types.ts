@@ -1176,6 +1176,33 @@ export type Database = {
         }
         Relationships: []
       }
+      user_project_assignments: {
+        Row: {
+          created_at: string
+          id: string
+          is_leader: boolean
+          project_key: string
+          project_label: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_leader?: boolean
+          project_key: string
+          project_label: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_leader?: boolean
+          project_key?: string
+          project_label?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1237,6 +1264,7 @@ export type Database = {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }
+      delete_doc_folder: { Args: { _folder_id: string }; Returns: undefined }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -1302,6 +1330,10 @@ export type Database = {
       }
       self_verify_signup: {
         Args: { _role: Database["public"]["Enums"]["app_role"] }
+        Returns: undefined
+      }
+      set_my_project_assignments: {
+        Args: { _keys: string[]; _labels: string[] }
         Returns: undefined
       }
     }
