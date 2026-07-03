@@ -224,7 +224,14 @@ function AgentInboxPage() {
           {drafts.length}
         </Badge>
         <div className="ml-auto flex items-center gap-2">
-          <RunWatchersButton onDone={invalidate} />
+          <RunWatchersButton
+            onDone={(r) => {
+              if (isAdmin && r.created === 0 && (r.skipped_dedupe > 0 || r.surfaced_existing > 0)) {
+                setScope("all");
+              }
+              invalidate();
+            }}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -723,6 +730,17 @@ function DialogFooterActions({
 function SourceLink({ kind, keyStr }: { kind: string; keyStr: string }) {
   // Best-effort deep-link into the existing detail pages.
   const encoded = encodeURIComponent(keyStr);
+  if (kind.startsWith("row.")) {
+    return (
+      <Link
+        to="/agent/row/$key"
+        params={{ key: encoded }}
+        className="text-xs text-primary hover:underline"
+      >
+        Open row
+      </Link>
+    );
+  }
   switch (kind) {
     case "person":
       return (
@@ -780,16 +798,19 @@ function SourceLink({ kind, keyStr }: { kind: string; keyStr: string }) {
 }
 
 // ── Run watchers ────────────────────────────────────────────────────────
-function RunWatchersButton({ onDone }: { onDone: () => void }) {
+function RunWatchersButton({ onDone }: { onDone: (result: Awaited<ReturnType<typeof runAgentWatchers>>) => void }) {
   const runFn = useServerFn(runAgentWatchers);
   const mut = useMutation({
     mutationFn: () => runFn({ data: {} }),
     onSuccess: (r) => {
       const errs = r.errors?.length ? ` · ${r.errors.length} error${r.errors.length > 1 ? "s" : ""}` : "";
+      const visibleHint = r.created === 0 && r.skipped_dedupe > 0
+        ? ` · ${r.surfaced_existing || r.skipped_dedupe} existing draft${(r.surfaced_existing || r.skipped_dedupe) === 1 ? "" : "s"} already queued`
+        : "";
       toast.success(
-        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${errs}`,
+        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${visibleHint}${errs}`,
       );
-      onDone();
+      onDone(r);
     },
     onError: (e) => toast.error((e as Error).message),
   });
