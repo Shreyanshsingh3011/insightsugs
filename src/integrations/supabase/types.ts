@@ -1421,6 +1421,60 @@ export type Database = {
         }
         Relationships: []
       }
+      smart_alert_rules: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          kind: string
+          phrase: string
+          target: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          phrase: string
+          target?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          phrase?: string
+          target?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      smart_alert_state: {
+        Row: {
+          id: string
+          last_raised_at: string
+          ref_key: string
+          rule_kind: string
+        }
+        Insert: {
+          id?: string
+          last_raised_at?: string
+          ref_key: string
+          rule_kind: string
+        }
+        Update: {
+          id?: string
+          last_raised_at?: string
+          ref_key?: string
+          rule_kind?: string
+        }
+        Relationships: []
+      }
       suppressed_emails: {
         Row: {
           created_at: string
@@ -1490,6 +1544,39 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      weekly_briefings: {
+        Row: {
+          content_json: Json
+          content_markdown: string
+          created_at: string
+          id: string
+          scope: string
+          user_id: string | null
+          week_end: string
+          week_start: string
+        }
+        Insert: {
+          content_json?: Json
+          content_markdown?: string
+          created_at?: string
+          id?: string
+          scope: string
+          user_id?: string | null
+          week_end: string
+          week_start: string
+        }
+        Update: {
+          content_json?: Json
+          content_markdown?: string
+          created_at?: string
+          id?: string
+          scope?: string
+          user_id?: string | null
+          week_end?: string
+          week_start?: string
         }
         Relationships: []
       }
