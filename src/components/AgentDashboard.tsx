@@ -1235,28 +1235,11 @@ export default function AgentDashboard() {
                 </TableHeader>
                 <TableBody>
                   {d.personsByBurden.slice(0, 12).map(p => {
-                    const link = detailLink({
-                      kind: "aggregate",
-                      title: `Person · ${p.person}`,
-                      person: p.person,
-                      source: "Efficiency ranking",
-                      severity: p.riskScore > 50 ? "high" : p.riskScore > 25 ? "med" : "ok",
-                      detail: `${p.person} — ${p.total} activities, ${p.completed} done, ${p.delayed} delayed (${p.delayDays}d). Efficiency ${p.efficiency}, risk ${p.riskScore}%.`,
-                    });
+                    const to = { to: "/agent/person/$key" as const, params: { key: encodeEntityKey(p.person) } };
                     return (
-                      <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav({ to: link.to, params: link.params })}>
+                      <TableRow key={p.person} className="cursor-pointer hover:bg-muted/40" onClick={() => nav(to)}>
                         <TableCell className="font-medium">
-                          <div className="flex items-center gap-1.5">
-                            <Link {...link} className="hover:underline">{p.person}</Link>
-                            <Link
-                              to="/agent/person/$key"
-                              params={{ key: encodeEntityKey(p.person) }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="rounded-full border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10"
-                              title="Open person profile"
-                              aria-label={`Open profile for ${p.person}`}
-                            >Profile →</Link>
-                          </div>
+                          <Link {...to} className="hover:underline">{p.person}</Link>
                         </TableCell>
                         <TableCell className="text-right">{p.total}</TableCell>
                         <TableCell className="text-right">{p.completed}</TableCell>
