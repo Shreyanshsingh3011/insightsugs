@@ -6,7 +6,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  ArrowLeft, RefreshCw, Layers, User as UserIcon, FolderKanban,
+  RefreshCw, Layers, User as UserIcon, FolderKanban,
   AlertTriangle, Loader2, TrendingUp, Clock, CheckCircle2, Gauge,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +17,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { EntityActionsBar, type EntityActionContext } from "@/components/EntityActionsBar";
+import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
+import { DetailExportMenu } from "@/components/DetailExportMenu";
 import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { summarize, type ScopedRow, encodeRowKey } from "@/lib/entity-scope";
+import { useAgentSources } from "@/hooks/useAgentSources";
 
 export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
