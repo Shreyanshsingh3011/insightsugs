@@ -109,7 +109,7 @@ function SearchPage() {
                 className="group flex min-w-0 items-center gap-2 text-sm font-medium hover:underline"
               >
                 {iconFor(h.kind)}
-                <span className="truncate"><Highlighted text={h.title} regex={regex} /></span>
+                <span className="truncate"><Highlighted text={h.title} tokens={tokens} /></span>
                 <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover:opacity-70" />
               </Link>
               <div className="flex shrink-0 items-center gap-2">
@@ -119,7 +119,7 @@ function SearchPage() {
             </div>
             {h.snippet && (
               <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
-                <Highlighted text={h.snippet} regex={regex} />
+                <Highlighted text={h.snippet} tokens={tokens} />
               </p>
             )}
             <div className="mt-2 flex items-center justify-between">
