@@ -55,18 +55,18 @@ for (const f of ROUTE_FILES) {
 }
 
 // ── 3. KPI strip must not bounce to /agent/detail/$payload ───────────────────
-// Extract the Kpi component usages and inspect their `to=` values.
-const kpiUsages = [...src.matchAll(/<Kpi\b[^>]*to=\{\{([^}]+)\}\}/g)];
+// Each <Kpi to={{ to: "...", params: {...} }} ... /> — extract each `to: "..."`.
+const kpiUsages = [...src.matchAll(/<Kpi\s+to=\{\{\s*to:\s*"([^"]+)"/g)];
 if (kpiUsages.length === 0) {
   errors.push("No <Kpi to={{...}}> usages found — dashboard KPI strip may be unlinked.");
 }
 for (const m of kpiUsages) {
-  const body = m[1];
-  if (/["']\/agent\/detail\/\$payload["']/.test(body)) {
-    errors.push(`KPI tile still routes to aggregate: ${body.trim().slice(0, 80)}…`);
+  if (m[1] === "/agent/detail/$payload") {
+    errors.push(`KPI tile still routes to aggregate: ${m[0]}`);
   }
 }
 ok.push(`inspected ${kpiUsages.length} KPI tiles`);
+
 
 // ── 4. Bottleneck onClick handler must navigate to stage page ────────────────
 // Look for the BarChart onClick region — must contain /agent/stage/
