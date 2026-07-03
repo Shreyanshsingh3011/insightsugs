@@ -18,7 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { decodeDetailPayload, type DetailPayload, type DetailContextRow } from "@/lib/agent-detail-payload";
 import { sendAlert } from "@/lib/alerts.functions";
 import { getSourceTimeline, type TimelineEvent } from "@/lib/source-timeline.functions";
-import { fetchMyRoles } from "@/lib/route-guards";
+
 import { generateGeminiFn } from "@/lib/gemini.functions";
 
 export const Route = createFileRoute("/_authenticated/agent/detail/$payload")({
