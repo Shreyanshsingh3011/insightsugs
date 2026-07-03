@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
+import { Link } from "@tanstack/react-router";
+import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 import { generateGeminiFn } from "@/lib/gemini.functions";
