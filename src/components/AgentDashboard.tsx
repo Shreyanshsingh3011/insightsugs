@@ -1457,6 +1457,25 @@ type KpiLink =
   | { to: "/agent/stage/$key"; params: { key: string } }
   | { to: "/agent/project/$projectId"; params: { projectId: string } };
 
+function MiniStat({ label, value, sub, tone = "default" }: {
+  label: string; value: string; sub?: string;
+  tone?: "default" | "ok" | "med" | "high";
+}) {
+  const cls =
+    tone === "ok" ? "text-emerald-700" :
+    tone === "med" ? "text-amber-700" :
+    tone === "high" ? "text-rose-700" :
+    "text-foreground";
+  return (
+    <div>
+      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className={`text-xl font-semibold tabular-nums ${cls}`}>
+        {value}{sub && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
 function Kpi({ icon, label, value, sub, tone = "default", to }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
   tone?: "default" | "ok" | "med" | "high" | "low";
