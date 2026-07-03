@@ -171,6 +171,22 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
     if (regErr) throw new Error(regErr.message);
     if (!regs || regs.length === 0) throw new Error("No matching sheets.");
 
+    // Fetch the profile directory once so we can map Responsible-Person-Mail-ID
+    // → profiles.full_name and avoid job-title fallbacks.
+    const directory: ProfileDirectory = new Map();
+    try {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("email, full_name");
+      for (const p of profiles ?? []) {
+        const em = String(p.email ?? "").trim().toLowerCase();
+        const nm = String(p.full_name ?? "").trim();
+        if (em && nm) directory.set(em, nm);
+      }
+    } catch {
+      // non-fatal: resolver falls back to email-local / raw values.
+    }
+
     const PER_SHEET = 1000;
     const normalized: NormalizedRow[] = [];
     const sheetsMeta: { label: string; name: string; rows: number; columns: number }[] = [];
@@ -196,9 +212,10 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
           const key = k.toLowerCase().replace(/\s+/g, "_");
           if (!(key in merged)) merged[key] = String(v ?? "");
         }
-        normalized.push(normalizeRow(r.display_name, r.sheet_type, merged));
+        normalized.push(normalizeRow(r.display_name, r.sheet_type, merged, directory));
       }
     }
+
 
     // Aggregates
     const status_breakdown: Record<string, number> = {};
