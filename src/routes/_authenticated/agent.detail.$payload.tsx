@@ -286,7 +286,7 @@ QUESTION: ${q}`;
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
         <Link
           to="/agent"
-          className="inline-flex min-w-0 items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+          className="inline-flex min-w-0 items-center gap-1 rounded text-sm text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         >
           <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
           <span className="truncate">Back to dashboard</span>
@@ -295,6 +295,9 @@ QUESTION: ${q}`;
           {data.projectLabel && <Badge variant="outline" className="max-w-[220px] truncate">{data.projectLabel}</Badge>}
           {data.source && <Badge variant="secondary">{data.source}</Badge>}
           <Badge variant="outline" className="capitalize">{data.kind}</Badge>
+          <Button size="sm" variant="outline" onClick={exportCsv} aria-label="Export detail as CSV">
+            <Download className="h-4 w-4" aria-hidden /> Export CSV
+          </Button>
         </div>
       </div>
 
