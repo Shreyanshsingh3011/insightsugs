@@ -45,7 +45,6 @@ import { Route as AuthenticatedAgentRowKeyRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAgentProjectProjectIdRouteImport } from './routes/_authenticated/agent.project.$projectId'
 import { Route as AuthenticatedAgentPersonKeyRouteImport } from './routes/_authenticated/agent.person.$key'
 import { Route as AuthenticatedAgentKpiIdRouteImport } from './routes/_authenticated/agent.kpi.$id'
-import { Route as AuthenticatedAgentDetailPayloadRouteImport } from './routes/_authenticated/agent.detail.$payload'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -241,12 +240,6 @@ const AuthenticatedAgentKpiIdRoute = AuthenticatedAgentKpiIdRouteImport.update({
   path: '/kpi/$id',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
-const AuthenticatedAgentDetailPayloadRoute =
-  AuthenticatedAgentDetailPayloadRouteImport.update({
-    id: '/detail/$payload',
-    path: '/detail/$payload',
-    getParentRoute: () => AuthenticatedAgentRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -272,7 +265,6 @@ export interface FileRoutesByFullPath {
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
-  '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
@@ -308,7 +300,6 @@ export interface FileRoutesByTo {
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
-  '/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
@@ -348,7 +339,6 @@ export interface FileRoutesById {
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
-  '/_authenticated/agent/detail/$payload': typeof AuthenticatedAgentDetailPayloadRoute
   '/_authenticated/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/_authenticated/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/_authenticated/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
@@ -388,7 +378,6 @@ export interface FileRouteTypes {
     | '/lovable/email/suppression'
     | '/agent/'
     | '/alerts/'
-    | '/agent/detail/$payload'
     | '/agent/kpi/$id'
     | '/agent/person/$key'
     | '/agent/project/$projectId'
@@ -424,7 +413,6 @@ export interface FileRouteTypes {
     | '/lovable/email/suppression'
     | '/agent'
     | '/alerts'
-    | '/agent/detail/$payload'
     | '/agent/kpi/$id'
     | '/agent/person/$key'
     | '/agent/project/$projectId'
@@ -463,7 +451,6 @@ export interface FileRouteTypes {
     | '/lovable/email/suppression'
     | '/_authenticated/agent/'
     | '/_authenticated/alerts/'
-    | '/_authenticated/agent/detail/$payload'
     | '/_authenticated/agent/kpi/$id'
     | '/_authenticated/agent/person/$key'
     | '/_authenticated/agent/project/$projectId'
@@ -747,20 +734,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentKpiIdRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
-    '/_authenticated/agent/detail/$payload': {
-      id: '/_authenticated/agent/detail/$payload'
-      path: '/detail/$payload'
-      fullPath: '/agent/detail/$payload'
-      preLoaderRoute: typeof AuthenticatedAgentDetailPayloadRouteImport
-      parentRoute: typeof AuthenticatedAgentRoute
-    }
   }
 }
 
 interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
-  AuthenticatedAgentDetailPayloadRoute: typeof AuthenticatedAgentDetailPayloadRoute
   AuthenticatedAgentKpiIdRoute: typeof AuthenticatedAgentKpiIdRoute
   AuthenticatedAgentPersonKeyRoute: typeof AuthenticatedAgentPersonKeyRoute
   AuthenticatedAgentProjectProjectIdRoute: typeof AuthenticatedAgentProjectProjectIdRoute
@@ -771,7 +750,6 @@ interface AuthenticatedAgentRouteChildren {
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
-  AuthenticatedAgentDetailPayloadRoute: AuthenticatedAgentDetailPayloadRoute,
   AuthenticatedAgentKpiIdRoute: AuthenticatedAgentKpiIdRoute,
   AuthenticatedAgentPersonKeyRoute: AuthenticatedAgentPersonKeyRoute,
   AuthenticatedAgentProjectProjectIdRoute:
