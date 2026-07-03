@@ -179,20 +179,17 @@ export function EntityDetailShell({
                 </TableHeader>
                 <TableBody>
                   {filtered.slice(0, 200).map((r) => {
-                    const payloadStr = encodeDetailPayload({
-                      kind: "row",
-                      projectLabel: r.project,
-                      title: r.activity,
-                      source: kindIcon === "person" ? "Person profile" : kindIcon === "stage" ? "Stage detail" : "Project workspace",
-                      severity: r.delay > 30 ? "high" : r.delay > 0 ? "med" : "low",
-                      person: r.person, stage: r.stage, email: r.email,
-                      detail: `${r.status || "—"} · TAT ${r.tat}d / taken ${r.taken}d${r.delay > 0 ? ` · ${r.delay}d late` : ""}`,
-                      row: r.row as Record<string, unknown>,
+                    const rowKey = encodeRowKey({
+                      project: r.project,
+                      srNo: String(r.row["Sr. No."] ?? r.row["Sr No"] ?? r.row["ID"] ?? ""),
+                      activity: r.activity,
                     });
+                    // Legacy aggregate payload kept for the redirect fallback.
+                    void encodeDetailPayload;
                     return (
                       <TableRow key={`${r.project}-${r.i}`} className="cursor-pointer hover:bg-muted/40">
                         <TableCell className="max-w-[260px] truncate font-medium" title={r.activity}>
-                          <Link to="/agent/detail/$payload" params={{ payload: payloadStr }} className="hover:underline">
+                          <Link to="/agent/row/$key" params={{ key: rowKey }} className="hover:underline">
                             {r.activity}
                           </Link>
                         </TableCell>
