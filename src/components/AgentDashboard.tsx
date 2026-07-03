@@ -1224,20 +1224,33 @@ export default function AgentDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.overdue.slice(0, 8).map((o, i) => (
-                  <div key={i} className={`rounded-lg border p-2.5 ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold">{o.activity}</div>
-                        <div className="mt-0.5 text-[11px] opacity-80">{o.person} · {o.stage}</div>
+                {d.overdue.slice(0, 8).map((o, i) => {
+                  const link = detailLink({
+                    kind: "row",
+                    title: o.activity || "Overdue activity",
+                    person: o.person, stage: o.stage, email: o.email,
+                    source: "Overdue queue",
+                    severity: o.delay > 60 ? "high" : o.delay > 20 ? "med" : "low",
+                    detail: `${o.delay}d late · ${o.person} · ${o.stage}. TAT ${o.tat}d vs taken ${o.taken}d. Draft an escalation and commit a recovery date.`,
+                    row: o.row as Record<string, unknown>,
+                  });
+                  return (
+                    <Link key={i} {...link} className="block">
+                      <div className={`rounded-lg border p-2.5 transition hover:shadow-sm ${o.delay > 60 ? TONE.high : o.delay > 20 ? TONE.med : TONE.low}`}>
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold">{o.activity}</div>
+                            <div className="mt-0.5 text-[11px] opacity-80">{o.person} · {o.stage}</div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-sm font-bold">{o.delay}d</div>
+                            <div className="text-[10px] opacity-70">TAT {o.tat} / took {o.taken}</div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="shrink-0 text-right">
-                        <div className="text-sm font-bold">{o.delay}d</div>
-                        <div className="text-[10px] opacity-70">TAT {o.tat} / took {o.taken}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    </Link>
+                  );
+                })}
                 {d.overdue.length === 0 && <p className="text-xs text-muted-foreground">No overdue items.</p>}
               </CardContent>
             </Card>
