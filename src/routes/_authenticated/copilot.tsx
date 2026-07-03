@@ -70,17 +70,98 @@ type Turn = {
   retriedForCitations?: boolean;
 };
 
-// A response is grounded when it contains at least one inline [...] marker AND
-// a "Sources:" section — matches GROUNDING_RULES in src/lib/gemini-client.ts.
-// Ignore the "I don't have that in the current dashboard data." fallback.
-function validateCitations(answer: string): boolean {
-  const t = answer.trim();
-  if (!t) return false;
-  if (/^i don'?t have that in the current dashboard data/i.test(t)) return true;
-  const hasInline = /\[[^\]\n]{2,}\]/.test(t);
-  const hasSources = /(^|\n)\s*sources\s*:/i.test(t);
-  return hasInline && hasSources;
+// Detailed citation validator. Returns { ok, issues[] } so the UI can explain
+// exactly what is missing when we reject an answer. Matches GROUNDING_RULES in
+// src/lib/gemini-client.ts:
+//   * Every non-fallback answer must contain at least one inline [..] marker.
+//   * Inline markers must use a recognised shape: [sheet:<name> row <n>],
+//     [flags[<id>]], or [doc:<name> p.<n>].
+//   * A "Sources:" section must exist and list at least one bullet.
+//   * Every distinct inline marker must appear (verbatim or by ref) in Sources.
+export type CitationIssue =
+  | "empty"
+  | "no_inline_citations"
+  | "malformed_citations"
+  | "no_sources_section"
+  | "empty_sources_section"
+  | "uncited_in_sources";
+
+export type CitationValidation = {
+  ok: boolean;
+  issues: CitationIssue[];
+  inlineCount: number;
+  malformed: string[];
+  uncited: string[];
+  isFallback: boolean;
+};
+
+const INLINE_RE = /\[([^\]\n]{2,}?)\]/g;
+const KNOWN_SHAPES = [
+  /^sheet:\s*[^,\s]+(?:\s+row\s+\d+)?$/i,
+  /^flags?\[.+\]$/i,
+  /^doc:\s*.+?(?:\s+p\.?\s*\d+)?$/i,
+];
+
+function extractInlineMarkers(answer: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  INLINE_RE.lastIndex = 0;
+  while ((m = INLINE_RE.exec(answer)) !== null) {
+    // Skip markdown link labels [text](url).
+    if (answer[m.index + m[0].length] === "(") continue;
+    const raw = m[1].trim();
+    if (!raw || seen.has(raw)) continue;
+    seen.add(raw);
+    out.push(raw);
+  }
+  return out;
 }
+
+export function validateCitationsDetailed(answer: string): CitationValidation {
+  const t = (answer ?? "").trim();
+  const base: CitationValidation = {
+    ok: false, issues: [], inlineCount: 0, malformed: [], uncited: [], isFallback: false,
+  };
+  if (!t) return { ...base, issues: ["empty"] };
+  if (/^i don'?t have that in the current dashboard data/i.test(t)) {
+    return { ...base, ok: true, isFallback: true };
+  }
+  const issues: CitationIssue[] = [];
+  const markers = extractInlineMarkers(t);
+  if (markers.length === 0) issues.push("no_inline_citations");
+  const malformed = markers.filter((raw) => !KNOWN_SHAPES.some((re) => re.test(raw)));
+  if (malformed.length > 0 && markers.length > 0) issues.push("malformed_citations");
+
+  const sourcesMatch = t.match(/(^|\n)\s*sources\s*:\s*([\s\S]*)$/i);
+  let uncited: string[] = [];
+  if (!sourcesMatch) {
+    issues.push("no_sources_section");
+  } else {
+    const body = sourcesMatch[2].trim();
+    if (!body || !/\S/.test(body.replace(/[-*•\d.\s]/g, ""))) {
+      issues.push("empty_sources_section");
+    } else {
+      const bodyLc = body.toLowerCase();
+      uncited = markers.filter((raw) => {
+        const lc = raw.toLowerCase();
+        if (bodyLc.includes(lc)) return false;
+        // Also accept a match on the ref part (sheet/doc name, flag id).
+        const refPart = lc.replace(/^(sheet:|doc:|flags?\[)/, "").replace(/\]$/, "").split(/\s+row\s+|\s+p\.?\s*/)[0]?.trim();
+        return !(refPart && bodyLc.includes(refPart));
+      });
+      if (uncited.length > 0) issues.push("uncited_in_sources");
+    }
+  }
+
+  return { ...base, ok: issues.length === 0, issues, inlineCount: markers.length, malformed, uncited };
+}
+
+// Boolean wrapper kept for the mutation retry check.
+function validateCitations(answer: string): boolean {
+  return validateCitationsDetailed(answer).ok;
+}
+
 
 /** Parse inline [..] citation markers from an answer and classify each. */
 type ParsedCitation = { raw: string; kind: string; ref: string; matchedSource?: Source };
