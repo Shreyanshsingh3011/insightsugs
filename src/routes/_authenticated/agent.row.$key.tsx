@@ -43,9 +43,11 @@ function RowPage() {
   const { key } = Route.useParams();
   const nav = useNavigate();
   const ident = useMemo(() => decodeRowKey(key), [key]);
-  const { rows, anyLoading, anyFetching, refetchAll } = useAgentSources();
-
-  // Locate the row deterministically from Sr. No. + project; fall back to activity.
+  const { rows, sources, anyLoading, anyFetching, refetchAll } = useAgentSources();
+  const windowTimestamps = useMemo(
+    () => sources.map((s) => s.payload?.generated_at).filter(Boolean) as string[],
+    [sources],
+  );
   const row = useMemo(
     () => rows.find(r => rowMatchesIdent(r, ident, String(r["__project"] ?? ""))) ?? null,
     [rows, ident],
