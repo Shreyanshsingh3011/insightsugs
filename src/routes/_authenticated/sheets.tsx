@@ -150,6 +150,18 @@ function SheetsPage() {
                   <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshMut.isPending ? "animate-spin" : ""}`} />
                   Refresh
                 </Button>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setVisEditing({ id: s.id, name: s.display_name, visibility: s.visibility ?? "private" })
+                    }
+                    title="Change visibility"
+                  >
+                    <Shield className="mr-1.5 h-4 w-4" /> Visibility
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -159,6 +171,7 @@ function SheetsPage() {
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
+
               </div>
             </Card>
           ))}
