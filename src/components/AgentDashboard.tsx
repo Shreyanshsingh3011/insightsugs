@@ -855,13 +855,8 @@ export default function AgentDashboard() {
             </Card>
 
             <Link
-              {...detailLink({
-                kind: "aggregate",
-                title: `Project health · ${payload?.project ?? "All projects"}`,
-                source: "Health",
-                severity: d.healthScore > 70 ? "ok" : d.healthScore > 40 ? "med" : "high",
-                detail: `Health ${d.healthScore}/100 · on-time ${d.onTimeRate}% · completion ${d.completionRate}% · pace ${d.paceRatio}% of TAT.`,
-              })}
+              to="/agent/kpi/$id"
+              params={{ id: "health" }}
               className="block"
             >
               <Card className="overflow-hidden transition hover:shadow-md">
