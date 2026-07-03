@@ -155,7 +155,7 @@ export const resendVerificationFn = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.rpc("resend_signup_verification", {
       _request_id: data.requestId,
-      _note: data.note ?? null,
+      _note: data.note ?? undefined,
     });
     if (error) throw new Error(error.message);
     return { ok: true };
