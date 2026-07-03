@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Mail, Send, User as UserIcon, Layers, AlertTriangle,
   ExternalLink, MessageSquare, History, CheckCircle2, MessageCircle,
-  Sparkles, Save, Bot, Copy, Lightbulb, ListChecks,
+  Sparkles, Save, Bot, Copy, Lightbulb, ListChecks, Download, Pencil,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
