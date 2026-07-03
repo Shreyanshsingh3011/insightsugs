@@ -116,13 +116,15 @@ type LedgerEntry =
   | { kind: "sheet_row"; registryId: string; sheetLabel: string; rowIndex: number; data: Record<string, unknown> }
   | { kind: "doc_chunk"; documentId: string; documentName: string; pageNo: number; snippet: string };
 
+// Kept intentionally `any`-shaped: TanStack Start's server-fn return type
+// checker rejects `unknown` (not JSON-serializable by its rule set).
 type ToolCallLog = {
   name: string;
-  args: unknown;
+  args: any;
   ok: boolean;
   ms: number;
   summary: string;
-  result?: unknown;
+  result?: any;
 };
 
 // -------------------- main server function --------------------
