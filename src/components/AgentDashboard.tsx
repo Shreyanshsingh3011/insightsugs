@@ -273,7 +273,15 @@ export default function AgentDashboard() {
 
   const scope = useAgentScope();
 
-  const [selected, setSelected] = useState<string>("all");
+  // Persist the project selector across navigations so returning from the
+  // detail page keeps the drill-down context intact.
+  const [selected, setSelected] = useState<string>(() => {
+    if (typeof window === "undefined") return "all";
+    return sessionStorage.getItem("agent:selected") ?? "all";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") sessionStorage.setItem("agent:selected", selected);
+  }, [selected]);
 
   // Live registry pulled from the master Google Sheet — falls back if unavailable.
   const registryQ = useQuery({
