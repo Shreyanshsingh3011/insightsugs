@@ -1613,8 +1613,12 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     const out = await (askCopilot as any)({
       data: {
         question:
-          "Give me an Auto-Insights digest: 5 to 7 short, surprising or important findings from this sheet — anomalies, outliers, top movers, concentrations, risk signals, or noteworthy trends. " +
-          "Output ONLY a JSON array of objects with shape {\"title\":string,\"detail\":string,\"severity\":\"info\"|\"warning\"|\"critical\"}. Each title <= 60 chars, each detail 1-2 sentences with at least one specific number from the data. No prose outside the JSON.",
+          "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this sheet.\n" +
+          "Output ONLY a JSON object with this exact shape:\n" +
+          '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
+          "- insights: 5 to 7 short, surprising or important findings — anomalies, outliers, top movers, concentrations, risk signals, or noteworthy trends. Each title <= 60 chars, each detail 1-2 sentences with at least one specific number/name from the data.\n" +
+          "- questions: 4 to 6 concise, specific follow-up questions a user would want to ask next, phrased naturally and referencing actual entities/columns/values seen in the data (e.g. names, project codes, dates). No generic questions. Each question <= 120 chars.\n" +
+          "No prose outside the JSON.",
         sheetIds: [data.sheetId],
         documentIds: [],
         history: [],
@@ -1622,35 +1626,110 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     });
 
     let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
+    let questions: string[] = [];
     try {
       const text = (out.answer as string).trim();
-      const start = text.indexOf("[");
-      const end = text.lastIndexOf("]");
+      const start = text.indexOf("{");
+      const end = text.lastIndexOf("}");
       if (start >= 0 && end > start) {
         const parsed = JSON.parse(text.slice(start, end + 1));
-        if (Array.isArray(parsed)) {
-          insights = parsed
-            .filter(
-              (i: unknown): i is { title: string; detail: string; severity?: string } =>
-                !!i && typeof (i as any).title === "string" && typeof (i as any).detail === "string",
-            )
-            .map((i) => ({
-              title: i.title.slice(0, 100),
-              detail: i.detail.slice(0, 400),
-              severity: (i.severity === "critical" || i.severity === "warning"
-                ? i.severity
-                : "info") as "info" | "warning" | "critical",
-            }))
-
-            .slice(0, 7);
-        }
+        const rawInsights = Array.isArray(parsed?.insights) ? parsed.insights : [];
+        insights = rawInsights
+          .filter(
+            (i: unknown): i is { title: string; detail: string; severity?: string } =>
+              !!i && typeof (i as any).title === "string" && typeof (i as any).detail === "string",
+          )
+          .map((i: any) => ({
+            title: i.title.slice(0, 100),
+            detail: i.detail.slice(0, 400),
+            severity: (i.severity === "critical" || i.severity === "warning"
+              ? i.severity
+              : "info") as "info" | "warning" | "critical",
+          }))
+          .slice(0, 7);
+        const rawQ = Array.isArray(parsed?.questions) ? parsed.questions : [];
+        questions = rawQ
+          .filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
+          .map((q: string) => q.trim().slice(0, 160))
+          .slice(0, 6);
       }
     } catch {
       insights = [];
+      questions = [];
     }
 
-    return { sheetId: reg.id, sheetName: reg.display_name, insights };
+    return { sheetId: reg.id, sheetName: reg.display_name, insights, questions };
   });
+
+// ============================================================================
+// Document Auto-Insights: same shape as sheet auto-insights but grounded on a doc
+// ============================================================================
+export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ documentId: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: doc, error: docErr } = await supabase
+      .from("documents")
+      .select("id, name")
+      .eq("id", data.documentId)
+      .maybeSingle();
+    if (docErr) throw new Error(docErr.message);
+    if (!doc) throw new Error("Document not found or you don't have access");
+
+    const out = await (askCopilot as any)({
+      data: {
+        question:
+          "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this document.\n" +
+          "Output ONLY a JSON object with this exact shape:\n" +
+          '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
+          "- insights: 5 to 7 short, important findings from the document — key clauses, dates, deadlines, obligations, risks, financials, named parties, or notable statements. Each title <= 60 chars, each detail 1-2 sentences quoting or referencing a specific value/name/section from the document.\n" +
+          "- questions: 4 to 6 concise, specific follow-up questions a reader would naturally want to ask about THIS document, referencing actual entities/sections/terms seen. No generic questions. Each question <= 120 chars.\n" +
+          "No prose outside the JSON.",
+        sheetIds: [],
+        documentIds: [data.documentId],
+        history: [],
+      },
+    });
+
+    let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
+    let questions: string[] = [];
+    try {
+      const text = (out.answer as string).trim();
+      const start = text.indexOf("{");
+      const end = text.lastIndexOf("}");
+      if (start >= 0 && end > start) {
+        const parsed = JSON.parse(text.slice(start, end + 1));
+        const rawInsights = Array.isArray(parsed?.insights) ? parsed.insights : [];
+        insights = rawInsights
+          .filter(
+            (i: unknown): i is { title: string; detail: string; severity?: string } =>
+              !!i && typeof (i as any).title === "string" && typeof (i as any).detail === "string",
+          )
+          .map((i: any) => ({
+            title: i.title.slice(0, 100),
+            detail: i.detail.slice(0, 400),
+            severity: (i.severity === "critical" || i.severity === "warning"
+              ? i.severity
+              : "info") as "info" | "warning" | "critical",
+          }))
+          .slice(0, 7);
+        const rawQ = Array.isArray(parsed?.questions) ? parsed.questions : [];
+        questions = rawQ
+          .filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
+          .map((q: string) => q.trim().slice(0, 160))
+          .slice(0, 6);
+      }
+    } catch {
+      insights = [];
+      questions = [];
+    }
+
+    return { documentId: doc.id, documentName: doc.name, insights, questions };
+  });
+
 
 // ============================================================================
 // generateChart — AI plans a chart spec, server executes deterministically,
