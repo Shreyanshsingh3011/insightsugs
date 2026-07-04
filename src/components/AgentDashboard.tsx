@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -30,7 +31,7 @@ import {
   Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
   CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
   Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon, FolderKanban,
-  MessageCircle, X,
+  MessageCircle, X, ShieldCheck, RotateCcw,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -565,12 +566,43 @@ export default function AgentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
-  // Ask Agent — grounded chat with history + retrieval over raw rows
-  type ChatMsg = { role: "user" | "assistant"; text: string };
+  // Ask Agent — grounded chat with history + retrieval over raw rows.
+  // Citations carry the exact rows the answer was grounded on, so the UI
+  // can show "used N rows" chips beneath each assistant reply.
+  type Citation = { activity: string; person: string; project: string; stage: string; status: string; delay: number };
+  type ChatMsg = { role: "user" | "assistant"; text: string; citations?: Citation[] };
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
-  useEffect(() => { setChat([]); }, [payload]);
+  const [lastQuestion, setLastQuestion] = useState<string>("");
+  const chatKey = `agent:chat:${selected}`;
+  // Load chat from localStorage when the active project scope changes,
+  // so reopening the widget restores per-project history & context.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(chatKey);
+      setChat(raw ? (JSON.parse(raw) as ChatMsg[]) : []);
+    } catch { setChat([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatKey]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(chatKey, JSON.stringify(chat)); } catch { /* quota */ }
+  }, [chat, chatKey]);
+  // Auto-scroll transcript & auto-resize composer textarea.
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chat, chatOpen]);
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [question, chatOpen]);
 
   const rowsAll: Row[] = payload?.data ?? [];
   // Build a compact, LLM-friendly row projection with the columns we care about.
@@ -742,16 +774,29 @@ export default function AgentDashboard() {
         },
       });
 
-      return res.text;
+      const citations: Citation[] = matches.slice(0, 6).map(m => ({
+        activity: String(m.activity ?? ""),
+        person: String(m.person ?? ""),
+        project: String(m.project ?? ""),
+        stage: String(m.stage ?? ""),
+        status: String(m.status ?? ""),
+        delay: Number(m.delay ?? 0),
+      }));
+      return { text: res.text as string, citations };
     },
-    onSuccess: (t, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: t }]),
+    onSuccess: (r, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: r.text, citations: r.citations }]),
   });
 
   function ask(q: string) {
     const t = q.trim();
-    if (!t) return;
+    if (!t || askMut.isPending) return;
+    setLastQuestion(t);
     setQuestion("");
     askMut.mutate(t);
+  }
+  function retryLast() {
+    if (!lastQuestion || askMut.isPending) return;
+    askMut.mutate(lastQuestion);
   }
 
   // ── FILTERED REPORT / EXPORT
@@ -1398,79 +1443,173 @@ export default function AgentDashboard() {
           {/* ASK THE AGENT — floating chatbot (button bottom-right, panel on click) */}
           <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 print:hidden">
             {chatOpen && (
-              <Card className="w-[min(92vw,400px)] overflow-hidden border-primary/30 shadow-2xl shadow-primary/20 animate-in fade-in slide-in-from-bottom-4 duration-200">
-                <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b border-border/60 bg-gradient-to-r from-primary/10 to-primary/5 pb-3 pt-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <Card className="flex w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border-primary/30 shadow-[0_20px_60px_-15px_hsl(var(--primary)/0.45)] ring-1 ring-primary/10 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-4 duration-300">
+                <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b border-border/60 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-4 py-3">
+                  <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/25">
                     <Bot className="h-4 w-4" />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="text-sm">Ask the agent</CardTitle>
+                    <CardTitle className="text-sm leading-tight">Ask the agent</CardTitle>
                     <p className="truncate text-[11px] text-muted-foreground">
-                      Grounded on {rowsAll.length} rows · retrieval + facts
+                      Grounded on {rowsAll.length.toLocaleString()} in-scope rows
                     </p>
                   </div>
                   {chat.length > 0 && (
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setChat([])}>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
+                      onClick={() => { setChat([]); setLastQuestion(""); askMut.reset(); }}>
                       Clear
                     </Button>
                   )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setChatOpen(false)} aria-label="Close chat">
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full"
+                    onClick={() => setChatOpen(false)} aria-label="Close chat">
                     <X className="h-4 w-4" />
                   </Button>
                 </CardHeader>
-                <CardContent className="space-y-3 p-3">
-                  <div className="h-80 space-y-2 overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-2">
-                    {chat.length === 0 && !askMut.isPending && (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground">
-                        <Bot className="h-8 w-8 text-primary/60" />
-                        <p>Ask anything about your projects, people, delays or stages.</p>
+
+                {/* Guardrail note — sets user expectations up front */}
+                <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-4 py-1.5 text-[10.5px] text-muted-foreground">
+                  <ShieldCheck className="h-3 w-3 shrink-0 text-primary/70" />
+                  Answers only from your dashboard data — no outside knowledge.
+                </div>
+
+                <CardContent className="flex flex-col gap-3 p-3">
+                  <div
+                    ref={transcriptRef}
+                    className="h-80 space-y-2.5 overflow-y-auto rounded-xl border border-border/60 bg-muted/30 p-2.5 scroll-smooth"
+                  >
+                    {chat.length === 0 && !askMut.isPending && !askMut.isError && (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                          <Sparkles className="h-5 w-5" />
+                        </div>
+                        <p className="font-medium text-foreground">Hi 👋 Ask me anything about this data.</p>
+                        <p>People, delays, stages, bottlenecks — I'll only answer from what's on your dashboard.</p>
                       </div>
                     )}
                     {chat.map((m, i) => (
-                      <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                        {m.role === "assistant" && <Bot className="mt-1 h-4 w-4 shrink-0 text-primary" />}
-                        <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                          m.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : "border border-primary/20 bg-background"
-                        }`}>{m.text}</div>
-                        {m.role === "user" && <UserIcon className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
+                      <div key={i} className={`flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                        {m.role === "assistant" && (
+                          <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                            <Bot className="h-3.5 w-3.5" />
+                          </div>
+                        )}
+                        <div className={`flex max-w-[85%] flex-col gap-1.5 ${m.role === "user" ? "items-end" : "items-start"}`}>
+                          <div className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
+                            m.role === "user"
+                              ? "rounded-br-sm bg-primary text-primary-foreground"
+                              : "rounded-bl-sm border border-primary/15 bg-background"
+                          }`}>{m.text}</div>
+                          {m.role === "assistant" && m.citations && m.citations.length > 0 && (
+                            <details className="w-full text-[10.5px]">
+                              <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
+                                📎 {m.citations.length} row{m.citations.length === 1 ? "" : "s"} cited
+                              </summary>
+                              <div className="mt-1 space-y-1 rounded-lg border border-border/50 bg-muted/40 p-1.5">
+                                {m.citations.map((c, ci) => (
+                                  <div key={ci} className="flex items-start gap-1.5 rounded-md bg-background/70 px-2 py-1">
+                                    <span className="mt-0.5 text-primary/70">·</span>
+                                    <div className="min-w-0 flex-1 leading-snug">
+                                      <div className="truncate font-medium text-foreground">{c.activity || "(activity)"}</div>
+                                      <div className="truncate text-muted-foreground">
+                                        {[c.person, c.project, c.stage].filter(Boolean).join(" · ")}
+                                        {c.delay > 0 && <span className="ml-1 text-destructive">+{c.delay}d</span>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                        {m.role === "user" && (
+                          <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                            <UserIcon className="h-3.5 w-3.5" />
+                          </div>
+                        )}
                       </div>
                     ))}
                     {askMut.isPending && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> thinking…
+                      <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary">
+                          <Bot className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-primary/15 bg-background px-3 py-2">
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
+                        </div>
+                      </div>
+                    )}
+                    {askMut.isError && !askMut.isPending && (
+                      <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">Couldn't reach the agent.</div>
+                          <div className="text-destructive/80">{(askMut.error as Error)?.message || "Please try again."}</div>
+                        </div>
+                        {lastQuestion && (
+                          <Button size="sm" variant="outline" className="h-7 gap-1 px-2 text-[11px]" onClick={retryLast}>
+                            <RotateCcw className="h-3 w-3" /> Retry
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {rowsAll.length === 0 && !askMut.isPending && (
+                      <div className="rounded-lg border border-dashed border-border/60 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
+                        No rows in the current scope yet — I can only answer once your dashboard has data.
                       </div>
                     )}
                   </div>
+
                   <form
                     onSubmit={(e) => { e.preventDefault(); ask(question); }}
-                    className="flex gap-2"
+                    className="flex items-end gap-2"
                   >
-                    <Input
-                      value={question} onChange={(e) => setQuestion(e.target.value)}
-                      placeholder="Ask about people, delays, stages…"
-                      className="flex-1"
+                    <Textarea
+                      ref={composerRef}
+                      value={question}
+                      onChange={(e) => setQuestion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          ask(question);
+                        }
+                      }}
+                      placeholder="Ask about people, delays, stages…  (Enter to send · Shift+Enter for newline)"
+                      rows={1}
+                      disabled={askMut.isPending}
+                      className="min-h-[40px] flex-1 resize-none rounded-xl bg-background text-sm leading-snug"
                     />
-                    <Button type="submit" size="icon" disabled={askMut.isPending || !question.trim()}>
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-xl"
+                      disabled={askMut.isPending || !question.trim() || rowsAll.length === 0}
+                      aria-label="Send"
+                    >
                       {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     </Button>
                   </form>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      "Biggest bottleneck?",
-                      "Most overdue owner?",
-                      "Top 5 to unblock this week",
-                      "3-step recovery plan",
-                    ].map(sug => (
-                      <button key={sug} type="button"
-                        onClick={() => ask(sug)}
-                        className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
-                      >
-                        {sug}
-                      </button>
-                    ))}
-                  </div>
+
+                  {chat.length === 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        "Biggest bottleneck?",
+                        "Most overdue owner?",
+                        "Top 5 to unblock this week",
+                        "3-step recovery plan",
+                      ].map(sug => (
+                        <button key={sug} type="button"
+                          onClick={() => ask(sug)}
+                          disabled={askMut.isPending || rowsAll.length === 0}
+                          className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground disabled:opacity-50"
+                        >
+                          {sug}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
