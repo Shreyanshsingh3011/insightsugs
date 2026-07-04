@@ -25,7 +25,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-import { listSheets, askCopilot, generateAutoInsights, generateChart } from "@/lib/sheets.functions";
+import { listSheets, askCopilot, generateAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
@@ -296,7 +296,9 @@ function CopilotPage() {
   const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
   const autoInsights = useServerFn(generateAutoInsights);
+  const autoDocInsights = useServerFn(generateDocumentAutoInsights);
   const chartFn = useServerFn(generateChart);
+
 
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
   const documents = useQuery({
@@ -310,6 +312,11 @@ function CopilotPage() {
   const [history, setHistory] = useState<Turn[]>([]);
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [insightsSheet, setInsightsSheet] = useState<string | null>(null);
+  const [insightQuestions, setInsightQuestions] = useState<string[]>([]);
+  const [docInsights, setDocInsights] = useState<Insight[] | null>(null);
+  const [docInsightsName, setDocInsightsName] = useState<string | null>(null);
+  const [docInsightQuestions, setDocInsightQuestions] = useState<string[]>([]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -385,10 +392,23 @@ function CopilotPage() {
     onSuccess: (res) => {
       setInsights(res.insights);
       setInsightsSheet(res.sheetName);
+      setInsightQuestions((res as any).questions ?? []);
       if (res.insights.length === 0) toast.info("No notable findings detected for this sheet.");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
   });
+
+  const docInsightsMut = useMutation({
+    mutationFn: (documentId: string) => autoDocInsights({ data: { documentId } }),
+    onSuccess: (res) => {
+      setDocInsights(res.insights);
+      setDocInsightsName(res.documentName);
+      setDocInsightQuestions((res as any).questions ?? []);
+      if (res.insights.length === 0) toast.info("No notable findings detected for this document.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
+  });
+
 
   const chartMut = useMutation({
     mutationFn: (vars: { turnIndex: number; question: string }) =>
@@ -456,6 +476,8 @@ function CopilotPage() {
   }, [askMut.isPending, history.length]);
 
   const singleSheetId = selected.size === 1 ? Array.from(selected)[0] : null;
+  const singleDocId = selectedDocs.size === 1 && selected.size === 0 ? Array.from(selectedDocs)[0] : null;
+
 
   return (
     <div className="mx-auto grid w-full max-w-6xl gap-4 p-4 md:grid-cols-[260px_1fr] md:p-6">
@@ -624,8 +646,109 @@ function CopilotPage() {
                 })}
               </div>
             )}
+            {insights && insightQuestions.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Suggested questions from this sheet
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {insightQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => sendAsk(q)}
+                      disabled={askMut.isPending}
+                      className="rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         )}
+
+        {/* Auto-Insights for a single document */}
+        {singleDocId && history.length === 0 && (
+          <Card className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <Wand2 className="h-4 w-4 text-primary" /> Document Auto-Insights
+                {docInsightsName && (
+                  <span className="text-xs font-normal text-muted-foreground">· {docInsightsName}</span>
+                )}
+              </h3>
+              <Button
+                size="sm"
+                variant={docInsights ? "ghost" : "default"}
+                onClick={() => docInsightsMut.mutate(singleDocId)}
+                disabled={docInsightsMut.isPending}
+              >
+                {docInsightsMut.isPending ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {docInsights ? "Regenerate" : "Generate"}
+              </Button>
+            </div>
+            {!docInsights && !docInsightsMut.isPending && (
+              <p className="text-xs text-muted-foreground">
+                AI reads the document and surfaces key clauses, deadlines, obligations and risks —
+                no question needed.
+              </p>
+            )}
+            {docInsights && docInsights.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {docInsights.map((ins, i) => {
+                  const Icon =
+                    ins.severity === "critical"
+                      ? AlertCircle
+                      : ins.severity === "warning"
+                        ? AlertTriangle
+                        : Info;
+                  const tone =
+                    ins.severity === "critical"
+                      ? "border-destructive/40 bg-destructive/5"
+                      : ins.severity === "warning"
+                        ? "border-amber-400/40 bg-amber-50/40 dark:bg-amber-950/20"
+                        : "border-border bg-muted/30";
+                  return (
+                    <div key={i} className={`rounded-md border p-3 text-sm ${tone}`}>
+                      <div className="mb-1 flex items-start gap-1.5 font-medium">
+                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{ins.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{ins.detail}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {docInsights && docInsightQuestions.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Suggested questions from this document
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {docInsightQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => sendAsk(q)}
+                      disabled={askMut.isPending}
+                      className="rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto">
           {history.length === 0 && !askMut.isPending && !singleSheetId ? (
