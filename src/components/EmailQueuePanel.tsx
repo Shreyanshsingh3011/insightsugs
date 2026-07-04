@@ -167,16 +167,17 @@ export function EmailQueuePanel() {
   return (
     <>
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Mail className="h-4 w-4 text-primary" /> Email queue &amp; delivery
+      <CardHeader className="flex flex-col gap-2 space-y-0 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+          <Mail className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+          <span className="truncate">Email queue &amp; delivery</span>
         </CardTitle>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || filtered.length === 0}>
-            <Download className="mr-1.5 h-3.5 w-3.5" /> Export CSV
+            <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Export CSV
           </Button>
           <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
-            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} aria-hidden />
             Refresh
           </Button>
         </div>
@@ -277,7 +278,7 @@ export function EmailQueuePanel() {
 
         {/* Log */}
         <div className="rounded-md border">
-          <div className="grid grid-cols-[24px_1.4fr_120px_120px_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="hidden md:grid grid-cols-[24px_minmax(0,1.4fr)_120px_120px_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <div>
               <Checkbox
                 checked={allSelected}
@@ -306,25 +307,34 @@ export function EmailQueuePanel() {
             return (
               <div
                 key={r.id}
-                className="grid grid-cols-[24px_1.4fr_120px_120px_auto] items-center gap-2 border-t px-3 py-1.5 text-xs"
+                className="flex flex-col gap-2 border-t px-3 py-2 text-xs md:grid md:grid-cols-[24px_minmax(0,1.4fr)_120px_120px_auto] md:items-center md:gap-2 md:py-1.5"
               >
-                <div>
-                  {canResend && (
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => toggleDraft(r.draft_id!)}
-                      aria-label="Select for bulk resend"
-                    />
-                  )}
+                {/* Mobile top row: status + time + checkbox */}
+                <div className="flex items-center gap-2 md:contents">
+                  <div className="shrink-0 md:block">
+                    {canResend && (
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleDraft(r.draft_id!)}
+                        aria-label="Select for bulk resend"
+                      />
+                    )}
+                  </div>
+                  <div className="flex-1 md:hidden" />
+                  <Badge variant="outline" className={`${statusTone(r.status)} md:hidden`}>{r.status}</Badge>
+                  <div className="tabular-nums text-muted-foreground md:hidden">
+                    {new Date(r.created_at).toLocaleTimeString()}
+                  </div>
                 </div>
+
                 <div className="min-w-0">
                   <div className="truncate">
                     <span className="font-medium">{r.recipient_email ?? "—"}</span>
                     <span className="text-muted-foreground"> · {r.template_name ?? "—"}</span>
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
-                    {r.message_id && <span title={r.message_id}>msg:{r.message_id.slice(0, 12)}…</span>}
-                    {r.draft_id && <span title={r.draft_id}>draft:{r.draft_id.slice(0, 8)}…</span>}
+                    {r.message_id && <span className="truncate" title={r.message_id}>msg:{r.message_id.slice(0, 12)}…</span>}
+                    {r.draft_id && <span className="truncate" title={r.draft_id}>draft:{r.draft_id.slice(0, 8)}…</span>}
                   </div>
                   {r.error_message && (
                     <div className="mt-0.5 truncate text-[10px] text-destructive" title={r.error_message}>
@@ -332,36 +342,39 @@ export function EmailQueuePanel() {
                     </div>
                   )}
                 </div>
-                <div>
+
+                <div className="hidden md:block">
                   <Badge variant="outline" className={statusTone(r.status)}>{r.status}</Badge>
                 </div>
-                <div className="tabular-nums text-muted-foreground">
+                <div className="hidden tabular-nums text-muted-foreground md:block">
                   {new Date(r.created_at).toLocaleTimeString()}
                 </div>
-                <div className="flex items-center justify-end gap-1">
+
+                <div className="flex flex-wrap items-center justify-end gap-1">
                   {r.draft_id && (
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 px-2 text-xs"
+                      className="h-8 px-2 text-xs"
+                      aria-label="View resend history"
                       title="View resend history"
                       onClick={() => setHistoryDraftId(r.draft_id!)}
                     >
-                      <History className="h-3 w-3" />
+                      <History className="h-3.5 w-3.5" aria-hidden />
                     </Button>
                   )}
                   {canResend && (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-2 text-xs"
+                      className="h-8 px-2 text-xs"
                       disabled={resend.isPending && isResending}
                       onClick={() => resend.mutate(r.draft_id!)}
                     >
                       {resend.isPending && isResending ? (
-                        <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />
                       ) : (
-                        <Send className="mr-1 h-3 w-3" />
+                        <Send className="mr-1 h-3 w-3" aria-hidden />
                       )}
                       Resend
                     </Button>
