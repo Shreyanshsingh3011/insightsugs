@@ -1856,22 +1856,30 @@ function ProjectChip({ label, count, active, loading, error, onClick }: {
 }) {
   return (
     <button
-      type="button" onClick={onClick}
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={`Filter by ${label}${error ? " (error)" : loading ? " (loading)" : ""} · ${count} rows`}
       className={[
-        "group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+        "group inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         active
-          ? "border-primary/50 bg-primary/10 text-primary shadow-sm"
-          : "border-border/60 bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground",
+          ? "border-foreground bg-foreground text-background shadow-sm"
+          : "border-border bg-card text-muted-foreground hover:border-foreground/40 hover:text-foreground",
       ].join(" ")}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${error ? "bg-rose-500" : loading ? "bg-amber-400 animate-pulse" : "bg-emerald-500"}`} />
-      {label}
-      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+      <span
+        aria-hidden
+        className={`h-1.5 w-1.5 rounded-full ${error ? "bg-destructive" : loading ? "animate-pulse bg-warning" : active ? "bg-background/80" : "bg-success"}`}
+      />
+      <span className="truncate">{label}</span>
+      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${active ? "bg-background/15 text-background" : "bg-muted text-muted-foreground"}`}>
         {count}
       </span>
     </button>
   );
 }
+
 
 // ────────────────── PERSON RESOLUTION DEBUG PANEL ──────────────────
 type PersonDiagnostics = {
