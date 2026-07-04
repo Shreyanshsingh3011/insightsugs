@@ -964,14 +964,28 @@ export const deleteSheet = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ registryId: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    // Look up ownership first so we can allow admins to delete any sheet.
+    const { data: reg, error: regErr } = await supabase
+      .from("sheet_registry")
+      .select("id, user_id")
+      .eq("id", data.registryId)
+      .maybeSingle();
+    if (regErr) throw new Error(regErr.message);
+    if (!reg) throw new Error("Sheet not found or you don't have access");
+
+    if (reg.user_id !== userId) {
+      const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+      if (!isAdmin) throw new Error("Only the sheet owner or an admin can delete this sheet");
+    }
+
     const { error } = await supabase
       .from("sheet_registry")
       .delete()
-      .eq("id", data.registryId)
-      .eq("user_id", userId);
+      .eq("id", data.registryId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 // Copilot: answer a question using selected sheets as context
 // askCopilot is now a thin adapter around the agentic V2 pipeline in

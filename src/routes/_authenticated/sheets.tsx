@@ -163,14 +163,20 @@ function SheetsPage() {
                   </Button>
                 )}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
                   onClick={() => {
-                    if (confirm(`Remove "${s.display_name}"?`)) deleteMut.mutate(s.id);
+                    if (confirm(`Delete "${s.display_name}"? This removes the sheet registration and all its stored rows. This cannot be undone.`)) {
+                      deleteMut.mutate(s.id);
+                    }
                   }}
+                  disabled={deleteMut.isPending}
+                  title="Delete this sheet"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="mr-1.5 h-4 w-4" /> Delete
                 </Button>
+
 
               </div>
             </Card>
