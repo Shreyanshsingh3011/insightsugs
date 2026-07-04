@@ -167,16 +167,17 @@ export function EmailQueuePanel() {
   return (
     <>
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Mail className="h-4 w-4 text-primary" /> Email queue &amp; delivery
+      <CardHeader className="flex flex-col gap-2 space-y-0 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+          <Mail className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+          <span className="truncate">Email queue &amp; delivery</span>
         </CardTitle>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button size="sm" variant="outline" onClick={exportCsv} disabled={!data || filtered.length === 0}>
-            <Download className="mr-1.5 h-3.5 w-3.5" /> Export CSV
+            <Download className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Export CSV
           </Button>
           <Button size="sm" variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
-            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} aria-hidden />
             Refresh
           </Button>
         </div>
