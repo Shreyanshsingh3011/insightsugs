@@ -154,7 +154,11 @@ function AlertsList() {
         </div>
 
         {isLoading && <p className="mt-4 text-sm text-muted-foreground">Loading alerts…</p>}
-        {error && <p className="mt-4 text-sm text-destructive">Failed to load alerts.</p>}
+        {error && (
+          <p className="mt-4 text-sm text-destructive">
+            Failed to load alerts: {(error as Error).message}. {!dynamic && "Register a sheet from the Sheets page to see live alerts."}
+          </p>
+        )}
         {!isLoading && !flags.length && (
           <div className="mt-6 flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
             <AlertTriangle className="h-6 w-6" />
