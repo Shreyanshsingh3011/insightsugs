@@ -705,7 +705,14 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
       "- When multiple rows matter, list them as a compact markdown table underneath the answer (using the citation marker in a trailing column named `source`).",
       "- Use Suggestion: prefix for any forward-looking advice.",
       "",
-      "AVAILABLE DATA CATALOG (call get_sheet_schema for column details before filtering):",
+      "",
+      "ACTION TOOLS (write — use ONLY when the user explicitly asks to take an action):",
+      "- create_alert: raise a delay alert. Include supporting citations in `reason`.",
+      "- draft_email: create a DRAFT in the Agent Inbox — never sends. Tell the user to review it there.",
+      "- create_activity: add a tracked task to a project. Call list_projects first if you don't know the project_id.",
+      "- After a successful action, confirm in one line and include the returned url/message.",
+      "- Never take an action based on your own inference. Only act on an explicit user request in the current turn.",
+      "",
       JSON.stringify(catalog).slice(0, 4000),
     ].join("\n");
 
