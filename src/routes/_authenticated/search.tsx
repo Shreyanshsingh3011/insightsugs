@@ -188,7 +188,11 @@ function SearchPage() {
 
   const updateParams = (patch: Partial<typeof params>, resetPage = true) => {
     navigate({
-      search: (prev) => ({ ...prev, ...patch, ...(resetPage ? { page: 1 } : {}) }),
+      search: (prev: typeof params) => ({
+        ...prev,
+        ...patch,
+        ...(resetPage ? { page: 1 } : {}),
+      }),
       replace: true,
     });
   };
