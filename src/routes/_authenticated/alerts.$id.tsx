@@ -332,6 +332,11 @@ function AlertDetails() {
                       {resolveMut.isPending ? "Resolving…" : "Mark resolved"}
                     </Button>
                   )}
+                  {isAdmin && (
+                    <Button size="sm" variant="secondary" onClick={() => investigateMut.mutate()} disabled={investigateMut.isPending}>
+                      {investigateMut.isPending ? "Investigating…" : "🔍 Auto-diagnose root cause"}
+                    </Button>
+                  )}
                 </div>
               )}
             </Card>
