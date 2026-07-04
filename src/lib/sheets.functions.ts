@@ -1667,7 +1667,7 @@ export const generateChart = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const { data: regs, error } = await supabase
       .from("sheet_registry")
       .select("id, display_name, sheet_type")
