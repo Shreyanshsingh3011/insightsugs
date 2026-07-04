@@ -774,16 +774,29 @@ export default function AgentDashboard() {
         },
       });
 
-      return res.text;
+      const citations: Citation[] = matches.slice(0, 6).map(m => ({
+        activity: String(m.activity ?? ""),
+        person: String(m.person ?? ""),
+        project: String(m.project ?? ""),
+        stage: String(m.stage ?? ""),
+        status: String(m.status ?? ""),
+        delay: Number(m.delay ?? 0),
+      }));
+      return { text: res.text as string, citations };
     },
-    onSuccess: (t, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: t }]),
+    onSuccess: (r, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: r.text, citations: r.citations }]),
   });
 
   function ask(q: string) {
     const t = q.trim();
-    if (!t) return;
+    if (!t || askMut.isPending) return;
+    setLastQuestion(t);
     setQuestion("");
     askMut.mutate(t);
+  }
+  function retryLast() {
+    if (!lastQuestion || askMut.isPending) return;
+    askMut.mutate(lastQuestion);
   }
 
   // ── FILTERED REPORT / EXPORT
