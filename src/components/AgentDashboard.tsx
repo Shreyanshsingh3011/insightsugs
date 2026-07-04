@@ -862,7 +862,11 @@ export default function AgentDashboard() {
       }));
       return { text: res.text as string, citations };
     },
-    onSuccess: (r, q) => setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: r.text, citations: r.citations }]),
+    onSuccess: (r, q) => {
+      setChat(prev => [...prev, { role: "user", text: q }, { role: "assistant", text: r.text, citations: r.citations }]);
+      bumpAnalytics({ questions: 1, citations: r.citations.length });
+    },
+    onError: () => { bumpAnalytics({ errors: 1 }); },
   });
 
   function ask(q: string) {
@@ -876,6 +880,33 @@ export default function AgentDashboard() {
     if (!lastQuestion || askMut.isPending) return;
     askMut.mutate(lastQuestion);
   }
+  function openCitationDrawer(question: string, citations: Citation[]) {
+    setDrawer({ open: true, question, citations });
+    bumpAnalytics({ citationsOpened: 1 });
+  }
+  // Jump from a citation chip to the matching row inside the dashboard:
+  // apply focus-person / project filters so the user lands on the source.
+  function jumpToCitation(c: Citation) {
+    if (c.person && canFocus) setFocusPerson(c.person);
+    setFilters(f => ({
+      ...f,
+      person: c.person || f.person,
+      stage: c.stage || f.stage,
+      q: c.activity ? c.activity.slice(0, 40) : f.q,
+    }));
+    setDrawer(d => ({ ...d, open: false }));
+    setChatOpen(false);
+    window.setTimeout(() => {
+      document.getElementById("filtered-report")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+  function clearChat() {
+    setChat([]);
+    setLastQuestion("");
+    askMut.reset();
+    try { window.localStorage.removeItem(chatKey); } catch { /* noop */ }
+  }
+
 
   // ── FILTERED REPORT / EXPORT
   type Filters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
