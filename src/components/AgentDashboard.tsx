@@ -607,6 +607,81 @@ export default function AgentDashboard() {
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [question, chatOpen]);
 
+  // Citation drawer — clicking any citation chip opens a full-detail side panel
+  // showing every sheet row the answer was grounded on.
+  const [drawer, setDrawer] = useState<{ open: boolean; question: string; citations: Citation[] }>({
+    open: false, question: "", citations: [],
+  });
+
+  // Lightweight per-project analytics — persisted to localStorage so it
+  // survives reloads and can be inspected via `window.__agentChatAnalytics`.
+  type ChatAnalytics = {
+    opens: number; questions: number; citations: number;
+    errors: number; citationsOpened: number; lastAt: string | null;
+  };
+  const analyticsKey = `agent:analytics:${selected}`;
+  const [analytics, setAnalytics] = useState<ChatAnalytics>({
+    opens: 0, questions: 0, citations: 0, errors: 0, citationsOpened: 0, lastAt: null,
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(analyticsKey);
+      if (raw) setAnalytics(JSON.parse(raw) as ChatAnalytics);
+      else setAnalytics({ opens: 0, questions: 0, citations: 0, errors: 0, citationsOpened: 0, lastAt: null });
+    } catch { /* noop */ }
+  }, [analyticsKey]);
+  const bumpAnalytics = (patch: Partial<ChatAnalytics>) => {
+    setAnalytics(prev => {
+      const next: ChatAnalytics = {
+        opens: prev.opens + (patch.opens ?? 0),
+        questions: prev.questions + (patch.questions ?? 0),
+        citations: prev.citations + (patch.citations ?? 0),
+        errors: prev.errors + (patch.errors ?? 0),
+        citationsOpened: prev.citationsOpened + (patch.citationsOpened ?? 0),
+        lastAt: new Date().toISOString(),
+      };
+      try {
+        window.localStorage.setItem(analyticsKey, JSON.stringify(next));
+        (window as unknown as { __agentChatAnalytics?: Record<string, ChatAnalytics> }).__agentChatAnalytics = {
+          ...((window as unknown as { __agentChatAnalytics?: Record<string, ChatAnalytics> }).__agentChatAnalytics ?? {}),
+          [selected]: next,
+        };
+      } catch { /* quota */ }
+      return next;
+    });
+  };
+
+  // Focus trap: while the chat panel is open, keep Tab focus inside it and
+  // let Escape close it. Autofocus the composer on open.
+  const chatCardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!chatOpen) return;
+    bumpAnalytics({ opens: 1 });
+    const t = window.setTimeout(() => composerRef.current?.focus(), 60);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setChatOpen(false); return; }
+      if (e.key !== "Tab") return;
+      const root = chatCardRef.current;
+      if (!root) return;
+      const nodes = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(el => !el.hasAttribute("data-focus-skip"));
+      if (!nodes.length) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { window.clearTimeout(t); document.removeEventListener("keydown", onKey); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatOpen]);
+
+
   const rowsAll: Row[] = payload?.data ?? [];
   // Build a compact, LLM-friendly row projection with the columns we care about.
   const rowIndex = useMemo(() => rowsAll.map((r, i) => {
