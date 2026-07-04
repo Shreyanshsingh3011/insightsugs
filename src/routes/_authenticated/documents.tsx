@@ -147,6 +147,14 @@ function DocumentsPage() {
     queryFn: () => getDocFn({ data: { id: selectedDocId! } }),
   });
 
+  const extractFn = useServerFn(extractDocActions);
+  const extractMu = useMutation({
+    mutationFn: (docId: string) => extractFn({ data: { document_id: docId } }),
+    onSuccess: (r: any) => toast.success(`Extracted ${r.obligations_found} obligations · ${r.alerts_created} alerts · ${r.notifications} notifications`),
+    onError: (e: any) => toast.error(e?.message ?? "Extraction failed"),
+  });
+
+
   const createMu = useMutation({
     mutationFn: async (v: { name: string; parent_id: string | null }) =>
       newFolderFn({ data: v }),
