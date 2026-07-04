@@ -392,10 +392,23 @@ function CopilotPage() {
     onSuccess: (res) => {
       setInsights(res.insights);
       setInsightsSheet(res.sheetName);
+      setInsightQuestions((res as any).questions ?? []);
       if (res.insights.length === 0) toast.info("No notable findings detected for this sheet.");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
   });
+
+  const docInsightsMut = useMutation({
+    mutationFn: (documentId: string) => autoDocInsights({ data: { documentId } }),
+    onSuccess: (res) => {
+      setDocInsights(res.insights);
+      setDocInsightsName(res.documentName);
+      setDocInsightQuestions((res as any).questions ?? []);
+      if (res.insights.length === 0) toast.info("No notable findings detected for this document.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
+  });
+
 
   const chartMut = useMutation({
     mutationFn: (vars: { turnIndex: number; question: string }) =>
