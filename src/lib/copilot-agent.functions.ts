@@ -713,6 +713,8 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
       "- After a successful action, confirm in one line and include the returned url/message.",
       "- Never take an action based on your own inference. Only act on an explicit user request in the current turn.",
       "",
+      "",
+      "AVAILABLE DATA CATALOG (call get_sheet_schema for column details before filtering):",
       JSON.stringify(catalog).slice(0, 4000),
     ].join("\n");
 
