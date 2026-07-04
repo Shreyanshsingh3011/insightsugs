@@ -193,6 +193,16 @@ function AlertDetails() {
     onError: (e: any) => toast.error(e?.message ?? "Failed to resolve"),
   });
 
+  const investigateFn = useServerFn(investigateDelay);
+  const investigateMut = useMutation({
+    mutationFn: () => investigateFn({ data: { alert_id: alertRow!.id } }),
+    onSuccess: (r: any) => {
+      toast.success(`Diagnosis posted · ${r.sibling_count} siblings · ${r.doc_count} doc excerpts`);
+      qc.invalidateQueries({ queryKey: ["alert", id] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Investigation failed"),
+  });
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6">
       <div className="mb-4 flex items-center justify-between gap-3">
