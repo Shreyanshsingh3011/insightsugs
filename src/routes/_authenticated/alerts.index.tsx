@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { AlertTriangle, Bell, FileSearch, Search, UserCheck } from "lucide-react";
 import { fetchDashboard, type DashboardData } from "@/lib/dashboard-data";
 import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
+import { listSheets } from "@/lib/sheets.functions";
 import { useAgentScope } from "@/hooks/useAgentScope";
 
 const SHEETS_KEY = "dashboard.selectedSheets.v1";
@@ -39,10 +40,24 @@ function AlertsList() {
   }, []);
 
   const buildFn = useServerFn(buildDashboardFromSheets);
-  const dynamic = selectedSheetIds.length > 0;
+  const listFn = useServerFn(listSheets);
+
+  // Auto-fallback: if user hasn't explicitly picked sheets, use every sheet they can see.
+  const { data: allSheets } = useQuery({
+    queryKey: ["alerts", "all-sheets-fallback"],
+    queryFn: () => listFn(),
+    enabled: selectedSheetIds.length === 0,
+    staleTime: 60_000,
+  });
+  const effectiveSheetIds = selectedSheetIds.length > 0
+    ? selectedSheetIds
+    : (allSheets?.sheets ?? []).map((s: any) => s.id);
+  const dynamic = effectiveSheetIds.length > 0;
+
   const { data, isLoading, error } = useQuery<DashboardData>({
-    queryKey: dynamic ? ["alerts", "dynamic", ...selectedSheetIds] : ["alerts", "static"],
-    queryFn: () => dynamic ? buildFn({ data: { sheetIds: selectedSheetIds } }) : fetchDashboard(),
+    queryKey: dynamic ? ["alerts", "dynamic", ...effectiveSheetIds] : ["alerts", "static"],
+    queryFn: () => dynamic ? buildFn({ data: { sheetIds: effectiveSheetIds } }) : fetchDashboard(),
+    retry: 0,
   });
 
   const allFlags = data?.flags ?? [];
