@@ -49,9 +49,9 @@ function AuthLayout() {
           <span className="text-sm font-medium tracking-tight">DelayLens</span>
         </div>
         <nav className="flex-1 space-y-0.5 p-3 text-sm">
+          <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent Dashboard</SideLink>
           <SideLink to="/insights" icon={<LayoutDashboard className="h-4 w-4" />}>Insights</SideLink>
           <SideLink to="/search" icon={<Search className="h-4 w-4" />}>Search</SideLink>
-          <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent Dashboard</SideLink>
           <SideLink to="/agent/inbox" icon={<Inbox className="h-4 w-4" />}>Agent Inbox</SideLink>
           <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>My activities</SideLink>
           <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
@@ -78,9 +78,9 @@ function AuthLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-border bg-card/80 px-4 backdrop-blur md:px-6">
           <nav className="flex flex-1 items-center gap-1 overflow-x-auto text-sm md:hidden">
+            <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent</SideLink>
             <SideLink to="/insights" icon={<LayoutDashboard className="h-4 w-4" />}>Insights</SideLink>
             <SideLink to="/search" icon={<Search className="h-4 w-4" />}>Search</SideLink>
-            <SideLink to="/agent" icon={<Bot className="h-4 w-4" />}>Agent</SideLink>
             <SideLink to="/agent/inbox" icon={<Inbox className="h-4 w-4" />}>Inbox</SideLink>
             <SideLink to="/my-activities" icon={<ListChecks className="h-4 w-4" />}>Tasks</SideLink>
             <SideLink to="/notifications" icon={<Bell className="h-4 w-4" />}>Inbox</SideLink>
