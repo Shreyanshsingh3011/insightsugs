@@ -456,6 +456,20 @@ function DocumentsPage() {
                   <p className="leading-relaxed">{doc.data.summary}</p>
                 </div>
               )}
+              {isAdmin && doc.data.status === "ready" && (
+                <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                    Auto-extract obligations
+                  </p>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    AI scans this document for deadlines, penalties, deliverables — creates tracked alerts with page citations.
+                  </p>
+                  <Button size="sm" onClick={() => extractMu.mutate(doc.data.id)} disabled={extractMu.isPending}>
+                    {extractMu.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                    {extractMu.isPending ? "Extracting…" : "Extract obligations & deadlines"}
+                  </Button>
+                </div>
+              )}
               {Array.isArray(doc.data.key_points) && doc.data.key_points.length > 0 && (
                 <div>
                   <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
