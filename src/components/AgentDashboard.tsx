@@ -569,6 +569,7 @@ export default function AgentDashboard() {
   type ChatMsg = { role: "user" | "assistant"; text: string };
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
   useEffect(() => { setChat([]); }, [payload]);
 
   const rowsAll: Row[] = payload?.data ?? [];
