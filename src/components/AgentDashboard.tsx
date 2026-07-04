@@ -566,12 +566,43 @@ export default function AgentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload]);
 
-  // Ask Agent — grounded chat with history + retrieval over raw rows
-  type ChatMsg = { role: "user" | "assistant"; text: string };
+  // Ask Agent — grounded chat with history + retrieval over raw rows.
+  // Citations carry the exact rows the answer was grounded on, so the UI
+  // can show "used N rows" chips beneath each assistant reply.
+  type Citation = { activity: string; person: string; project: string; stage: string; status: string; delay: number };
+  type ChatMsg = { role: "user" | "assistant"; text: string; citations?: Citation[] };
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
-  useEffect(() => { setChat([]); }, [payload]);
+  const [lastQuestion, setLastQuestion] = useState<string>("");
+  const chatKey = `agent:chat:${selected}`;
+  // Load chat from localStorage when the active project scope changes,
+  // so reopening the widget restores per-project history & context.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(chatKey);
+      setChat(raw ? (JSON.parse(raw) as ChatMsg[]) : []);
+    } catch { setChat([]); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatKey]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(chatKey, JSON.stringify(chat)); } catch { /* quota */ }
+  }, [chat, chatKey]);
+  // Auto-scroll transcript & auto-resize composer textarea.
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chat, chatOpen]);
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [question, chatOpen]);
 
   const rowsAll: Row[] = payload?.data ?? [];
   // Build a compact, LLM-friendly row projection with the columns we care about.
