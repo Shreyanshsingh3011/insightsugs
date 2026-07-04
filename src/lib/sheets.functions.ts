@@ -1042,10 +1042,10 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       const { data: r, error: regErr } = await supabase
         .from("sheet_registry")
         .select("id, display_name, sheet_type")
-        .in("id", data.sheetIds)
-        .eq("user_id", userId);
+        .in("id", data.sheetIds);
       if (regErr) throw new Error(regErr.message);
       regs = r ?? [];
+
     }
 
     // 1) Computed aggregates across ALL rows (not truncated).
@@ -1671,9 +1671,9 @@ export const generateChart = createServerFn({ method: "POST" })
     const { data: regs, error } = await supabase
       .from("sheet_registry")
       .select("id, display_name, sheet_type")
-      .in("id", data.sheetIds)
-      .eq("user_id", userId);
+      .in("id", data.sheetIds);
     if (error) throw new Error(error.message);
+
 
     const FETCH_CAP = 50000;
     const PAGE = 1000;

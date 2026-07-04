@@ -163,8 +163,8 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
             .from("sheet_registry")
             .select("id, display_name, sheet_type, row_count")
             .in("id", data.sheetIds)
-            .eq("user_id", userId)
         : Promise.resolve({ data: [] as any[], error: null }),
+
       data.documentIds.length
         ? supabase
             .from("documents")
