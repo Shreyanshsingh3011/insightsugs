@@ -1774,6 +1774,51 @@ export default function AgentDashboard() {
             </button>
           </div>
 
+          {/* CITATIONS DRAWER — full sheet-row detail for the answer the user clicked */}
+          <UISheet open={drawer.open} onOpenChange={(o) => setDrawer(d => ({ ...d, open: o }))}>
+            <SheetContent side="right" className="w-[min(96vw,460px)] overflow-y-auto p-0">
+              <SheetHeader className="border-b border-border/60 bg-gradient-to-r from-primary/10 to-transparent px-5 py-4 text-left">
+                <SheetTitle className="flex items-center gap-2 text-base">
+                  <Layers className="h-4 w-4 text-primary" aria-hidden="true" />
+                  Sources for this answer
+                </SheetTitle>
+                <SheetDescription className="text-xs">
+                  {drawer.question ? <>Question: <span className="font-medium text-foreground">"{drawer.question}"</span></> : "Rows the agent grounded its reply on."}
+                </SheetDescription>
+              </SheetHeader>
+              <div className="space-y-2 p-4">
+                {drawer.citations.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No source rows were captured for this answer.</p>
+                )}
+                {drawer.citations.map((c, i) => (
+                  <div key={i} className="rounded-lg border border-border/60 bg-card p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Row {i + 1}</div>
+                        <div className="mt-0.5 text-sm font-semibold leading-snug">{c.activity || "(activity)"}</div>
+                      </div>
+                      {c.delay > 0 && (
+                        <Badge variant="destructive" className="shrink-0">+{c.delay}d late</Badge>
+                      )}
+                    </div>
+                    <dl className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+                      <div><dt className="text-muted-foreground">Person</dt><dd className="truncate font-medium">{c.person || "—"}</dd></div>
+                      <div><dt className="text-muted-foreground">Project</dt><dd className="truncate font-medium">{c.project || "—"}</dd></div>
+                      <div><dt className="text-muted-foreground">Stage</dt><dd className="truncate font-medium">{c.stage || "—"}</dd></div>
+                      <div className="col-span-3"><dt className="text-muted-foreground">Status</dt><dd className="font-medium">{c.status || "—"}</dd></div>
+                    </dl>
+                    <div className="mt-3 flex justify-end">
+                      <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => jumpToCitation(c)}>
+                        Open in dashboard <ArrowRight className="h-3 w-3" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SheetContent>
+          </UISheet>
+
+
 
           {/* FILTERED REPORT / EXPORT */}
           <Card id="filtered-report">
