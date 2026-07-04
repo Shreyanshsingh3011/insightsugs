@@ -215,11 +215,13 @@ async function investigateCore(opts: {
     await supabaseAdmin.from("alerts").update({
       root_cause: diagnosis.root_cause.slice(0, 1000),
     }).eq("id", alertRow.id);
-    await supabaseAdmin.from("alert_messages").insert({
-      alert_id: alertRow.id,
-      author_id: opts.actor_id,
-      body: bodyMd,
-    });
+    if (opts.actor_id) {
+      await supabaseAdmin.from("alert_messages").insert({
+        alert_id: alertRow.id,
+        author_id: opts.actor_id,
+        body: bodyMd,
+      });
+    }
   }
 
   return { ...diagnosis, sibling_count: siblings.length, doc_count: docs.length, subject };
