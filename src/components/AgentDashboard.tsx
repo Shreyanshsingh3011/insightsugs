@@ -1552,98 +1552,125 @@ export default function AgentDashboard() {
           {/* ASK THE AGENT — floating chatbot (button bottom-right, panel on click) */}
           <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 print:hidden">
             {chatOpen && (
-              <Card className="flex w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border-primary/30 shadow-[0_20px_60px_-15px_hsl(var(--primary)/0.45)] ring-1 ring-primary/10 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-4 duration-300">
+              <Card
+                ref={chatCardRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="agent-chat-title"
+                aria-describedby="agent-chat-guardrail"
+                className="flex w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border-primary/30 shadow-[0_20px_60px_-15px_hsl(var(--primary)/0.45)] ring-1 ring-primary/10 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-4 duration-300"
+              >
                 <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b border-border/60 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-4 py-3">
                   <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/25">
-                    <Bot className="h-4 w-4" />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
+                    <Bot className="h-4 w-4" aria-hidden="true" />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" aria-hidden="true" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="text-sm leading-tight">Ask the agent</CardTitle>
+                    <CardTitle id="agent-chat-title" className="text-sm leading-tight">Ask the agent</CardTitle>
                     <p className="truncate text-[11px] text-muted-foreground">
                       Grounded on {rowsAll.length.toLocaleString()} in-scope rows
                     </p>
                   </div>
                   {chat.length > 0 && (
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
-                      onClick={() => { setChat([]); setLastQuestion(""); askMut.reset(); }}>
+                      onClick={clearChat}
+                      aria-label="Clear this conversation from local storage">
                       Clear
                     </Button>
                   )}
                   <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full"
                     onClick={() => setChatOpen(false)} aria-label="Close chat">
-                    <X className="h-4 w-4" />
+                    <X className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </CardHeader>
 
                 {/* Guardrail note — sets user expectations up front */}
-                <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-4 py-1.5 text-[10.5px] text-muted-foreground">
-                  <ShieldCheck className="h-3 w-3 shrink-0 text-primary/70" />
+                <div id="agent-chat-guardrail" className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-4 py-1.5 text-[10.5px] text-muted-foreground">
+                  <ShieldCheck className="h-3 w-3 shrink-0 text-primary/70" aria-hidden="true" />
                   Answers only from your dashboard data — no outside knowledge.
                 </div>
 
                 <CardContent className="flex flex-col gap-3 p-3">
                   <div
                     ref={transcriptRef}
+                    role="log"
+                    aria-live="polite"
+                    aria-label="Conversation with the agent"
                     className="h-80 space-y-2.5 overflow-y-auto rounded-xl border border-border/60 bg-muted/30 p-2.5 scroll-smooth"
                   >
                     {chat.length === 0 && !askMut.isPending && !askMut.isError && (
                       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          <Sparkles className="h-5 w-5" />
+                          <Sparkles className="h-5 w-5" aria-hidden="true" />
                         </div>
                         <p className="font-medium text-foreground">Hi 👋 Ask me anything about this data.</p>
                         <p>People, delays, stages, bottlenecks — I'll only answer from what's on your dashboard.</p>
                       </div>
                     )}
-                    {chat.map((m, i) => (
-                      <div key={i} className={`flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                        {m.role === "assistant" && (
-                          <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-                            <Bot className="h-3.5 w-3.5" />
+                    {chat.map((m, i) => {
+                      const prevUser = m.role === "assistant" ? chat[i - 1]?.text ?? "" : "";
+                      const highlight = m.role === "assistant" ? m.citations?.[0] : undefined;
+                      return (
+                        <div key={i} className={`flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                          {m.role === "assistant" && (
+                            <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary" aria-hidden="true">
+                              <Bot className="h-3.5 w-3.5" />
+                            </div>
+                          )}
+                          <div className={`flex max-w-[85%] flex-col gap-1.5 ${m.role === "user" ? "items-end" : "items-start"}`}>
+                            <div className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
+                              m.role === "user"
+                                ? "rounded-br-sm bg-primary text-primary-foreground"
+                                : "rounded-bl-sm border border-primary/15 bg-background"
+                            }`}>{m.text}</div>
+
+                            {/* Per-message citation highlight — one-line summary of the strongest cited row */}
+                            {m.role === "assistant" && highlight && (
+                              <button
+                                type="button"
+                                onClick={() => jumpToCitation(highlight)}
+                                aria-label={`Jump to ${highlight.activity || "activity"} in dashboard`}
+                                className="group flex max-w-full items-center gap-1.5 rounded-md border border-primary/25 bg-primary/5 px-2 py-1 text-left text-[10.5px] text-foreground transition-colors hover:border-primary/50 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                              >
+                                <Target className="h-3 w-3 shrink-0 text-primary" aria-hidden="true" />
+                                <span className="min-w-0 flex-1 truncate">
+                                  <span className="font-medium">{highlight.activity || "activity"}</span>
+                                  {(highlight.person || highlight.project) && (
+                                    <span className="text-muted-foreground"> · {[highlight.person, highlight.project].filter(Boolean).join(" · ")}</span>
+                                  )}
+                                  {highlight.delay > 0 && <span className="ml-1 text-destructive">+{highlight.delay}d</span>}
+                                </span>
+                                <ArrowRight className="h-3 w-3 shrink-0 text-primary/60 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                              </button>
+                            )}
+
+                            {/* Full citations drawer trigger */}
+                            {m.role === "assistant" && m.citations && m.citations.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => openCitationDrawer(prevUser, m.citations!)}
+                                aria-label={`View ${m.citations.length} sheet rows this answer used`}
+                                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                              >
+                                <Layers className="h-3 w-3" aria-hidden="true" />
+                                View {m.citations.length} sheet row{m.citations.length === 1 ? "" : "s"} used
+                              </button>
+                            )}
                           </div>
-                        )}
-                        <div className={`flex max-w-[85%] flex-col gap-1.5 ${m.role === "user" ? "items-end" : "items-start"}`}>
-                          <div className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
-                            m.role === "user"
-                              ? "rounded-br-sm bg-primary text-primary-foreground"
-                              : "rounded-bl-sm border border-primary/15 bg-background"
-                          }`}>{m.text}</div>
-                          {m.role === "assistant" && m.citations && m.citations.length > 0 && (
-                            <details className="w-full text-[10.5px]">
-                              <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
-                                📎 {m.citations.length} row{m.citations.length === 1 ? "" : "s"} cited
-                              </summary>
-                              <div className="mt-1 space-y-1 rounded-lg border border-border/50 bg-muted/40 p-1.5">
-                                {m.citations.map((c, ci) => (
-                                  <div key={ci} className="flex items-start gap-1.5 rounded-md bg-background/70 px-2 py-1">
-                                    <span className="mt-0.5 text-primary/70">·</span>
-                                    <div className="min-w-0 flex-1 leading-snug">
-                                      <div className="truncate font-medium text-foreground">{c.activity || "(activity)"}</div>
-                                      <div className="truncate text-muted-foreground">
-                                        {[c.person, c.project, c.stage].filter(Boolean).join(" · ")}
-                                        {c.delay > 0 && <span className="ml-1 text-destructive">+{c.delay}d</span>}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </details>
+                          {m.role === "user" && (
+                            <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground" aria-hidden="true">
+                              <UserIcon className="h-3.5 w-3.5" />
+                            </div>
                           )}
                         </div>
-                        {m.role === "user" && (
-                          <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                            <UserIcon className="h-3.5 w-3.5" />
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                     {askMut.isPending && (
-                      <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary">
+                      <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground" aria-label="Agent is thinking">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary" aria-hidden="true">
                           <Bot className="h-3.5 w-3.5" />
                         </div>
-                        <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-primary/15 bg-background px-3 py-2">
+                        <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-primary/15 bg-background px-3 py-2" aria-hidden="true">
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
@@ -1651,15 +1678,15 @@ export default function AgentDashboard() {
                       </div>
                     )}
                     {askMut.isError && !askMut.isPending && (
-                      <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                         <div className="min-w-0 flex-1">
                           <div className="font-medium">Couldn't reach the agent.</div>
                           <div className="text-destructive/80">{(askMut.error as Error)?.message || "Please try again."}</div>
                         </div>
                         {lastQuestion && (
                           <Button size="sm" variant="outline" className="h-7 gap-1 px-2 text-[11px]" onClick={retryLast}>
-                            <RotateCcw className="h-3 w-3" /> Retry
+                            <RotateCcw className="h-3 w-3" aria-hidden="true" /> Retry
                           </Button>
                         )}
                       </div>
@@ -1674,8 +1701,11 @@ export default function AgentDashboard() {
                   <form
                     onSubmit={(e) => { e.preventDefault(); ask(question); }}
                     className="flex items-end gap-2"
+                    aria-label="Ask the agent"
                   >
+                    <label htmlFor="agent-chat-input" className="sr-only">Ask the agent a question</label>
                     <Textarea
+                      id="agent-chat-input"
                       ref={composerRef}
                       value={question}
                       onChange={(e) => setQuestion(e.target.value)}
@@ -1688,6 +1718,7 @@ export default function AgentDashboard() {
                       placeholder="Ask about people, delays, stages…  (Enter to send · Shift+Enter for newline)"
                       rows={1}
                       disabled={askMut.isPending}
+                      aria-label="Chat message"
                       className="min-h-[40px] flex-1 resize-none rounded-xl bg-background text-sm leading-snug"
                     />
                     <Button
@@ -1695,14 +1726,14 @@ export default function AgentDashboard() {
                       size="icon"
                       className="h-10 w-10 shrink-0 rounded-xl"
                       disabled={askMut.isPending || !question.trim() || rowsAll.length === 0}
-                      aria-label="Send"
+                      aria-label="Send message"
                     >
-                      {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
                     </Button>
                   </form>
 
                   {chat.length === 0 && (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested questions">
                       {[
                         "Biggest bottleneck?",
                         "Most overdue owner?",
@@ -1712,13 +1743,21 @@ export default function AgentDashboard() {
                         <button key={sug} type="button"
                           onClick={() => ask(sug)}
                           disabled={askMut.isPending || rowsAll.length === 0}
-                          className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground disabled:opacity-50"
+                          className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
                         >
                           {sug}
                         </button>
                       ))}
                     </div>
                   )}
+
+                  {/* Analytics footer — visible signal that we track quality */}
+                  <div className="flex items-center justify-between border-t border-border/60 pt-2 text-[10px] text-muted-foreground">
+                    <span title={`Last activity: ${analytics.lastAt ? new Date(analytics.lastAt).toLocaleString() : "never"}`}>
+                      {analytics.questions} q · {analytics.citations} cites · {analytics.errors} err
+                    </span>
+                    <span className="opacity-70">Local · this browser</span>
+                  </div>
                 </CardContent>
               </Card>
             )}
