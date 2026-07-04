@@ -312,6 +312,11 @@ function CopilotPage() {
   const [history, setHistory] = useState<Turn[]>([]);
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [insightsSheet, setInsightsSheet] = useState<string | null>(null);
+  const [insightQuestions, setInsightQuestions] = useState<string[]>([]);
+  const [docInsights, setDocInsights] = useState<Insight[] | null>(null);
+  const [docInsightsName, setDocInsightsName] = useState<string | null>(null);
+  const [docInsightQuestions, setDocInsightQuestions] = useState<string[]>([]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
