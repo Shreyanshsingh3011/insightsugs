@@ -1605,10 +1605,9 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
       .from("sheet_registry")
       .select("id, display_name, sheet_type")
       .eq("id", data.sheetId)
-      .eq("user_id", userId)
       .maybeSingle();
     if (regErr) throw new Error(regErr.message);
-    if (!reg) throw new Error("Sheet not found");
+    if (!reg) throw new Error("Sheet not found or you don't have access");
 
     // Reuse askCopilot with a curated prompt to keep the answer grounded.
     const out = await (askCopilot as any)({
