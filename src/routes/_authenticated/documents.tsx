@@ -13,6 +13,8 @@ import {
   registerAndProcessDocument,
   deleteFolder,
 } from "@/lib/documents.functions";
+import { extractDocActions } from "@/lib/doc-action-extractor.functions";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
