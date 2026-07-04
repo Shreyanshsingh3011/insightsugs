@@ -729,8 +729,12 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
         aggregate_column: aggregateColumn,
         get_row: getRow,
         search_doc_chunks: searchDocChunks,
+        create_alert: createAlert,
+        draft_email: draftEmail,
+        create_activity: createActivity,
+        list_projects: listProjects,
       },
-      stopWhen: stepCountIs(8),
+      stopWhen: stepCountIs(20),
     });
 
     const rawAnswer = (result.text ?? "").trim();
