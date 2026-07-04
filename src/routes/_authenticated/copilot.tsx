@@ -646,8 +646,109 @@ function CopilotPage() {
                 })}
               </div>
             )}
+            {insights && insightQuestions.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Suggested questions from this sheet
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {insightQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => sendAsk(q)}
+                      disabled={askMut.isPending}
+                      className="rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         )}
+
+        {/* Auto-Insights for a single document */}
+        {singleDocId && history.length === 0 && (
+          <Card className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <Wand2 className="h-4 w-4 text-primary" /> Document Auto-Insights
+                {docInsightsName && (
+                  <span className="text-xs font-normal text-muted-foreground">· {docInsightsName}</span>
+                )}
+              </h3>
+              <Button
+                size="sm"
+                variant={docInsights ? "ghost" : "default"}
+                onClick={() => docInsightsMut.mutate(singleDocId)}
+                disabled={docInsightsMut.isPending}
+              >
+                {docInsightsMut.isPending ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {docInsights ? "Regenerate" : "Generate"}
+              </Button>
+            </div>
+            {!docInsights && !docInsightsMut.isPending && (
+              <p className="text-xs text-muted-foreground">
+                AI reads the document and surfaces key clauses, deadlines, obligations and risks —
+                no question needed.
+              </p>
+            )}
+            {docInsights && docInsights.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {docInsights.map((ins, i) => {
+                  const Icon =
+                    ins.severity === "critical"
+                      ? AlertCircle
+                      : ins.severity === "warning"
+                        ? AlertTriangle
+                        : Info;
+                  const tone =
+                    ins.severity === "critical"
+                      ? "border-destructive/40 bg-destructive/5"
+                      : ins.severity === "warning"
+                        ? "border-amber-400/40 bg-amber-50/40 dark:bg-amber-950/20"
+                        : "border-border bg-muted/30";
+                  return (
+                    <div key={i} className={`rounded-md border p-3 text-sm ${tone}`}>
+                      <div className="mb-1 flex items-start gap-1.5 font-medium">
+                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{ins.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{ins.detail}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {docInsights && docInsightQuestions.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Suggested questions from this document
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {docInsightQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => sendAsk(q)}
+                      disabled={askMut.isPending}
+                      className="rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto">
           {history.length === 0 && !askMut.isPending && !singleSheetId ? (
