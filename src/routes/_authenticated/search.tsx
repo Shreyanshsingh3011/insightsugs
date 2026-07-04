@@ -452,7 +452,7 @@ function SearchPage() {
               Page {params.page} · showing {hits.length} of {totalCandidates}
               {hasMore ? "+" : ""}{" "}
               <span className="ml-1">
-                across {activeKinds.map((k) => KIND_LABELS[k].toLowerCase()).join(", ")}
+                across {activeKinds.map((k: SearchKind) => KIND_LABELS[k].toLowerCase()).join(", ")}
               </span>
             </span>
             <div className="flex items-center gap-2">
