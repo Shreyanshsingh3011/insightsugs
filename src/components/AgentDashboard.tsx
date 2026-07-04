@@ -31,7 +31,7 @@ import {
   Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
   CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
   Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon, FolderKanban,
-  MessageCircle, X,
+  MessageCircle, X, ShieldCheck, RotateCcw,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
