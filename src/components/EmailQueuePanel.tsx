@@ -278,7 +278,7 @@ export function EmailQueuePanel() {
 
         {/* Log */}
         <div className="rounded-md border">
-          <div className="grid grid-cols-[24px_1.4fr_120px_120px_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="hidden md:grid grid-cols-[24px_minmax(0,1.4fr)_120px_120px_auto] gap-2 border-b bg-muted/40 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <div>
               <Checkbox
                 checked={allSelected}
