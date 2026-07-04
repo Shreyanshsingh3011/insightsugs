@@ -295,7 +295,7 @@ async function runStandupCore(runBy: string | null): Promise<StandupRunResult> {
     await supabaseAdmin.from("audit_log").insert({
       actor_id: runBy,
       event_type: "standup.daily.run",
-      details: result as unknown as Record<string, unknown>,
+      details: JSON.parse(JSON.stringify(result)),
     });
   } catch {}
   return result;
