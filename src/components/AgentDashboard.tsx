@@ -30,6 +30,7 @@ import {
   Sparkles, RefreshCw, TrendingUp, Users, Activity, Target, Zap,
   CheckCircle2, Clock, Loader2, AlertTriangle, Bot, Send, ArrowRight,
   Flame, Gauge, Radar, Layers, Download, Filter, User as UserIcon, FolderKanban,
+  MessageCircle, X,
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -568,6 +569,7 @@ export default function AgentDashboard() {
   type ChatMsg = { role: "user" | "assistant"; text: string };
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
   useEffect(() => { setChat([]); }, [payload]);
 
   const rowsAll: Row[] = payload?.data ?? [];
@@ -1393,74 +1395,98 @@ export default function AgentDashboard() {
             </CardContent>
           </Card>
 
-          {/* ASK THE AGENT — grounded chat */}
-          <Card className="border-primary/30">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Bot className="h-4 w-4 text-primary" /> Ask the agent
-                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                  Grounded on {rowsAll.length} rows · retrieval + facts
-                </span>
-                {chat.length > 0 && (
-                  <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => setChat([])}>
-                    Clear
-                  </Button>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {chat.length > 0 && (
-                <div className="max-h-80 space-y-2 overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-2">
-                  {chat.map((m, i) => (
-                    <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                      {m.role === "assistant" && <Bot className="mt-1 h-4 w-4 shrink-0 text-primary" />}
-                      <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                        m.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "border border-primary/20 bg-background"
-                      }`}>{m.text}</div>
-                      {m.role === "user" && <UserIcon className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
-                    </div>
-                  ))}
-                  {askMut.isPending && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" /> thinking…
-                    </div>
+          {/* ASK THE AGENT — floating chatbot (button bottom-right, panel on click) */}
+          <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 print:hidden">
+            {chatOpen && (
+              <Card className="w-[min(92vw,400px)] overflow-hidden border-primary/30 shadow-2xl shadow-primary/20 animate-in fade-in slide-in-from-bottom-4 duration-200">
+                <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b border-border/60 bg-gradient-to-r from-primary/10 to-primary/5 pb-3 pt-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="text-sm">Ask the agent</CardTitle>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      Grounded on {rowsAll.length} rows · retrieval + facts
+                    </p>
+                  </div>
+                  {chat.length > 0 && (
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setChat([])}>
+                      Clear
+                    </Button>
                   )}
-                </div>
-              )}
-              <form
-                onSubmit={(e) => { e.preventDefault(); ask(question); }}
-                className="flex flex-col gap-2 md:flex-row"
-              >
-                <Input
-                  value={question} onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="Ask anything about this data — people, activities, delays, stages…"
-                  className="flex-1"
-                />
-                <Button type="submit" disabled={askMut.isPending || !question.trim()}>
-                  {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Ask
-                </Button>
-              </form>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  "What's the biggest bottleneck?",
-                  "Who has the most overdue work and by how much?",
-                  "List the 5 most critical activities to unblock this week.",
-                  "Which stage is dragging the timeline and why?",
-                  "Give me a 3-step recovery plan with owners.",
-                ].map(sug => (
-                  <button key={sug} type="button"
-                    onClick={() => ask(sug)}
-                    className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setChatOpen(false)} aria-label="Close chat">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3 p-3">
+                  <div className="h-80 space-y-2 overflow-y-auto rounded-lg border border-border/60 bg-muted/30 p-2">
+                    {chat.length === 0 && !askMut.isPending && (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground">
+                        <Bot className="h-8 w-8 text-primary/60" />
+                        <p>Ask anything about your projects, people, delays or stages.</p>
+                      </div>
+                    )}
+                    {chat.map((m, i) => (
+                      <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                        {m.role === "assistant" && <Bot className="mt-1 h-4 w-4 shrink-0 text-primary" />}
+                        <div className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                          m.role === "user"
+                            ? "bg-primary text-primary-foreground"
+                            : "border border-primary/20 bg-background"
+                        }`}>{m.text}</div>
+                        {m.role === "user" && <UserIcon className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />}
+                      </div>
+                    ))}
+                    {askMut.isPending && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> thinking…
+                      </div>
+                    )}
+                  </div>
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); ask(question); }}
+                    className="flex gap-2"
                   >
-                    {sug}
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                    <Input
+                      value={question} onChange={(e) => setQuestion(e.target.value)}
+                      placeholder="Ask about people, delays, stages…"
+                      className="flex-1"
+                    />
+                    <Button type="submit" size="icon" disabled={askMut.isPending || !question.trim()}>
+                      {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </Button>
+                  </form>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "Biggest bottleneck?",
+                      "Most overdue owner?",
+                      "Top 5 to unblock this week",
+                      "3-step recovery plan",
+                    ].map(sug => (
+                      <button key={sug} type="button"
+                        onClick={() => ask(sug)}
+                        className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                      >
+                        {sug}
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            <button
+              type="button"
+              onClick={() => setChatOpen(v => !v)}
+              aria-label={chatOpen ? "Close chat" : "Open chat"}
+              className="group relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl shadow-primary/40 ring-4 ring-primary/20 transition-all hover:scale-105 hover:shadow-primary/60"
+            >
+              {!chatOpen && (
+                <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-primary/40" />
+              )}
+              {chatOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
+            </button>
+          </div>
+
 
           {/* FILTERED REPORT / EXPORT */}
           <Card>
