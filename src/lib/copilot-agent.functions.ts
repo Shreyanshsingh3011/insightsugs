@@ -532,6 +532,144 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
         }),
     });
 
+    // ---------- ACTION TOOLS (write) ----------
+    // These create pending records the user can review in Alerts / Agent Inbox / Activities.
+    // Every action is scoped to the authenticated user via RLS (supabase = user client).
+
+    const createAlert = tool({
+      description:
+        "Create a delay alert (status=open) for the user to review on the Alerts page. Use ONLY when the user explicitly asks to flag/raise/create an alert. Cite the supporting rows in `reason`.",
+      inputSchema: z.object({
+        activity: z.string().min(2).max(300).describe("Short activity/task label"),
+        severity: z.enum(["Low", "Medium", "High", "Critical"]).default("Medium"),
+        stage: z.string().max(80).optional(),
+        reason: z.string().max(1500).optional().describe("Why this alert is being raised, with citations"),
+        root_cause: z.string().max(1500).optional(),
+      }),
+      execute: async ({ activity, severity, stage, reason, root_cause }) =>
+        withTrace("create_alert", { activity, severity }, async () => {
+          const flag_id = `CP-${Date.now().toString(36).toUpperCase()}`;
+          const { data: row, error } = await supabase
+            .from("alerts")
+            .insert({
+              flag_id,
+              activity: activity.slice(0, 300),
+              stage: stage ?? null,
+              severity,
+              source: "copilot",
+              reason: reason ?? null,
+              root_cause: root_cause ?? null,
+              status: "open",
+              sent_by: userId,
+            })
+            .select("id, flag_id")
+            .single();
+          if (error) return { error: error.message };
+          return {
+            _summary: `Created alert ${row.flag_id}`,
+            _resultForModel: {
+              alert_id: row.id,
+              flag_id: row.flag_id,
+              url: `/alerts/${row.id}`,
+              message: `Alert ${row.flag_id} created. Visible on the Alerts page.`,
+            },
+          };
+        }),
+    });
+
+    const draftEmail = tool({
+      description:
+        "Create a DRAFT email in the Agent Inbox for the user to review and approve before sending. Never sends directly. Use when the user asks to draft/write/prepare an email or nudge.",
+      inputSchema: z.object({
+        subject: z.string().min(2).max(200),
+        body: z.string().min(2).max(6000),
+        recipient_email: z.string().email().optional(),
+        why: z.string().max(500).optional().describe("One-line rationale with citations"),
+      }),
+      execute: async ({ subject, body, recipient_email, why }) =>
+        withTrace("draft_email", { subject, recipient_email }, async () => {
+          const { data: row, error } = await supabase
+            .from("agent_drafts")
+            .insert({
+              draft_type: "status_update",
+              source_kind: "copilot",
+              source_key: `copilot:${Date.now()}`,
+              title: subject.slice(0, 200),
+              subject,
+              body,
+              channel: "email",
+              recipient_email: recipient_email ?? null,
+              why: why ?? null,
+              confidence: 0.7,
+              state: "pending",
+            })
+            .select("id")
+            .single();
+          if (error) return { error: error.message };
+          return {
+            _summary: `Drafted email "${subject.slice(0, 60)}"`,
+            _resultForModel: {
+              draft_id: row.id,
+              url: `/agent/inbox`,
+              message: `Email drafted. Review & send from the Agent Inbox.`,
+            },
+          };
+        }),
+    });
+
+    const createActivity = tool({
+      description:
+        "Create a tracked activity/task on a specific project. Use when the user asks to add/track a follow-up or obligation.",
+      inputSchema: z.object({
+        project_id: z.string().uuid(),
+        title: z.string().min(2).max(300),
+        description: z.string().max(2000).optional(),
+        due_date: z.string().optional().describe("ISO date YYYY-MM-DD"),
+        tat_days: z.number().int().min(1).max(365).optional(),
+      }),
+      execute: async ({ project_id, title, description, due_date, tat_days }) =>
+        withTrace("create_activity", { project_id, title }, async () => {
+          const { data: row, error } = await supabase
+            .from("activities")
+            .insert({
+              project_id,
+              title: title.slice(0, 300),
+              description: description ?? null,
+              due_date: due_date ?? null,
+              tat_days: tat_days ?? null,
+              status: "pending",
+            })
+            .select("id")
+            .single();
+          if (error) return { error: error.message };
+          return {
+            _summary: `Created activity "${title.slice(0, 60)}"`,
+            _resultForModel: {
+              activity_id: row.id,
+              message: `Activity created on project. Visible on the project's activity list.`,
+            },
+          };
+        }),
+    });
+
+    const listProjects = tool({
+      description: "List projects the user can see (id + name). Call before create_activity when you don't have a project_id yet.",
+      inputSchema: z.object({}),
+      execute: async () =>
+        withTrace("list_projects", {}, async () => {
+          const { data: rows, error } = await supabase
+            .from("projects")
+            .select("id, name")
+            .limit(50);
+          if (error) return { error: error.message };
+          return {
+            _summary: `${rows?.length ?? 0} projects`,
+            _resultForModel: { projects: rows ?? [] },
+          };
+        }),
+    });
+
+
     // 4) System prompt — the agent has no rows, only tools.
     const catalog = {
       sheets: regs.map((r) => ({
