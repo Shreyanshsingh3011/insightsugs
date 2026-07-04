@@ -36,6 +36,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet as UISheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
 
 // ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
 const FALLBACK_PROJECTS: AgentProject[] = [
