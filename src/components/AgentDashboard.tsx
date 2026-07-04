@@ -996,30 +996,63 @@ export default function AgentDashboard() {
   return (
     <div className="space-y-6">
       {/* HERO */}
-      <div className="relative overflow-hidden rounded-3xl border border-border/60 bg-gradient-to-br from-indigo-500/10 via-fuchsia-500/5 to-transparent p-6">
-        <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/10 blur-3xl" />
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <section
+        aria-labelledby="agent-hero-title"
+        className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-[var(--shadow-card)]"
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.4] [background-image:radial-gradient(circle_at_1px_1px,var(--color-border)_1px,transparent_0)] [background-size:22px_22px]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-foreground/[0.04] blur-3xl"
+        />
+        <div className="relative grid gap-5 p-5 md:p-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-8">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
-              <Bot className="h-3 w-3" /> Autonomous Agent
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="grid h-3.5 w-3.5 place-items-center rounded-full bg-foreground text-background">
+                <Bot className="h-2.5 w-2.5" aria-hidden />
+              </span>
+              Autonomous Agent
             </div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
+            <h1
+              id="agent-hero-title"
+              className="mt-3 font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl lg:text-[34px] lg:leading-[1.1]"
+            >
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {scope.isSuper
                 ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 1000)}s${registryLive ? " · project list pulled from master sheet" : " · using built-in list"}.`
                 : scope.isAdmin
                 ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · syncing every ${Math.round(AUTO_REFRESH_MS / 1000)}s.`
                 : `Showing only work assigned to ${scope.profile?.full_name || "you"} across your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
             </p>
+            {lastSyncedAt && (
+              <div
+                className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                aria-live="polite"
+              >
+                <span
+                  aria-hidden
+                  className={`h-1.5 w-1.5 rounded-full ${anyFetching ? "animate-pulse bg-warning" : "bg-success"}`}
+                />
+                {anyFetching ? "Syncing" : "Live"} · updated {new Date(lastSyncedAt).toLocaleTimeString()}
+              </div>
+            )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Badge variant="outline" className="gap-1">
-                <Layers className="h-3 w-3" />
-                {payload?.data?.length ?? 0} rows
-              </Badge>
+
+          <div className="flex flex-col items-start gap-3 lg:items-end">
+            <Badge
+              variant="outline"
+              className="gap-1.5 rounded-full border-border bg-background/60 px-2.5 py-1 text-xs font-medium"
+            >
+              <Layers className="h-3 w-3" aria-hidden />
+              <span className="tabular-nums">{payload?.data?.length ?? 0}</span>
+              <span className="text-muted-foreground">rows</span>
+            </Badge>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               {!scope.isSuper && (
                 <ProjectAssignmentPicker
                   projects={allProjects}
@@ -1027,45 +1060,48 @@ export default function AgentDashboard() {
                 />
               )}
               <QuickAddDependencyDialog onAdded={refetchAll} />
-              <Button variant="outline" size="sm" onClick={refetchAll}>
-                <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} />
-                Sync
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refetchAll}
+                className="min-h-9 gap-1.5"
+                aria-label={anyFetching ? "Syncing data" : "Sync data now"}
+              >
+                <RefreshCw className={`h-4 w-4 ${anyFetching ? "animate-spin" : ""}`} aria-hidden />
+                <span>Sync</span>
               </Button>
-
-              <div className="inline-flex overflow-hidden rounded-md border border-border/60">
+              <div
+                className="inline-flex overflow-hidden rounded-md border border-border"
+                role="group"
+                aria-label="Export current view"
+              >
                 <Button
                   variant="ghost" size="sm"
-                  className="h-8 gap-1 rounded-none px-2.5 text-xs"
+                  className="h-9 gap-1.5 rounded-none px-3 text-xs"
                   onClick={exportScopedCSV}
                   disabled={!payload || filteredRows.length === 0}
-                  aria-label="Export current filtered view as CSV"
+                  aria-label={`Export ${filteredRows.length} filtered rows as CSV`}
                   title={`Export ${filteredRows.length} of ${rowIndex.length} rows (current filters) as CSV`}
                 >
-                  <Download className="h-3.5 w-3.5" /> CSV
+                  <Download className="h-3.5 w-3.5" aria-hidden /> CSV
                 </Button>
-                <div className="w-px bg-border/60" aria-hidden />
+                <div className="w-px bg-border" aria-hidden />
                 <Button
                   variant="ghost" size="sm"
-                  className="h-8 gap-1 rounded-none px-2.5 text-xs"
+                  className="h-9 gap-1.5 rounded-none px-3 text-xs"
                   onClick={exportScopedPDF}
                   disabled={!payload || filteredRows.length === 0}
-                  aria-label="Export current filtered view as PDF"
+                  aria-label={`Export ${filteredRows.length} filtered rows as PDF`}
                   title={`Export KPIs + ${filteredRows.length} of ${rowIndex.length} rows (current filters) as PDF`}
                 >
-                  <Download className="h-3.5 w-3.5" /> PDF
+                  <Download className="h-3.5 w-3.5" aria-hidden /> PDF
                 </Button>
               </div>
-
-
             </div>
-            {lastSyncedAt && (
-              <div className="text-[10px] text-muted-foreground">
-                Data as of {new Date(lastSyncedAt).toLocaleString()}
-              </div>
-            )}
           </div>
         </div>
-      </div>
+      </section>
+
 
       {needsOnboarding && (
         <Card className="border-primary/40 bg-primary/5">
@@ -1820,22 +1856,30 @@ function ProjectChip({ label, count, active, loading, error, onClick }: {
 }) {
   return (
     <button
-      type="button" onClick={onClick}
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={`Filter by ${label}${error ? " (error)" : loading ? " (loading)" : ""} · ${count} rows`}
       className={[
-        "group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+        "group inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         active
-          ? "border-primary/50 bg-primary/10 text-primary shadow-sm"
-          : "border-border/60 bg-background text-muted-foreground hover:border-primary/30 hover:text-foreground",
+          ? "border-foreground bg-foreground text-background shadow-sm"
+          : "border-border bg-card text-muted-foreground hover:border-foreground/40 hover:text-foreground",
       ].join(" ")}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${error ? "bg-rose-500" : loading ? "bg-amber-400 animate-pulse" : "bg-emerald-500"}`} />
-      {label}
-      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+      <span
+        aria-hidden
+        className={`h-1.5 w-1.5 rounded-full ${error ? "bg-destructive" : loading ? "animate-pulse bg-warning" : active ? "bg-background/80" : "bg-success"}`}
+      />
+      <span className="truncate">{label}</span>
+      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${active ? "bg-background/15 text-background" : "bg-muted text-muted-foreground"}`}>
         {count}
       </span>
     </button>
   );
 }
+
 
 // ────────────────── PERSON RESOLUTION DEBUG PANEL ──────────────────
 type PersonDiagnostics = {
