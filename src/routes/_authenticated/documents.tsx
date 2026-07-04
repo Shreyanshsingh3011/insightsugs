@@ -13,6 +13,8 @@ import {
   registerAndProcessDocument,
   deleteFolder,
 } from "@/lib/documents.functions";
+import { extractDocActions } from "@/lib/doc-action-extractor.functions";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -144,6 +146,14 @@ function DocumentsPage() {
     enabled: !!selectedDocId,
     queryFn: () => getDocFn({ data: { id: selectedDocId! } }),
   });
+
+  const extractFn = useServerFn(extractDocActions);
+  const extractMu = useMutation({
+    mutationFn: (docId: string) => extractFn({ data: { document_id: docId } }),
+    onSuccess: (r: any) => toast.success(`Extracted ${r.obligations_found} obligations · ${r.alerts_created} alerts · ${r.notifications} notifications`),
+    onError: (e: any) => toast.error(e?.message ?? "Extraction failed"),
+  });
+
 
   const createMu = useMutation({
     mutationFn: async (v: { name: string; parent_id: string | null }) =>
@@ -444,6 +454,20 @@ function DocumentsPage() {
                     Summary
                   </h4>
                   <p className="leading-relaxed">{doc.data.summary}</p>
+                </div>
+              )}
+              {isAdmin && doc.data.status === "ready" && (
+                <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                    Auto-extract obligations
+                  </p>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    AI scans this document for deadlines, penalties, deliverables — creates tracked alerts with page citations.
+                  </p>
+                  <Button size="sm" onClick={() => extractMu.mutate(doc.data.id)} disabled={extractMu.isPending}>
+                    {extractMu.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                    {extractMu.isPending ? "Extracting…" : "Extract obligations & deadlines"}
+                  </Button>
                 </div>
               )}
               {Array.isArray(doc.data.key_points) && doc.data.key_points.length > 0 && (

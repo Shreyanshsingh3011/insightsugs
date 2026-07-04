@@ -13,6 +13,7 @@ import {
 import { fetchDashboard, type DashboardData, type FlagEntry } from "@/lib/dashboard-data";
 import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
 import { sendAlert, getAlertByFlag, replyToAlert, resolveAlert } from "@/lib/alerts.functions";
+import { investigateDelay } from "@/lib/delay-root-cause.functions";
 import { listEmailGroups } from "@/lib/email-groups.functions";
 import { useIsAdmin } from "@/hooks/useSession";
 
@@ -192,6 +193,16 @@ function AlertDetails() {
     onError: (e: any) => toast.error(e?.message ?? "Failed to resolve"),
   });
 
+  const investigateFn = useServerFn(investigateDelay);
+  const investigateMut = useMutation({
+    mutationFn: () => investigateFn({ data: { alert_id: alertRow!.id } }),
+    onSuccess: (r: any) => {
+      toast.success(`Diagnosis posted · ${r.sibling_count} siblings · ${r.doc_count} doc excerpts`);
+      qc.invalidateQueries({ queryKey: ["alert", id] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Investigation failed"),
+  });
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -319,6 +330,11 @@ function AlertDetails() {
                     <Button size="sm" variant="outline" onClick={() => resolveMut.mutate()} disabled={resolveMut.isPending}>
                       <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                       {resolveMut.isPending ? "Resolving…" : "Mark resolved"}
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <Button size="sm" variant="secondary" onClick={() => investigateMut.mutate()} disabled={investigateMut.isPending}>
+                      {investigateMut.isPending ? "Investigating…" : "🔍 Auto-diagnose root cause"}
                     </Button>
                   )}
                 </div>

@@ -43,6 +43,8 @@ import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/pub
 import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/public/hooks/weekly-briefing'
 import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
+import { Route as ApiPublicHooksDelayRootCauseRouteImport } from './routes/api/public/hooks/delay-root-cause'
+import { Route as ApiPublicHooksDailyStandupRouteImport } from './routes/api/public/hooks/daily-standup'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
 import { Route as ApiPublicHooksAgentWatchersRouteImport } from './routes/api/public/hooks/agent-watchers'
 import { Route as AuthenticatedAgentStageKeyRouteImport } from './routes/_authenticated/agent.stage.$key'
@@ -232,6 +234,18 @@ const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
   path: '/api/public/hooks/escalate',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksDelayRootCauseRoute =
+  ApiPublicHooksDelayRootCauseRouteImport.update({
+    id: '/api/public/hooks/delay-root-cause',
+    path: '/api/public/hooks/delay-root-cause',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksDailyStandupRoute =
+  ApiPublicHooksDailyStandupRouteImport.update({
+    id: '/api/public/hooks/daily-standup',
+    path: '/api/public/hooks/daily-standup',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksConcernNudgesRoute =
   ApiPublicHooksConcernNudgesRouteImport.update({
     id: '/api/public/hooks/concern-nudges',
@@ -308,6 +322,8 @@ export interface FileRoutesByFullPath {
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
+  '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
+  '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
@@ -348,6 +364,8 @@ export interface FileRoutesByTo {
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
+  '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
+  '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
@@ -392,6 +410,8 @@ export interface FileRoutesById {
   '/_authenticated/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
+  '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
+  '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
@@ -436,6 +456,8 @@ export interface FileRouteTypes {
     | '/agent/stage/$key'
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
+    | '/api/public/hooks/daily-standup'
+    | '/api/public/hooks/delay-root-cause'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/weekly-briefing'
@@ -476,6 +498,8 @@ export interface FileRouteTypes {
     | '/agent/stage/$key'
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
+    | '/api/public/hooks/daily-standup'
+    | '/api/public/hooks/delay-root-cause'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/weekly-briefing'
@@ -519,6 +543,8 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/stage/$key'
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
+    | '/api/public/hooks/daily-standup'
+    | '/api/public/hooks/delay-root-cause'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/weekly-briefing'
@@ -536,6 +562,8 @@ export interface RootRouteChildren {
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
+  ApiPublicHooksDailyStandupRoute: typeof ApiPublicHooksDailyStandupRoute
+  ApiPublicHooksDelayRootCauseRoute: typeof ApiPublicHooksDelayRootCauseRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
   ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
   ApiPublicHooksWeeklyBriefingRoute: typeof ApiPublicHooksWeeklyBriefingRoute
@@ -785,6 +813,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksEscalateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/delay-root-cause': {
+      id: '/api/public/hooks/delay-root-cause'
+      path: '/api/public/hooks/delay-root-cause'
+      fullPath: '/api/public/hooks/delay-root-cause'
+      preLoaderRoute: typeof ApiPublicHooksDelayRootCauseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/daily-standup': {
+      id: '/api/public/hooks/daily-standup'
+      path: '/api/public/hooks/daily-standup'
+      fullPath: '/api/public/hooks/daily-standup'
+      preLoaderRoute: typeof ApiPublicHooksDailyStandupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/concern-nudges': {
       id: '/api/public/hooks/concern-nudges'
       path: '/api/public/hooks/concern-nudges'
@@ -937,6 +979,8 @@ const rootRouteChildren: RootRouteChildren = {
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
+  ApiPublicHooksDailyStandupRoute: ApiPublicHooksDailyStandupRoute,
+  ApiPublicHooksDelayRootCauseRoute: ApiPublicHooksDelayRootCauseRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
   ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
   ApiPublicHooksWeeklyBriefingRoute: ApiPublicHooksWeeklyBriefingRoute,
