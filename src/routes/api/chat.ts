@@ -7,7 +7,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { UIMessage, tool as ToolFn } from "ai";
 import { z } from "zod";
-import { getLovableAiGatewayRunId } from "@/lib/ai-gateway.server";
+const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
+function getLovableAiGatewayRunId(request: Request) {
+  return request.headers.get(LOVABLE_AIG_RUN_ID_HEADER)?.trim() || undefined;
+}
+
 import {
   startAgentRun,
   finishAgentRun,
