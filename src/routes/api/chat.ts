@@ -60,9 +60,9 @@ function buildTools(
   ctx: Ctx,
   run: { id?: string; toolCalls: Array<{ name: string; input: unknown; output?: unknown; ms?: number }> } | null,
   actorId: string | null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tool: any,
+  tool: typeof ToolFn,
 ) {
+
 
 
 
