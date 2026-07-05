@@ -5,24 +5,16 @@
 // project's rows/rankings/flags with each request. Read-only tools operate
 // on that snapshot; write tools (added in step 3) will queue pending_actions.
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  convertToModelMessages,
-  streamText,
-  stepCountIs,
-  tool,
-  type UIMessage,
-} from "ai";
+import type { UIMessage, Tool } from "ai";
 import { z } from "zod";
-import {
-  createLovableAiGatewayProvider,
-  getLovableAiGatewayRunId,
-} from "@/lib/ai-gateway.server";
+import { getLovableAiGatewayRunId } from "@/lib/ai-gateway.server";
 import {
   startAgentRun,
   finishAgentRun,
   recordToolCall,
 } from "@/lib/agent-runs.server";
 import { AGENT_REGISTRY, routeToAgent } from "@/lib/agent-registry";
+
 
 type Ctx = {
   projectId?: string;
