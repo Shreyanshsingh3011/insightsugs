@@ -332,7 +332,19 @@ export const Route = createFileRoute("/api/chat")({
           input: { question: lastText, project: ctx.projectLabel ?? ctx.projectId ?? null },
         });
 
-        const tools = buildTools(ctx, run);
+        const tools = buildTools(ctx, run, body.actorId ?? null);
+
+        // Emit a chat-started analytics event (best-effort, admin bypass).
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.from("agent_run_events").insert({
+            actor_id: body.actorId ?? null,
+            agent: "chatbot",
+            event: "chat_sent",
+            run_id: run?.id ?? null,
+            metadata: { project: ctx.projectLabel ?? ctx.projectId ?? null, chars: lastText.length },
+          });
+        } catch { /* best-effort */ }
 
         try {
           const contextPreamble = `Current project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Rows: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}.`;
