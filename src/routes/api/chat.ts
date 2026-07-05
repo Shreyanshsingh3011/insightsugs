@@ -389,7 +389,7 @@ export const Route = createFileRoute("/api/chat")({
           } catch { /* best-effort */ }
         }
 
-        const allTools = buildTools(ctx, run, body.actorId ?? null);
+        const allTools = buildTools(ctx, run, body.actorId ?? null, tool);
         const tools = Object.fromEntries(
           Object.entries(allTools).filter(([name]) => agentSpec.toolAllowList.includes(name)),
         );
