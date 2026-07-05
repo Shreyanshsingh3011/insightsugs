@@ -52,6 +52,9 @@ export default function AutonomousAgentsPanel() {
             <Link to="/agent/evals" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
               <FlaskConical className="h-3 w-3" /> Evals
             </Link>
+            <Link to="/agent/custom" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
+              <Webhook className="h-3 w-3" /> Custom
+            </Link>
           </div>
         </CardTitle>
       </CardHeader>
