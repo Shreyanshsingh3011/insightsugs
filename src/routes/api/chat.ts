@@ -281,6 +281,39 @@ function buildTools(
         return res;
       },
     }),
+
+    rememberFact: tool({
+      description:
+        "Save a durable fact or preference about this user for future sessions. Use sparingly — only when the user explicitly says 'remember', 'always', 'from now on', or reveals a stable preference.",
+      inputSchema: z.object({
+        kind: z.enum(["preference", "person", "project", "note"]).describe("Category"),
+        key: z.string().describe("Short slug key, e.g. 'default_project'"),
+        value: z.string().describe("The fact/preference in plain text"),
+        importance: z.number().describe("1 = trivial, 5 = critical (default 2)"),
+      }),
+      execute: async ({ kind, key, value, importance }) => {
+        if (!actorId) return { saved: false, reason: "not authenticated" };
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { error } = await supabaseAdmin.from("agent_memory").upsert(
+            {
+              user_id: actorId,
+              kind,
+              key: key.slice(0, 120),
+              value: value.slice(0, 1000),
+              importance: Math.max(1, Math.min(importance ?? 2, 5)),
+              source: "chatbot",
+            },
+            { onConflict: "user_id,kind,key" },
+          );
+          const out = error ? { saved: false, error: error.message } : { saved: true };
+          recordToolCall(run, { name: "rememberFact", input: { kind, key }, output: out });
+          return out;
+        } catch (e) {
+          return { saved: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+    }),
   };
 }
 
