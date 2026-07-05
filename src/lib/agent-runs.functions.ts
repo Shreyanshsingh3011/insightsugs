@@ -3,16 +3,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+
 export type AgentRunRow = {
   id: string;
   agent: string;
   trigger: string;
   status: string;
   actor_id: string | null;
-  input: unknown;
-  output: unknown;
+  input: Json;
+  output: Json;
   error: string | null;
-  tool_calls: unknown;
+  tool_calls: Json;
   tokens_in: number | null;
   tokens_out: number | null;
   latency_ms: number | null;
@@ -32,7 +34,7 @@ export const listAgentRuns = createServerFn({ method: "POST" })
       scope: raw.scope === "all" ? "all" : "mine",
     }),
   )
-  .handler(async ({ data, context }): Promise<AgentRunRow[]> => {
+  .handler(async ({ data, context }) => {
     let q = context.supabase
       .from("agent_runs")
       .select("*")

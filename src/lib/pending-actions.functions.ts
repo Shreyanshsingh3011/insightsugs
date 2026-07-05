@@ -5,6 +5,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+
 export type PendingAction = {
   id: string;
   kind: string;
@@ -12,7 +14,7 @@ export type PendingAction = {
   title: string | null;
   summary: string;
   rationale: string | null;
-  payload: unknown;
+  payload: Json;
   proposed_by: string | null;
   assigned_to: string | null;
   decided_by: string | null;
@@ -31,7 +33,7 @@ export const listPendingActions = createServerFn({ method: "POST" })
     status: StatusEnum.parse(raw.status ?? "pending"),
     limit: Math.min(Math.max(raw.limit ?? 50, 1), 200),
   }))
-  .handler(async ({ data, context }): Promise<PendingAction[]> => {
+  .handler(async ({ data, context }) => {
     let q = context.supabase
       .from("pending_actions")
       .select("*")
