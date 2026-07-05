@@ -373,9 +373,11 @@ export const Route = createFileRoute("/api/chat")({
             },
           });
 
-          return result.toUIMessageStreamResponse({
+          const resp = result.toUIMessageStreamResponse({
             originalMessages: messages,
           });
+          if (run?.id) resp.headers.set("x-agent-run-id", run.id);
+          return resp;
         } catch (e) {
           await finishAgentRun(run, {
             status: "failed",
