@@ -58,7 +58,7 @@
     "@tanstack/router-plugin": "^1.167.28",
     "@tanstack/zod-adapter": "^1.167.0",
     "@xyflow/react": "^12.10.2",
-    "ai": "^6.0.185",
+    "ai": "^7.0.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
