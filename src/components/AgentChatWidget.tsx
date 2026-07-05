@@ -257,6 +257,48 @@ export default function AgentChatWidget({
                 </Message>
               ))}
 
+              {status === "ready" && lastRunId && messages.some((m) => m.role === "assistant") ? (
+                <div className="flex items-center gap-2 pl-2 pt-1">
+                  <span className="text-[10px] text-muted-foreground">Was this helpful?</span>
+                  <button
+                    type="button"
+                    aria-label="Thumbs up"
+                    disabled={!!feedbackGiven[lastRunId]}
+                    onClick={() => {
+                      const rid = lastRunId;
+                      setFeedbackGiven((f) => ({ ...f, [rid]: 1 }));
+                      feedbackMut({ data: { runId: rid, rating: 1 } })
+                        .then(() => toast.success("Thanks!"))
+                        .catch(() => setFeedbackGiven((f) => { const n = { ...f }; delete n[rid]; return n; }));
+                    }}
+                    className={cn(
+                      "rounded p-1 hover:bg-muted transition",
+                      feedbackGiven[lastRunId] === 1 && "text-emerald-500 bg-emerald-500/10",
+                    )}
+                  >
+                    <ThumbsUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Thumbs down"
+                    disabled={!!feedbackGiven[lastRunId]}
+                    onClick={() => {
+                      const rid = lastRunId;
+                      setFeedbackGiven((f) => ({ ...f, [rid]: -1 }));
+                      feedbackMut({ data: { runId: rid, rating: -1 } })
+                        .then(() => toast.success("Noted."))
+                        .catch(() => setFeedbackGiven((f) => { const n = { ...f }; delete n[rid]; return n; }));
+                    }}
+                    className={cn(
+                      "rounded p-1 hover:bg-muted transition",
+                      feedbackGiven[lastRunId] === -1 && "text-destructive bg-destructive/10",
+                    )}
+                  >
+                    <ThumbsDown className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
+
               {status === "submitted" ? (
                 <div className="px-1 py-2">
                   <Shimmer>Thinking…</Shimmer>
