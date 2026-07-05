@@ -21,6 +21,7 @@ import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedNotificationsRouteImport } from './routes/_authenticated/notifications'
 import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authenticated/my-activities'
 import { Route as AuthenticatedInsightsRouteImport } from './routes/_authenticated/insights'
+import { Route as AuthenticatedIngestRouteImport } from './routes/_authenticated/ingest'
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticated/concerns'
@@ -121,6 +122,11 @@ const AuthenticatedMyActivitiesRoute =
 const AuthenticatedInsightsRoute = AuthenticatedInsightsRouteImport.update({
   id: '/insights',
   path: '/insights',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedIngestRoute = AuthenticatedIngestRouteImport.update({
+  id: '/ingest',
+  path: '/ingest',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedDocumentsRoute = AuthenticatedDocumentsRouteImport.update({
@@ -357,6 +363,7 @@ export interface FileRoutesByFullPath {
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
+  '/ingest': typeof AuthenticatedIngestRoute
   '/insights': typeof AuthenticatedInsightsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
@@ -408,6 +415,7 @@ export interface FileRoutesByTo {
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
   '/documents': typeof AuthenticatedDocumentsRoute
+  '/ingest': typeof AuthenticatedIngestRoute
   '/insights': typeof AuthenticatedInsightsRoute
   '/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/notifications': typeof AuthenticatedNotificationsRoute
@@ -463,6 +471,7 @@ export interface FileRoutesById {
   '/_authenticated/concerns': typeof AuthenticatedConcernsRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
+  '/_authenticated/ingest': typeof AuthenticatedIngestRoute
   '/_authenticated/insights': typeof AuthenticatedInsightsRoute
   '/_authenticated/my-activities': typeof AuthenticatedMyActivitiesRoute
   '/_authenticated/notifications': typeof AuthenticatedNotificationsRoute
@@ -518,6 +527,7 @@ export interface FileRouteTypes {
     | '/concerns'
     | '/copilot'
     | '/documents'
+    | '/ingest'
     | '/insights'
     | '/my-activities'
     | '/notifications'
@@ -569,6 +579,7 @@ export interface FileRouteTypes {
     | '/concerns'
     | '/copilot'
     | '/documents'
+    | '/ingest'
     | '/insights'
     | '/my-activities'
     | '/notifications'
@@ -623,6 +634,7 @@ export interface FileRouteTypes {
     | '/_authenticated/concerns'
     | '/_authenticated/copilot'
     | '/_authenticated/documents'
+    | '/_authenticated/ingest'
     | '/_authenticated/insights'
     | '/_authenticated/my-activities'
     | '/_authenticated/notifications'
@@ -774,6 +786,13 @@ declare module '@tanstack/react-router' {
       path: '/insights'
       fullPath: '/insights'
       preLoaderRoute: typeof AuthenticatedInsightsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/ingest': {
+      id: '/_authenticated/ingest'
+      path: '/ingest'
+      fullPath: '/ingest'
+      preLoaderRoute: typeof AuthenticatedIngestRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/documents': {
@@ -1126,6 +1145,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedConcernsRoute: typeof AuthenticatedConcernsRoute
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
+  AuthenticatedIngestRoute: typeof AuthenticatedIngestRoute
   AuthenticatedInsightsRoute: typeof AuthenticatedInsightsRoute
   AuthenticatedMyActivitiesRoute: typeof AuthenticatedMyActivitiesRoute
   AuthenticatedNotificationsRoute: typeof AuthenticatedNotificationsRoute
@@ -1146,6 +1166,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedConcernsRoute: AuthenticatedConcernsRoute,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
+  AuthenticatedIngestRoute: AuthenticatedIngestRoute,
   AuthenticatedInsightsRoute: AuthenticatedInsightsRoute,
   AuthenticatedMyActivitiesRoute: AuthenticatedMyActivitiesRoute,
   AuthenticatedNotificationsRoute: AuthenticatedNotificationsRoute,

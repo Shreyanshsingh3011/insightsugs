@@ -70,10 +70,14 @@ function SheetsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="mr-1.5 h-4 w-4" /> Add API endpoint
+          <Button size="sm" asChild>
+            <Link to="/ingest"><Plus className="mr-1.5 h-4 w-4" /> Ingest data</Link>
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+            <Link2 className="mr-1.5 h-4 w-4" /> Quick URL
           </Button>
         </div>
+
       </div>
 
       {sheets.isLoading ? (
