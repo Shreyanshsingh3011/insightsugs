@@ -626,11 +626,11 @@ export default function AgentDashboard() {
       flags,
       totals: {
         rows: d.n,
-        delayed: d.delayedCount,
-        completed: d.completedCount,
+        delayed: d.totals.delayed,
+        completed: d.totals.completed,
         health_score: d.healthScore,
       },
-      riskScore: d.n ? Math.round((d.delayedCount / d.n) * 100) : 0,
+      riskScore: d.n ? Math.round((d.totals.delayed / d.n) * 100) : 0,
     };
   }, [selected, projects, payload, d]);
 
