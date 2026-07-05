@@ -689,6 +689,54 @@ export type Database = {
         }
         Relationships: []
       }
+      custom_agents: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          last_run_at: string | null
+          name: string
+          owner_id: string
+          run_count: number
+          system_prompt: string
+          tool_allowlist: string[]
+          updated_at: string
+          webhook_enabled: boolean
+          webhook_secret: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_run_at?: string | null
+          name: string
+          owner_id: string
+          run_count?: number
+          system_prompt: string
+          tool_allowlist?: string[]
+          updated_at?: string
+          webhook_enabled?: boolean
+          webhook_secret?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_run_at?: string | null
+          name?: string
+          owner_id?: string
+          run_count?: number
+          system_prompt?: string
+          tool_allowlist?: string[]
+          updated_at?: string
+          webhook_enabled?: boolean
+          webhook_secret?: string
+        }
+        Relationships: []
+      }
       delay_reasons: {
         Row: {
           active: boolean
@@ -1898,6 +1946,53 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      webhook_events: {
+        Row: {
+          agent_id: string
+          created_at: string
+          error: string | null
+          id: string
+          latency_ms: number | null
+          output: string | null
+          payload: Json | null
+          run_id: string | null
+          source_ip: string | null
+          status: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          output?: string | null
+          payload?: Json | null
+          run_id?: string | null
+          source_ip?: string | null
+          status: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          output?: string | null
+          payload?: Json | null
+          run_id?: string | null
+          source_ip?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_events_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "custom_agents"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       weekly_briefings: {
         Row: {

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Bot, Zap, FileSearch, Loader2, Activity, ShieldCheck, LineChart, Brain, FlaskConical } from "lucide-react";
+import { Bot, Zap, FileSearch, Loader2, Activity, ShieldCheck, LineChart, Brain, FlaskConical, Webhook } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { runStandupAgent } from "@/lib/standup-agent.functions";
 import { investigateDelay } from "@/lib/delay-root-cause.functions";
@@ -51,6 +51,9 @@ export default function AutonomousAgentsPanel() {
             </Link>
             <Link to="/agent/evals" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
               <FlaskConical className="h-3 w-3" /> Evals
+            </Link>
+            <Link to="/agent/custom" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
+              <Webhook className="h-3 w-3" /> Custom
             </Link>
           </div>
         </CardTitle>

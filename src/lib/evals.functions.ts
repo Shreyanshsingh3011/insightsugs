@@ -1,9 +1,9 @@
 // Server functions for the evaluation harness (Step 6).
+// AI SDK deps are lazy-loaded inside the runEvalSuite handler to keep the
+// SSR bundle small.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { generateText, stepCountIs, tool } from "ai";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 
 export type EvalCase = {
   id: string;
@@ -93,6 +93,10 @@ export const runEvalSuite = createServerFn({ method: "POST" })
       .select("*")
       .eq("active", true);
     if (error) throw new Error(error.message);
+    const [{ generateText, stepCountIs, tool }, { createLovableAiGatewayProvider }] = await Promise.all([
+      import("ai"),
+      import("@/lib/ai-gateway.server"),
+    ]);
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-3-flash-preview");
 
