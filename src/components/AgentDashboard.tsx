@@ -576,6 +576,64 @@ export default function AgentDashboard() {
   // can show "used N rows" chips beneath each assistant reply.
   type Citation = { activity: string; person: string; project: string; stage: string; status: string; delay: number };
   type ChatMsg = { role: "user" | "assistant"; text: string; citations?: Citation[] };
+  const { userId } = useSession();
+
+  // Compact snapshot of the current project state, sent to /api/chat so the
+  // agent's tools can filter/aggregate the same data the user sees.
+  const agentChatContext = useMemo<AgentChatContext>(() => {
+    const label = selected === "all"
+      ? "All projects"
+      : projects.find(p => p.id === selected)?.label ?? selected;
+    const rows = (payload?.data ?? []).slice(0, 500).map(r => ({
+      activity: pick(r, "Activity List", "Process Descriptions", "Process"),
+      person: pick(r, "Responsible Person", "Responsibility", "approvers name"),
+      stage: pick(r, "Stages", "Stages of Process"),
+      status: pick(r, "Status Category", "Status as on Date"),
+      criticality: pick(r, "Criticality"),
+      tat: num(r["TAT"]),
+      days_taken: num(r["Days Taken"]),
+      delay: num(r["Delay in Days"]),
+    }));
+    const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
+      person: p.person,
+      delay_count: p.delayed,
+      total_overdue_days: p.delayDays,
+      activities: [],
+    }));
+    const tatRows = (d.overdue ?? []).slice(0, 60).map(o => ({
+      activity: o.activity,
+      tat: o.tat,
+      days_taken: o.taken,
+      delta: o.delay,
+      status: o.status,
+      person: o.person,
+    }));
+    const flags = (d.overdue ?? []).slice(0, 40).map((o, i) => ({
+      id: `f-${i}`,
+      activity: o.activity,
+      severity: o.delay > 60 ? "critical" : o.delay > 20 ? "warning" : "info",
+      status: o.status,
+      stage: o.stage,
+      reason: `${o.delay}d overdue · TAT ${o.tat}d vs taken ${o.taken}d`,
+      flagged_to: { person: o.person },
+    }));
+    return {
+      projectId: selected,
+      projectLabel: label,
+      rows,
+      personRanking,
+      tatRows,
+      flags,
+      totals: {
+        rows: d.n,
+        delayed: d.delayedCount,
+        completed: d.completedCount,
+        health_score: d.healthScore,
+      },
+      riskScore: d.n ? Math.round((d.delayedCount / d.n) * 100) : 0,
+    };
+  }, [selected, projects, payload, d]);
+
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
