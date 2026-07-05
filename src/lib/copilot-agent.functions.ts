@@ -6,8 +6,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
-import { generateText, stepCountIs, tool } from "ai";
+// Heavy AI SDK + gateway modules are lazy-loaded inside the handler to keep
+// them out of the SSR entry bundle.
+
 
 // -------------------- helpers --------------------
 
