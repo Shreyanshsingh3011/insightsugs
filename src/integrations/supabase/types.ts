@@ -190,6 +190,78 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_preferences: {
+        Row: {
+          key: string
+          updated_at: string
+          user_id: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          user_id: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          user_id?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      agent_runs: {
+        Row: {
+          actor_id: string | null
+          agent: string
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          input: Json
+          latency_ms: number | null
+          output: Json | null
+          status: string
+          tokens_in: number | null
+          tokens_out: number | null
+          tool_calls: Json
+          trigger: string
+        }
+        Insert: {
+          actor_id?: string | null
+          agent: string
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          input?: Json
+          latency_ms?: number | null
+          output?: Json | null
+          status?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+          tool_calls?: Json
+          trigger?: string
+        }
+        Update: {
+          actor_id?: string | null
+          agent?: string
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          input?: Json
+          latency_ms?: number | null
+          output?: Json | null
+          status?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+          tool_calls?: Json
+          trigger?: string
+        }
+        Relationships: []
+      }
       alert_messages: {
         Row: {
           alert_id: string
@@ -1067,6 +1139,62 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      pending_actions: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          execution_error: string | null
+          id: string
+          kind: string
+          payload: Json
+          proposed_by: string | null
+          run_id: string | null
+          status: string
+          summary: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          execution_error?: string | null
+          id?: string
+          kind: string
+          payload: Json
+          proposed_by?: string | null
+          run_id?: string | null
+          status?: string
+          summary: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          execution_error?: string | null
+          id?: string
+          kind?: string
+          payload?: Json
+          proposed_by?: string | null
+          run_id?: string | null
+          status?: string
+          summary?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_actions_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
