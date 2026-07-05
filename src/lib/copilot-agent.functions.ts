@@ -157,6 +157,17 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
 
+    // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
+    const [
+      { generateText, stepCountIs, tool },
+      { createLovableAiGatewayProvider },
+    ] = await Promise.all([
+      import("ai"),
+      import("@/lib/ai-gateway"),
+    ]);
+
+
+
     // 1) Resolve sheet + document metadata (labels for citations, IDs for scope).
     const [regsRes, docsRes] = await Promise.all([
       data.sheetIds.length
