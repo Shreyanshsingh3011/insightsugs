@@ -27,7 +27,9 @@ import type {
   HighlighterGeneric,
   ThemedToken,
 } from "shiki";
-import { createHighlighter } from "shiki";
+// shiki is heavy — dynamic-import inside getHighlighter() to keep it out of
+// the SSR entry bundle.
+
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // oxlint-disable-next-line eslint(no-bitwise)
