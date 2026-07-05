@@ -62,6 +62,8 @@ function buildTools(
   actorId: string | null,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tool: any,
+) {
+
 
 
   const timed = <T,>(name: string, input: unknown, fn: () => T): T => {
