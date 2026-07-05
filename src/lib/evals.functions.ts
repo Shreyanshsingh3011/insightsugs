@@ -93,6 +93,10 @@ export const runEvalSuite = createServerFn({ method: "POST" })
       .select("*")
       .eq("active", true);
     if (error) throw new Error(error.message);
+    const [{ generateText, stepCountIs, tool }, { createLovableAiGatewayProvider }] = await Promise.all([
+      import("ai"),
+      import("@/lib/ai-gateway.server"),
+    ]);
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-3-flash-preview");
 
