@@ -346,8 +346,19 @@ export const Route = createFileRoute("/api/chat")({
 
         const ctx: Ctx = body.context ?? {};
         const runIdIncoming = getLovableAiGatewayRunId(request);
+
+        // Lazy-load heavy modules (ai SDK + gateway provider) only when needed
+        // — keeps them out of the SSR entry bundle.
+        const [
+          { convertToModelMessages, streamText, stepCountIs, tool },
+          { createLovableAiGatewayProvider },
+        ] = await Promise.all([
+          import("ai"),
+          import("@/lib/ai-gateway.server"),
+        ]);
         const gateway = createLovableAiGatewayProvider(key, runIdIncoming);
         const model = gateway("google/gemini-3-flash-preview");
+
 
         const lastUser = messages[messages.length - 1];
         const lastText =
