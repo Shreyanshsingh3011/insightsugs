@@ -322,27 +322,34 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
-
-const streamdownPlugins = { cjk, code, math, mermaid };
+export type MessageResponseProps = ComponentProps<typeof StreamdownLazy>;
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      plugins={streamdownPlugins}
-      {...props}
-    />
+  ({ className, children, ...props }: MessageResponseProps) => (
+    <Suspense
+      fallback={
+        <div
+          className={cn(
+            "whitespace-pre-wrap text-sm text-foreground/80",
+            className,
+          )}
+        >
+          {typeof children === "string" ? children : null}
+        </div>
+      }
+    >
+      <StreamdownLazy className={className} {...props}>
+        {children}
+      </StreamdownLazy>
+    </Suspense>
   ),
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating
+    nextProps.isAnimating === prevProps.isAnimating,
 );
 
 MessageResponse.displayName = "MessageResponse";
+
 
 export type MessageToolbarProps = ComponentProps<"div">;
 
