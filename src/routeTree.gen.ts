@@ -33,7 +33,9 @@ import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/em
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAgentRunsRouteImport } from './routes/_authenticated/agent.runs'
+import { Route as AuthenticatedAgentMemoryRouteImport } from './routes/_authenticated/agent.memory'
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
+import { Route as AuthenticatedAgentEvalsRouteImport } from './routes/_authenticated/agent.evals'
 import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authenticated/agent.approvals'
 import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
@@ -181,9 +183,20 @@ const AuthenticatedAgentRunsRoute = AuthenticatedAgentRunsRouteImport.update({
   path: '/runs',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
+const AuthenticatedAgentMemoryRoute =
+  AuthenticatedAgentMemoryRouteImport.update({
+    id: '/memory',
+    path: '/memory',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 const AuthenticatedAgentInboxRoute = AuthenticatedAgentInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
+  getParentRoute: () => AuthenticatedAgentRoute,
+} as any)
+const AuthenticatedAgentEvalsRoute = AuthenticatedAgentEvalsRouteImport.update({
+  id: '/evals',
+  path: '/evals',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
 const AuthenticatedAgentApprovalsRoute =
@@ -345,7 +358,9 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
+  '/agent/memory': typeof AuthenticatedAgentMemoryRoute
   '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -392,7 +407,9 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
+  '/agent/memory': typeof AuthenticatedAgentMemoryRoute
   '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -443,7 +460,9 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/_authenticated/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/_authenticated/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
+  '/_authenticated/agent/memory': typeof AuthenticatedAgentMemoryRoute
   '/_authenticated/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
@@ -494,7 +513,9 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/agent/activity'
     | '/agent/approvals'
+    | '/agent/evals'
     | '/agent/inbox'
+    | '/agent/memory'
     | '/agent/runs'
     | '/alerts/$id'
     | '/sheets/$sheetId'
@@ -541,7 +562,9 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/agent/activity'
     | '/agent/approvals'
+    | '/agent/evals'
     | '/agent/inbox'
+    | '/agent/memory'
     | '/agent/runs'
     | '/alerts/$id'
     | '/sheets/$sheetId'
@@ -591,7 +614,9 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/agent/activity'
     | '/_authenticated/agent/approvals'
+    | '/_authenticated/agent/evals'
     | '/_authenticated/agent/inbox'
+    | '/_authenticated/agent/memory'
     | '/_authenticated/agent/runs'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
@@ -808,11 +833,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentRunsRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/_authenticated/agent/memory': {
+      id: '/_authenticated/agent/memory'
+      path: '/memory'
+      fullPath: '/agent/memory'
+      preLoaderRoute: typeof AuthenticatedAgentMemoryRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/agent/inbox': {
       id: '/_authenticated/agent/inbox'
       path: '/inbox'
       fullPath: '/agent/inbox'
       preLoaderRoute: typeof AuthenticatedAgentInboxRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/agent/evals': {
+      id: '/_authenticated/agent/evals'
+      path: '/evals'
+      fullPath: '/agent/evals'
+      preLoaderRoute: typeof AuthenticatedAgentEvalsRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
     '/_authenticated/agent/approvals': {
@@ -982,7 +1021,9 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentActivityRoute: typeof AuthenticatedAgentActivityRoute
   AuthenticatedAgentApprovalsRoute: typeof AuthenticatedAgentApprovalsRoute
+  AuthenticatedAgentEvalsRoute: typeof AuthenticatedAgentEvalsRoute
   AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
+  AuthenticatedAgentMemoryRoute: typeof AuthenticatedAgentMemoryRoute
   AuthenticatedAgentRunsRoute: typeof AuthenticatedAgentRunsRoute
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
   AuthenticatedAgentKpiIdRoute: typeof AuthenticatedAgentKpiIdRoute
@@ -995,7 +1036,9 @@ interface AuthenticatedAgentRouteChildren {
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentActivityRoute: AuthenticatedAgentActivityRoute,
   AuthenticatedAgentApprovalsRoute: AuthenticatedAgentApprovalsRoute,
+  AuthenticatedAgentEvalsRoute: AuthenticatedAgentEvalsRoute,
   AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,
+  AuthenticatedAgentMemoryRoute: AuthenticatedAgentMemoryRoute,
   AuthenticatedAgentRunsRoute: AuthenticatedAgentRunsRoute,
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
   AuthenticatedAgentKpiIdRoute: AuthenticatedAgentKpiIdRoute,

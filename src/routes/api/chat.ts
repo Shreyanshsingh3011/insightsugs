@@ -22,6 +22,7 @@ import {
   finishAgentRun,
   recordToolCall,
 } from "@/lib/agent-runs.server";
+import { AGENT_REGISTRY, routeToAgent } from "@/lib/agent-registry";
 
 type Ctx = {
   projectId?: string;
@@ -280,6 +281,39 @@ function buildTools(
         return res;
       },
     }),
+
+    rememberFact: tool({
+      description:
+        "Save a durable fact or preference about this user for future sessions. Use sparingly — only when the user explicitly says 'remember', 'always', 'from now on', or reveals a stable preference.",
+      inputSchema: z.object({
+        kind: z.enum(["preference", "person", "project", "note"]).describe("Category"),
+        key: z.string().describe("Short slug key, e.g. 'default_project'"),
+        value: z.string().describe("The fact/preference in plain text"),
+        importance: z.number().describe("1 = trivial, 5 = critical (default 2)"),
+      }),
+      execute: async ({ kind, key, value, importance }) => {
+        if (!actorId) return { saved: false, reason: "not authenticated" };
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { error } = await supabaseAdmin.from("agent_memory").upsert(
+            {
+              user_id: actorId,
+              kind,
+              key: key.slice(0, 120),
+              value: value.slice(0, 1000),
+              importance: Math.max(1, Math.min(importance ?? 2, 5)),
+              source: "chatbot",
+            },
+            { onConflict: "user_id,kind,key" },
+          );
+          const out = error ? { saved: false, error: error.message } : { saved: true };
+          recordToolCall(run, { name: "rememberFact", input: { kind, key }, output: out });
+          return out;
+        } catch (e) {
+          return { saved: false, error: e instanceof Error ? e.message : String(e) };
+        }
+      },
+    }),
   };
 }
 
@@ -325,29 +359,67 @@ export const Route = createFileRoute("/api/chat")({
             .join(" ")
             .slice(0, 500) ?? "";
 
+        // Route to the right specialist based on the latest user message.
+        const routedTo = routeToAgent(lastText);
+        const agentSpec = AGENT_REGISTRY[routedTo];
+
         const run = await startAgentRun({
-          agent: "chatbot",
+          agent: `chatbot:${routedTo}`,
           trigger: "chat",
           actorId: body.actorId ?? null,
-          input: { question: lastText, project: ctx.projectLabel ?? ctx.projectId ?? null },
+          input: { question: lastText, project: ctx.projectLabel ?? ctx.projectId ?? null, routed_to: routedTo },
         });
 
-        const tools = buildTools(ctx, run, body.actorId ?? null);
+        // Persist routing metadata for observability.
+        if (run?.id) {
+          try {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            await supabaseAdmin
+              .from("agent_runs")
+              .update({ routed_to: routedTo })
+              .eq("id", run.id);
+          } catch { /* best-effort */ }
+        }
+
+        const allTools = buildTools(ctx, run, body.actorId ?? null);
+        const tools = Object.fromEntries(
+          Object.entries(allTools).filter(([name]) => agentSpec.toolAllowList.includes(name)),
+        );
+
+        // Load top user memories (best-effort).
+        let memoryBlock = "";
+        if (body.actorId) {
+          try {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            const { data: mem } = await supabaseAdmin
+              .from("agent_memory")
+              .select("kind,key,value,importance")
+              .eq("user_id", body.actorId)
+              .order("importance", { ascending: false })
+              .order("updated_at", { ascending: false })
+              .limit(15);
+            if (mem && mem.length > 0) {
+              memoryBlock =
+                "\n\nKNOWN USER FACTS (from memory — respect these):\n" +
+                mem.map((m) => `- [${m.kind}:${m.key}] ${m.value}`).join("\n");
+            }
+          } catch { /* best-effort */ }
+        }
 
         // Emit a chat-started analytics event (best-effort, admin bypass).
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           await supabaseAdmin.from("agent_run_events").insert({
             actor_id: body.actorId ?? null,
-            agent: "chatbot",
+            agent: `chatbot:${routedTo}`,
             event: "chat_sent",
             run_id: run?.id ?? null,
-            metadata: { project: ctx.projectLabel ?? ctx.projectId ?? null, chars: lastText.length },
+            metadata: { project: ctx.projectLabel ?? ctx.projectId ?? null, chars: lastText.length, routed_to: routedTo },
           });
         } catch { /* best-effort */ }
 
         try {
-          const contextPreamble = `Current project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Rows: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}.`;
+          const contextPreamble = `Active agent: ${agentSpec.name} — ${agentSpec.purpose}\nCurrent project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Rows: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}.${memoryBlock}`;
 
           const modelMessages = await convertToModelMessages(messages);
 
@@ -360,7 +432,7 @@ export const Route = createFileRoute("/api/chat")({
             onFinish: async ({ usage, text }) => {
               await finishAgentRun(run, {
                 status: "succeeded",
-                output: { text_length: text?.length ?? 0 },
+                output: { text_length: text?.length ?? 0, routed_to: routedTo },
                 tokensIn: usage?.inputTokens,
                 tokensOut: usage?.outputTokens,
               });
@@ -377,6 +449,7 @@ export const Route = createFileRoute("/api/chat")({
             originalMessages: messages,
           });
           if (run?.id) resp.headers.set("x-agent-run-id", run.id);
+          resp.headers.set("x-agent-routed-to", routedTo);
           return resp;
         } catch (e) {
           await finishAgentRun(run, {
