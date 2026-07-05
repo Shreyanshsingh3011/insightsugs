@@ -6,8 +6,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway";
-import { generateText, stepCountIs, tool } from "ai";
+// Heavy AI SDK + gateway modules are lazy-loaded inside the handler to keep
+// them out of the SSR entry bundle.
+
 
 // -------------------- helpers --------------------
 
@@ -155,6 +156,17 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
+
+    // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
+    const [
+      { generateText, stepCountIs, tool },
+      { createLovableAiGatewayProvider },
+    ] = await Promise.all([
+      import("ai"),
+      import("@/lib/ai-gateway"),
+    ]);
+
+
 
     // 1) Resolve sheet + document metadata (labels for citations, IDs for scope).
     const [regsRes, docsRes] = await Promise.all([

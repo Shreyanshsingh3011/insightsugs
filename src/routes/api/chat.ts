@@ -5,24 +5,20 @@
 // project's rows/rankings/flags with each request. Read-only tools operate
 // on that snapshot; write tools (added in step 3) will queue pending_actions.
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  convertToModelMessages,
-  streamText,
-  stepCountIs,
-  tool,
-  type UIMessage,
-} from "ai";
+import type { UIMessage, tool as ToolFn } from "ai";
 import { z } from "zod";
-import {
-  createLovableAiGatewayProvider,
-  getLovableAiGatewayRunId,
-} from "@/lib/ai-gateway.server";
+const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
+function getLovableAiGatewayRunId(request: Request) {
+  return request.headers.get(LOVABLE_AIG_RUN_ID_HEADER)?.trim() || undefined;
+}
+
 import {
   startAgentRun,
   finishAgentRun,
   recordToolCall,
 } from "@/lib/agent-runs.server";
 import { AGENT_REGISTRY, routeToAgent } from "@/lib/agent-registry";
+
 
 type Ctx = {
   projectId?: string;
@@ -68,7 +64,12 @@ function buildTools(
   ctx: Ctx,
   run: { id?: string; toolCalls: Array<{ name: string; input: unknown; output?: unknown; ms?: number }> } | null,
   actorId: string | null,
+  tool: typeof ToolFn,
 ) {
+
+
+
+
   const timed = <T,>(name: string, input: unknown, fn: () => T): T => {
     const t0 = Date.now();
     const out = fn();
@@ -349,8 +350,19 @@ export const Route = createFileRoute("/api/chat")({
 
         const ctx: Ctx = body.context ?? {};
         const runIdIncoming = getLovableAiGatewayRunId(request);
+
+        // Lazy-load heavy modules (ai SDK + gateway provider) only when needed
+        // — keeps them out of the SSR entry bundle.
+        const [
+          { convertToModelMessages, streamText, stepCountIs, tool },
+          { createLovableAiGatewayProvider },
+        ] = await Promise.all([
+          import("ai"),
+          import("@/lib/ai-gateway.server"),
+        ]);
         const gateway = createLovableAiGatewayProvider(key, runIdIncoming);
         const model = gateway("google/gemini-3-flash-preview");
+
 
         const lastUser = messages[messages.length - 1];
         const lastText =
@@ -381,7 +393,7 @@ export const Route = createFileRoute("/api/chat")({
           } catch { /* best-effort */ }
         }
 
-        const allTools = buildTools(ctx, run, body.actorId ?? null);
+        const allTools = buildTools(ctx, run, body.actorId ?? null, tool);
         const tools = Object.fromEntries(
           Object.entries(allTools).filter(([name]) => agentSpec.toolAllowList.includes(name)),
         );
