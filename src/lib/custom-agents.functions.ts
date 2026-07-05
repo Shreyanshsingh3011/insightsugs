@@ -25,7 +25,7 @@ export type WebhookEvent = {
   id: string;
   agent_id: string;
   source_ip: string | null;
-  payload: Record<string, unknown> | null;
+  payload: Json;
   status: string;
   run_id: string | null;
   output: string | null;
