@@ -22,6 +22,7 @@ import {
   finishAgentRun,
   recordToolCall,
 } from "@/lib/agent-runs.server";
+import { AGENT_REGISTRY, routeToAgent } from "@/lib/agent-registry";
 
 type Ctx = {
   projectId?: string;
