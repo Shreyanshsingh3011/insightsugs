@@ -4,7 +4,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, MessageCircle, X, Sparkles } from "lucide-react";
+import { Bot, MessageCircle, X, Sparkles, ThumbsUp, ThumbsDown, ShieldCheck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { submitAgentRunFeedback } from "@/lib/agent-runs.functions";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Conversation,
@@ -65,6 +69,10 @@ export default function AgentChatWidget({
     contextRef.current = context;
   }, [context]);
 
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 1 | -1>>({});
+  const feedbackMut = useServerFn(submitAgentRunFeedback);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -78,6 +86,12 @@ export default function AgentChatWidget({
             actorId: actorId ?? null,
           },
         }),
+        fetch: async (url, init) => {
+          const resp = await fetch(url, init);
+          const rid = resp.headers.get("x-agent-run-id");
+          if (rid) setLastRunId(rid);
+          return resp;
+        },
       }),
     [actorId],
   );
