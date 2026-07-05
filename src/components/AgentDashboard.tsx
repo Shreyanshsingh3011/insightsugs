@@ -13,6 +13,8 @@ import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolve
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 import { EmailQueuePanel } from "@/components/EmailQueuePanel";
+import AgentChatWidget, { type AgentChatContext } from "@/components/AgentChatWidget";
+import { useSession } from "@/hooks/useSession";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -574,6 +576,64 @@ export default function AgentDashboard() {
   // can show "used N rows" chips beneath each assistant reply.
   type Citation = { activity: string; person: string; project: string; stage: string; status: string; delay: number };
   type ChatMsg = { role: "user" | "assistant"; text: string; citations?: Citation[] };
+  const { userId } = useSession();
+
+  // Compact snapshot of the current project state, sent to /api/chat so the
+  // agent's tools can filter/aggregate the same data the user sees.
+  const agentChatContext = useMemo<AgentChatContext>(() => {
+    const label = selected === "all"
+      ? "All projects"
+      : projects.find(p => p.id === selected)?.label ?? selected;
+    const rows = (payload?.data ?? []).slice(0, 500).map(r => ({
+      activity: pick(r, "Activity List", "Process Descriptions", "Process"),
+      person: pick(r, "Responsible Person", "Responsibility", "approvers name"),
+      stage: pick(r, "Stages", "Stages of Process"),
+      status: pick(r, "Status Category", "Status as on Date"),
+      criticality: pick(r, "Criticality"),
+      tat: num(r["TAT"]),
+      days_taken: num(r["Days Taken"]),
+      delay: num(r["Delay in Days"]),
+    }));
+    const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
+      person: p.person,
+      delay_count: p.delayed,
+      total_overdue_days: p.delayDays,
+      activities: [],
+    }));
+    const tatRows = (d.overdue ?? []).slice(0, 60).map(o => ({
+      activity: o.activity,
+      tat: o.tat,
+      days_taken: o.taken,
+      delta: o.delay,
+      status: o.status,
+      person: o.person,
+    }));
+    const flags = (d.overdue ?? []).slice(0, 40).map((o, i) => ({
+      id: `f-${i}`,
+      activity: o.activity,
+      severity: o.delay > 60 ? "critical" : o.delay > 20 ? "warning" : "info",
+      status: o.status,
+      stage: o.stage,
+      reason: `${o.delay}d overdue · TAT ${o.tat}d vs taken ${o.taken}d`,
+      flagged_to: { person: o.person },
+    }));
+    return {
+      projectId: selected,
+      projectLabel: label,
+      rows,
+      personRanking,
+      tatRows,
+      flags,
+      totals: {
+        rows: d.n,
+        delayed: d.totals.delayed,
+        completed: d.totals.completed,
+        health_score: d.healthScore,
+      },
+      riskScore: d.n ? Math.round((d.totals.delayed / d.n) * 100) : 0,
+    };
+  }, [selected, projects, payload, d]);
+
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1549,230 +1609,9 @@ export default function AgentDashboard() {
             </CardContent>
           </Card>
 
-          {/* ASK THE AGENT — floating chatbot (button bottom-right, panel on click) */}
-          <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 print:hidden">
-            {chatOpen && (
-              <Card
-                ref={chatCardRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="agent-chat-title"
-                aria-describedby="agent-chat-guardrail"
-                className="flex w-[min(94vw,420px)] flex-col overflow-hidden rounded-2xl border-primary/30 shadow-[0_20px_60px_-15px_hsl(var(--primary)/0.45)] ring-1 ring-primary/10 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-4 duration-300"
-              >
-                <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b border-border/60 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-4 py-3">
-                  <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/25">
-                    <Bot className="h-4 w-4" aria-hidden="true" />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <CardTitle id="agent-chat-title" className="text-sm leading-tight">Ask the agent</CardTitle>
-                    <p className="truncate text-[11px] text-muted-foreground">
-                      Grounded on {rowsAll.length.toLocaleString()} in-scope rows
-                    </p>
-                  </div>
-                  {chat.length > 0 && (
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
-                      onClick={clearChat}
-                      aria-label="Clear this conversation from local storage">
-                      Clear
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full"
-                    onClick={() => setChatOpen(false)} aria-label="Close chat">
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </CardHeader>
+          {/* ASK THE AGENT — new agentic widget powered by /api/chat + tool loop */}
+          <AgentChatWidget context={agentChatContext} actorId={userId} />
 
-                {/* Guardrail note — sets user expectations up front */}
-                <div id="agent-chat-guardrail" className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-4 py-1.5 text-[10.5px] text-muted-foreground">
-                  <ShieldCheck className="h-3 w-3 shrink-0 text-primary/70" aria-hidden="true" />
-                  Answers only from your dashboard data — no outside knowledge.
-                </div>
-
-                <CardContent className="flex flex-col gap-3 p-3">
-                  <div
-                    ref={transcriptRef}
-                    role="log"
-                    aria-live="polite"
-                    aria-label="Conversation with the agent"
-                    className="h-80 space-y-2.5 overflow-y-auto rounded-xl border border-border/60 bg-muted/30 p-2.5 scroll-smooth"
-                  >
-                    {chat.length === 0 && !askMut.isPending && !askMut.isError && (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                          <Sparkles className="h-5 w-5" aria-hidden="true" />
-                        </div>
-                        <p className="font-medium text-foreground">Hi 👋 Ask me anything about this data.</p>
-                        <p>People, delays, stages, bottlenecks — I'll only answer from what's on your dashboard.</p>
-                      </div>
-                    )}
-                    {chat.map((m, i) => {
-                      const prevUser = m.role === "assistant" ? chat[i - 1]?.text ?? "" : "";
-                      const highlight = m.role === "assistant" ? m.citations?.[0] : undefined;
-                      return (
-                        <div key={i} className={`flex gap-2 animate-in fade-in slide-in-from-bottom-1 duration-200 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                          {m.role === "assistant" && (
-                            <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary" aria-hidden="true">
-                              <Bot className="h-3.5 w-3.5" />
-                            </div>
-                          )}
-                          <div className={`flex max-w-[85%] flex-col gap-1.5 ${m.role === "user" ? "items-end" : "items-start"}`}>
-                            <div className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-relaxed shadow-sm ${
-                              m.role === "user"
-                                ? "rounded-br-sm bg-primary text-primary-foreground"
-                                : "rounded-bl-sm border border-primary/15 bg-background"
-                            }`}>{m.text}</div>
-
-                            {/* Per-message citation highlight — one-line summary of the strongest cited row */}
-                            {m.role === "assistant" && highlight && (
-                              <button
-                                type="button"
-                                onClick={() => jumpToCitation(highlight)}
-                                aria-label={`Jump to ${highlight.activity || "activity"} in dashboard`}
-                                className="group flex max-w-full items-center gap-1.5 rounded-md border border-primary/25 bg-primary/5 px-2 py-1 text-left text-[10.5px] text-foreground transition-colors hover:border-primary/50 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                              >
-                                <Target className="h-3 w-3 shrink-0 text-primary" aria-hidden="true" />
-                                <span className="min-w-0 flex-1 truncate">
-                                  <span className="font-medium">{highlight.activity || "activity"}</span>
-                                  {(highlight.person || highlight.project) && (
-                                    <span className="text-muted-foreground"> · {[highlight.person, highlight.project].filter(Boolean).join(" · ")}</span>
-                                  )}
-                                  {highlight.delay > 0 && <span className="ml-1 text-destructive">+{highlight.delay}d</span>}
-                                </span>
-                                <ArrowRight className="h-3 w-3 shrink-0 text-primary/60 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-                              </button>
-                            )}
-
-                            {/* Full citations drawer trigger */}
-                            {m.role === "assistant" && m.citations && m.citations.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => openCitationDrawer(prevUser, m.citations!)}
-                                aria-label={`View ${m.citations.length} sheet rows this answer used`}
-                                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                              >
-                                <Layers className="h-3 w-3" aria-hidden="true" />
-                                View {m.citations.length} sheet row{m.citations.length === 1 ? "" : "s"} used
-                              </button>
-                            )}
-                          </div>
-                          {m.role === "user" && (
-                            <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground" aria-hidden="true">
-                              <UserIcon className="h-3.5 w-3.5" />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {askMut.isPending && (
-                      <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground" aria-label="Agent is thinking">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-primary" aria-hidden="true">
-                          <Bot className="h-3.5 w-3.5" />
-                        </div>
-                        <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-primary/15 bg-background px-3 py-2" aria-hidden="true">
-                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.3s]" />
-                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70 [animation-delay:-0.15s]" />
-                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/70" />
-                        </div>
-                      </div>
-                    )}
-                    {askMut.isError && !askMut.isPending && (
-                      <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium">Couldn't reach the agent.</div>
-                          <div className="text-destructive/80">{(askMut.error as Error)?.message || "Please try again."}</div>
-                        </div>
-                        {lastQuestion && (
-                          <Button size="sm" variant="outline" className="h-7 gap-1 px-2 text-[11px]" onClick={retryLast}>
-                            <RotateCcw className="h-3 w-3" aria-hidden="true" /> Retry
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                    {rowsAll.length === 0 && !askMut.isPending && (
-                      <div className="rounded-lg border border-dashed border-border/60 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
-                        No rows in the current scope yet — I can only answer once your dashboard has data.
-                      </div>
-                    )}
-                  </div>
-
-                  <form
-                    onSubmit={(e) => { e.preventDefault(); ask(question); }}
-                    className="flex items-end gap-2"
-                    aria-label="Ask the agent"
-                  >
-                    <label htmlFor="agent-chat-input" className="sr-only">Ask the agent a question</label>
-                    <Textarea
-                      id="agent-chat-input"
-                      ref={composerRef}
-                      value={question}
-                      onChange={(e) => setQuestion(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          ask(question);
-                        }
-                      }}
-                      placeholder="Ask about people, delays, stages…  (Enter to send · Shift+Enter for newline)"
-                      rows={1}
-                      disabled={askMut.isPending}
-                      aria-label="Chat message"
-                      className="min-h-[40px] flex-1 resize-none rounded-xl bg-background text-sm leading-snug"
-                    />
-                    <Button
-                      type="submit"
-                      size="icon"
-                      className="h-10 w-10 shrink-0 rounded-xl"
-                      disabled={askMut.isPending || !question.trim() || rowsAll.length === 0}
-                      aria-label="Send message"
-                    >
-                      {askMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-                    </Button>
-                  </form>
-
-                  {chat.length === 0 && (
-                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested questions">
-                      {[
-                        "Biggest bottleneck?",
-                        "Most overdue owner?",
-                        "Top 5 to unblock this week",
-                        "3-step recovery plan",
-                      ].map(sug => (
-                        <button key={sug} type="button"
-                          onClick={() => ask(sug)}
-                          disabled={askMut.isPending || rowsAll.length === 0}
-                          className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
-                        >
-                          {sug}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Analytics footer — visible signal that we track quality */}
-                  <div className="flex items-center justify-between border-t border-border/60 pt-2 text-[10px] text-muted-foreground">
-                    <span title={`Last activity: ${analytics.lastAt ? new Date(analytics.lastAt).toLocaleString() : "never"}`}>
-                      {analytics.questions} q · {analytics.citations} cites · {analytics.errors} err
-                    </span>
-                    <span className="opacity-70">Local · this browser</span>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            <button
-              type="button"
-              onClick={() => setChatOpen(v => !v)}
-              aria-label={chatOpen ? "Close chat" : "Open chat"}
-              className="group relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-xl shadow-primary/40 ring-4 ring-primary/20 transition-all hover:scale-105 hover:shadow-primary/60"
-            >
-              {!chatOpen && (
-                <span className="absolute inset-0 -z-10 animate-ping rounded-full bg-primary/40" />
-              )}
-              {chatOpen ? <X className="h-6 w-6" /> : <MessageCircle className="h-6 w-6" />}
-            </button>
-          </div>
 
           {/* CITATIONS DRAWER — full sheet-row detail for the answer the user clicked */}
           <UISheet open={drawer.open} onOpenChange={(o) => setDrawer(d => ({ ...d, open: o }))}>
