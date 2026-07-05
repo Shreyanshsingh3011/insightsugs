@@ -264,10 +264,12 @@ export const Route = createFileRoute("/api/chat")({
         try {
           const contextPreamble = `Current project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Rows: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}.`;
 
+          const modelMessages = await convertToModelMessages(messages);
+
           const result = streamText({
             model,
             system: `${SYSTEM_PROMPT}\n\n${contextPreamble}`,
-            messages: await convertToModelMessages(messages),
+            messages: modelMessages,
             tools,
             stopWhen: stepCountIs(50),
             onFinish: async ({ usage, text }) => {
