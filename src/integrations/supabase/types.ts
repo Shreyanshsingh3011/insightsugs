@@ -211,12 +211,63 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_run_events: {
+        Row: {
+          action_id: string | null
+          actor_id: string | null
+          agent: string
+          created_at: string
+          event: string
+          id: string
+          metadata: Json
+          run_id: string | null
+        }
+        Insert: {
+          action_id?: string | null
+          actor_id?: string | null
+          agent: string
+          created_at?: string
+          event: string
+          id?: string
+          metadata?: Json
+          run_id?: string | null
+        }
+        Update: {
+          action_id?: string | null
+          actor_id?: string | null
+          agent?: string
+          created_at?: string
+          event?: string
+          id?: string
+          metadata?: Json
+          run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_run_events_action_id_fkey"
+            columns: ["action_id"]
+            isOneToOne: false
+            referencedRelation: "pending_actions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_run_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_runs: {
         Row: {
           actor_id: string | null
           agent: string
+          cost_credits: number | null
           created_at: string
           error: string | null
+          feedback: number | null
+          feedback_note: string | null
           finished_at: string | null
           id: string
           input: Json
@@ -231,8 +282,11 @@ export type Database = {
         Insert: {
           actor_id?: string | null
           agent: string
+          cost_credits?: number | null
           created_at?: string
           error?: string | null
+          feedback?: number | null
+          feedback_note?: string | null
           finished_at?: string | null
           id?: string
           input?: Json
@@ -247,8 +301,11 @@ export type Database = {
         Update: {
           actor_id?: string | null
           agent?: string
+          cost_credits?: number | null
           created_at?: string
           error?: string | null
+          feedback?: number | null
+          feedback_note?: string | null
           finished_at?: string | null
           id?: string
           input?: Json
@@ -1146,14 +1203,17 @@ export type Database = {
           created_at: string
           decided_at: string | null
           decided_by: string | null
+          executed_at: string | null
           execution_error: string | null
           id: string
           kind: string
           payload: Json
           proposed_by: string | null
+          rationale: string | null
           run_id: string | null
           status: string
           summary: string
+          title: string | null
           updated_at: string
         }
         Insert: {
@@ -1161,14 +1221,17 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           decided_by?: string | null
+          executed_at?: string | null
           execution_error?: string | null
           id?: string
           kind: string
           payload: Json
           proposed_by?: string | null
+          rationale?: string | null
           run_id?: string | null
           status?: string
           summary: string
+          title?: string | null
           updated_at?: string
         }
         Update: {
@@ -1176,14 +1239,17 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           decided_by?: string | null
+          executed_at?: string | null
           execution_error?: string | null
           id?: string
           kind?: string
           payload?: Json
           proposed_by?: string | null
+          rationale?: string | null
           run_id?: string | null
           status?: string
           summary?: string
+          title?: string | null
           updated_at?: string
         }
         Relationships: [
