@@ -12,23 +12,26 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import {
   createContext,
+  lazy,
   memo,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
+
+// Streamdown and its plugins (mermaid, katex, shiki, cjk) are enormous.
+// Lazy-load them so they never touch the SSR entry bundle and only fetch
+// once the user actually opens the chat.
+const StreamdownLazy = lazy(() => import("./streamdown-lazy"));
+
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -319,27 +322,34 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
-
-const streamdownPlugins = { cjk, code, math, mermaid };
+export type MessageResponseProps = ComponentProps<typeof StreamdownLazy>;
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      plugins={streamdownPlugins}
-      {...props}
-    />
+  ({ className, children, ...props }: MessageResponseProps) => (
+    <Suspense
+      fallback={
+        <div
+          className={cn(
+            "whitespace-pre-wrap text-sm text-foreground/80",
+            className,
+          )}
+        >
+          {typeof children === "string" ? children : null}
+        </div>
+      }
+    >
+      <StreamdownLazy className={className} {...props}>
+        {children}
+      </StreamdownLazy>
+    </Suspense>
   ),
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating
+    nextProps.isAnimating === prevProps.isAnimating,
 );
 
 MessageResponse.displayName = "MessageResponse";
+
 
 export type MessageToolbarProps = ComponentProps<"div">;
 
