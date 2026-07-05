@@ -36,6 +36,7 @@ import { Route as AuthenticatedAgentRunsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAgentMemoryRouteImport } from './routes/_authenticated/agent.memory'
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
 import { Route as AuthenticatedAgentEvalsRouteImport } from './routes/_authenticated/agent.evals'
+import { Route as AuthenticatedAgentCustomRouteImport } from './routes/_authenticated/agent.custom'
 import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authenticated/agent.approvals'
 import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
@@ -59,6 +60,7 @@ import { Route as AuthenticatedAgentRowKeyRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAgentProjectProjectIdRouteImport } from './routes/_authenticated/agent.project.$projectId'
 import { Route as AuthenticatedAgentPersonKeyRouteImport } from './routes/_authenticated/agent.person.$key'
 import { Route as AuthenticatedAgentKpiIdRouteImport } from './routes/_authenticated/agent.kpi.$id'
+import { Route as ApiPublicHooksAgentAgentIdRouteImport } from './routes/api/public/hooks/agent.$agentId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -199,6 +201,12 @@ const AuthenticatedAgentEvalsRoute = AuthenticatedAgentEvalsRouteImport.update({
   path: '/evals',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
+const AuthenticatedAgentCustomRoute =
+  AuthenticatedAgentCustomRouteImport.update({
+    id: '/custom',
+    path: '/custom',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 const AuthenticatedAgentApprovalsRoute =
   AuthenticatedAgentApprovalsRouteImport.update({
     id: '/approvals',
@@ -333,6 +341,12 @@ const AuthenticatedAgentKpiIdRoute = AuthenticatedAgentKpiIdRouteImport.update({
   path: '/kpi/$id',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
+const ApiPublicHooksAgentAgentIdRoute =
+  ApiPublicHooksAgentAgentIdRouteImport.update({
+    id: '/api/public/hooks/agent/$agentId',
+    path: '/api/public/hooks/agent/$agentId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -358,6 +372,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/agent/custom': typeof AuthenticatedAgentCustomRoute
   '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/agent/memory': typeof AuthenticatedAgentMemoryRoute
@@ -384,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
+  '/api/public/hooks/agent/$agentId': typeof ApiPublicHooksAgentAgentIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -407,6 +423,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/agent/custom': typeof AuthenticatedAgentCustomRoute
   '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/agent/memory': typeof AuthenticatedAgentMemoryRoute
@@ -433,6 +450,7 @@ export interface FileRoutesByTo {
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
+  '/api/public/hooks/agent/$agentId': typeof ApiPublicHooksAgentAgentIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -460,6 +478,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/_authenticated/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/_authenticated/agent/custom': typeof AuthenticatedAgentCustomRoute
   '/_authenticated/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/_authenticated/agent/memory': typeof AuthenticatedAgentMemoryRoute
@@ -486,6 +505,7 @@ export interface FileRoutesById {
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
+  '/api/public/hooks/agent/$agentId': typeof ApiPublicHooksAgentAgentIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -513,6 +533,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/agent/activity'
     | '/agent/approvals'
+    | '/agent/custom'
     | '/agent/evals'
     | '/agent/inbox'
     | '/agent/memory'
@@ -539,6 +560,7 @@ export interface FileRouteTypes {
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
+    | '/api/public/hooks/agent/$agentId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -562,6 +584,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/agent/activity'
     | '/agent/approvals'
+    | '/agent/custom'
     | '/agent/evals'
     | '/agent/inbox'
     | '/agent/memory'
@@ -588,6 +611,7 @@ export interface FileRouteTypes {
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
+    | '/api/public/hooks/agent/$agentId'
   id:
     | '__root__'
     | '/'
@@ -614,6 +638,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/agent/activity'
     | '/_authenticated/agent/approvals'
+    | '/_authenticated/agent/custom'
     | '/_authenticated/agent/evals'
     | '/_authenticated/agent/inbox'
     | '/_authenticated/agent/memory'
@@ -640,6 +665,7 @@ export interface FileRouteTypes {
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
+    | '/api/public/hooks/agent/$agentId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -661,6 +687,7 @@ export interface RootRouteChildren {
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
   LovableEmailTransactionalPreviewRoute: typeof LovableEmailTransactionalPreviewRoute
   LovableEmailTransactionalSendRoute: typeof LovableEmailTransactionalSendRoute
+  ApiPublicHooksAgentAgentIdRoute: typeof ApiPublicHooksAgentAgentIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -854,6 +881,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentEvalsRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/_authenticated/agent/custom': {
+      id: '/_authenticated/agent/custom'
+      path: '/custom'
+      fullPath: '/agent/custom'
+      preLoaderRoute: typeof AuthenticatedAgentCustomRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/agent/approvals': {
       id: '/_authenticated/agent/approvals'
       path: '/approvals'
@@ -1015,12 +1049,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentKpiIdRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/api/public/hooks/agent/$agentId': {
+      id: '/api/public/hooks/agent/$agentId'
+      path: '/api/public/hooks/agent/$agentId'
+      fullPath: '/api/public/hooks/agent/$agentId'
+      preLoaderRoute: typeof ApiPublicHooksAgentAgentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentActivityRoute: typeof AuthenticatedAgentActivityRoute
   AuthenticatedAgentApprovalsRoute: typeof AuthenticatedAgentApprovalsRoute
+  AuthenticatedAgentCustomRoute: typeof AuthenticatedAgentCustomRoute
   AuthenticatedAgentEvalsRoute: typeof AuthenticatedAgentEvalsRoute
   AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
   AuthenticatedAgentMemoryRoute: typeof AuthenticatedAgentMemoryRoute
@@ -1036,6 +1078,7 @@ interface AuthenticatedAgentRouteChildren {
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentActivityRoute: AuthenticatedAgentActivityRoute,
   AuthenticatedAgentApprovalsRoute: AuthenticatedAgentApprovalsRoute,
+  AuthenticatedAgentCustomRoute: AuthenticatedAgentCustomRoute,
   AuthenticatedAgentEvalsRoute: AuthenticatedAgentEvalsRoute,
   AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,
   AuthenticatedAgentMemoryRoute: AuthenticatedAgentMemoryRoute,
@@ -1140,6 +1183,7 @@ const rootRouteChildren: RootRouteChildren = {
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
   LovableEmailTransactionalPreviewRoute: LovableEmailTransactionalPreviewRoute,
   LovableEmailTransactionalSendRoute: LovableEmailTransactionalSendRoute,
+  ApiPublicHooksAgentAgentIdRoute: ApiPublicHooksAgentAgentIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
