@@ -152,6 +152,13 @@ export default function AgentChatWidget({
                 {context.projectLabel ?? context.projectId ?? "No project selected"} · grounded in dashboard data
               </div>
             </div>
+            <Link
+              to="/agent/approvals"
+              className="text-[11px] text-primary hover:underline flex items-center gap-1"
+              title="Review actions the copilot proposed"
+            >
+              <ShieldCheck className="h-3 w-3" /> Approvals
+            </Link>
             <Button
               variant="ghost"
               size="icon-sm"
