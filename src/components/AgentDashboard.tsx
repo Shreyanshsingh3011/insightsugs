@@ -13,6 +13,8 @@ import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolve
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 import { EmailQueuePanel } from "@/components/EmailQueuePanel";
+import AgentChatWidget, { type AgentChatContext } from "@/components/AgentChatWidget";
+import { useSession } from "@/hooks/useSession";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
