@@ -157,14 +157,17 @@ const getHighlighter = (
     return cached;
   }
 
-  const highlighterPromise = createHighlighter({
-    langs: [language],
-    themes: ["github-light", "github-dark"],
-  });
+  const highlighterPromise = import("shiki").then(({ createHighlighter }) =>
+    createHighlighter({
+      langs: [language],
+      themes: ["github-light", "github-dark"],
+    }),
+  );
 
   highlighterCache.set(language, highlighterPromise);
   return highlighterPromise;
 };
+
 
 // Create raw tokens for immediate display while highlighting loads
 const createRawTokens = (code: string): TokenizedCode => ({
