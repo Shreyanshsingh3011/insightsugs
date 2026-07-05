@@ -257,13 +257,13 @@ export default function AgentChatWidget({
 
           <div className="border-t p-3">
             <PromptInput
-              onSubmit={(e) => {
+              onSubmit={(message, e) => {
                 e.preventDefault();
                 if (isBusy) {
                   stop();
                   return;
                 }
-                submit(input);
+                submit(message.text || input);
               }}
             >
               <PromptInputBody>
