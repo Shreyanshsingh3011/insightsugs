@@ -60,7 +60,9 @@ function buildTools(
   ctx: Ctx,
   run: { id?: string; toolCalls: Array<{ name: string; input: unknown; output?: unknown; ms?: number }> } | null,
   actorId: string | null,
+  tool: (def: unknown) => Tool,
 ) {
+
   const timed = <T,>(name: string, input: unknown, fn: () => T): T => {
     const t0 = Date.now();
     const out = fn();
