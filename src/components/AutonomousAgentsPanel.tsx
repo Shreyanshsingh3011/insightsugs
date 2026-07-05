@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Bot, Zap, FileSearch, Loader2 } from "lucide-react";
+import { Bot, Zap, FileSearch, Loader2, Activity, ShieldCheck, LineChart } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { runStandupAgent } from "@/lib/standup-agent.functions";
 import { investigateDelay } from "@/lib/delay-root-cause.functions";
 import { useState } from "react";
@@ -35,6 +36,17 @@ export default function AutonomousAgentsPanel() {
           <Bot className="h-4 w-4 text-primary" />
           Autonomous Agents
           <Badge variant="secondary" className="ml-1 text-[10px]">3 active</Badge>
+          <div className="ml-auto flex items-center gap-1 text-xs">
+            <Link to="/agent/approvals" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
+              <ShieldCheck className="h-3 w-3" /> Approvals
+            </Link>
+            <Link to="/agent/activity" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
+              <Activity className="h-3 w-3" /> Activity
+            </Link>
+            <Link to="/agent/runs" className="rounded-md border px-2 py-1 hover:bg-muted flex items-center gap-1">
+              <LineChart className="h-3 w-3" /> Runs
+            </Link>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-3">

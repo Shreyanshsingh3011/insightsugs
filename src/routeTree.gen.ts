@@ -32,7 +32,10 @@ import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authentic
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
+import { Route as AuthenticatedAgentRunsRouteImport } from './routes/_authenticated/agent.runs'
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
+import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authenticated/agent.approvals'
+import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_authenticated/admin.smart-alerts'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
@@ -42,6 +45,7 @@ import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/l
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/public/hooks/weekly-report'
 import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/public/hooks/weekly-briefing'
+import { Route as ApiPublicHooksStaleCriticalWatcherRouteImport } from './routes/api/public/hooks/stale-critical-watcher'
 import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksDelayRootCauseRouteImport } from './routes/api/public/hooks/delay-root-cause'
@@ -172,11 +176,28 @@ const AuthenticatedAlertsIdRoute = AuthenticatedAlertsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedAlertsRoute,
 } as any)
+const AuthenticatedAgentRunsRoute = AuthenticatedAgentRunsRouteImport.update({
+  id: '/runs',
+  path: '/runs',
+  getParentRoute: () => AuthenticatedAgentRoute,
+} as any)
 const AuthenticatedAgentInboxRoute = AuthenticatedAgentInboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
   getParentRoute: () => AuthenticatedAgentRoute,
 } as any)
+const AuthenticatedAgentApprovalsRoute =
+  AuthenticatedAgentApprovalsRouteImport.update({
+    id: '/approvals',
+    path: '/approvals',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
+const AuthenticatedAgentActivityRoute =
+  AuthenticatedAgentActivityRouteImport.update({
+    id: '/activity',
+    path: '/activity',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -227,6 +248,12 @@ const ApiPublicHooksWeeklyBriefingRoute =
   ApiPublicHooksWeeklyBriefingRouteImport.update({
     id: '/api/public/hooks/weekly-briefing',
     path: '/api/public/hooks/weekly-briefing',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksStaleCriticalWatcherRoute =
+  ApiPublicHooksStaleCriticalWatcherRouteImport.update({
+    id: '/api/public/hooks/stale-critical-watcher',
+    path: '/api/public/hooks/stale-critical-watcher',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicHooksSmartAlertsScanRoute =
@@ -316,7 +343,10 @@ export interface FileRoutesByFullPath {
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/agent/activity': typeof AuthenticatedAgentActivityRoute
+  '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
+  '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -333,6 +363,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
+  '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
@@ -359,7 +390,10 @@ export interface FileRoutesByTo {
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/agent/activity': typeof AuthenticatedAgentActivityRoute
+  '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
+  '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -376,6 +410,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
+  '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
@@ -406,7 +441,10 @@ export interface FileRoutesById {
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
+  '/_authenticated/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
+  '/_authenticated/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -423,6 +461,7 @@ export interface FileRoutesById {
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
+  '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
   '/api/public/hooks/weekly-report': typeof ApiPublicHooksWeeklyReportRoute
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
@@ -453,7 +492,10 @@ export interface FileRouteTypes {
     | '/admin/email-groups'
     | '/admin/smart-alerts'
     | '/admin/users'
+    | '/agent/activity'
+    | '/agent/approvals'
     | '/agent/inbox'
+    | '/agent/runs'
     | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/lovable/email/suppression'
@@ -470,6 +512,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/delay-root-cause'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
+    | '/api/public/hooks/stale-critical-watcher'
     | '/api/public/hooks/weekly-briefing'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
@@ -496,7 +539,10 @@ export interface FileRouteTypes {
     | '/admin/email-groups'
     | '/admin/smart-alerts'
     | '/admin/users'
+    | '/agent/activity'
+    | '/agent/approvals'
     | '/agent/inbox'
+    | '/agent/runs'
     | '/alerts/$id'
     | '/sheets/$sheetId'
     | '/lovable/email/suppression'
@@ -513,6 +559,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/delay-root-cause'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
+    | '/api/public/hooks/stale-critical-watcher'
     | '/api/public/hooks/weekly-briefing'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
@@ -542,7 +589,10 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/smart-alerts'
     | '/_authenticated/admin/users'
+    | '/_authenticated/agent/activity'
+    | '/_authenticated/agent/approvals'
     | '/_authenticated/agent/inbox'
+    | '/_authenticated/agent/runs'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
     | '/lovable/email/suppression'
@@ -559,6 +609,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/delay-root-cause'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
+    | '/api/public/hooks/stale-critical-watcher'
     | '/api/public/hooks/weekly-briefing'
     | '/api/public/hooks/weekly-report'
     | '/lovable/email/queue/process'
@@ -579,6 +630,7 @@ export interface RootRouteChildren {
   ApiPublicHooksDelayRootCauseRoute: typeof ApiPublicHooksDelayRootCauseRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
   ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
+  ApiPublicHooksStaleCriticalWatcherRoute: typeof ApiPublicHooksStaleCriticalWatcherRoute
   ApiPublicHooksWeeklyBriefingRoute: typeof ApiPublicHooksWeeklyBriefingRoute
   ApiPublicHooksWeeklyReportRoute: typeof ApiPublicHooksWeeklyReportRoute
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
@@ -749,11 +801,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlertsIdRouteImport
       parentRoute: typeof AuthenticatedAlertsRoute
     }
+    '/_authenticated/agent/runs': {
+      id: '/_authenticated/agent/runs'
+      path: '/runs'
+      fullPath: '/agent/runs'
+      preLoaderRoute: typeof AuthenticatedAgentRunsRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/agent/inbox': {
       id: '/_authenticated/agent/inbox'
       path: '/inbox'
       fullPath: '/agent/inbox'
       preLoaderRoute: typeof AuthenticatedAgentInboxRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/agent/approvals': {
+      id: '/_authenticated/agent/approvals'
+      path: '/approvals'
+      fullPath: '/agent/approvals'
+      preLoaderRoute: typeof AuthenticatedAgentApprovalsRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/agent/activity': {
+      id: '/_authenticated/agent/activity'
+      path: '/activity'
+      fullPath: '/agent/activity'
+      preLoaderRoute: typeof AuthenticatedAgentActivityRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
     '/_authenticated/admin/users': {
@@ -817,6 +890,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/hooks/weekly-briefing'
       fullPath: '/api/public/hooks/weekly-briefing'
       preLoaderRoute: typeof ApiPublicHooksWeeklyBriefingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/stale-critical-watcher': {
+      id: '/api/public/hooks/stale-critical-watcher'
+      path: '/api/public/hooks/stale-critical-watcher'
+      fullPath: '/api/public/hooks/stale-critical-watcher'
+      preLoaderRoute: typeof ApiPublicHooksStaleCriticalWatcherRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/smart-alerts-scan': {
@@ -900,7 +980,10 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedAgentRouteChildren {
+  AuthenticatedAgentActivityRoute: typeof AuthenticatedAgentActivityRoute
+  AuthenticatedAgentApprovalsRoute: typeof AuthenticatedAgentApprovalsRoute
   AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
+  AuthenticatedAgentRunsRoute: typeof AuthenticatedAgentRunsRoute
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
   AuthenticatedAgentKpiIdRoute: typeof AuthenticatedAgentKpiIdRoute
   AuthenticatedAgentPersonKeyRoute: typeof AuthenticatedAgentPersonKeyRoute
@@ -910,7 +993,10 @@ interface AuthenticatedAgentRouteChildren {
 }
 
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
+  AuthenticatedAgentActivityRoute: AuthenticatedAgentActivityRoute,
+  AuthenticatedAgentApprovalsRoute: AuthenticatedAgentApprovalsRoute,
   AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,
+  AuthenticatedAgentRunsRoute: AuthenticatedAgentRunsRoute,
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
   AuthenticatedAgentKpiIdRoute: AuthenticatedAgentKpiIdRoute,
   AuthenticatedAgentPersonKeyRoute: AuthenticatedAgentPersonKeyRoute,
@@ -1004,6 +1090,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksDelayRootCauseRoute: ApiPublicHooksDelayRootCauseRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
   ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
+  ApiPublicHooksStaleCriticalWatcherRoute:
+    ApiPublicHooksStaleCriticalWatcherRoute,
   ApiPublicHooksWeeklyBriefingRoute: ApiPublicHooksWeeklyBriefingRoute,
   ApiPublicHooksWeeklyReportRoute: ApiPublicHooksWeeklyReportRoute,
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,

@@ -4,7 +4,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, MessageCircle, X, Sparkles } from "lucide-react";
+import { Bot, MessageCircle, X, Sparkles, ThumbsUp, ThumbsDown, ShieldCheck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { submitAgentRunFeedback } from "@/lib/agent-runs.functions";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Conversation,
@@ -65,6 +69,10 @@ export default function AgentChatWidget({
     contextRef.current = context;
   }, [context]);
 
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 1 | -1>>({});
+  const feedbackMut = useServerFn(submitAgentRunFeedback);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
@@ -78,6 +86,12 @@ export default function AgentChatWidget({
             actorId: actorId ?? null,
           },
         }),
+        fetch: async (url, init) => {
+          const resp = await fetch(url, init);
+          const rid = resp.headers.get("x-agent-run-id");
+          if (rid) setLastRunId(rid);
+          return resp;
+        },
       }),
     [actorId],
   );
@@ -138,6 +152,13 @@ export default function AgentChatWidget({
                 {context.projectLabel ?? context.projectId ?? "No project selected"} · grounded in dashboard data
               </div>
             </div>
+            <Link
+              to="/agent/approvals"
+              className="text-[11px] text-primary hover:underline flex items-center gap-1"
+              title="Review actions the copilot proposed"
+            >
+              <ShieldCheck className="h-3 w-3" /> Approvals
+            </Link>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -235,6 +256,48 @@ export default function AgentChatWidget({
                   </MessageContent>
                 </Message>
               ))}
+
+              {status === "ready" && lastRunId && messages.some((m) => m.role === "assistant") ? (
+                <div className="flex items-center gap-2 pl-2 pt-1">
+                  <span className="text-[10px] text-muted-foreground">Was this helpful?</span>
+                  <button
+                    type="button"
+                    aria-label="Thumbs up"
+                    disabled={!!feedbackGiven[lastRunId]}
+                    onClick={() => {
+                      const rid = lastRunId;
+                      setFeedbackGiven((f) => ({ ...f, [rid]: 1 }));
+                      feedbackMut({ data: { runId: rid, rating: 1 } })
+                        .then(() => toast.success("Thanks!"))
+                        .catch(() => setFeedbackGiven((f) => { const n = { ...f }; delete n[rid]; return n; }));
+                    }}
+                    className={cn(
+                      "rounded p-1 hover:bg-muted transition",
+                      feedbackGiven[lastRunId] === 1 && "text-emerald-500 bg-emerald-500/10",
+                    )}
+                  >
+                    <ThumbsUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Thumbs down"
+                    disabled={!!feedbackGiven[lastRunId]}
+                    onClick={() => {
+                      const rid = lastRunId;
+                      setFeedbackGiven((f) => ({ ...f, [rid]: -1 }));
+                      feedbackMut({ data: { runId: rid, rating: -1 } })
+                        .then(() => toast.success("Noted."))
+                        .catch(() => setFeedbackGiven((f) => { const n = { ...f }; delete n[rid]; return n; }));
+                    }}
+                    className={cn(
+                      "rounded p-1 hover:bg-muted transition",
+                      feedbackGiven[lastRunId] === -1 && "text-destructive bg-destructive/10",
+                    )}
+                  >
+                    <ThumbsDown className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : null}
 
               {status === "submitted" ? (
                 <div className="px-1 py-2">

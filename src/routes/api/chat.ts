@@ -63,12 +63,40 @@ function pick(r: Record<string, unknown>, ...keys: string[]): string {
   return "";
 }
 
-function buildTools(ctx: Ctx, run: { toolCalls: Array<{ name: string; input: unknown; output?: unknown; ms?: number }> } | null) {
+function buildTools(
+  ctx: Ctx,
+  run: { id?: string; toolCalls: Array<{ name: string; input: unknown; output?: unknown; ms?: number }> } | null,
+  actorId: string | null,
+) {
   const timed = <T,>(name: string, input: unknown, fn: () => T): T => {
     const t0 = Date.now();
     const out = fn();
     recordToolCall(run, { name, input, output: out, ms: Date.now() - t0 });
     return out;
+  };
+
+  const queueAction = async (kind: string, title: string, summary: string, rationale: string, payload: unknown) => {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data, error } = await supabaseAdmin
+        .from("pending_actions")
+        .insert({
+          kind,
+          title,
+          summary,
+          rationale,
+          payload: payload as never,
+          proposed_by: actorId,
+          run_id: run?.id ?? null,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+      if (error) return { queued: false, error: error.message };
+      return { queued: true, action_id: data?.id, review_url: "/agent/approvals" };
+    } catch (e) {
+      return { queued: false, error: e instanceof Error ? e.message : String(e) };
+    }
   };
 
   return {
@@ -207,6 +235,51 @@ function buildTools(ctx: Ctx, run: { toolCalls: Array<{ name: string; input: unk
           return { count: items.length, items };
         }),
     }),
+
+    proposeCreateAlert: tool({
+      description:
+        "Propose a new alert for a specific delayed activity or person. This queues an approval request — the alert is NOT created until a human approves it in /agent/approvals. Use when the user says 'flag', 'raise alert', 'notify about', or clearly asks you to escalate.",
+      inputSchema: z.object({
+        activity: z.string().describe("Activity name to raise the alert on"),
+        person: z.string().nullable().describe("Person to flag it to (optional)"),
+        severity: z.enum(["info", "warning", "critical"]).describe("Alert severity"),
+        reason: z.string().describe("One-sentence reason for the alert"),
+      }),
+      execute: async ({ activity, person, severity, reason }) => {
+        const title = `Alert: ${activity}`;
+        const summary = `${severity.toUpperCase()} — ${activity}${person ? ` (owner: ${person})` : ""}`;
+        const res = await queueAction(
+          "create_alert",
+          title,
+          summary,
+          reason,
+          { activity, person, severity, reason, project: ctx.projectLabel ?? ctx.projectId },
+        );
+        recordToolCall(run, { name: "proposeCreateAlert", input: { activity, person, severity }, output: res });
+        return res;
+      },
+    }),
+
+    proposeNudgeAssignee: tool({
+      description:
+        "Propose a short nudge message to an assignee about an overdue activity. Queues an approval — no message is sent until approved. Use when the user asks to 'ping', 'nudge', 'follow up with', or 'remind' a person.",
+      inputSchema: z.object({
+        person: z.string().describe("Person to nudge"),
+        activity: z.string().describe("The overdue activity name"),
+        message: z.string().describe("Draft message (1-2 sentences, friendly, specific)"),
+      }),
+      execute: async ({ person, activity, message }) => {
+        const res = await queueAction(
+          "nudge_assignee",
+          `Nudge ${person}`,
+          `Nudge ${person} about "${activity}"`,
+          message,
+          { person, activity, message, project: ctx.projectLabel ?? ctx.projectId },
+        );
+        recordToolCall(run, { name: "proposeNudgeAssignee", input: { person, activity }, output: res });
+        return res;
+      },
+    }),
   };
 }
 
@@ -217,7 +290,7 @@ RULES:
 - For any question about specific people, delays, alerts, or activities, CALL A TOOL first. Do not answer from prior chat memory alone.
 - If a tool returns no matching data, say so explicitly ("I don't see X in the current project data").
 - Cite specifics: person names, activity names, day counts. Keep answers tight — bullets over prose.
-- If the user asks you to take an action (send email, create alert, assign work), acknowledge it and note that write actions require approval — those tools are coming in the next release.
+- To ACT (create alert, nudge, escalate), call a proposeXxx tool. Never say "I'll send" or "I'll create" — those tools QUEUE a proposal for human approval. Tell the user: "Queued for your approval — review at /agent/approvals."
 
 When you have enough information, produce a short, direct answer.`;
 
@@ -259,7 +332,19 @@ export const Route = createFileRoute("/api/chat")({
           input: { question: lastText, project: ctx.projectLabel ?? ctx.projectId ?? null },
         });
 
-        const tools = buildTools(ctx, run);
+        const tools = buildTools(ctx, run, body.actorId ?? null);
+
+        // Emit a chat-started analytics event (best-effort, admin bypass).
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          await supabaseAdmin.from("agent_run_events").insert({
+            actor_id: body.actorId ?? null,
+            agent: "chatbot",
+            event: "chat_sent",
+            run_id: run?.id ?? null,
+            metadata: { project: ctx.projectLabel ?? ctx.projectId ?? null, chars: lastText.length },
+          });
+        } catch { /* best-effort */ }
 
         try {
           const contextPreamble = `Current project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Rows: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}.`;
@@ -288,9 +373,11 @@ export const Route = createFileRoute("/api/chat")({
             },
           });
 
-          return result.toUIMessageStreamResponse({
+          const resp = result.toUIMessageStreamResponse({
             originalMessages: messages,
           });
+          if (run?.id) resp.headers.set("x-agent-run-id", run.id);
+          return resp;
         } catch (e) {
           await finishAgentRun(run, {
             status: "failed",
