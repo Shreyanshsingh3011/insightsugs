@@ -190,6 +190,42 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_memory: {
+        Row: {
+          created_at: string
+          id: string
+          importance: number
+          key: string
+          kind: string
+          source: string | null
+          updated_at: string
+          user_id: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          importance?: number
+          key: string
+          kind: string
+          source?: string | null
+          updated_at?: string
+          user_id: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          importance?: number
+          key?: string
+          kind?: string
+          source?: string | null
+          updated_at?: string
+          user_id?: string
+          value?: string
+        }
+        Relationships: []
+      }
       agent_preferences: {
         Row: {
           key: string
@@ -269,10 +305,12 @@ export type Database = {
           feedback: number | null
           feedback_note: string | null
           finished_at: string | null
+          handoff_from: string | null
           id: string
           input: Json
           latency_ms: number | null
           output: Json | null
+          routed_to: string | null
           status: string
           tokens_in: number | null
           tokens_out: number | null
@@ -288,10 +326,12 @@ export type Database = {
           feedback?: number | null
           feedback_note?: string | null
           finished_at?: string | null
+          handoff_from?: string | null
           id?: string
           input?: Json
           latency_ms?: number | null
           output?: Json | null
+          routed_to?: string | null
           status?: string
           tokens_in?: number | null
           tokens_out?: number | null
@@ -307,10 +347,12 @@ export type Database = {
           feedback?: number | null
           feedback_note?: string | null
           finished_at?: string | null
+          handoff_from?: string | null
           id?: string
           input?: Json
           latency_ms?: number | null
           output?: Json | null
+          routed_to?: string | null
           status?: string
           tokens_in?: number | null
           tokens_out?: number | null
@@ -1043,6 +1085,98 @@ export type Database = {
           ran_at?: string
         }
         Relationships: []
+      }
+      eval_cases: {
+        Row: {
+          active: boolean
+          created_at: string
+          expected_substring: string | null
+          expected_tool: string | null
+          id: string
+          name: string
+          owner_id: string | null
+          prompt: string
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          expected_substring?: string | null
+          expected_tool?: string | null
+          id?: string
+          name: string
+          owner_id?: string | null
+          prompt: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          expected_substring?: string | null
+          expected_tool?: string | null
+          id?: string
+          name?: string
+          owner_id?: string | null
+          prompt?: string
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      eval_runs: {
+        Row: {
+          actor_id: string | null
+          case_id: string
+          created_at: string
+          error: string | null
+          id: string
+          latency_ms: number | null
+          output: string | null
+          passed: boolean
+          score: number | null
+          tokens_in: number | null
+          tokens_out: number | null
+          tool_called: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          case_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          output?: string | null
+          passed: boolean
+          score?: number | null
+          tokens_in?: number | null
+          tokens_out?: number | null
+          tool_called?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          case_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          output?: string | null
+          passed?: boolean
+          score?: number | null
+          tokens_in?: number | null
+          tokens_out?: number | null
+          tool_called?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "eval_runs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "eval_cases"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       holidays: {
         Row: {
