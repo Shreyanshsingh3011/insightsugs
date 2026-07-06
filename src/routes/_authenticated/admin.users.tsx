@@ -165,7 +165,11 @@ function UsersPage() {
         </Button>
       </div>
 
+      {/* SEED TEST LOGINS */}
+      <SeedTestLogins />
+
       {/* FILTERS */}
+
       <Card className="p-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
