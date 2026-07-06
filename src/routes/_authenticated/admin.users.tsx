@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  CheckCircle2, XCircle, Clock, ShieldCheck, Send, Search, RefreshCw, ShieldAlert,
+  CheckCircle2, XCircle, Clock, ShieldCheck, Send, Search, RefreshCw, ShieldAlert, KeyRound, Copy,
 } from "lucide-react";
 import {
   listSignupRequests,
@@ -20,7 +20,9 @@ import {
   resendVerificationFn,
   type PendingRequest,
 } from "@/lib/signup-verify.functions";
+import { seedTestLoginsFromRealEmails, type SeededLogin } from "@/lib/seed-test-logins.functions";
 import { usePersistedState } from "@/hooks/usePersistedState";
+
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   ssr: false,
@@ -163,7 +165,11 @@ function UsersPage() {
         </Button>
       </div>
 
+      {/* SEED TEST LOGINS */}
+      <SeedTestLogins />
+
       {/* FILTERS */}
+
       <Card className="p-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
@@ -457,3 +463,106 @@ function PendingRow({ req, onApprove, onReject, onResend, resendPending }: {
     </div>
   );
 }
+
+function SeedTestLogins() {
+  const seedFn = useServerFn(seedTestLoginsFromRealEmails);
+  const [password, setPassword] = useState("DelayLens#2026");
+  const [includeGmail, setIncludeGmail] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+
+  const seed = useMutation({
+    mutationFn: () => seedFn({ data: { password, includeGmail } }),
+    onSuccess: (res) => {
+      toast.success(`Seeded ${res.logins.filter((l: SeededLogin) => l.status === "ok").length} test login(s)`);
+      setExpanded(true);
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const copyOne = async (l: SeededLogin) => {
+    await navigator.clipboard.writeText(`${l.email} / ${l.password}`);
+    toast.success("Copied");
+  };
+  const copyAll = async () => {
+    const rows = (seed.data?.logins ?? [])
+      .filter((l) => l.status === "ok")
+      .map((l) => `${l.role.padEnd(12)} ${l.email}  ${l.password}`)
+      .join("\n");
+    if (!rows) return;
+    await navigator.clipboard.writeText(rows);
+    toast.success("All credentials copied");
+  };
+
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-primary" aria-hidden />
+          <h2 className="text-sm font-semibold">Seed test logins from real emails</h2>
+        </div>
+        <p className="w-full text-xs text-muted-foreground">
+          Resets passwords for every real user already in the database (skips synthetic <code>.test</code> and <code>test.com</code> accounts) so you can sign in as them for QA. Existing roles are preserved.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-muted-foreground" htmlFor="seed-pw">Shared password</label>
+          <Input
+            id="seed-pw"
+            className="h-8 w-52 text-xs"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={includeGmail}
+              onChange={(e) => setIncludeGmail(e.target.checked)}
+            />
+            Include @gmail.com
+          </label>
+          <Button size="sm" onClick={() => seed.mutate()} disabled={seed.isPending || password.length < 8}>
+            <KeyRound className="h-4 w-4" />
+            {seed.isPending ? "Seeding…" : "Seed / reset"}
+          </Button>
+        </div>
+      </div>
+
+      {seed.data && expanded && (
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-muted-foreground">
+              {seed.data.logins.filter((l) => l.status === "ok").length} of {seed.data.logins.length} succeeded
+            </div>
+            <Button size="sm" variant="outline" onClick={copyAll}>
+              <Copy className="h-4 w-4" /> Copy all
+            </Button>
+          </div>
+          <div className="divide-y divide-border/60 rounded-md border border-border/60">
+            {seed.data.logins.map((l) => (
+              <div key={l.email} className="flex items-center gap-3 p-2 text-xs">
+                <Badge variant={l.role === "super_admin" ? "default" : l.role === "admin" ? "secondary" : "outline"}>
+                  {l.role}
+                </Badge>
+                <div className="min-w-0 flex-1 truncate">
+                  <span className="font-medium">{l.email}</span>
+                  {l.full_name && <span className="ml-1 text-muted-foreground">· {l.full_name}</span>}
+                </div>
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono">{l.password}</code>
+                {l.status === "ok" ? (
+                  <Button size="sm" variant="ghost" onClick={() => copyOne(l)}>
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                ) : (
+                  <span className="text-rose-600" title={l.message}>failed</span>
+                )}
+              </div>
+            ))}
+            {seed.data.logins.length === 0 && (
+              <div className="p-3 text-xs text-muted-foreground">No real-email users found in the database.</div>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
