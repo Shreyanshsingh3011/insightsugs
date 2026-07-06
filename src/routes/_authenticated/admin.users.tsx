@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  CheckCircle2, XCircle, Clock, ShieldCheck, Send, Search, RefreshCw, ShieldAlert,
+  CheckCircle2, XCircle, Clock, ShieldCheck, Send, Search, RefreshCw, ShieldAlert, KeyRound, Copy,
 } from "lucide-react";
 import {
   listSignupRequests,
@@ -20,7 +20,9 @@ import {
   resendVerificationFn,
   type PendingRequest,
 } from "@/lib/signup-verify.functions";
+import { seedTestLoginsFromRealEmails, type SeededLogin } from "@/lib/seed-test-logins.functions";
 import { usePersistedState } from "@/hooks/usePersistedState";
+
 
 export const Route = createFileRoute("/_authenticated/admin/users")({
   ssr: false,
