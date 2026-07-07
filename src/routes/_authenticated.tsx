@@ -30,6 +30,62 @@ function AuthLayout() {
   const isSuper = !!roles?.includes("super_admin");
   const { mode, toggle } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const gPrefixAt = useRef<number>(0);
+
+  // Global shortcuts: ⌘K / Ctrl+K palette, ? cheatsheet, g+<key> quick nav.
+  useEffect(() => {
+    const isTypingTarget = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K → command palette
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
+      if (isTypingTarget(e.target)) return;
+      // ? → shortcuts cheatsheet
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      // g <key> quick nav
+      const now = Date.now();
+      if (e.key.toLowerCase() === "g" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        gPrefixAt.current = now;
+        return;
+      }
+      if (now - gPrefixAt.current < 1200) {
+        const map: Record<string, string> = {
+          i: "/insights",
+          a: "/agent",
+          s: "/sheets",
+          n: "/notifications",
+          c: "/copilot",
+        };
+        const to = map[e.key.toLowerCase()];
+        if (to) {
+          e.preventDefault();
+          gPrefixAt.current = 0;
+          router.navigate({ to: to as never });
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
 
   if (loading) {
     return (
