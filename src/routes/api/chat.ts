@@ -692,6 +692,28 @@ export const Route = createFileRoute("/api/chat")({
           } catch { /* best-effort */ }
         }
 
+        // Load user's summarizeThread match-mode preference (dashboard toggle).
+        let matchModeBlock = "";
+        if (body.actorId) {
+          try {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            const { data: pref } = await supabaseAdmin
+              .from("agent_preferences")
+              .select("value")
+              .eq("user_id", body.actorId)
+              .eq("key", "brief_match_mode")
+              .maybeSingle();
+            const mode =
+              pref?.value && typeof pref.value === "object" && "mode" in (pref.value as object)
+                ? (pref.value as { mode?: string }).mode
+                : "keyword";
+            if (mode === "expanded") {
+              matchModeBlock =
+                "\n\nUSER PREFERENCE: When calling summarizeThread, default matchMode='expanded' unless the user explicitly asks for a tight/keyword brief.";
+            }
+          } catch { /* best-effort */ }
+
+
         // Emit a chat-started analytics event (best-effort, admin bypass).
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
