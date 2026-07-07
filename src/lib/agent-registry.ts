@@ -15,6 +15,8 @@ const READ_TOOLS = [
   "getOpenAlerts",
   "queryProjects",
   "investigateDelay",
+  "summarizeThread",
+  "generateStatusReport",
 ];
 
 const WRITE_TOOLS = [
