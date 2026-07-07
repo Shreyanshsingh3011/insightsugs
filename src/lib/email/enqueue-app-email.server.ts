@@ -125,6 +125,7 @@ export async function enqueueAppEmail(
       message_id: messageId,
       to: recipient,
       from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
+      ...(input.replyTo ? { reply_to: input.replyTo } : {}),
       sender_domain: SENDER_DOMAIN,
       subject,
       html,
