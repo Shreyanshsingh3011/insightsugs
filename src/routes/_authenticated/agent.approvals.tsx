@@ -223,14 +223,14 @@ function AgentActionsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => decideMut.mutate({ id: a.id, decision: "reject" })}
+                        onClick={() => setConfirmState({ action: a, decision: "reject" })}
                         disabled={decideMut.isPending}
                       >
                         <X className="h-3.5 w-3.5 mr-1" /> Reject
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => decideMut.mutate({ id: a.id, decision: "approve" })}
+                        onClick={() => setConfirmState({ action: a, decision: "approve" })}
                         disabled={decideMut.isPending}
                       >
                         <Check className="h-3.5 w-3.5 mr-1" /> Approve
