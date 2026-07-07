@@ -133,7 +133,19 @@ function AuthLayout() {
     );
   }
   if (!session) {
-    throw redirect({ to: "/login" });
+    // Navigate as a side effect; throwing redirect() from a component
+    // is caught by the error boundary instead of navigating.
+    if (typeof window !== "undefined") {
+      router.navigate({ to: "/login", replace: true });
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-foreground" />
+          Redirecting to sign in…
+        </div>
+      </div>
+    );
   }
   if (!rolesLoading && roles && roles.length === 0) {
     return <PendingApprovalScreen email={session.user.email ?? ""} />;
