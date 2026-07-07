@@ -372,6 +372,131 @@ function extractEmail(fromHeader: string): string {
   return (m ? m[1] : fromHeader).trim();
 }
 
+// ---------- "why is it late?" follow-up brief ----------
+
+async function briefForPendingAction(
+  supabaseAdmin: SupabaseAdmin,
+  userId: string,
+  action: Record<string, unknown>,
+): Promise<{ brief: string; bullets: string[]; recommended: string | null }> {
+  const payload = (action.payload ?? {}) as {
+    activity_id?: string;
+    activity?: string;
+    project?: string;
+    person?: string;
+    severity?: string;
+    reason?: string;
+    days_over?: number;
+    due_date?: string;
+  };
+
+  // Try to find a linked alert or concern to run summarizeThreadCore on.
+  if (payload.activity_id) {
+    const { data: alert } = await supabaseAdmin
+      .from("alerts")
+      .select("id")
+      .eq("activity", payload.activity ?? "")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (alert) {
+      try {
+        const { summarizeThreadCore } = await import("@/lib/agent-briefs-core.server");
+        const r = await summarizeThreadCore(supabaseAdmin as never, {
+          kind: "alert",
+          id: (alert as { id: string }).id,
+        });
+        if ("ok" in r && r.ok) {
+          return { brief: r.brief, bullets: r.bullets, recommended: r.recommended_decision };
+        }
+      } catch {
+        // fall through to synthesis
+      }
+    }
+  }
+
+  // Fallback: synthesise from payload + activity row.
+  let extra = "";
+  if (payload.activity_id) {
+    const { data: act } = await supabaseAdmin
+      .from("activities")
+      .select("status, due_date, updated_at")
+      .eq("id", payload.activity_id)
+      .maybeSingle();
+    if (act) {
+      const a = act as { status?: string; due_date?: string; updated_at?: string };
+      extra = ` Current status: ${a.status ?? "unknown"}${a.updated_at ? `; last update ${a.updated_at.slice(0, 10)}` : ""}.`;
+    }
+  }
+  const brief =
+    payload.reason ??
+    `${payload.activity ?? "This item"} is overdue by ${payload.days_over ?? "?"} day(s)${
+      payload.person ? ` and owned by ${payload.person}` : ""
+    }.${extra}`;
+  const bullets = [
+    payload.due_date ? `Due ${String(payload.due_date).slice(0, 10)}` : null,
+    payload.severity ? `Severity: ${payload.severity}` : null,
+    payload.person ? `Owner: ${payload.person}` : null,
+  ].filter(Boolean) as string[];
+  void userId;
+  return { brief, bullets, recommended: null };
+}
+
+async function sendWhyBrief(
+  supabaseAdmin: SupabaseAdmin,
+  tok: TokenRow,
+  recipient: string,
+  email: InboundEmail,
+): Promise<void> {
+  if (!tok.pending_action_ids?.length) return;
+  const { data: rows } = await supabaseAdmin
+    .from("pending_actions")
+    .select("*")
+    .in("id", tok.pending_action_ids);
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const r of (rows ?? []) as Array<Record<string, unknown>>) {
+    byId.set(r.id as string, r);
+  }
+
+  const items: Array<{
+    index: number;
+    title: string;
+    project: string | null;
+    owner: string | null;
+    brief: string;
+    bullets: string[];
+    recommended: string | null;
+  }> = [];
+
+  for (let i = 0; i < tok.pending_action_ids.length; i++) {
+    const id = tok.pending_action_ids[i];
+    const row = byId.get(id);
+    if (!row) continue;
+    const payload = (row.payload ?? {}) as { project?: string; person?: string };
+    const b = await briefForPendingAction(supabaseAdmin, tok.user_id, row);
+    items.push({
+      index: i + 1,
+      title: (row.title as string) ?? (row.summary as string) ?? `Proposal #${i + 1}`,
+      project: payload.project ?? null,
+      owner: payload.person ?? null,
+      brief: b.brief,
+      bullets: b.bullets,
+      recommended: b.recommended,
+    });
+  }
+
+  const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+  await enqueueAppEmail({
+    templateName: "agent-why-brief",
+    recipientEmail: recipient,
+    idempotencyKey: `why-brief-${email.providerMessageId ?? tok.token}`,
+    templateData: {
+      subject: email.subject ?? "your digest",
+      items,
+    },
+  });
+}
+
 // ---------- Token minting (called by the digest sender) ----------
 
 export function replyAddressFor(token: string): string {
