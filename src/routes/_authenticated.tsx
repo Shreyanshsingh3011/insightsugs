@@ -12,7 +12,7 @@ import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
-  Menu, X, Command, Keyboard,
+  Menu, X, Command, Keyboard, ShieldCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -149,6 +149,7 @@ function AuthLayout() {
       ...(isAdmin ? [{ to: "/admin/email", label: "Email queue", icon: <Mail className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/smart-alerts", label: "Smart alerts", icon: <Radar className="h-4 w-4" /> }] : []),
       ...(isSuper ? [{ to: "/admin/users", label: "Users", icon: <Users className="h-4 w-4" /> }] : []),
+      ...(isSuper ? [{ to: "/admin/allowlist", label: "Signup allowlist", icon: <ShieldCheck className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/audit", label: "Audit", icon: <ScrollText className="h-4 w-4" /> }] : []),
     ],
   } : null;

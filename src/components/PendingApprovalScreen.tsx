@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   verifySignupAgainstSheet,
   mySignupStatus,
+  notifySuperAdminsOfPendingSignup,
 } from "@/lib/signup-verify.functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { Loader2, CheckCircle2, Clock, XCircle, ShieldCheck, LogOut } from "luci
 export function PendingApprovalScreen({ email }: { email: string }) {
   const verifyFn = useServerFn(verifySignupAgainstSheet);
   const statusFn = useServerFn(mySignupStatus);
+  const notifyFn = useServerFn(notifySuperAdminsOfPendingSignup);
 
   const statusQ = useQuery({
     queryKey: ["my-signup-status"],
@@ -22,11 +24,18 @@ export function PendingApprovalScreen({ email }: { email: string }) {
 
   const verify = useMutation({
     mutationFn: () => verifyFn(),
-    onSuccess: () => { statusQ.refetch(); },
+    onSuccess: (res) => {
+      statusQ.refetch();
+      // If verification failed, alert super admins by email (fire-and-forget, deduped server-side).
+      if (res && !res.verified) {
+        notifyFn().catch(() => {});
+      }
+    },
   });
 
   // Auto-attempt sheet verification once on mount.
   useEffect(() => { verify.mutate(); /* eslint-disable-next-line */ }, []);
+
 
   const s = statusQ.data;
   const rejected = s?.status === "rejected";

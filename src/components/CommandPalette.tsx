@@ -16,7 +16,7 @@ import {
   Bot, LayoutDashboard, Search, Sparkles, Inbox, ListChecks, Bell,
   AlertTriangle, MessageSquareWarning, FileText, Sheet as SheetIcon,
   Newspaper, Users, Radar, Mail, ScrollText, Settings, FolderKanban,
-  Zap, Sun, Moon, Keyboard, PlayCircle, Network,
+  Zap, Sun, Moon, Keyboard, PlayCircle, Network, ShieldCheck,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -131,6 +131,7 @@ export function CommandPalette({
     }
     if (isSuper) {
       base.push({ id: "nav:users", group: "Admin", label: "Users", icon: <Users className="h-4 w-4" />, run: () => go("/admin/users") });
+      base.push({ id: "nav:allow", group: "Admin", label: "Signup allowlist", icon: <ShieldCheck className="h-4 w-4" />, run: () => go("/admin/allowlist") });
     }
     return base;
   }, [isAdmin, isSuper]); // eslint-disable-line react-hooks/exhaustive-deps
