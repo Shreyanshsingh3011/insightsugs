@@ -1735,6 +1735,39 @@ export type Database = {
           },
         ]
       }
+      signup_allowlist: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          email: string
+          full_name: string | null
+          id: string
+          note: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          email: string
+          full_name?: string | null
+          id?: string
+          note?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string | null
+          id?: string
+          note?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       signup_notifications: {
         Row: {
           channel: string
@@ -2143,6 +2176,14 @@ export type Database = {
         Args: { _alert_id: string; _user_id: string }
         Returns: boolean
       }
+      list_super_admin_emails: {
+        Args: never
+        Returns: {
+          email: string
+          full_name: string
+          user_id: string
+        }[]
+      }
       match_all_sheet_rows: {
         Args: { _match_count?: number; _query: string; _user_id: string }
         Returns: {
@@ -2219,6 +2260,14 @@ export type Database = {
       set_my_project_assignments: {
         Args: { _keys: string[]; _labels: string[] }
         Returns: undefined
+      }
+      verify_signup_from_allowlist: {
+        Args: never
+        Returns: {
+          granted_role: Database["public"]["Enums"]["app_role"]
+          reason: string
+          verified: boolean
+        }[]
       }
     }
     Enums: {
