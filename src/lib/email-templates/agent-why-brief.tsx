@@ -20,7 +20,7 @@ interface Props {
 const Email = ({ subject, items = [] }: Props) => (
   <Html lang="en" dir="ltr">
     <Head />
-    <Preview>Why it's late — brief for {items.length} item(s)</Preview>
+    <Preview>{`Why it's late — brief for ${items.length} item(s)`}</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>Why it's late</Heading>
