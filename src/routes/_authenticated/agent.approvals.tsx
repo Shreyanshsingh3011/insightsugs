@@ -131,7 +131,22 @@ function AgentActionsTab() {
     queryFn: () => list({ data: { status } }),
   });
 
-  const decideMut = useMutation({
+  // Realtime: refresh the list whenever any pending_action row changes.
+  useEffect(() => {
+    const channel = supabase
+      .channel("approvals-pending-actions")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pending_actions" },
+        () => {
+          qc.invalidateQueries({ queryKey: ["pending-actions"] });
+          qc.invalidateQueries({ queryKey: ["pending-actions-count"] });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
+
     mutationFn: (v: { id: string; decision: "approve" | "reject"; note?: string }) => decide({ data: v }),
     onSuccess: (_r, v) => {
       toast.success(v.decision === "approve" ? "Approved & executed" : "Rejected");
