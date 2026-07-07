@@ -422,7 +422,7 @@ function SignupRequestsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => rejectMut.mutate({ requestId: r.id, reason: "Rejected from approvals inbox" })}
+                        onClick={() => setSignupConfirm({ request: r, decision: "reject" })}
                         disabled={approveMut.isPending || rejectMut.isPending}
                       >
                         <X className="h-3.5 w-3.5 mr-1" /> Reject
@@ -430,14 +430,14 @@ function SignupRequestsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => approveMut.mutate({ requestId: r.id, role: "user" })}
+                        onClick={() => setSignupConfirm({ request: r, decision: "approve", role: "user" })}
                         disabled={approveMut.isPending || rejectMut.isPending}
                       >
                         <Check className="h-3.5 w-3.5 mr-1" /> Approve as user
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => approveMut.mutate({ requestId: r.id, role: r.requested_role })}
+                        onClick={() => setSignupConfirm({ request: r, decision: "approve", role: r.requested_role })}
                         disabled={approveMut.isPending || rejectMut.isPending}
                       >
                         <Check className="h-3.5 w-3.5 mr-1" /> Approve as {r.requested_role}
