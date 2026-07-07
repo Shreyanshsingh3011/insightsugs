@@ -4,12 +4,15 @@ import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CommandPalette } from "@/components/CommandPalette";
+import { NotificationsBell } from "@/components/NotificationsBell";
+import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
-  Menu, X, Command,
+  Menu, X, Command, Keyboard,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -27,6 +30,62 @@ function AuthLayout() {
   const isSuper = !!roles?.includes("super_admin");
   const { mode, toggle } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const gPrefixAt = useRef<number>(0);
+
+  // Global shortcuts: ⌘K / Ctrl+K palette, ? cheatsheet, g+<key> quick nav.
+  useEffect(() => {
+    const isTypingTarget = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        el.isContentEditable
+      );
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      // ⌘K / Ctrl+K → command palette
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
+      if (isTypingTarget(e.target)) return;
+      // ? → shortcuts cheatsheet
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      // g <key> quick nav
+      const now = Date.now();
+      if (e.key.toLowerCase() === "g" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        gPrefixAt.current = now;
+        return;
+      }
+      if (now - gPrefixAt.current < 1200) {
+        const map: Record<string, string> = {
+          i: "/insights",
+          a: "/agent",
+          s: "/sheets",
+          n: "/notifications",
+          c: "/copilot",
+        };
+        const to = map[e.key.toLowerCase()];
+        if (to) {
+          e.preventDefault();
+          gPrefixAt.current = 0;
+          router.navigate({ to: to as never });
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
 
   if (loading) {
     return (
@@ -95,7 +154,7 @@ function AuthLayout() {
 
   const allSections = adminSection ? [...sections, adminSection] : sections;
 
-  const goToSearch = () => router.navigate({ to: "/search" });
+  const openPalette = () => setPaletteOpen(true);
 
   const userInitial = (session.user.email ?? "?").charAt(0).toUpperCase();
 
@@ -106,7 +165,7 @@ function AuthLayout() {
         <BrandMark />
         <div className="px-3 pb-2">
           <button
-            onClick={goToSearch}
+            onClick={openPalette}
             className="group flex w-full items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-left text-sm text-muted-foreground transition-all hover:border-foreground/20 hover:bg-background hover:text-foreground"
           >
             <Search className="h-4 w-4" />
@@ -138,13 +197,32 @@ function AuthLayout() {
             <Menu className="h-5 w-5" />
           </button>
           <button
-            onClick={goToSearch}
+            onClick={openPalette}
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
           >
             <Search className="h-4 w-4" />
             <span>Search</span>
           </button>
           <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={openPalette}
+            aria-label="Open command palette"
+            className="hidden h-9 w-9 md:inline-flex"
+          >
+            <Command className="h-4 w-4" />
+          </Button>
+          <NotificationsBell />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Keyboard shortcuts"
+            className="hidden h-9 w-9 md:inline-flex"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -195,6 +273,14 @@ function AuthLayout() {
           </aside>
         </div>
       )}
+
+      {/* Global overlays */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+      />
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
 }
