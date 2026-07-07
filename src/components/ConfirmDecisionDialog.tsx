@@ -10,7 +10,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/dialog-confirm";
+} from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useState, useEffect } from "react";
 import { ArrowRight, MinusCircle, PlusCircle, Check, X } from "lucide-react";
