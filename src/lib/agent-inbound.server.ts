@@ -268,7 +268,7 @@ export async function processInboundEmail(
       .eq("provider_message_id", email.providerMessageId)
       .maybeSingle();
     if (existing) {
-      return { ok: true, results: (existing as { results: CmdResult[] }).results ?? [] };
+      return { ok: true, results: (existing as unknown as { results: CmdResult[] }).results ?? [] };
     }
   }
 
