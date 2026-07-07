@@ -61,6 +61,10 @@ function EmailGroupsPage() {
     onError: (e: any) => toast.error(e?.message ?? "Delete failed"),
   });
 
+  if (!isAdmin) {
+    return <div className="mx-auto max-w-5xl px-4 py-8 text-sm text-muted-foreground">Admins only.</div>;
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6">
       <div className="mb-5 flex items-center justify-between gap-3">
