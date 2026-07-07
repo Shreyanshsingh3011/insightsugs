@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, redirect, Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { useSession, useRoles } from "@/hooks/useSession";
 import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,7 +17,42 @@ import {
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthLayout,
+  errorComponent: AuthErrorFallback,
 });
+
+function AuthErrorFallback({ error }: { error: unknown }) {
+  // A `redirect({ to: "/login" })` thrown from the component during render
+  // surfaces here instead of navigating. Perform the navigation on mount.
+  const router = useRouter();
+  const isRedirect =
+    !!error &&
+    typeof error === "object" &&
+    "options" in (error as Record<string, unknown>) &&
+    !!(error as { options?: { to?: string } }).options?.to;
+  useEffect(() => {
+    if (isRedirect) {
+      const to = (error as { options: { to: string } }).options.to;
+      router.navigate({ to: to as never, replace: true });
+    }
+  }, [isRedirect, error, router]);
+  if (isRedirect) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-foreground" />
+          Redirecting…
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="max-w-md text-sm text-muted-foreground">
+        Something went wrong loading this page.
+      </div>
+    </div>
+  );
+}
 
 type NavItem = { to: string; label: string; icon: React.ReactNode };
 type NavSection = { label: string; items: NavItem[] };
@@ -98,7 +133,19 @@ function AuthLayout() {
     );
   }
   if (!session) {
-    throw redirect({ to: "/login" });
+    // Navigate as a side effect; throwing redirect() from a component
+    // is caught by the error boundary instead of navigating.
+    if (typeof window !== "undefined") {
+      router.navigate({ to: "/login", replace: true });
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-foreground" />
+          Redirecting to sign in…
+        </div>
+      </div>
+    );
   }
   if (!rolesLoading && roles && roles.length === 0) {
     return <PendingApprovalScreen email={session.user.email ?? ""} />;
