@@ -355,6 +355,15 @@ export async function processInboundEmail(
     }
   }
 
+  // If any "why" command was issued, generate & send the full brief as a follow-up.
+  if (results.some((r) => r.command.kind === "why")) {
+    try {
+      await sendWhyBrief(supabaseAdmin, tok, senderEmail, email);
+    } catch {
+      // Non-fatal.
+    }
+  }
+
   return { ok: true, results };
 }
 
