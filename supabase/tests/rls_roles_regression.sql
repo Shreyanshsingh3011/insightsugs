@@ -58,9 +58,9 @@ BEGIN
   INSERT INTO public.alerts (flag_id, activity, sent_by) VALUES ('rls-flag-B', 'b', su);
 
   -- Audit rows.
-  INSERT INTO public.audit_log (actor_id, action, project_id) VALUES (su, 'rls-a', proj_a);
-  INSERT INTO public.audit_log (actor_id, action, project_id) VALUES (su, 'rls-b', proj_b);
-  INSERT INTO public.audit_log (actor_id, action, project_id) VALUES (su, 'rls-g', null);
+  INSERT INTO public.audit_log (actor_id , event_type, project_id) VALUES (su, 'rls-a', proj_a);
+  INSERT INTO public.audit_log (actor_id , event_type, project_id) VALUES (su, 'rls-b', proj_b);
+  INSERT INTO public.audit_log (actor_id , event_type, project_id) VALUES (su, 'rls-g', null);
 
   PERFORM set_config('role', 'authenticated', true);
 
@@ -73,7 +73,7 @@ BEGIN
   SELECT count(*) INTO n FROM public.alerts WHERE flag_id LIKE 'rls-flag-%';
   ASSERT n = 2, format('super sees both alerts — got %s', n);
 
-  SELECT count(*) INTO n FROM public.audit_log WHERE action LIKE 'rls-%';
+  SELECT count(*) INTO n FROM public.audit_log WHERE event_type LIKE 'rls-%';
   ASSERT n = 3, format('super sees all audit rows — got %s', n);
 
   ------------------ ADMIN scoped to project A --------------------
@@ -88,9 +88,9 @@ BEGIN
   ASSERT n = 1, format('admin sees only alerts they sent — got %s', n);
 
   -- Audit: admin owns proj_a → sees rls-a + rls-g (null project); NOT rls-b.
-  SELECT count(*) INTO n FROM public.audit_log WHERE action LIKE 'rls-%';
+  SELECT count(*) INTO n FROM public.audit_log WHERE event_type LIKE 'rls-%';
   ASSERT n = 2, format('admin sees own-project + null-project audit — got %s', n);
-  PERFORM 1 FROM public.audit_log WHERE action = 'rls-b'; ASSERT NOT FOUND, 'admin must NOT see foreign-project audit';
+  PERFORM 1 FROM public.audit_log WHERE event_type = 'rls-b'; ASSERT NOT FOUND, 'admin must NOT see foreign-project audit';
 
   ------------------ PLAIN USER sees nothing project-linked -------
   PERFORM set_config('request.jwt.claims', json_build_object('sub', us, 'role','authenticated')::text, true);
@@ -101,7 +101,7 @@ BEGIN
   SELECT count(*) INTO n FROM public.alerts WHERE flag_id LIKE 'rls-flag-%';
   ASSERT n = 0, format('user sees 0 alerts (not sent, not recipient) — got %s', n);
 
-  SELECT count(*) INTO n FROM public.audit_log WHERE action LIKE 'rls-%';
+  SELECT count(*) INTO n FROM public.audit_log WHERE event_type LIKE 'rls-%';
   ASSERT n = 0, format('user sees 0 audit rows (not admin) — got %s', n);
 
   RAISE NOTICE '✅ All role-scoped RLS assertions passed.';
