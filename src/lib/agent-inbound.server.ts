@@ -18,9 +18,7 @@
 //
 // Every processed email is logged in inbound_email_events for audit.
 
-type SupabaseAdmin = Awaited<
-  ReturnType<typeof import("@/integrations/supabase/client.server").then>
->["supabaseAdmin"];
+type SupabaseAdmin = typeof import("@/integrations/supabase/client.server")["supabaseAdmin"];
 
 type TokenRow = {
   id: string;
