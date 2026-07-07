@@ -161,7 +161,12 @@ function ProjectsPage() {
         </Dialog>
       </div>
 
+      <div className="mt-4">
+        <BriefMatchModeToggle />
+      </div>
+
       <ProjectsFromSheets />
+
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
 
