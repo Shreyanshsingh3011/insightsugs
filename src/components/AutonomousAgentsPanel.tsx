@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Bot, Zap, FileSearch, Loader2, Activity, ShieldCheck, LineChart, Brain, FlaskConical, Webhook } from "lucide-react";
+import { Bot, Zap, FileSearch, Loader2, Activity, ShieldCheck, LineChart, Brain, FlaskConical, Webhook, Network } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { runStandupAgent } from "@/lib/standup-agent.functions";
 import { investigateDelay } from "@/lib/delay-root-cause.functions";
