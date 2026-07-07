@@ -180,13 +180,15 @@ async function runCommand(
         return { ok: true, message: `✅ Approved proposal #${cmd.index}.` };
       }
       case "reject": {
+        const basePayload = (loaded.row.payload as Record<string, unknown>) ?? {};
+        const nextPayload = { ...basePayload, decision_note: cmd.reason ?? null };
         const { error } = await supabaseAdmin
           .from("pending_actions")
           .update({
             status: "rejected",
             decided_by: token.user_id,
             decided_at: new Date().toISOString(),
-            decision_note: cmd.reason ?? null,
+            payload: nextPayload as never,
           })
           .eq("id", loaded.id)
           .eq("status", "pending");
@@ -195,9 +197,11 @@ async function runCommand(
       }
       case "snooze": {
         const until = new Date(Date.now() + cmd.hours * 3_600_000).toISOString();
+        const basePayload = (loaded.row.payload as Record<string, unknown>) ?? {};
+        const nextPayload = { ...basePayload, snoozed_until: until };
         const { error } = await supabaseAdmin
           .from("pending_actions")
-          .update({ snoozed_until: until })
+          .update({ payload: nextPayload as never })
           .eq("id", loaded.id);
         if (error) return { ok: false, message: `Snooze failed: ${error.message}` };
         return { ok: true, message: `💤 Snoozed proposal #${cmd.index} until ${until}.` };
@@ -214,10 +218,9 @@ async function runCommand(
         if (list.length === 0) return { ok: false, message: `No user matches @${handle}.` };
         if (list.length > 1) return { ok: false, message: `@${handle} is ambiguous — please use full email.` };
         const target = list[0];
-        const payload = { ...(loaded.row.payload as Record<string, unknown> ?? {}), assigned_to: target.id };
         const { error } = await supabaseAdmin
           .from("pending_actions")
-          .update({ payload })
+          .update({ assigned_to: target.id })
           .eq("id", loaded.id);
         if (error) return { ok: false, message: `Assign failed: ${error.message}` };
         return { ok: true, message: `👤 Assigned proposal #${cmd.index} to ${target.full_name ?? target.email}.` };
