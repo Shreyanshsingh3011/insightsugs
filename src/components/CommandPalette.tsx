@@ -232,11 +232,11 @@ export function CommandPalette({
               {sheetsQ.data.map((s) => (
                 <CommandItem
                   key={`sheet:${s.id}`}
-                  value={`sheet ${s.title} ${s.sheet_type ?? ""}`}
+                  value={`sheet ${s.display_name} ${s.sheet_type ?? ""}`}
                   onSelect={() => go("/sheets/$sheetId", { sheetId: s.id })}
                 >
                   <SheetIcon className="h-4 w-4" />
-                  <span className="truncate">{s.title ?? "Untitled sheet"}</span>
+                  <span className="truncate">{s.display_name ?? "Untitled sheet"}</span>
                   {s.sheet_type && (
                     <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
                       {s.sheet_type}
