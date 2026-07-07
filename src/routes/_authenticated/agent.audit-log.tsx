@@ -52,18 +52,20 @@ function AuditLogPage() {
   });
   const items = (data ?? []) as AuditEntry[];
 
-  // Realtime: refresh when a new audit_log entry is inserted.
+  // Realtime: refresh when new audit_log entries arrive (batched to coalesce bursts).
+  const enqueueInvalidate = useBatchedInvalidate();
   useEffect(() => {
     const channel = supabase
       .channel("audit-log-stream")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "audit_log" },
-        () => qc.invalidateQueries({ queryKey: ["audit-log"] }),
+        () => enqueueInvalidate(["audit-log"]),
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [qc]);
+  }, [enqueueInvalidate]);
+
 
 
   return (
