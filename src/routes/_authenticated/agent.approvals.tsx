@@ -147,6 +147,7 @@ function AgentActionsTab() {
     return () => { supabase.removeChannel(channel); };
   }, [qc]);
 
+  const decideMut = useMutation({
     mutationFn: (v: { id: string; decision: "approve" | "reject"; note?: string }) => decide({ data: v }),
     onSuccess: (_r, v) => {
       toast.success(v.decision === "approve" ? "Approved & executed" : "Rejected");
