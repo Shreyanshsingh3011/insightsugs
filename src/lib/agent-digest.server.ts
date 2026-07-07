@@ -54,8 +54,12 @@ export async function runAgentDigest(): Promise<{
   const day = new Date().toISOString().slice(0, 10);
   let emailsQueued = 0;
   const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+  const { mintDigestReplyToken, replyAddressFor, subjectTagFor } = await import(
+    "@/lib/agent-inbound.server"
+  );
 
   const sendTo = async (
+    userId: string,
     email: string,
     fullName: string | null,
     scopedProposals: ProposalRow[],
@@ -63,14 +67,32 @@ export async function runAgentDigest(): Promise<{
   ) => {
     if (scopedProposals.length === 0) return;
     try {
+      // Mint a reply token that maps to this recipient + the exact ordered
+      // proposal list they see, so "approve #3" acts on the 3rd item shown.
+      const token = await mintDigestReplyToken({
+        userId,
+        digestKind: `daily-${scopeLabel}`,
+        digestRef: day,
+        pendingActionIds: scopedProposals.slice(0, 20).map((p) => p.id),
+        projectIds: Array.from(
+          new Set(
+            scopedProposals
+              .map((p) => (p.payload as { project_id?: string } | null)?.project_id)
+              .filter((v): v is string => typeof v === "string"),
+          ),
+        ),
+      });
       await enqueueAppEmail({
         templateName: "agent-morning-digest",
         recipientEmail: email,
         idempotencyKey: `agent-digest-${day}-${scopeLabel}-${email}`,
+        replyTo: replyAddressFor(token),
+        subjectTag: subjectTagFor(token),
         templateData: {
           recipientName: fullName ?? "there",
           windowHours: WINDOW_HOURS,
-          proposals: scopedProposals.slice(0, 20).map((p) => ({
+          proposals: scopedProposals.slice(0, 20).map((p, i) => ({
+            index: i + 1,
             title: p.title,
             summary: p.summary,
             rationale: p.rationale ?? "",
@@ -79,6 +101,7 @@ export async function runAgentDigest(): Promise<{
           })),
           totalCount: scopedProposals.length,
           approvalsUrl: `${SITE_URL}/agent/approvals`,
+          replyHint: `Reply to this email with a command like "approve #2" or "why is it late?"`,
         },
       });
       emailsQueued += 1;
