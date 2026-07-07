@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.run_rls_role_regression();
