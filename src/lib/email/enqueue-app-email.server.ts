@@ -103,13 +103,16 @@ export async function enqueueAppEmail(
     return { ok: false, reason: "render_failed", error: (e as Error).message };
   }
 
-  // Log pending, then enqueue.
+  // Log pending, then enqueue. Stash the idempotency_key in metadata so
+  // callers (e.g. status-report dialog) can look up delivery status later.
   await supabaseAdmin.from("email_send_log").insert({
     message_id: messageId,
     template_name: input.templateName,
     recipient_email: recipient,
     status: "pending",
+    metadata: { idempotency_key: idempotencyKey } as never,
   });
+
 
   const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email", {
     queue_name: "transactional_emails",
