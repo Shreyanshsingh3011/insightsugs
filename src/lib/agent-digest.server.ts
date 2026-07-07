@@ -118,7 +118,8 @@ export async function runAgentDigest(): Promise<{
   const superRecipients: Array<{ user_id?: string; email: string; full_name: string | null }> =
     (supers ?? []).filter((r: { email?: string }) => r.email && r.email.includes("@"));
   for (const r of superRecipients) {
-    await sendTo(r.email, r.full_name, proposals, "all");
+    if (!r.user_id) continue;
+    await sendTo(r.user_id, r.email, r.full_name, proposals, "all");
   }
 
   // 2b. Admins — project-scoped digest.
