@@ -489,8 +489,102 @@ function buildTools(
         return res;
       },
     }),
+
+    summarizeThread: tool({
+      description:
+        "Generate a decision-ready brief for a specific concern or alert. Pulls the thread, participants, and keyword-matched linked documents; returns a 2-3 sentence brief, key bullets, and a recommended decision. Use when the user asks to 'summarize this concern', 'brief me on alert X', or 'what should we do about #<id>'. The `matchMode` argument controls document recall: 'keyword' (default) matches on the activity keyword only; 'expanded' also matches participant names / severity — pass 'expanded' when the user asks for a wider or fuller brief.",
+      inputSchema: z.object({
+        kind: z.enum(["concern", "alert"]).describe("Which thread type to summarize"),
+        id: z.string().uuid().describe("The concern or alert UUID"),
+        matchMode: z
+          .enum(["keyword", "expanded"])
+          .nullable()
+          .describe("Linked-document match mode. Default 'keyword'."),
+      }),
+      execute: async ({ kind, id, matchMode }) => {
+        const t0 = Date.now();
+        try {
+          const [{ summarizeThreadCore }, { supabaseAdmin }] = await Promise.all([
+            import("@/lib/agent-briefs-core.server"),
+            import("@/integrations/supabase/client.server"),
+          ]);
+          const res = await summarizeThreadCore(supabaseAdmin, {
+            kind,
+            id,
+            matchMode: matchMode ?? "keyword",
+          });
+          recordToolCall(run, { name: "summarizeThread", input: { kind, id, matchMode }, output: res, ms: Date.now() - t0 });
+          return res;
+        } catch (e) {
+          const err = { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+          recordToolCall(run, { name: "summarizeThread", input: { kind, id, matchMode }, output: err, ms: Date.now() - t0 });
+          return err;
+        }
+      },
+    }),
+
+    generateStatusReport: tool({
+      description:
+        "Snapshot a project's status: totals (activities, overdue, blocked, open alerts/concerns), top overdue activities, and a 3-paragraph executive brief. Read-only — does NOT send email. Use when the user asks 'give me a status report for project X' or 'how is project Y doing'.",
+      inputSchema: z.object({
+        project_id: z.string().uuid().describe("The project UUID to report on"),
+      }),
+      execute: async ({ project_id }) => {
+        const t0 = Date.now();
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { data: project } = await supabaseAdmin
+            .from("projects")
+            .select("id, name")
+            .eq("id", project_id)
+            .maybeSingle();
+          if (!project) {
+            const err = { ok: false as const, error: "Project not found" };
+            recordToolCall(run, { name: "generateStatusReport", input: { project_id }, output: err, ms: Date.now() - t0 });
+            return err;
+          }
+          const today = new Date().toISOString().slice(0, 10);
+          const { data: acts } = await supabaseAdmin
+            .from("activities")
+            .select("id, title, status, due_date, assignee_id")
+            .eq("project_id", project_id)
+            .limit(500);
+          const rows = acts ?? [];
+          const overdueRows = rows
+            .filter((a) => a.status !== "completed" && a.due_date && a.due_date < today)
+            .map((a) => ({
+              title: a.title,
+              days_over: Math.max(
+                0,
+                Math.floor((Date.now() - new Date(a.due_date as string).getTime()) / 86_400_000),
+              ),
+            }))
+            .sort((x, y) => y.days_over - x.days_over)
+            .slice(0, 8);
+          const out = {
+            ok: true as const,
+            project: { id: project.id, name: project.name },
+            totals: {
+              activities: rows.length,
+              completed: rows.filter((a) => a.status === "completed").length,
+              overdue: overdueRows.length,
+              blocked: rows.filter((a) => a.status === "blocked").length,
+            },
+            top_overdue: overdueRows,
+            note: "For a full PDF/email version, open the project on /projects and click 'Status report'.",
+          };
+          recordToolCall(run, { name: "generateStatusReport", input: { project_id }, output: out, ms: Date.now() - t0 });
+          return out;
+        } catch (e) {
+          const err = { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+          recordToolCall(run, { name: "generateStatusReport", input: { project_id }, output: err, ms: Date.now() - t0 });
+          return err;
+        }
+      },
+    }),
   };
 }
+
 
 const SYSTEM_PROMPT = `You are DelayLens Copilot — an agentic assistant for a construction project delay-tracking platform.
 
