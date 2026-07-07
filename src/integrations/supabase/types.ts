@@ -758,6 +758,45 @@ export type Database = {
         }
         Relationships: []
       }
+      digest_reply_tokens: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          digest_kind: string
+          digest_ref: string | null
+          expires_at: string
+          id: string
+          pending_action_ids: string[]
+          project_ids: string[]
+          token: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          digest_kind: string
+          digest_ref?: string | null
+          expires_at?: string
+          id?: string
+          pending_action_ids?: string[]
+          project_ids?: string[]
+          token: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          digest_kind?: string
+          digest_ref?: string | null
+          expires_at?: string
+          id?: string
+          pending_action_ids?: string[]
+          project_ids?: string[]
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       direct_messages: {
         Row: {
           body: string
@@ -1241,6 +1280,48 @@ export type Database = {
           holiday_date?: string
           id?: string
           label?: string | null
+        }
+        Relationships: []
+      }
+      inbound_email_events: {
+        Row: {
+          created_at: string
+          error: string | null
+          from_email: string
+          id: string
+          parsed_commands: Json
+          provider_message_id: string | null
+          raw_body: string | null
+          results: Json
+          status: string
+          subject: string | null
+          token: string | null
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          from_email: string
+          id?: string
+          parsed_commands?: Json
+          provider_message_id?: string | null
+          raw_body?: string | null
+          results?: Json
+          status?: string
+          subject?: string | null
+          token?: string | null
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          from_email?: string
+          id?: string
+          parsed_commands?: Json
+          provider_message_id?: string | null
+          raw_body?: string | null
+          results?: Json
+          status?: string
+          subject?: string | null
+          token?: string | null
         }
         Relationships: []
       }
