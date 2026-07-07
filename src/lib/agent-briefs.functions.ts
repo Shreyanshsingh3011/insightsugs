@@ -40,7 +40,12 @@ function esc(s: string): string {
 const SummarizeInput = z.object({
   kind: z.enum(["concern", "alert"]),
   id: z.string().uuid(),
+  // "keyword": ilike name/summary on activity keyword only (default).
+  // "expanded": also match participant names, project label, and severity
+  //             keywords — broader recall, may add noise.
+  matchMode: z.enum(["keyword", "expanded"]).optional().default("keyword"),
 });
+
 
 export type ThreadBrief = {
   ok: true;
