@@ -273,6 +273,14 @@ function AuthLayout() {
           </aside>
         </div>
       )}
+
+      {/* Global overlays */}
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+      />
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
 }
