@@ -468,6 +468,40 @@ function SignupRequestsTab() {
           })}
         </div>
       )}
+
+      <ConfirmDecisionDialog
+        open={!!signupConfirm}
+        onOpenChange={(o) => { if (!o) setSignupConfirm(null); }}
+        decision={signupConfirm?.decision ?? "approve"}
+        title={signupConfirm ? (signupConfirm.request.full_name || signupConfirm.request.email) : ""}
+        subtitle={signupConfirm ? `${signupConfirm.request.email} · requested role: ${signupConfirm.request.requested_role}` : ""}
+        diff={
+          signupConfirm
+            ? signupConfirm.decision === "approve"
+              ? {
+                  description: `Grant sign-in access with role "${signupConfirm.role}"`,
+                  before: { user_roles: "(none — no access)", signup_status: signupConfirm.request.status },
+                  after: { user_roles: `[${signupConfirm.role}]`, signup_status: "approved", verified_via: "admin" },
+                }
+              : {
+                  description: "Deny sign-in access for this account",
+                  before: { user_roles: "(none — no access)", signup_status: signupConfirm.request.status },
+                  after: { signup_status: "rejected" },
+                }
+            : { description: "", before: null, after: null }
+        }
+        loading={approveMut.isPending || rejectMut.isPending}
+        askNote
+        onConfirm={(note) => {
+          if (!signupConfirm) return;
+          if (signupConfirm.decision === "approve") {
+            approveMut.mutate({ requestId: signupConfirm.request.id, role: signupConfirm.role });
+          } else {
+            rejectMut.mutate({ requestId: signupConfirm.request.id, reason: note ?? "Rejected from approvals inbox" });
+          }
+          setSignupConfirm(null);
+        }}
+      />
     </div>
   );
 }
