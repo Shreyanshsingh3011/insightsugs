@@ -154,7 +154,7 @@ function AuthLayout() {
 
   const allSections = adminSection ? [...sections, adminSection] : sections;
 
-  const goToSearch = () => router.navigate({ to: "/search" });
+  const openPalette = () => setPaletteOpen(true);
 
   const userInitial = (session.user.email ?? "?").charAt(0).toUpperCase();
 
