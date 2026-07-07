@@ -40,7 +40,12 @@ function esc(s: string): string {
 const SummarizeInput = z.object({
   kind: z.enum(["concern", "alert"]),
   id: z.string().uuid(),
+  // "keyword": ilike name/summary on activity keyword only (default).
+  // "expanded": also match participant names, project label, and severity
+  //             keywords — broader recall, may add noise.
+  matchMode: z.enum(["keyword", "expanded"]).optional().default("keyword"),
 });
+
 
 export type ThreadBrief = {
   ok: true;
@@ -61,188 +66,19 @@ export const summarizeThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => SummarizeInput.parse(input))
   .handler(async ({ data, context }): Promise<ThreadBrief | { ok: false; error: string }> => {
-    const { supabase } = context;
-
-    let title = "";
-    let status = "";
-    let severity: string | null = null;
-    let bodyText = "";
-    let activityHint = "";
-    const participants: ThreadBrief["participants"] = [];
-    const messagesRaw: Array<{ author_id: string; body: string; created_at: string }> = [];
-
-    if (data.kind === "concern") {
-      const { data: c, error } = await supabase
-        .from("concerns")
-        .select("id, title, body, status, severity, activity, raised_by, acknowledged_by, resolved_by")
-        .eq("id", data.id)
-        .maybeSingle();
-      if (error || !c) return { ok: false, error: error?.message ?? "Concern not found" };
-      title = c.title;
-      status = c.status;
-      severity = c.severity;
-      bodyText = c.body ?? "";
-      activityHint = c.activity ?? "";
-      const ids = [c.raised_by, c.acknowledged_by, c.resolved_by].filter(Boolean) as string[];
-      if (ids.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
-        for (const p of profs ?? []) {
-          const role: "raiser" | "responder" =
-            p.id === c.raised_by ? "raiser" : "responder";
-          participants.push({ id: p.id, name: p.full_name ?? "Unknown", role });
-        }
-      }
-      const { data: msgs } = await supabase
-        .from("concern_messages")
-        .select("author_id, body, created_at")
-        .eq("concern_id", data.id)
-        .order("created_at", { ascending: true })
-        .limit(200);
-      messagesRaw.push(...(msgs ?? []));
-    } else {
-      const { data: a, error } = await supabase
-        .from("alerts")
-        .select("id, activity, reason, root_cause, status, severity, sent_by, resolved_by")
-        .eq("id", data.id)
-        .maybeSingle();
-      if (error || !a) return { ok: false, error: error?.message ?? "Alert not found" };
-      title = `Alert: ${a.activity}`;
-      status = a.status;
-      severity = a.severity;
-      bodyText = [a.reason, a.root_cause].filter(Boolean).join("\n\n");
-      activityHint = a.activity ?? "";
-      const ids = [a.sent_by, a.resolved_by].filter(Boolean) as string[];
-      if (ids.length) {
-        const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
-        for (const p of profs ?? []) {
-          participants.push({
-            id: p.id,
-            name: p.full_name ?? "Unknown",
-            role: p.id === a.sent_by ? "raiser" : "responder",
-          });
-        }
-      }
-      const { data: recips } = await supabase
-        .from("alert_recipients")
-        .select("user_id")
-        .eq("alert_id", data.id);
-      const recipIds = (recips ?? []).map((r) => r.user_id).filter(Boolean) as string[];
-      if (recipIds.length) {
-        const { data: rProfs } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", recipIds);
-        for (const p of rProfs ?? []) {
-          participants.push({
-            id: p.id,
-            name: p.full_name ?? "Recipient",
-            role: "recipient",
-          });
-        }
-      }
-      const { data: msgs } = await supabase
-        .from("alert_messages")
-        .select("author_id, body, created_at")
-        .eq("alert_id", data.id)
-        .order("created_at", { ascending: true })
-        .limit(200);
-      messagesRaw.push(...(msgs ?? []));
-    }
-
-    // Resolve message authors → names.
-    const authorIds = Array.from(new Set(messagesRaw.map((m) => m.author_id)));
-    const nameById = new Map<string, string>();
-    if (authorIds.length) {
-      const { data: profs } = await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .in("id", authorIds);
-      for (const p of profs ?? []) nameById.set(p.id, p.full_name ?? "Unknown");
-    }
-    const messages = messagesRaw.map((m) => ({
-      name: nameById.get(m.author_id) ?? "Unknown",
-      body: m.body,
-      created_at: m.created_at,
-    }));
-
-    // Linked docs: best-effort keyword match on document name / summary.
-    let linked: ThreadBrief["linked_docs"] = [];
-    const needle = (activityHint || title).trim().slice(0, 60);
-    if (needle) {
-      const { data: docs } = await supabase
-        .from("documents")
-        .select("id, name, summary")
-        .or(`name.ilike.%${needle}%,summary.ilike.%${needle}%`)
-        .limit(5);
-      linked = (docs ?? []).map((d) => ({ id: d.id, name: d.name, summary: d.summary }));
-    }
-
-    // Build AI prompt.
-    const transcript = messages
-      .map((m) => `- [${m.created_at.slice(0, 16).replace("T", " ")}] ${m.name}: ${m.body}`)
-      .join("\n");
-    const docsBlock = linked.length
-      ? linked.map((d) => `- ${d.name}${d.summary ? ` — ${d.summary.slice(0, 240)}` : ""}`).join("\n")
-      : "(no linked documents)";
-    const userMsg = [
-      `${data.kind.toUpperCase()}: ${title}`,
-      `Status: ${status}${severity ? ` · Severity: ${severity}` : ""}`,
-      activityHint ? `Related activity: ${activityHint}` : "",
-      "",
-      "Original description:",
-      bodyText || "(none)",
-      "",
-      "Thread transcript:",
-      transcript || "(no replies yet)",
-      "",
-      "Linked documents:",
-      docsBlock,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    const brief = await aiSummarize(
-      "You are a project delivery analyst. Produce a decision-ready brief for a manager who has 60 seconds. " +
-        "Structure the response as three plain-text sections separated by blank lines: " +
-        "1) BRIEF: 2-3 sentence summary of the situation and where it stands. " +
-        "2) KEY POINTS: 3-6 short bullets starting with '- '. " +
-        "3) RECOMMENDED DECISION: one sentence with a clear action. " +
-        "Cite specific names, dates, and numbers. Do not invent facts.",
-      userMsg,
-    );
-
-    // Parse sections defensively.
-    const sections = brief.split(/\n\s*\n/);
-    const briefPart =
-      sections.find((s) => /BRIEF/i.test(s))?.replace(/^[^:]*:\s*/i, "").trim() ??
-      sections[0]?.trim() ??
-      "";
-    const bulletsPart = sections.find((s) => /KEY POINTS|BULLETS/i.test(s)) ?? "";
-    const bullets = bulletsPart
-      .split("\n")
-      .map((l) => l.replace(/^[-*•]\s*/, "").trim())
-      .filter((l) => l && !/KEY POINTS|BULLETS/i.test(l));
-    const decision =
-      sections
-        .find((s) => /RECOMMEND|DECISION/i.test(s))
-        ?.replace(/^[^:]*:\s*/i, "")
-        .trim() ?? "";
-
-    return {
-      ok: true,
+    const { summarizeThreadCore } = await import("@/lib/agent-briefs-core.server");
+    const res = await summarizeThreadCore(context.supabase, {
       kind: data.kind,
       id: data.id,
-      title,
-      status,
-      severity,
-      participants,
-      message_count: messages.length,
-      linked_docs: linked,
-      brief: briefPart,
-      bullets,
-      recommended_decision: decision,
-    };
+      matchMode: data.matchMode,
+    });
+    if (!res.ok) return res;
+    // Drop the internal-only `match_mode` field to keep the public ThreadBrief
+    // shape backwards-compatible.
+    const { match_mode: _mm, ...rest } = res;
+    return rest;
   });
+
 
 // ---------- generateStatusReport ----------
 
@@ -267,7 +103,16 @@ export type StatusReport = {
   top_overdue: Array<{ title: string; days_over: number; assignee: string | null }>;
   brief: string;
   html: string;
-  email: { queued: boolean; message_id?: string; reason?: string } | null;
+  email:
+    | {
+        queued: boolean;
+        message_id?: string;
+        reason?: string;
+        idempotency_key?: string;
+      }
+    | null;
+  idempotency_key: string;
+
 };
 
 export const generateStatusReport = createServerFn({ method: "POST" })
@@ -386,6 +231,11 @@ export const generateStatusReport = createServerFn({ method: "POST" })
   </table>
 </body></html>`.trim();
 
+    // Idempotency key ties every send for this project+hour together so
+    // repeated clicks don't spam recipients and the UI can look up delivery
+    // status later via email_send_log.metadata.idempotency_key.
+    const idempotencyKey = `status-report:${project.id}:${generatedAt.slice(0, 13)}`;
+
     // Optionally email.
     let emailResult: StatusReport["email"] = null;
     if (data.send_email) {
@@ -399,13 +249,13 @@ export const generateStatusReport = createServerFn({ method: "POST" })
         recipient = me?.email ?? undefined;
       }
       if (!recipient) {
-        emailResult = { queued: false, reason: "no recipient" };
+        emailResult = { queued: false, reason: "no recipient", idempotency_key: idempotencyKey };
       } else {
         const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
         const res = await enqueueAppEmail({
           templateName: "agent-notification",
           recipientEmail: recipient,
-          idempotencyKey: `status-report:${project.id}:${generatedAt.slice(0, 13)}`,
+          idempotencyKey,
           templateData: {
             subject: `Status report — ${project.name}`,
             senderName: "Insight Agent",
@@ -419,8 +269,12 @@ export const generateStatusReport = createServerFn({ method: "POST" })
         });
         emailResult =
           "ok" in res && res.ok
-            ? { queued: true, message_id: res.messageId }
-            : { queued: false, reason: "reason" in res ? res.reason : "failed" };
+            ? { queued: true, message_id: res.messageId, idempotency_key: idempotencyKey }
+            : {
+                queued: false,
+                reason: "reason" in res ? res.reason : "failed",
+                idempotency_key: idempotencyKey,
+              };
       }
     }
 
@@ -433,5 +287,74 @@ export const generateStatusReport = createServerFn({ method: "POST" })
       brief,
       html,
       email: emailResult,
+      idempotency_key: idempotencyKey,
     };
   });
+
+// ---------- Helpers used by the status-report dashboard dialog ----------
+
+// List candidate recipients for a project's status report (project owner +
+// members + assignees on its activities). Auth-scoped via RLS.
+export const listStatusReportRecipients = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ project_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const ids = new Set<string>();
+
+    const { data: proj } = await supabase
+      .from("projects")
+      .select("owner_id")
+      .eq("id", data.project_id)
+      .maybeSingle();
+    if (proj?.owner_id) ids.add(proj.owner_id);
+
+    const { data: members } = await supabase
+      .from("project_members")
+      .select("user_id")
+      .eq("project_id", data.project_id);
+    for (const m of members ?? []) if (m.user_id) ids.add(m.user_id);
+
+    const { data: acts } = await supabase
+      .from("activities")
+      .select("assignee_id")
+      .eq("project_id", data.project_id);
+    for (const a of acts ?? []) if (a.assignee_id) ids.add(a.assignee_id);
+
+    if (ids.size === 0) return { recipients: [] as Array<{ id: string; name: string; email: string }> };
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", Array.from(ids));
+    return {
+      recipients: (profs ?? [])
+        .filter((p) => p.email)
+        .map((p) => ({ id: p.id, name: p.full_name ?? p.email, email: p.email as string })),
+    };
+  });
+
+// Look up the latest delivery attempt for a status-report send by the
+// idempotency key we stored in email_send_log.metadata.
+export const getStatusReportDelivery = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ idempotency_key: z.string().min(4) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: rows } = await supabase
+      .from("email_send_log")
+      .select("message_id, status, recipient_email, error_message, created_at, metadata")
+      .contains("metadata", { idempotency_key: data.idempotency_key } as never)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    const entries = (rows ?? []).map((r) => ({
+      message_id: r.message_id,
+      status: r.status,
+      recipient: r.recipient_email,
+      error: r.error_message,
+      created_at: r.created_at,
+    }));
+    return { entries };
+  });
+

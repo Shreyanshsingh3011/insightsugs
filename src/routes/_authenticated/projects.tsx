@@ -15,6 +15,9 @@ import { toast } from "sonner";
 import { Plus, Trash2, FileSpreadsheet } from "lucide-react";
 import { computeDueDate } from "@/lib/business-days";
 import { listProjectsFromSheets } from "@/lib/sheets.functions";
+import { StatusReportButton } from "@/components/StatusReportDialog";
+import { BriefMatchModeToggle } from "@/components/BriefMatchModeToggle";
+
 
 export const Route = createFileRoute("/_authenticated/projects")({
   head: () => ({ meta: [{ title: "Projects — DelayLens" }] }),
@@ -158,7 +161,12 @@ function ProjectsPage() {
         </Dialog>
       </div>
 
+      <div className="mt-4">
+        <BriefMatchModeToggle />
+      </div>
+
       <ProjectsFromSheets />
+
 
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-[260px_1fr]">
 
@@ -184,7 +192,11 @@ function ProjectsPage() {
                   <h2 className="text-lg font-semibold">{selected.name}</h2>
                   {selected.description && <p className="text-sm text-muted-foreground">{selected.description}</p>}
                 </div>
-                <Button size="sm" onClick={() => addActivity.mutate()}><Plus className="mr-1.5 h-4 w-4" />Activity</Button>
+                <div className="flex items-center gap-2">
+                  <StatusReportButton projectId={selected.id} projectName={selected.name} />
+                  <Button size="sm" onClick={() => addActivity.mutate()}><Plus className="mr-1.5 h-4 w-4" />Activity</Button>
+                </div>
+
               </div>
 
               <div className="mt-4 space-y-2">
