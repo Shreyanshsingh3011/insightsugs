@@ -575,19 +575,28 @@ function CopilotPage() {
               Conversational AI over your sheets and documents. Follow-ups remember context.
             </p>
           </div>
-          {history.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setHistory([]);
-                toast.success("Conversation cleared");
-              }}
+          <div className="flex items-center gap-2">
+            <Link
+              to="/agent/planner"
+              className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-muted"
             >
-              <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Clear chat
-            </Button>
-          )}
+              <Sparkles className="h-3.5 w-3.5 text-primary" /> Plan mode
+            </Link>
+            {history.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setHistory([]);
+                  toast.success("Conversation cleared");
+                }}
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Clear chat
+              </Button>
+            )}
+          </div>
         </div>
+
 
         {/* Auto-Insights digest (when exactly one sheet selected & no chat yet) */}
         {singleSheetId && history.length === 0 && (
