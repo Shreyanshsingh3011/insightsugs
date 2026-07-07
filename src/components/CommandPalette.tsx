@@ -16,7 +16,7 @@ import {
   Bot, LayoutDashboard, Search, Sparkles, Inbox, ListChecks, Bell,
   AlertTriangle, MessageSquareWarning, FileText, Sheet as SheetIcon,
   Newspaper, Users, Radar, Mail, ScrollText, Settings, FolderKanban,
-  Zap, Sun, Moon, Keyboard, PlayCircle, Network,
+  Zap, Sun, Moon, Keyboard, PlayCircle, Network, ShieldCheck,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 
