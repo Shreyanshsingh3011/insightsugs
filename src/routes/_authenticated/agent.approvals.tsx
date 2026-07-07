@@ -356,6 +356,12 @@ function SignupRequestsTab() {
     return filter === "all" ? rows : rows.filter((r) => r.status === filter);
   }, [data, filter]);
 
+  const [signupConfirm, setSignupConfirm] = useState<
+    | null
+    | { request: PendingRequest; decision: "approve"; role: "user" | "admin" | "super_admin" }
+    | { request: PendingRequest; decision: "reject" }
+  >(null);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
