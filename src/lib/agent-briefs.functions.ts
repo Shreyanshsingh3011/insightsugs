@@ -419,6 +419,11 @@ export const generateStatusReport = createServerFn({ method: "POST" })
   </table>
 </body></html>`.trim();
 
+    // Idempotency key ties every send for this project+hour together so
+    // repeated clicks don't spam recipients and the UI can look up delivery
+    // status later via email_send_log.metadata.idempotency_key.
+    const idempotencyKey = `status-report:${project.id}:${generatedAt.slice(0, 13)}`;
+
     // Optionally email.
     let emailResult: StatusReport["email"] = null;
     if (data.send_email) {
@@ -432,13 +437,13 @@ export const generateStatusReport = createServerFn({ method: "POST" })
         recipient = me?.email ?? undefined;
       }
       if (!recipient) {
-        emailResult = { queued: false, reason: "no recipient" };
+        emailResult = { queued: false, reason: "no recipient", idempotency_key: idempotencyKey };
       } else {
         const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
         const res = await enqueueAppEmail({
           templateName: "agent-notification",
           recipientEmail: recipient,
-          idempotencyKey: `status-report:${project.id}:${generatedAt.slice(0, 13)}`,
+          idempotencyKey,
           templateData: {
             subject: `Status report — ${project.name}`,
             senderName: "Insight Agent",
@@ -452,8 +457,12 @@ export const generateStatusReport = createServerFn({ method: "POST" })
         });
         emailResult =
           "ok" in res && res.ok
-            ? { queued: true, message_id: res.messageId }
-            : { queued: false, reason: "reason" in res ? res.reason : "failed" };
+            ? { queued: true, message_id: res.messageId, idempotency_key: idempotencyKey }
+            : {
+                queued: false,
+                reason: "reason" in res ? res.reason : "failed",
+                idempotency_key: idempotencyKey,
+              };
       }
     }
 
@@ -466,5 +475,74 @@ export const generateStatusReport = createServerFn({ method: "POST" })
       brief,
       html,
       email: emailResult,
+      idempotency_key: idempotencyKey,
     };
   });
+
+// ---------- Helpers used by the status-report dashboard dialog ----------
+
+// List candidate recipients for a project's status report (project owner +
+// members + assignees on its activities). Auth-scoped via RLS.
+export const listStatusReportRecipients = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ project_id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const ids = new Set<string>();
+
+    const { data: proj } = await supabase
+      .from("projects")
+      .select("owner_id")
+      .eq("id", data.project_id)
+      .maybeSingle();
+    if (proj?.owner_id) ids.add(proj.owner_id);
+
+    const { data: members } = await supabase
+      .from("project_members")
+      .select("user_id")
+      .eq("project_id", data.project_id);
+    for (const m of members ?? []) if (m.user_id) ids.add(m.user_id);
+
+    const { data: acts } = await supabase
+      .from("activities")
+      .select("assignee_id")
+      .eq("project_id", data.project_id);
+    for (const a of acts ?? []) if (a.assignee_id) ids.add(a.assignee_id);
+
+    if (ids.size === 0) return { recipients: [] as Array<{ id: string; name: string; email: string }> };
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", Array.from(ids));
+    return {
+      recipients: (profs ?? [])
+        .filter((p) => p.email)
+        .map((p) => ({ id: p.id, name: p.full_name ?? p.email, email: p.email as string })),
+    };
+  });
+
+// Look up the latest delivery attempt for a status-report send by the
+// idempotency key we stored in email_send_log.metadata.
+export const getStatusReportDelivery = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ idempotency_key: z.string().min(4) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: rows } = await supabase
+      .from("email_send_log")
+      .select("message_id, status, recipient_email, error_message, created_at, metadata")
+      .contains("metadata", { idempotency_key: data.idempotency_key } as never)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    const entries = (rows ?? []).map((r) => ({
+      message_id: r.message_id,
+      status: r.status,
+      recipient: r.recipient_email,
+      error: r.error_message,
+      created_at: r.created_at,
+    }));
+    return { entries };
+  });
+
