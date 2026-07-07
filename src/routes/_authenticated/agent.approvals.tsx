@@ -131,7 +131,7 @@ function AgentActionsTab() {
   });
 
   const decideMut = useMutation({
-    mutationFn: (v: { id: string; decision: "approve" | "reject" }) => decide({ data: v }),
+    mutationFn: (v: { id: string; decision: "approve" | "reject"; note?: string }) => decide({ data: v }),
     onSuccess: (_r, v) => {
       toast.success(v.decision === "approve" ? "Approved & executed" : "Rejected");
       qc.invalidateQueries({ queryKey: ["pending-actions"] });
