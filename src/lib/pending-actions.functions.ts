@@ -56,6 +56,14 @@ export const decidePendingAction = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { userId, supabase } = context;
+
+    // Snapshot BEFORE state for audit log
+    const { data: before } = await supabase
+      .from("pending_actions")
+      .select("*")
+      .eq("id", data.id)
+      .single();
+
     const status = data.decision === "approve" ? "approved" : "rejected";
     const { data: updated, error } = await supabase
       .from("pending_actions")
@@ -70,16 +78,17 @@ export const decidePendingAction = createServerFn({ method: "POST" })
       .single();
     if (error) throw new Error(error.message);
 
-    // Best-effort execution for approved actions. Keep side-effects tiny —
-    // real integrations (email, sheet writeback) hook in here later.
     let execError: string | null = null;
+    let after = updated;
     if (data.decision === "approve") {
       try {
-        // Placeholder: mark as executed. No external side effect yet.
-        await supabase
+        const { data: exec } = await supabase
           .from("pending_actions")
           .update({ status: "executed", executed_at: new Date().toISOString() })
-          .eq("id", data.id);
+          .eq("id", data.id)
+          .select("*")
+          .single();
+        if (exec) after = exec;
       } catch (e) {
         execError = e instanceof Error ? e.message : String(e);
         await supabase
@@ -89,7 +98,6 @@ export const decidePendingAction = createServerFn({ method: "POST" })
       }
     }
 
-    // Analytics event
     await supabase.from("agent_run_events").insert({
       actor_id: userId,
       agent: "approval",
@@ -97,6 +105,26 @@ export const decidePendingAction = createServerFn({ method: "POST" })
       action_id: data.id,
       run_id: updated?.run_id ?? null,
       metadata: { kind: updated?.kind, exec_error: execError },
+    });
+
+    // Audit log — who decided what, with before/after summary
+    await supabase.from("audit_log").insert({
+      actor_id: userId,
+      event_type: data.decision === "approve" ? "approval.action.approve" : "approval.action.reject",
+      details: {
+        target: "pending_action",
+        target_id: data.id,
+        kind: updated?.kind,
+        title: updated?.title ?? updated?.summary,
+        note: data.note,
+        exec_error: execError,
+        before: before
+          ? { status: before.status, decided_by: before.decided_by, decided_at: before.decided_at }
+          : null,
+        after: after
+          ? { status: after.status, decided_by: after.decided_by, decided_at: after.decided_at, executed_at: after.executed_at }
+          : null,
+      },
     });
 
     return { ok: true, executed: data.decision === "approve" && !execError };

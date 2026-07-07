@@ -40,6 +40,7 @@ import { Route as AuthenticatedAgentMemoryRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
 import { Route as AuthenticatedAgentEvalsRouteImport } from './routes/_authenticated/agent.evals'
 import { Route as AuthenticatedAgentCustomRouteImport } from './routes/_authenticated/agent.custom'
+import { Route as AuthenticatedAgentAuditLogRouteImport } from './routes/_authenticated/agent.audit-log'
 import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authenticated/agent.approvals'
 import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
@@ -226,6 +227,12 @@ const AuthenticatedAgentCustomRoute =
     path: '/custom',
     getParentRoute: () => AuthenticatedAgentRoute,
   } as any)
+const AuthenticatedAgentAuditLogRoute =
+  AuthenticatedAgentAuditLogRouteImport.update({
+    id: '/audit-log',
+    path: '/audit-log',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
 const AuthenticatedAgentApprovalsRoute =
   AuthenticatedAgentApprovalsRouteImport.update({
     id: '/approvals',
@@ -392,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/agent/audit-log': typeof AuthenticatedAgentAuditLogRoute
   '/agent/custom': typeof AuthenticatedAgentCustomRoute
   '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
@@ -446,6 +454,7 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/agent/audit-log': typeof AuthenticatedAgentAuditLogRoute
   '/agent/custom': typeof AuthenticatedAgentCustomRoute
   '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
@@ -504,6 +513,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/_authenticated/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
+  '/_authenticated/agent/audit-log': typeof AuthenticatedAgentAuditLogRoute
   '/_authenticated/agent/custom': typeof AuthenticatedAgentCustomRoute
   '/_authenticated/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
@@ -562,6 +572,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/agent/activity'
     | '/agent/approvals'
+    | '/agent/audit-log'
     | '/agent/custom'
     | '/agent/evals'
     | '/agent/inbox'
@@ -616,6 +627,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/agent/activity'
     | '/agent/approvals'
+    | '/agent/audit-log'
     | '/agent/custom'
     | '/agent/evals'
     | '/agent/inbox'
@@ -673,6 +685,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/users'
     | '/_authenticated/agent/activity'
     | '/_authenticated/agent/approvals'
+    | '/_authenticated/agent/audit-log'
     | '/_authenticated/agent/custom'
     | '/_authenticated/agent/evals'
     | '/_authenticated/agent/inbox'
@@ -947,6 +960,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentCustomRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/_authenticated/agent/audit-log': {
+      id: '/_authenticated/agent/audit-log'
+      path: '/audit-log'
+      fullPath: '/agent/audit-log'
+      preLoaderRoute: typeof AuthenticatedAgentAuditLogRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
     '/_authenticated/agent/approvals': {
       id: '/_authenticated/agent/approvals'
       path: '/approvals'
@@ -1121,6 +1141,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentActivityRoute: typeof AuthenticatedAgentActivityRoute
   AuthenticatedAgentApprovalsRoute: typeof AuthenticatedAgentApprovalsRoute
+  AuthenticatedAgentAuditLogRoute: typeof AuthenticatedAgentAuditLogRoute
   AuthenticatedAgentCustomRoute: typeof AuthenticatedAgentCustomRoute
   AuthenticatedAgentEvalsRoute: typeof AuthenticatedAgentEvalsRoute
   AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
@@ -1138,6 +1159,7 @@ interface AuthenticatedAgentRouteChildren {
 const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentActivityRoute: AuthenticatedAgentActivityRoute,
   AuthenticatedAgentApprovalsRoute: AuthenticatedAgentApprovalsRoute,
+  AuthenticatedAgentAuditLogRoute: AuthenticatedAgentAuditLogRoute,
   AuthenticatedAgentCustomRoute: AuthenticatedAgentCustomRoute,
   AuthenticatedAgentEvalsRoute: AuthenticatedAgentEvalsRoute,
   AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,

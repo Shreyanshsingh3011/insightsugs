@@ -18,8 +18,9 @@ import { useIsAdmin } from "@/hooks/useSession";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDecisionDialog, type ConfirmDiff } from "@/components/ConfirmDecisionDialog";
 import {
-  Check, X, Loader2, ShieldCheck, ArrowLeft, UserPlus, Bot, ArrowRight, MinusCircle, PlusCircle,
+  Check, X, Loader2, ShieldCheck, ArrowLeft, UserPlus, Bot, ArrowRight, MinusCircle, PlusCircle, ScrollText,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -130,7 +131,7 @@ function AgentActionsTab() {
   });
 
   const decideMut = useMutation({
-    mutationFn: (v: { id: string; decision: "approve" | "reject" }) => decide({ data: v }),
+    mutationFn: (v: { id: string; decision: "approve" | "reject"; note?: string }) => decide({ data: v }),
     onSuccess: (_r, v) => {
       toast.success(v.decision === "approve" ? "Approved & executed" : "Rejected");
       qc.invalidateQueries({ queryKey: ["pending-actions"] });
@@ -141,6 +142,12 @@ function AgentActionsTab() {
 
   const items = (data ?? []) as PendingAction[];
   const pendingItems = items.filter((i) => i.status === "pending");
+
+  const [confirmState, setConfirmState] = useState<
+    | null
+    | { action: PendingAction; decision: "approve" | "reject" }
+    | { bulk: "approve" | "reject" }
+  >(null);
 
   const bulkApprove = () => {
     pendingItems.forEach((a) => decideMut.mutate({ id: a.id, decision: "approve" }));
@@ -165,10 +172,10 @@ function AgentActionsTab() {
         </div>
         {status === "pending" && pendingItems.length > 1 && (
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={bulkReject} disabled={decideMut.isPending}>
+            <Button size="sm" variant="outline" onClick={() => setConfirmState({ bulk: "reject" })} disabled={decideMut.isPending}>
               <X className="h-3.5 w-3.5 mr-1" /> Reject all ({pendingItems.length})
             </Button>
-            <Button size="sm" onClick={bulkApprove} disabled={decideMut.isPending}>
+            <Button size="sm" onClick={() => setConfirmState({ bulk: "approve" })} disabled={decideMut.isPending}>
               <Check className="h-3.5 w-3.5 mr-1" /> Approve all ({pendingItems.length})
             </Button>
           </div>
@@ -216,14 +223,14 @@ function AgentActionsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => decideMut.mutate({ id: a.id, decision: "reject" })}
+                        onClick={() => setConfirmState({ action: a, decision: "reject" })}
                         disabled={decideMut.isPending}
                       >
                         <X className="h-3.5 w-3.5 mr-1" /> Reject
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => decideMut.mutate({ id: a.id, decision: "approve" })}
+                        onClick={() => setConfirmState({ action: a, decision: "approve" })}
                         disabled={decideMut.isPending}
                       >
                         <Check className="h-3.5 w-3.5 mr-1" /> Approve
@@ -266,6 +273,46 @@ function AgentActionsTab() {
           })}
         </div>
       )}
+
+      <ConfirmDecisionDialog
+        open={!!confirmState}
+        onOpenChange={(o) => { if (!o) setConfirmState(null); }}
+        decision={confirmState && "bulk" in confirmState ? confirmState.bulk : (confirmState?.decision ?? "approve")}
+        title={
+          confirmState && "bulk" in confirmState
+            ? `${confirmState.bulk === "approve" ? "Approve" : "Reject"} ${pendingItems.length} pending action${pendingItems.length === 1 ? "" : "s"}`
+            : confirmState ? (confirmState.action.title ?? confirmState.action.summary) : ""
+        }
+        subtitle={
+          confirmState && "action" in confirmState
+            ? `${confirmState.action.kind} · ${confirmState.action.summary}`
+            : "This applies the same decision to every pending action in the list."
+        }
+        diff={
+          confirmState && "action" in confirmState
+            ? (() => { const d = buildDiff(confirmState.action); return { description: d.description, before: d.before, after: confirmState.decision === "approve" ? d.after : null }; })()
+            : {
+                description: confirmState && "bulk" in confirmState && confirmState.bulk === "approve"
+                  ? "Execute every listed pending action"
+                  : "Mark every listed pending action as rejected",
+                before: { pending_actions: pendingItems.length },
+                after: confirmState && "bulk" in confirmState && confirmState.bulk === "approve"
+                  ? { executed: pendingItems.length }
+                  : { rejected: pendingItems.length },
+              }
+        }
+        loading={decideMut.isPending}
+        askNote
+        onConfirm={(note) => {
+          if (!confirmState) return;
+          if ("bulk" in confirmState) {
+            if (confirmState.bulk === "approve") bulkApprove(); else bulkReject();
+          } else {
+            decideMut.mutate({ id: confirmState.action.id, decision: confirmState.decision, note });
+          }
+          setConfirmState(null);
+        }}
+      />
     </div>
   );
 }
@@ -308,6 +355,12 @@ function SignupRequestsTab() {
     const rows = (data ?? []) as PendingRequest[];
     return filter === "all" ? rows : rows.filter((r) => r.status === filter);
   }, [data, filter]);
+
+  const [signupConfirm, setSignupConfirm] = useState<
+    | null
+    | { request: PendingRequest; decision: "approve"; role: "user" | "admin" | "super_admin" }
+    | { request: PendingRequest; decision: "reject" }
+  >(null);
 
   return (
     <div className="space-y-4">
@@ -369,7 +422,7 @@ function SignupRequestsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => rejectMut.mutate({ requestId: r.id, reason: "Rejected from approvals inbox" })}
+                        onClick={() => setSignupConfirm({ request: r, decision: "reject" })}
                         disabled={approveMut.isPending || rejectMut.isPending}
                       >
                         <X className="h-3.5 w-3.5 mr-1" /> Reject
@@ -377,14 +430,14 @@ function SignupRequestsTab() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => approveMut.mutate({ requestId: r.id, role: "user" })}
+                        onClick={() => setSignupConfirm({ request: r, decision: "approve", role: "user" })}
                         disabled={approveMut.isPending || rejectMut.isPending}
                       >
                         <Check className="h-3.5 w-3.5 mr-1" /> Approve as user
                       </Button>
                       <Button
                         size="sm"
-                        onClick={() => approveMut.mutate({ requestId: r.id, role: r.requested_role })}
+                        onClick={() => setSignupConfirm({ request: r, decision: "approve", role: r.requested_role })}
                         disabled={approveMut.isPending || rejectMut.isPending}
                       >
                         <Check className="h-3.5 w-3.5 mr-1" /> Approve as {r.requested_role}
@@ -415,6 +468,40 @@ function SignupRequestsTab() {
           })}
         </div>
       )}
+
+      <ConfirmDecisionDialog
+        open={!!signupConfirm}
+        onOpenChange={(o) => { if (!o) setSignupConfirm(null); }}
+        decision={signupConfirm?.decision ?? "approve"}
+        title={signupConfirm ? (signupConfirm.request.full_name || signupConfirm.request.email) : ""}
+        subtitle={signupConfirm ? `${signupConfirm.request.email} · requested role: ${signupConfirm.request.requested_role}` : ""}
+        diff={
+          signupConfirm
+            ? signupConfirm.decision === "approve"
+              ? {
+                  description: `Grant sign-in access with role "${signupConfirm.role}"`,
+                  before: { user_roles: "(none — no access)", signup_status: signupConfirm.request.status },
+                  after: { user_roles: `[${signupConfirm.role}]`, signup_status: "approved", verified_via: "admin" },
+                }
+              : {
+                  description: "Deny sign-in access for this account",
+                  before: { user_roles: "(none — no access)", signup_status: signupConfirm.request.status },
+                  after: { signup_status: "rejected" },
+                }
+            : { description: "", before: null, after: null }
+        }
+        loading={approveMut.isPending || rejectMut.isPending}
+        askNote
+        onConfirm={(note) => {
+          if (!signupConfirm) return;
+          if (signupConfirm.decision === "approve") {
+            approveMut.mutate({ requestId: signupConfirm.request.id, role: signupConfirm.role });
+          } else {
+            rejectMut.mutate({ requestId: signupConfirm.request.id, reason: note ?? "Rejected from approvals inbox" });
+          }
+          setSignupConfirm(null);
+        }}
+      />
     </div>
   );
 }
@@ -443,6 +530,12 @@ function ApprovalsPage() {
             </p>
           </div>
         </div>
+        <Link
+          to="/agent/audit-log"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground border rounded-md px-2.5 py-1.5"
+        >
+          <ScrollText className="h-3.5 w-3.5" /> Audit log
+        </Link>
       </div>
 
       {isAdmin && (
