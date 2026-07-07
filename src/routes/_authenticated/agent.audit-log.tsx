@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { listAuditLog, type AuditEntry } from "@/lib/audit-log.functions";
+import { useBatchedInvalidate } from "@/hooks/useBatchedInvalidate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ScrollText, Loader2, Check, X, ArrowRight, MinusCircle, PlusCircle } from "lucide-react";

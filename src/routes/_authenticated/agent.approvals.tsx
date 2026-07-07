@@ -16,6 +16,7 @@ import {
   type PendingRequest,
 } from "@/lib/signup-verify.functions";
 import { useIsAdmin } from "@/hooks/useSession";
+import { useBatchedInvalidate } from "@/hooks/useBatchedInvalidate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
