@@ -2249,15 +2249,6 @@ export type Database = {
         Args: { _note?: string; _request_id: string }
         Returns: undefined
       }
-      run_rls_role_regression: {
-        Args: never
-        Returns: {
-          actual: number
-          check_name: string
-          expected: number
-          passed: boolean
-        }[]
-      }
       seed_default_doc_folders: {
         Args: { _user_id: string }
         Returns: undefined
