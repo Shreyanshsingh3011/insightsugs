@@ -68,8 +68,8 @@ async def run_role(playwright, user, label):
     page = await ctx.new_page()
 
     await page.goto("http://localhost:8080/login", wait_until="domcontentloaded")
-    await page.get_by_label("Email", exact=False).fill(user["email"])
-    await page.get_by_label("Password", exact=False).fill(user["password"])
+    await page.get_by_placeholder("Email").fill(user["email"])
+    await page.get_by_placeholder("Password").fill(user["password"])
     await page.get_by_role("button", name="Sign in").click()
     try:
         await page.wait_for_url("**/agent**", timeout=8000)
