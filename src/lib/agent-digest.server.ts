@@ -170,7 +170,7 @@ export async function runAgentDigest(): Promise<{
         const pid = (p.payload as { project_id?: string } | null)?.project_id;
         return typeof pid === "string" && allowed.has(pid);
       });
-      await sendTo(prof.email, prof.full_name, scoped, "scoped");
+      await sendTo(prof.id, prof.email, prof.full_name, scoped, "scoped");
     }
   }
 
