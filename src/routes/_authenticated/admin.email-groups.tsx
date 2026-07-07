@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, X, Mail, Users as UsersIcon } from "lucide-react";
 import { listEmailGroups, upsertEmailGroup, deleteEmailGroup } from "@/lib/email-groups.functions";
+import { useIsAdmin } from "@/hooks/useSession";
 
 export const Route = createFileRoute("/_authenticated/admin/email-groups")({
   head: () => ({ meta: [{ title: "Email groups — DelayLens" }] }),
