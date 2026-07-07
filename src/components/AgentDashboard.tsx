@@ -12,7 +12,7 @@ import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
-import { EmailQueuePanel } from "@/components/EmailQueuePanel";
+
 import AgentChatWidget, { type AgentChatContext } from "@/components/AgentChatWidget";
 import { useSession } from "@/hooks/useSession";
 
@@ -1340,7 +1340,7 @@ export default function AgentDashboard() {
         </Card>
       )}
 
-      {(scope.isAdmin || scope.isSuper) && <EmailQueuePanel />}
+      
 
 
 

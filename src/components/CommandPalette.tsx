@@ -124,6 +124,7 @@ export function CommandPalette({
       base.push(
         { id: "nav:projects", group: "Admin", label: "Projects", icon: <FolderKanban className="h-4 w-4" />, run: () => go("/projects") },
         { id: "nav:egroups", group: "Admin", label: "Email groups", icon: <Mail className="h-4 w-4" />, run: () => go("/admin/email-groups") },
+        { id: "nav:equeue", group: "Admin", label: "Email queue & delivery", icon: <Mail className="h-4 w-4" />, run: () => go("/admin/email") },
         { id: "nav:salerts", group: "Admin", label: "Smart alerts", icon: <Radar className="h-4 w-4" />, run: () => go("/admin/smart-alerts") },
         { id: "nav:audit", group: "Admin", label: "Audit", icon: <ScrollText className="h-4 w-4" />, run: () => go("/admin/audit") },
       );
