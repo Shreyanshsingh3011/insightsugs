@@ -135,8 +135,31 @@ export const approveSignupFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { requestId: string; role: "super_admin" | "admin" | "user" }) => d)
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.rpc("approve_signup", { _request_id: data.requestId, _role: data.role });
+    const { supabase, userId } = context;
+    const { data: before } = await supabase
+      .from("signup_requests")
+      .select("id, email, full_name, requested_role, status, granted_role")
+      .eq("id", data.requestId)
+      .maybeSingle();
+    const { error } = await supabase.rpc("approve_signup", {
+      _request_id: data.requestId,
+      _role: data.role,
+    });
     if (error) throw new Error(error.message);
+    await supabase.from("audit_log").insert({
+      actor_id: userId,
+      event_type: "approval.signup.approve",
+      details: {
+        target: "signup_request",
+        target_id: data.requestId,
+        subject_email: before?.email,
+        subject_name: before?.full_name,
+        before: before
+          ? { status: before.status, granted_role: before.granted_role, requested_role: before.requested_role }
+          : null,
+        after: { status: "approved", granted_role: data.role, verified_via: "admin" },
+      },
+    });
     return { ok: true };
   });
 
@@ -144,8 +167,32 @@ export const rejectSignupFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { requestId: string; reason?: string }) => d)
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.rpc("reject_signup", { _request_id: data.requestId, _reason: data.reason ?? "" });
+    const { supabase, userId } = context;
+    const { data: before } = await supabase
+      .from("signup_requests")
+      .select("id, email, full_name, requested_role, status, granted_role")
+      .eq("id", data.requestId)
+      .maybeSingle();
+    const { error } = await supabase.rpc("reject_signup", {
+      _request_id: data.requestId,
+      _reason: data.reason ?? "",
+    });
     if (error) throw new Error(error.message);
+    await supabase.from("audit_log").insert({
+      actor_id: userId,
+      event_type: "approval.signup.reject",
+      details: {
+        target: "signup_request",
+        target_id: data.requestId,
+        subject_email: before?.email,
+        subject_name: before?.full_name,
+        reason: data.reason ?? null,
+        before: before
+          ? { status: before.status, granted_role: before.granted_role, requested_role: before.requested_role }
+          : null,
+        after: { status: "rejected", reject_reason: data.reason ?? null },
+      },
+    });
     return { ok: true };
   });
 
