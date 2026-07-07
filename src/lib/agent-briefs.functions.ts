@@ -170,17 +170,36 @@ export const summarizeThread = createServerFn({ method: "POST" })
       created_at: m.created_at,
     }));
 
-    // Linked docs: best-effort keyword match on document name / summary.
+    // Linked docs: keyword-match on document name / summary. In "expanded"
+    // mode we also OR in participant names and severity for broader recall.
     let linked: ThreadBrief["linked_docs"] = [];
     const needle = (activityHint || title).trim().slice(0, 60);
+    const orParts: string[] = [];
     if (needle) {
+      orParts.push(`name.ilike.%${needle}%`, `summary.ilike.%${needle}%`);
+    }
+    if (data.matchMode === "expanded") {
+      const extraTerms = [
+        ...participants.map((p) => p.name).filter(Boolean),
+        severity ?? "",
+      ]
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 3)
+        .slice(0, 4);
+      for (const t of extraTerms) {
+        const safe = t.replace(/[,()]/g, " ").slice(0, 40);
+        orParts.push(`name.ilike.%${safe}%`, `summary.ilike.%${safe}%`);
+      }
+    }
+    if (orParts.length) {
       const { data: docs } = await supabase
         .from("documents")
         .select("id, name, summary")
-        .or(`name.ilike.%${needle}%,summary.ilike.%${needle}%`)
-        .limit(5);
+        .or(orParts.join(","))
+        .limit(data.matchMode === "expanded" ? 10 : 5);
       linked = (docs ?? []).map((d) => ({ id: d.id, name: d.name, summary: d.summary }));
     }
+
 
     // Build AI prompt.
     const transcript = messages
