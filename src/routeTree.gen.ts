@@ -60,6 +60,7 @@ import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksStaleCriticalWatcherRouteImport } from './routes/api/public/hooks/stale-critical-watcher'
 import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
+import { Route as ApiPublicHooksEmailInboundRouteImport } from './routes/api/public/hooks/email-inbound'
 import { Route as ApiPublicHooksDelayRootCauseRouteImport } from './routes/api/public/hooks/delay-root-cause'
 import { Route as ApiPublicHooksDailyStandupRouteImport } from './routes/api/public/hooks/daily-standup'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
@@ -347,6 +348,12 @@ const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
   path: '/api/public/hooks/escalate',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicHooksEmailInboundRoute =
+  ApiPublicHooksEmailInboundRouteImport.update({
+    id: '/api/public/hooks/email-inbound',
+    path: '/api/public/hooks/email-inbound',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksDelayRootCauseRoute =
   ApiPublicHooksDelayRootCauseRouteImport.update({
     id: '/api/public/hooks/delay-root-cause',
@@ -466,6 +473,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
+  '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -527,6 +535,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
+  '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -592,6 +601,7 @@ export interface FileRoutesById {
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
+  '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -657,6 +667,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
     | '/api/public/hooks/delay-root-cause'
+    | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -718,6 +729,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
     | '/api/public/hooks/delay-root-cause'
+    | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -782,6 +794,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
     | '/api/public/hooks/delay-root-cause'
+    | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -808,6 +821,7 @@ export interface RootRouteChildren {
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
   ApiPublicHooksDailyStandupRoute: typeof ApiPublicHooksDailyStandupRoute
   ApiPublicHooksDelayRootCauseRoute: typeof ApiPublicHooksDelayRootCauseRoute
+  ApiPublicHooksEmailInboundRoute: typeof ApiPublicHooksEmailInboundRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
   ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
   ApiPublicHooksStaleCriticalWatcherRoute: typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -1178,6 +1192,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksEscalateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/email-inbound': {
+      id: '/api/public/hooks/email-inbound'
+      path: '/api/public/hooks/email-inbound'
+      fullPath: '/api/public/hooks/email-inbound'
+      preLoaderRoute: typeof ApiPublicHooksEmailInboundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/delay-root-cause': {
       id: '/api/public/hooks/delay-root-cause'
       path: '/api/public/hooks/delay-root-cause'
@@ -1389,6 +1410,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
   ApiPublicHooksDailyStandupRoute: ApiPublicHooksDailyStandupRoute,
   ApiPublicHooksDelayRootCauseRoute: ApiPublicHooksDelayRootCauseRoute,
+  ApiPublicHooksEmailInboundRoute: ApiPublicHooksEmailInboundRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
   ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
   ApiPublicHooksStaleCriticalWatcherRoute:

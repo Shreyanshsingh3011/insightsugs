@@ -3,6 +3,7 @@ import { template as agentNotification } from './agent-notification'
 import { template as weeklyBriefing } from './weekly-briefing'
 import { template as signupPendingReview } from './signup-pending-review'
 import { template as agentMorningDigest } from './agent-morning-digest'
+import { template as agentInboundAck } from './agent-inbound-ack'
 
 export interface TemplateEntry {
   component: ComponentType<any>
@@ -22,5 +23,6 @@ export const TEMPLATES: Record<string, TemplateEntry> = {
   'weekly-briefing': weeklyBriefing,
   'signup-pending-review': signupPendingReview,
   'agent-morning-digest': agentMorningDigest,
+  'agent-inbound-ack': agentInboundAck,
 }
 

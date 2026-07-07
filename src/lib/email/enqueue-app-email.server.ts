@@ -27,6 +27,10 @@ export type EnqueueEmailInput = {
   recipientEmail: string;
   idempotencyKey?: string;
   templateData?: Record<string, unknown>;
+  /** Optional Reply-To header override (e.g. reply+<token>@reply.sugslloyds.com). */
+  replyTo?: string;
+  /** Optional tag appended to the subject for correlation, e.g. "[ref:<token>]". */
+  subjectTag?: string;
 };
 
 export type EnqueueEmailResult =
@@ -99,6 +103,7 @@ export async function enqueueAppEmail(
     html = await render(el);
     plainText = await render(el, { plainText: true });
     subject = typeof template.subject === "function" ? template.subject(templateData) : template.subject;
+    if (input.subjectTag) subject = `${subject} ${input.subjectTag}`;
   } catch (e) {
     return { ok: false, reason: "render_failed", error: (e as Error).message };
   }
@@ -120,6 +125,7 @@ export async function enqueueAppEmail(
       message_id: messageId,
       to: recipient,
       from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
+      ...(input.replyTo ? { reply_to: input.replyTo } : {}),
       sender_domain: SENDER_DOMAIN,
       subject,
       html,
