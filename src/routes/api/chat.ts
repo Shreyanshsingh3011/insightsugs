@@ -712,6 +712,9 @@ export const Route = createFileRoute("/api/chat")({
                 "\n\nUSER PREFERENCE: When calling summarizeThread, default matchMode='expanded' unless the user explicitly asks for a tight/keyword brief.";
             }
           } catch { /* best-effort */ }
+        }
+
+
 
 
         // Emit a chat-started analytics event (best-effort, admin bypass).
