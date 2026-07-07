@@ -16,6 +16,7 @@ import {
   type PendingRequest,
 } from "@/lib/signup-verify.functions";
 import { useIsAdmin } from "@/hooks/useSession";
+import { useBatchedInvalidate } from "@/hooks/useBatchedInvalidate";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -132,6 +133,8 @@ function AgentActionsTab() {
   });
 
   // Realtime: refresh the list whenever any pending_action row changes.
+  // Batched to coalesce bursts (e.g. bulk inserts) into one refetch.
+  const enqueueInvalidate = useBatchedInvalidate();
   useEffect(() => {
     const channel = supabase
       .channel("approvals-pending-actions")
@@ -139,13 +142,14 @@ function AgentActionsTab() {
         "postgres_changes",
         { event: "*", schema: "public", table: "pending_actions" },
         () => {
-          qc.invalidateQueries({ queryKey: ["pending-actions"] });
-          qc.invalidateQueries({ queryKey: ["pending-actions-count"] });
+          enqueueInvalidate(["pending-actions"]);
+          enqueueInvalidate(["pending-actions-count"]);
         },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [qc]);
+  }, [enqueueInvalidate]);
+
 
   const decideMut = useMutation({
     mutationFn: (v: { id: string; decision: "approve" | "reject"; note?: string }) => decide({ data: v }),
@@ -349,18 +353,20 @@ function SignupRequestsTab() {
     queryFn: () => list(),
   });
 
-  // Realtime: refresh whenever a signup_request row changes.
+  // Realtime: refresh whenever a signup_request row changes (batched).
+  const enqueueInvalidate = useBatchedInvalidate();
   useEffect(() => {
     const channel = supabase
       .channel("approvals-signup-requests")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "signup_requests" },
-        () => qc.invalidateQueries({ queryKey: ["signup-requests"] }),
+        () => enqueueInvalidate(["signup-requests"]),
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [qc]);
+  }, [enqueueInvalidate]);
+
 
   const approveMut = useMutation({
     mutationFn: (v: { requestId: string; role: "user" | "admin" | "super_admin" }) =>

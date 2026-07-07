@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { listAuditLog, type AuditEntry } from "@/lib/audit-log.functions";
+import { useBatchedInvalidate } from "@/hooks/useBatchedInvalidate";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, ScrollText, Loader2, Check, X, ArrowRight, MinusCircle, PlusCircle } from "lucide-react";
@@ -52,18 +53,20 @@ function AuditLogPage() {
   });
   const items = (data ?? []) as AuditEntry[];
 
-  // Realtime: refresh when a new audit_log entry is inserted.
+  // Realtime: refresh when new audit_log entries arrive (batched to coalesce bursts).
+  const enqueueInvalidate = useBatchedInvalidate();
   useEffect(() => {
     const channel = supabase
       .channel("audit-log-stream")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "audit_log" },
-        () => qc.invalidateQueries({ queryKey: ["audit-log"] }),
+        () => enqueueInvalidate(["audit-log"]),
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [qc]);
+  }, [enqueueInvalidate]);
+
 
 
   return (
