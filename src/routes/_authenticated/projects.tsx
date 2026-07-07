@@ -15,6 +15,9 @@ import { toast } from "sonner";
 import { Plus, Trash2, FileSpreadsheet } from "lucide-react";
 import { computeDueDate } from "@/lib/business-days";
 import { listProjectsFromSheets } from "@/lib/sheets.functions";
+import { StatusReportButton } from "@/components/StatusReportDialog";
+import { BriefMatchModeToggle } from "@/components/BriefMatchModeToggle";
+
 
 export const Route = createFileRoute("/_authenticated/projects")({
   head: () => ({ meta: [{ title: "Projects — DelayLens" }] }),
