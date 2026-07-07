@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useIsSuperAdmin } from "@/hooks/useSession";
+import { useIsSuper } from "@/hooks/useSession";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +26,7 @@ type Row = {
 };
 
 function AllowlistPage() {
-  const isSuper = useIsSuperAdmin();
+  const isSuper = useIsSuper();
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
