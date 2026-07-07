@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  CheckCircle2, XCircle, Clock, ShieldCheck, Send, Search, RefreshCw, ShieldAlert, KeyRound, Copy,
+  CheckCircle2, XCircle, Clock, ShieldCheck, Send, Search, RefreshCw, ShieldAlert, KeyRound, Copy, Loader2,
 } from "lucide-react";
 import {
   listSignupRequests,
@@ -510,20 +510,49 @@ function SeedTestLogins() {
             className="h-8 w-52 text-xs"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={seed.isPending}
           />
           <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <input
               type="checkbox"
               checked={includeGmail}
               onChange={(e) => setIncludeGmail(e.target.checked)}
+              disabled={seed.isPending}
             />
             Include @gmail.com
           </label>
-          <Button size="sm" onClick={() => seed.mutate()} disabled={seed.isPending || password.length < 8}>
-            <KeyRound className="h-4 w-4" />
+          <Button
+            size="sm"
+            onClick={() => {
+              if (seed.isPending) return;
+              seed.mutate();
+            }}
+            disabled={seed.isPending || password.length < 8}
+            aria-busy={seed.isPending}
+          >
+            {seed.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <KeyRound className="h-4 w-4" aria-hidden />
+            )}
             {seed.isPending ? "Seeding…" : "Seed / reset"}
           </Button>
         </div>
+        {seed.isPending && (
+          <div
+            className="w-full"
+            role="progressbar"
+            aria-label="Resetting passwords"
+            aria-valuetext="Resetting passwords…"
+          >
+            <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+              <div className="h-full w-1/3 animate-[progress-slide_1.2s_ease-in-out_infinite] rounded-full bg-primary" />
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Resetting passwords and syncing roles — please don't refresh.
+            </p>
+          </div>
+        )}
       </div>
 
       {seed.data && expanded && (
