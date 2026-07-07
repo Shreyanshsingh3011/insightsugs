@@ -21,5 +21,6 @@ export const TEMPLATES: Record<string, TemplateEntry> = {
   'agent-notification': agentNotification,
   'weekly-briefing': weeklyBriefing,
   'signup-pending-review': signupPendingReview,
+  'agent-morning-digest': agentMorningDigest,
 }
 
