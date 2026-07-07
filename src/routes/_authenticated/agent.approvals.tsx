@@ -530,6 +530,12 @@ function ApprovalsPage() {
             </p>
           </div>
         </div>
+        <Link
+          to="/agent/audit-log"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground border rounded-md px-2.5 py-1.5"
+        >
+          <ScrollText className="h-3.5 w-3.5" /> Audit log
+        </Link>
       </div>
 
       {isAdmin && (
