@@ -27,6 +27,10 @@ export type EnqueueEmailInput = {
   recipientEmail: string;
   idempotencyKey?: string;
   templateData?: Record<string, unknown>;
+  /** Optional Reply-To header override (e.g. reply+<token>@reply.sugslloyds.com). */
+  replyTo?: string;
+  /** Optional tag appended to the subject for correlation, e.g. "[ref:<token>]". */
+  subjectTag?: string;
 };
 
 export type EnqueueEmailResult =
