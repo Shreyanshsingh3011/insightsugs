@@ -47,45 +47,109 @@ export async function runAgentDigest(): Promise<{
     return { proposals: 0, emails_queued: 0, slack_posted: false, errors };
   }
 
-  // 2. Super admin emails.
-  const { data: admins, error: adminErr } = await supabaseAdmin.rpc(
-    "list_super_admin_emails",
-  );
-  if (adminErr) errors.push(`list_super_admin_emails: ${adminErr.message}`);
-  const recipients: Array<{ email: string; full_name: string | null }> =
-    (admins ?? []).filter((r: { email?: string }) => r.email && r.email.includes("@"));
-
-  // 3. Enqueue one email per recipient (idempotent per calendar day).
+  // 2. Build recipient list:
+  //    - super admins receive ALL proposals
+  //    - admins receive only proposals whose payload.project_id belongs to a
+  //      project they own or are a member of.
   const day = new Date().toISOString().slice(0, 10);
   let emailsQueued = 0;
-  if (recipients.length > 0) {
-    const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
-    for (const r of recipients) {
-      try {
-        await enqueueAppEmail({
-          templateName: "agent-morning-digest",
-          recipientEmail: r.email,
-          idempotencyKey: `agent-digest-${day}-${r.email}`,
-          templateData: {
-            recipientName: r.full_name ?? "there",
-            windowHours: WINDOW_HOURS,
-            proposals: proposals.slice(0, 20).map((p) => ({
-              title: p.title,
-              summary: p.summary,
-              rationale: p.rationale ?? "",
-              kind: p.kind,
-              reviewUrl: `${SITE_URL}/agent/approvals?id=${p.id}`,
-            })),
-            totalCount: proposals.length,
-            approvalsUrl: `${SITE_URL}/agent/approvals`,
-          },
-        });
-        emailsQueued += 1;
-      } catch (e) {
-        errors.push(`email ${r.email}: ${e instanceof Error ? e.message : String(e)}`);
-      }
+  const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+
+  const sendTo = async (
+    email: string,
+    fullName: string | null,
+    scopedProposals: ProposalRow[],
+    scopeLabel: "all" | "scoped",
+  ) => {
+    if (scopedProposals.length === 0) return;
+    try {
+      await enqueueAppEmail({
+        templateName: "agent-morning-digest",
+        recipientEmail: email,
+        idempotencyKey: `agent-digest-${day}-${scopeLabel}-${email}`,
+        templateData: {
+          recipientName: fullName ?? "there",
+          windowHours: WINDOW_HOURS,
+          proposals: scopedProposals.slice(0, 20).map((p) => ({
+            title: p.title,
+            summary: p.summary,
+            rationale: p.rationale ?? "",
+            kind: p.kind,
+            reviewUrl: `${SITE_URL}/agent/approvals?id=${p.id}`,
+          })),
+          totalCount: scopedProposals.length,
+          approvalsUrl: `${SITE_URL}/agent/approvals`,
+        },
+      });
+      emailsQueued += 1;
+    } catch (e) {
+      errors.push(`email ${email}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // 2a. Super admins — full digest.
+  const { data: supers, error: superErr } = await supabaseAdmin.rpc(
+    "list_super_admin_emails",
+  );
+  if (superErr) errors.push(`list_super_admin_emails: ${superErr.message}`);
+  const superRecipients: Array<{ user_id?: string; email: string; full_name: string | null }> =
+    (supers ?? []).filter((r: { email?: string }) => r.email && r.email.includes("@"));
+  for (const r of superRecipients) {
+    await sendTo(r.email, r.full_name, proposals, "all");
+  }
+
+  // 2b. Admins — project-scoped digest.
+  const superIds = new Set<string>(
+    ((supers ?? []) as Array<{ user_id?: string }>).map((r) => r.user_id ?? "").filter(Boolean),
+  );
+  const { data: adminRoleRows, error: adminRoleErr } = await supabaseAdmin
+    .from("user_roles")
+    .select("user_id")
+    .eq("role", "admin");
+  if (adminRoleErr) errors.push(`admin roles: ${adminRoleErr.message}`);
+  const adminIds = Array.from(
+    new Set(
+      ((adminRoleRows ?? []) as Array<{ user_id: string }>)
+        .map((r) => r.user_id)
+        .filter((id) => id && !superIds.has(id)),
+    ),
+  );
+
+  if (adminIds.length > 0) {
+    const { data: profs } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email, full_name")
+      .in("id", adminIds);
+    const { data: owned } = await supabaseAdmin
+      .from("projects")
+      .select("id, owner_id")
+      .in("owner_id", adminIds);
+    const { data: memb } = await supabaseAdmin
+      .from("project_members")
+      .select("user_id, project_id")
+      .in("user_id", adminIds);
+
+    const projectsByAdmin = new Map<string, Set<string>>();
+    for (const id of adminIds) projectsByAdmin.set(id, new Set());
+    for (const row of (owned ?? []) as Array<{ id: string; owner_id: string }>) {
+      projectsByAdmin.get(row.owner_id)?.add(row.id);
+    }
+    for (const row of (memb ?? []) as Array<{ user_id: string; project_id: string }>) {
+      projectsByAdmin.get(row.user_id)?.add(row.project_id);
+    }
+
+    for (const prof of (profs ?? []) as Array<{ id: string; email: string | null; full_name: string | null }>) {
+      if (!prof.email || !prof.email.includes("@")) continue;
+      const allowed = projectsByAdmin.get(prof.id) ?? new Set<string>();
+      if (allowed.size === 0) continue;
+      const scoped = proposals.filter((p) => {
+        const pid = (p.payload as { project_id?: string } | null)?.project_id;
+        return typeof pid === "string" && allowed.has(pid);
+      });
+      await sendTo(prof.email, prof.full_name, scoped, "scoped");
     }
   }
+
 
   // 4. Optional Slack post — only if a Slack connector is linked.
   let slackPosted = false;
