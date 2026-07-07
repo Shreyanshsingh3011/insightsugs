@@ -156,6 +156,14 @@ export function CommandPalette({
       icon: <PlayCircle className="h-4 w-4" />,
       run: () => go("/agent/custom"),
     },
+    {
+      id: "act:planner",
+      group: "Actions",
+      label: "Multi-step planner…",
+      icon: <Sparkles className="h-4 w-4" />,
+      run: () => go("/agent/planner"),
+    },
+
   ], [mode, toggleTheme, onOpenChange, onOpenShortcuts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
