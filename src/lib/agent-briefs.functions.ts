@@ -291,7 +291,16 @@ export type StatusReport = {
   top_overdue: Array<{ title: string; days_over: number; assignee: string | null }>;
   brief: string;
   html: string;
-  email: { queued: boolean; message_id?: string; reason?: string } | null;
+  email:
+    | {
+        queued: boolean;
+        message_id?: string;
+        reason?: string;
+        idempotency_key?: string;
+      }
+    | null;
+  idempotency_key: string;
+
 };
 
 export const generateStatusReport = createServerFn({ method: "POST" })
