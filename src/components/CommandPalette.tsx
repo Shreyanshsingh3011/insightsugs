@@ -69,8 +69,8 @@ export function CommandPalette({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("sheet_registry")
-        .select("id, title, sheet_type")
-        .order("title", { ascending: true })
+        .select("id, display_name, sheet_type")
+        .order("display_name", { ascending: true })
         .limit(50);
       if (error) throw error;
       return data ?? [];
