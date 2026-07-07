@@ -4,12 +4,15 @@ import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CommandPalette } from "@/components/CommandPalette";
+import { NotificationsBell } from "@/components/NotificationsBell";
+import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import {
-  LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
+  LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
-  Menu, X, Command,
+  Menu, X, Command, Keyboard,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
