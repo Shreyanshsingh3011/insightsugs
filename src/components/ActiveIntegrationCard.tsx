@@ -84,7 +84,7 @@ export function ActiveIntegrationCard() {
           </Button>
           {isSuper && (
             <Button size="sm" variant="outline" asChild>
-              <Link to="/admin/integrations">
+              <Link to="/settings">
                 <Settings2 className="mr-1.5 h-4 w-4" /> Manage
               </Link>
             </Button>
