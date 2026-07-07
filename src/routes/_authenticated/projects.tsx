@@ -192,7 +192,11 @@ function ProjectsPage() {
                   <h2 className="text-lg font-semibold">{selected.name}</h2>
                   {selected.description && <p className="text-sm text-muted-foreground">{selected.description}</p>}
                 </div>
-                <Button size="sm" onClick={() => addActivity.mutate()}><Plus className="mr-1.5 h-4 w-4" />Activity</Button>
+                <div className="flex items-center gap-2">
+                  <StatusReportButton projectId={selected.id} projectName={selected.name} />
+                  <Button size="sm" onClick={() => addActivity.mutate()}><Plus className="mr-1.5 h-4 w-4" />Activity</Button>
+                </div>
+
               </div>
 
               <div className="mt-4 space-y-2">
