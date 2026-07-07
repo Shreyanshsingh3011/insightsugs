@@ -1385,10 +1385,13 @@ export type Database = {
           created_at: string
           decided_at: string | null
           decided_by: string | null
+          escalation_count: number
+          escalation_tier: number
           executed_at: string | null
           execution_error: string | null
           id: string
           kind: string
+          last_escalated_at: string | null
           payload: Json
           proposed_by: string | null
           rationale: string | null
@@ -1403,10 +1406,13 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           decided_by?: string | null
+          escalation_count?: number
+          escalation_tier?: number
           executed_at?: string | null
           execution_error?: string | null
           id?: string
           kind: string
+          last_escalated_at?: string | null
           payload: Json
           proposed_by?: string | null
           rationale?: string | null
@@ -1421,10 +1427,13 @@ export type Database = {
           created_at?: string
           decided_at?: string | null
           decided_by?: string | null
+          escalation_count?: number
+          escalation_tier?: number
           executed_at?: string | null
           execution_error?: string | null
           id?: string
           kind?: string
+          last_escalated_at?: string | null
           payload?: Json
           proposed_by?: string | null
           rationale?: string | null
