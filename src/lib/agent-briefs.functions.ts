@@ -124,16 +124,21 @@ export const summarizeThread = createServerFn({ method: "POST" })
       }
       const { data: recips } = await supabase
         .from("alert_recipients")
-        .select("user_id, profiles:user_id(full_name)")
+        .select("user_id")
         .eq("alert_id", data.id);
-      for (const r of recips ?? []) {
-        if (!r.user_id) continue;
-        participants.push({
-          id: r.user_id,
-          name:
-            (r as { profiles?: { full_name?: string } }).profiles?.full_name ?? "Recipient",
-          role: "recipient",
-        });
+      const recipIds = (recips ?? []).map((r) => r.user_id).filter(Boolean) as string[];
+      if (recipIds.length) {
+        const { data: rProfs } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", recipIds);
+        for (const p of rProfs ?? []) {
+          participants.push({
+            id: p.id,
+            name: p.full_name ?? "Recipient",
+            role: "recipient",
+          });
+        }
       }
       const { data: msgs } = await supabase
         .from("alert_messages")
