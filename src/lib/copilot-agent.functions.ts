@@ -52,46 +52,69 @@ async function fetchAllRows(
   return out;
 }
 
-// Lazily embed any rows for a sheet that don't yet have an embedding row.
-// Skip if the sheet already has an entry for every row_index.
-async function ensureSheetEmbeddings(
+// Lazily embed rows for a sheet that don't yet have an embedding row.
+// Resumable: pass a batchCap to bound wall-time per invocation. Subsequent
+// calls (from copilot questions or the backfill hook) pick up where this
+// one left off, so a huge sheet reaches 100% coverage across a few runs
+// instead of stalling in one request.
+export async function ensureSheetEmbeddings(
   supabase: any,
   registryId: string,
-): Promise<{ embedded: number; total: number }> {
+  opts?: { batchCap?: number },
+): Promise<{ embedded: number; total: number; remaining: number }> {
   const { embedTexts, contentHash } = await import("./embeddings.server");
+  const batchCap = opts?.batchCap ?? 2000;
 
-  // Count total rows vs. embedded rows; only fetch what's missing to keep cost down.
   const { count: totalCount } = await supabase
     .from("sheet_rows")
     .select("row_index", { count: "exact", head: true })
     .eq("sheet_registry_id", registryId);
   const total = totalCount ?? 0;
-  if (total === 0) return { embedded: 0, total: 0 };
+  if (total === 0) return { embedded: 0, total: 0, remaining: 0 };
 
-  const { count: haveCount } = await supabase
-    .from("sheet_row_embeddings")
-    .select("row_index", { count: "exact", head: true })
-    .eq("sheet_registry_id", registryId);
-  if ((haveCount ?? 0) >= total) return { embedded: 0, total };
+  // Pull existing embedded row_indexes up-front so we only fetch/embed misses.
+  const have = new Set<number>();
+  {
+    const PAGE = 1000;
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
+        .from("sheet_row_embeddings")
+        .select("row_index")
+        .eq("sheet_registry_id", registryId)
+        .order("row_index", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) break;
+      for (const r of data as any[]) have.add(r.row_index);
+      if (data.length < PAGE) break;
+    }
+  }
+  const remainingBefore = Math.max(total - have.size, 0);
+  if (remainingBefore === 0) return { embedded: 0, total, remaining: 0 };
 
-  // Cap on the first embed pass so a huge sheet doesn't stall the first
-  // question. Users hitting the cap will get progressively better coverage
-  // as they keep asking questions.
-  const FIRST_PASS_CAP = 4000;
-  const allRows = await fetchAllRows(supabase, registryId, FIRST_PASS_CAP);
-
-  const { data: existing } = await supabase
-    .from("sheet_row_embeddings")
-    .select("row_index")
-    .eq("sheet_registry_id", registryId);
-  const have = new Set<number>((existing ?? []).map((r: any) => r.row_index));
-  const missing = allRows.filter((r) => !have.has(r.row_index));
-  if (missing.length === 0) return { embedded: 0, total };
+  // Fetch just enough missing rows to fill this batch.
+  const missing: Array<{ row_index: number; data: Record<string, unknown> }> = [];
+  const PAGE = 1000;
+  for (let offset = 0; missing.length < batchCap; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("sheet_rows")
+      .select("row_index, canonical, extras")
+      .eq("sheet_registry_id", registryId)
+      .order("row_index", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    for (const r of data as any[]) {
+      if (have.has(r.row_index)) continue;
+      missing.push({ row_index: r.row_index, data: mergeRow(r) });
+      if (missing.length >= batchCap) break;
+    }
+    if (data.length < PAGE) break;
+  }
+  if (missing.length === 0) return { embedded: 0, total, remaining: remainingBefore };
 
   const snippets = missing.map((r) => stringifyRow(r.data));
   const vectors = await embedTexts(snippets);
-
-  // Insert in chunks; unique(registry_id,row_index) prevents dupes on race.
   const toInsert = missing.map((r, i) => ({
     sheet_registry_id: registryId,
     row_index: r.row_index,
@@ -108,7 +131,7 @@ async function ensureSheetEmbeddings(
       });
     if (error) throw new Error(`Embed insert failed: ${error.message}`);
   }
-  return { embedded: missing.length, total };
+  return { embedded: missing.length, total, remaining: remainingBefore - missing.length };
 }
 
 // -------------------- ledger --------------------
