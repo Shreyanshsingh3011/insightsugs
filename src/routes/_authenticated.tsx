@@ -207,6 +207,25 @@ function AuthLayout() {
           <Button
             variant="ghost"
             size="icon"
+            onClick={openPalette}
+            aria-label="Open command palette"
+            className="hidden h-9 w-9 md:inline-flex"
+          >
+            <Command className="h-4 w-4" />
+          </Button>
+          <NotificationsBell />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Keyboard shortcuts"
+            className="hidden h-9 w-9 md:inline-flex"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={toggle}
             aria-label="Toggle theme"
             className="h-9 w-9"
