@@ -9,7 +9,9 @@
     "build:dev": "NODE_OPTIONS=--max-old-space-size=6144 vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:rls": "bun run scripts/tests/rls-role-regression.ts",
+    "test:rls:ui": "python3 scripts/tests/rls-ui-smoke.py"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.5",
