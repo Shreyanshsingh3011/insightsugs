@@ -349,7 +349,19 @@ function SignupRequestsTab() {
     queryFn: () => list(),
   });
 
-  const approveMut = useMutation({
+  // Realtime: refresh whenever a signup_request row changes.
+  useEffect(() => {
+    const channel = supabase
+      .channel("approvals-signup-requests")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "signup_requests" },
+        () => qc.invalidateQueries({ queryKey: ["signup-requests"] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
+
     mutationFn: (v: { requestId: string; role: "user" | "admin" | "super_admin" }) =>
       approve({ data: v }),
     onSuccess: () => {
