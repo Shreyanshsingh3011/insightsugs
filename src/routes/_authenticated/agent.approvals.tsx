@@ -273,6 +273,46 @@ function AgentActionsTab() {
           })}
         </div>
       )}
+
+      <ConfirmDecisionDialog
+        open={!!confirmState}
+        onOpenChange={(o) => { if (!o) setConfirmState(null); }}
+        decision={confirmState && "bulk" in confirmState ? confirmState.bulk : (confirmState?.decision ?? "approve")}
+        title={
+          confirmState && "bulk" in confirmState
+            ? `${confirmState.bulk === "approve" ? "Approve" : "Reject"} ${pendingItems.length} pending action${pendingItems.length === 1 ? "" : "s"}`
+            : confirmState ? (confirmState.action.title ?? confirmState.action.summary) : ""
+        }
+        subtitle={
+          confirmState && "action" in confirmState
+            ? `${confirmState.action.kind} · ${confirmState.action.summary}`
+            : "This applies the same decision to every pending action in the list."
+        }
+        diff={
+          confirmState && "action" in confirmState
+            ? (() => { const d = buildDiff(confirmState.action); return { description: d.description, before: d.before, after: confirmState.decision === "approve" ? d.after : null }; })()
+            : {
+                description: confirmState && "bulk" in confirmState && confirmState.bulk === "approve"
+                  ? "Execute every listed pending action"
+                  : "Mark every listed pending action as rejected",
+                before: { pending_actions: pendingItems.length },
+                after: confirmState && "bulk" in confirmState && confirmState.bulk === "approve"
+                  ? { executed: pendingItems.length }
+                  : { rejected: pendingItems.length },
+              }
+        }
+        loading={decideMut.isPending}
+        askNote
+        onConfirm={(note) => {
+          if (!confirmState) return;
+          if ("bulk" in confirmState) {
+            if (confirmState.bulk === "approve") bulkApprove(); else bulkReject();
+          } else {
+            decideMut.mutate({ id: confirmState.action.id, decision: confirmState.decision, note });
+          }
+          setConfirmState(null);
+        }}
+      />
     </div>
   );
 }
