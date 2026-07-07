@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Plus, Trash2, Save, X, Mail, Users as UsersIcon } from "lucide-react";
 import { listEmailGroups, upsertEmailGroup, deleteEmailGroup } from "@/lib/email-groups.functions";
+import { useIsAdmin } from "@/hooks/useSession";
 
 export const Route = createFileRoute("/_authenticated/admin/email-groups")({
   head: () => ({ meta: [{ title: "Email groups — DelayLens" }] }),
@@ -27,6 +28,7 @@ type GroupRow = {
 const SEVERITIES = ["Critical", "High", "Medium", "Low"];
 
 function EmailGroupsPage() {
+  const isAdmin = useIsAdmin();
   const qc = useQueryClient();
   const listFn = useServerFn(listEmailGroups);
   const upsertFn = useServerFn(upsertEmailGroup);
@@ -35,6 +37,7 @@ function EmailGroupsPage() {
   const { data: groups, isLoading } = useQuery<GroupRow[]>({
     queryKey: ["email-groups"],
     queryFn: () => listFn(),
+    enabled: isAdmin,
   });
 
   const [editing, setEditing] = useState<Partial<GroupRow> | null>(null);
@@ -57,6 +60,10 @@ function EmailGroupsPage() {
     },
     onError: (e: any) => toast.error(e?.message ?? "Delete failed"),
   });
+
+  if (!isAdmin) {
+    return <div className="mx-auto max-w-5xl px-4 py-8 text-sm text-muted-foreground">Admins only.</div>;
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 md:px-6">
