@@ -47,14 +47,27 @@ export const verifySignupAgainstSheet = createServerFn({ method: "POST" })
     const { data: existing } = await supabase.from("user_roles").select("role").eq("user_id", userId).limit(1);
     if (existing && existing.length) return { verified: true, reason: "already approved" };
 
-    // Load profile (name + email)
+    // 1) In-app allowlist first (managed by super admins under /admin/allowlist).
+    const { data: rpc, error: rpcErr } = await supabase.rpc("verify_signup_from_allowlist");
+    if (!rpcErr && Array.isArray(rpc) && rpc.length > 0) {
+      const row = rpc[0] as { verified: boolean; reason: string; granted_role: "user" | "admin" | null };
+      if (row.verified) {
+        return { verified: true, reason: row.reason, role: row.granted_role ?? undefined };
+      }
+      // fall through to CSV fallback only when the reason is "not found"
+      if (!/Not found in allowlist/i.test(row.reason)) {
+        return { verified: false, reason: row.reason };
+      }
+    }
+
+    // 2) Optional CSV allowlist fallback (legacy).
     const { data: prof } = await supabase.from("profiles").select("full_name, email").eq("id", userId).maybeSingle();
     const email = norm(prof?.email ?? "");
     const name = norm(prof?.full_name ?? "");
     if (!email) return { verified: false, reason: "No email on profile" };
 
     const url = process.env.SIGNUP_ALLOWLIST_CSV_URL;
-    if (!url) return { verified: false, reason: "No allowlist configured — awaiting super admin approval." };
+    if (!url) return { verified: false, reason: "Not found in allowlist — awaiting super admin approval." };
 
     let text: string;
     try {
@@ -78,18 +91,75 @@ export const verifySignupAgainstSheet = createServerFn({ method: "POST" })
       const rowEmail = norm(row[iEmail] ?? "");
       if (!rowEmail || rowEmail !== email) continue;
       const rowName = iName >= 0 ? norm(row[iName] ?? "") : "";
-      // Name check: if the sheet has a name, require it to match the profile (when profile has one)
       if (iName >= 0 && rowName && name && rowName !== name) {
         return { verified: false, reason: `Email in allowlist but name doesn't match (sheet: ${row[iName]})` };
       }
       const rawRole = iRole >= 0 ? norm(row[iRole] ?? "") : "user";
       const role: "user" | "admin" = rawRole === "admin" ? "admin" : "user";
-      const { error: rpcErr } = await supabase.rpc("self_verify_signup", { _role: role });
-      if (rpcErr) return { verified: false, reason: rpcErr.message };
+      const { error: rpcErr2 } = await supabase.rpc("self_verify_signup", { _role: role });
+      if (rpcErr2) return { verified: false, reason: rpcErr2.message };
       return { verified: true, reason: "Matched in allowlist sheet", role };
     }
     return { verified: false, reason: "Not found in allowlist — awaiting super admin approval." };
   });
+
+// Fan out email + record notifications to all super admins for a pending signup.
+// Idempotent-ish: uses signup_notifications to dedupe repeated attempts.
+export const notifySuperAdminsOfPendingSignup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{ ok: true; emailed: number } | { ok: false; reason: string }> => {
+    const { supabase, userId } = context;
+
+    const { data: req } = await supabase
+      .from("signup_requests")
+      .select("id, email, full_name, requested_role, status")
+      .eq("user_id", userId)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (!req) return { ok: true, emailed: 0 };
+
+    // Dedupe: skip if we've already emailed super admins for this request.
+    const { data: prior } = await supabase
+      .from("signup_notifications")
+      .select("id")
+      .eq("request_id", req.id)
+      .eq("channel", "email")
+      .limit(1);
+    if (prior && prior.length > 0) return { ok: true, emailed: 0 };
+
+    const { data: recipients } = await supabase.rpc("list_super_admin_emails");
+    const list = (recipients ?? []) as { user_id: string; email: string; full_name: string | null }[];
+    if (list.length === 0) return { ok: true, emailed: 0 };
+
+    const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
+
+    let sent = 0;
+    for (const admin of list) {
+      const r = await enqueueAppEmail({
+        templateName: "signup-pending-review",
+        recipientEmail: admin.email,
+        idempotencyKey: `signup-pending-${req.id}-${admin.user_id}`,
+        templateData: {
+          reviewerName: admin.full_name ?? "",
+          candidateName: req.full_name ?? "",
+          candidateEmail: req.email,
+          requestedRole: req.requested_role,
+          reviewUrl: "https://insightsugs.lovable.app/agent/approvals",
+        },
+      });
+      if (r.ok) sent += 1;
+    }
+
+    await supabase.from("signup_notifications").insert({
+      request_id: req.id,
+      sent_by: userId,
+      channel: "email",
+      note: `Emailed ${sent} super admin(s)`,
+    });
+
+    return { ok: true, emailed: sent };
+  });
+
 
 export type PendingRequest = {
   id: string; user_id: string; email: string; full_name: string | null;
