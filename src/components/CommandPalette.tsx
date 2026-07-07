@@ -86,7 +86,6 @@ export function CommandPalette({
         .from("custom_agents")
         .select("id, name")
         .order("name", { ascending: true })
-        .limit: undefined as never // no-op placeholder; ignored
         .limit(50);
       if (error) throw error;
       return data ?? [];
