@@ -64,6 +64,7 @@ import { Route as ApiPublicHooksDelayRootCauseRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksDailyStandupRouteImport } from './routes/api/public/hooks/daily-standup'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
 import { Route as ApiPublicHooksAgentWatchersRouteImport } from './routes/api/public/hooks/agent-watchers'
+import { Route as ApiPublicHooksAgentEscalateRouteImport } from './routes/api/public/hooks/agent-escalate'
 import { Route as AuthenticatedAgentStageKeyRouteImport } from './routes/_authenticated/agent.stage.$key'
 import { Route as AuthenticatedAgentRowKeyRouteImport } from './routes/_authenticated/agent.row.$key'
 import { Route as AuthenticatedAgentProjectProjectIdRouteImport } from './routes/_authenticated/agent.project.$projectId'
@@ -370,6 +371,12 @@ const ApiPublicHooksAgentWatchersRoute =
     path: '/api/public/hooks/agent-watchers',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksAgentEscalateRoute =
+  ApiPublicHooksAgentEscalateRouteImport.update({
+    id: '/api/public/hooks/agent-escalate',
+    path: '/api/public/hooks/agent-escalate',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedAgentStageKeyRoute =
   AuthenticatedAgentStageKeyRouteImport.update({
     id: '/stage/$key',
@@ -454,6 +461,7 @@ export interface FileRoutesByFullPath {
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
   '/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
+  '/api/public/hooks/agent-escalate': typeof ApiPublicHooksAgentEscalateRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
@@ -514,6 +522,7 @@ export interface FileRoutesByTo {
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
   '/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
+  '/api/public/hooks/agent-escalate': typeof ApiPublicHooksAgentEscalateRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
@@ -578,6 +587,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
   '/_authenticated/agent/row/$key': typeof AuthenticatedAgentRowKeyRoute
   '/_authenticated/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
+  '/api/public/hooks/agent-escalate': typeof ApiPublicHooksAgentEscalateRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
@@ -642,6 +652,7 @@ export interface FileRouteTypes {
     | '/agent/project/$projectId'
     | '/agent/row/$key'
     | '/agent/stage/$key'
+    | '/api/public/hooks/agent-escalate'
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
@@ -702,6 +713,7 @@ export interface FileRouteTypes {
     | '/agent/project/$projectId'
     | '/agent/row/$key'
     | '/agent/stage/$key'
+    | '/api/public/hooks/agent-escalate'
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
@@ -765,6 +777,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/project/$projectId'
     | '/_authenticated/agent/row/$key'
     | '/_authenticated/agent/stage/$key'
+    | '/api/public/hooks/agent-escalate'
     | '/api/public/hooks/agent-watchers'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
@@ -790,6 +803,7 @@ export interface RootRouteChildren {
   ApiPublicAgentDigestRoute: typeof ApiPublicAgentDigestRoute
   ApiPublicAgentTickRoute: typeof ApiPublicAgentTickRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
+  ApiPublicHooksAgentEscalateRoute: typeof ApiPublicHooksAgentEscalateRoute
   ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
   ApiPublicHooksDailyStandupRoute: typeof ApiPublicHooksDailyStandupRoute
@@ -1192,6 +1206,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksAgentWatchersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/agent-escalate': {
+      id: '/api/public/hooks/agent-escalate'
+      path: '/api/public/hooks/agent-escalate'
+      fullPath: '/api/public/hooks/agent-escalate'
+      preLoaderRoute: typeof ApiPublicHooksAgentEscalateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/agent/stage/$key': {
       id: '/_authenticated/agent/stage/$key'
       path: '/stage/$key'
@@ -1363,6 +1384,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicAgentDigestRoute: ApiPublicAgentDigestRoute,
   ApiPublicAgentTickRoute: ApiPublicAgentTickRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
+  ApiPublicHooksAgentEscalateRoute: ApiPublicHooksAgentEscalateRoute,
   ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
   ApiPublicHooksDailyStandupRoute: ApiPublicHooksDailyStandupRoute,
