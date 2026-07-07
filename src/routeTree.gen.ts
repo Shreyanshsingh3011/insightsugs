@@ -23,6 +23,7 @@ import { Route as AuthenticatedMyActivitiesRouteImport } from './routes/_authent
 import { Route as AuthenticatedInsightsRouteImport } from './routes/_authenticated/insights'
 import { Route as AuthenticatedIngestRouteImport } from './routes/_authenticated/ingest'
 import { Route as AuthenticatedDocumentsRouteImport } from './routes/_authenticated/documents'
+import { Route as AuthenticatedCorrelationsRouteImport } from './routes/_authenticated/correlations'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticated/concerns'
 import { Route as AuthenticatedBriefingsRouteImport } from './routes/_authenticated/briefings'
@@ -137,6 +138,12 @@ const AuthenticatedDocumentsRoute = AuthenticatedDocumentsRouteImport.update({
   path: '/documents',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedCorrelationsRoute =
+  AuthenticatedCorrelationsRouteImport.update({
+    id: '/correlations',
+    path: '/correlations',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCopilotRoute = AuthenticatedCopilotRouteImport.update({
   id: '/copilot',
   path: '/copilot',
@@ -382,6 +389,7 @@ export interface FileRoutesByFullPath {
   '/briefings': typeof AuthenticatedBriefingsRoute
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
+  '/correlations': typeof AuthenticatedCorrelationsRoute
   '/documents': typeof AuthenticatedDocumentsRoute
   '/ingest': typeof AuthenticatedIngestRoute
   '/insights': typeof AuthenticatedInsightsRoute
@@ -437,6 +445,7 @@ export interface FileRoutesByTo {
   '/briefings': typeof AuthenticatedBriefingsRoute
   '/concerns': typeof AuthenticatedConcernsRoute
   '/copilot': typeof AuthenticatedCopilotRoute
+  '/correlations': typeof AuthenticatedCorrelationsRoute
   '/documents': typeof AuthenticatedDocumentsRoute
   '/ingest': typeof AuthenticatedIngestRoute
   '/insights': typeof AuthenticatedInsightsRoute
@@ -496,6 +505,7 @@ export interface FileRoutesById {
   '/_authenticated/briefings': typeof AuthenticatedBriefingsRoute
   '/_authenticated/concerns': typeof AuthenticatedConcernsRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
+  '/_authenticated/correlations': typeof AuthenticatedCorrelationsRoute
   '/_authenticated/documents': typeof AuthenticatedDocumentsRoute
   '/_authenticated/ingest': typeof AuthenticatedIngestRoute
   '/_authenticated/insights': typeof AuthenticatedInsightsRoute
@@ -555,6 +565,7 @@ export interface FileRouteTypes {
     | '/briefings'
     | '/concerns'
     | '/copilot'
+    | '/correlations'
     | '/documents'
     | '/ingest'
     | '/insights'
@@ -610,6 +621,7 @@ export interface FileRouteTypes {
     | '/briefings'
     | '/concerns'
     | '/copilot'
+    | '/correlations'
     | '/documents'
     | '/ingest'
     | '/insights'
@@ -668,6 +680,7 @@ export interface FileRouteTypes {
     | '/_authenticated/briefings'
     | '/_authenticated/concerns'
     | '/_authenticated/copilot'
+    | '/_authenticated/correlations'
     | '/_authenticated/documents'
     | '/_authenticated/ingest'
     | '/_authenticated/insights'
@@ -839,6 +852,13 @@ declare module '@tanstack/react-router' {
       path: '/documents'
       fullPath: '/documents'
       preLoaderRoute: typeof AuthenticatedDocumentsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/correlations': {
+      id: '/_authenticated/correlations'
+      path: '/correlations'
+      fullPath: '/correlations'
+      preLoaderRoute: typeof AuthenticatedCorrelationsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/copilot': {
@@ -1208,6 +1228,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedBriefingsRoute: typeof AuthenticatedBriefingsRoute
   AuthenticatedConcernsRoute: typeof AuthenticatedConcernsRoute
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
+  AuthenticatedCorrelationsRoute: typeof AuthenticatedCorrelationsRoute
   AuthenticatedDocumentsRoute: typeof AuthenticatedDocumentsRoute
   AuthenticatedIngestRoute: typeof AuthenticatedIngestRoute
   AuthenticatedInsightsRoute: typeof AuthenticatedInsightsRoute
@@ -1229,6 +1250,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedBriefingsRoute: AuthenticatedBriefingsRoute,
   AuthenticatedConcernsRoute: AuthenticatedConcernsRoute,
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
+  AuthenticatedCorrelationsRoute: AuthenticatedCorrelationsRoute,
   AuthenticatedDocumentsRoute: AuthenticatedDocumentsRoute,
   AuthenticatedIngestRoute: AuthenticatedIngestRoute,
   AuthenticatedInsightsRoute: AuthenticatedInsightsRoute,

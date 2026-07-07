@@ -16,7 +16,7 @@ import {
   Bot, LayoutDashboard, Search, Sparkles, Inbox, ListChecks, Bell,
   AlertTriangle, MessageSquareWarning, FileText, Sheet as SheetIcon,
   Newspaper, Users, Radar, Mail, ScrollText, Settings, FolderKanban,
-  Zap, Sun, Moon, Keyboard, PlayCircle,
+  Zap, Sun, Moon, Keyboard, PlayCircle, Network,
 } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -118,6 +118,7 @@ export function CommandPalette({
       { id: "nav:ingest", group: "Navigate", label: "Data ingestion", icon: <Zap className="h-4 w-4" />, run: () => go("/ingest") },
       { id: "nav:briefings", group: "Navigate", label: "Briefings", icon: <Newspaper className="h-4 w-4" />, run: () => go("/briefings") },
       { id: "nav:settings", group: "Navigate", label: "Settings", icon: <Settings className="h-4 w-4" />, run: () => go("/settings") },
+      { id: "nav:correlations", group: "Navigate", label: "Find correlations", icon: <Network className="h-4 w-4" />, run: () => go("/correlations") },
     ];
     if (isAdmin) {
       base.push(
