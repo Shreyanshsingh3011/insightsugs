@@ -28,6 +28,7 @@ type GroupRow = {
 const SEVERITIES = ["Critical", "High", "Medium", "Low"];
 
 function EmailGroupsPage() {
+  const isAdmin = useIsAdmin();
   const qc = useQueryClient();
   const listFn = useServerFn(listEmailGroups);
   const upsertFn = useServerFn(upsertEmailGroup);
