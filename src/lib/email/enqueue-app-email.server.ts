@@ -103,6 +103,7 @@ export async function enqueueAppEmail(
     html = await render(el);
     plainText = await render(el, { plainText: true });
     subject = typeof template.subject === "function" ? template.subject(templateData) : template.subject;
+    if (input.subjectTag) subject = `${subject} ${input.subjectTag}`;
   } catch (e) {
     return { ok: false, reason: "render_failed", error: (e as Error).message };
   }
