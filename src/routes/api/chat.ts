@@ -315,19 +315,199 @@ function buildTools(
         }
       },
     }),
+
+    queryProjects: tool({
+      description:
+        "List projects/sheets visible to the current user with row counts and last-refresh time. Use to answer 'which projects are late', 'show me all projects', or when the user names a project other than the currently-loaded one so you can identify it before drilling in.",
+      inputSchema: z.object({
+        query: z.string().nullable().describe("Optional case-insensitive name filter"),
+        limit: z.number().nullable().describe("Max results (default 20)"),
+      }),
+      execute: async ({ query, limit }) => {
+        const t0 = Date.now();
+        try {
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          let q = supabaseAdmin
+            .from("sheet_registry")
+            .select("id, display_name, sheet_type, row_count, last_refreshed_at, user_id, visibility")
+            .order("last_refreshed_at", { ascending: false, nullsFirst: false })
+            .limit(Math.max(1, Math.min(limit ?? 20, 50)));
+          if (actorId) {
+            q = q.or(`user_id.eq.${actorId},visibility.eq.shared,visibility.eq.public`);
+          } else {
+            q = q.eq("visibility", "public");
+          }
+          if (query && query.trim()) {
+            q = q.ilike("display_name", `%${query.trim()}%`);
+          }
+          const { data, error } = await q;
+          const out = error
+            ? { error: error.message, items: [] }
+            : {
+                count: data?.length ?? 0,
+                current_project: ctx.projectLabel ?? ctx.projectId ?? null,
+                items: (data ?? []).map((r) => ({
+                  id: r.id,
+                  name: r.display_name,
+                  type: r.sheet_type,
+                  rows: r.row_count,
+                  last_refreshed: r.last_refreshed_at,
+                  is_current: r.id === ctx.projectId,
+                })),
+              };
+          recordToolCall(run, { name: "queryProjects", input: { query, limit }, output: out, ms: Date.now() - t0 });
+          return out;
+        } catch (e) {
+          const out = { error: e instanceof Error ? e.message : String(e), items: [] };
+          recordToolCall(run, { name: "queryProjects", input: { query, limit }, output: out, ms: Date.now() - t0 });
+          return out;
+        }
+      },
+    }),
+
+    investigateDelay: tool({
+      description:
+        "Root-cause an overdue activity: joins the TAT breach, owner workload, and any related open flags on the current project. Use for 'why is X late', 'what's blocking Y', 'who should I nudge about Z'. Returns a structured finding; follow up with createAlert / draftEmail / scheduleStandup as needed.",
+      inputSchema: z.object({
+        activity: z.string().describe("Activity name (case-insensitive substring match)"),
+      }),
+      execute: async ({ activity }) =>
+        timed("investigateDelay", { activity }, () => {
+          const q = activity.trim().toLowerCase();
+          const tat = (ctx.tatRows ?? []).find((r) => r.activity?.toLowerCase().includes(q));
+          if (!tat) return { found: false, activity };
+          const owner = tat.person ?? "";
+          const ownerStats = (ctx.personRanking ?? []).find(
+            (p) => owner && p.person.toLowerCase().includes(owner.toLowerCase()),
+          );
+          const relatedFlags = (ctx.flags ?? [])
+            .filter(
+              (f) =>
+                f.activity?.toLowerCase().includes(q) ||
+                (owner && (f.flagged_to?.person ?? "").toLowerCase().includes(owner.toLowerCase())),
+            )
+            .slice(0, 5)
+            .map((f) => ({
+              id: f.id,
+              activity: f.activity,
+              severity: f.severity,
+              reason: f.reason_text ?? f.reason,
+              stage: f.stage,
+              status: f.status,
+            }));
+          const daysOver = tat.delta ?? 0;
+          const severity = daysOver > 10 ? "critical" : daysOver > 3 ? "warning" : "info";
+          return {
+            found: true,
+            activity: tat.activity,
+            owner: owner || null,
+            tat_days: tat.tat,
+            actual_days: tat.days_taken,
+            days_over: daysOver,
+            status: tat.status,
+            suggested_severity: severity,
+            owner_workload: ownerStats
+              ? {
+                  delay_count: ownerStats.delay_count,
+                  total_overdue_days: ownerStats.total_overdue_days,
+                  is_top_offender: (ctx.personRanking ?? [])[0]?.person === ownerStats.person,
+                }
+              : null,
+            related_flags: relatedFlags,
+            recommendation:
+              daysOver > 10
+                ? `Escalate: raise a critical alert and draft an email to ${owner || "the owner"}.`
+                : daysOver > 3
+                  ? `Nudge ${owner || "the owner"} and consider scheduling a standup.`
+                  : `Monitor; owner may recover without intervention.`,
+          };
+        }),
+    }),
+
+    createAlert: tool({
+      description:
+        "Queue an alert proposal for human approval at /agent/approvals. Use when the user says 'create alert', 'raise alert', or 'flag'.",
+      inputSchema: z.object({
+        activity: z.string().describe("Activity name to raise the alert on"),
+        person: z.string().nullable().describe("Person to flag it to (optional)"),
+        severity: z.enum(["info", "warning", "critical"]).describe("Alert severity"),
+        reason: z.string().describe("One-sentence reason for the alert"),
+      }),
+      execute: async ({ activity, person, severity, reason }) => {
+        const res = await queueAction(
+          "create_alert",
+          `Alert: ${activity}`,
+          `${severity.toUpperCase()} — ${activity}${person ? ` (owner: ${person})` : ""}`,
+          reason,
+          { activity, person, severity, reason, project: ctx.projectLabel ?? ctx.projectId },
+        );
+        recordToolCall(run, { name: "createAlert", input: { activity, person, severity }, output: res });
+        return res;
+      },
+    }),
+
+    draftEmail: tool({
+      description:
+        "Draft an email to an assignee/stakeholder about a delay or blocker. Queues the draft for human review — NO email is sent until approved at /agent/approvals. Use for 'email X about Y', 'send a follow-up', or after investigateDelay flags a critical breach.",
+      inputSchema: z.object({
+        to: z.string().describe("Recipient name (owner/assignee)"),
+        subject: z.string().describe("Email subject line"),
+        body: z.string().describe("Email body — professional, specific, references the activity and days overdue"),
+        activity: z.string().nullable().describe("Related activity name for traceability"),
+      }),
+      execute: async ({ to, subject, body, activity }) => {
+        const res = await queueAction(
+          "draft_email",
+          `Email draft to ${to}`,
+          subject,
+          activity ? `Regarding: ${activity}` : "Follow-up email",
+          { to, subject, body, activity, project: ctx.projectLabel ?? ctx.projectId },
+        );
+        recordToolCall(run, { name: "draftEmail", input: { to, subject, activity }, output: res });
+        return res;
+      },
+    }),
+
+    scheduleStandup: tool({
+      description:
+        "Propose a standup/sync meeting to unblock a delayed activity or group. Queues for human approval — no calendar invite is sent automatically.",
+      inputSchema: z.object({
+        title: z.string().describe("Meeting title"),
+        attendees: z.array(z.string()).describe("Attendee names"),
+        when: z.string().describe("Proposed time in natural language, e.g. 'tomorrow 10am' or '2026-07-08T10:00'"),
+        agenda: z.string().describe("Short agenda (1-3 bullets)"),
+      }),
+      execute: async ({ title, attendees, when, agenda }) => {
+        const res = await queueAction(
+          "schedule_standup",
+          title,
+          `Standup with ${attendees.join(", ")} — ${when}`,
+          agenda,
+          { title, attendees, when, agenda, project: ctx.projectLabel ?? ctx.projectId },
+        );
+        recordToolCall(run, { name: "scheduleStandup", input: { title, attendees, when }, output: res });
+        return res;
+      },
+    }),
   };
 }
 
-const SYSTEM_PROMPT = `You are DelayLens Copilot, an agentic assistant for a construction project delay-tracking platform.
+const SYSTEM_PROMPT = `You are DelayLens Copilot — an agentic assistant for a construction project delay-tracking platform.
+
+You are an AGENT, not a Q&A bot. For any non-trivial question:
+  1. THINK about what you need to know.
+  2. CALL TOOLS to gather it — chain multiple tool calls in one turn when needed.
+  3. For "why is Project X late and who should I nudge?" style questions the canonical loop is:
+       queryProjects (if the project isn't the current one) → investigateDelay (or topDelays + getPersonWorkload) → propose a followup (createAlert / draftEmail / scheduleStandup).
+  4. Only then produce a short, direct answer that cites the specific findings.
 
 RULES:
 - Answer ONLY from tool outputs and the dashboard context provided. Never invent names, numbers, or dates.
-- For any question about specific people, delays, alerts, or activities, CALL A TOOL first. Do not answer from prior chat memory alone.
+- For any question about specific people, projects, delays, alerts, or activities, CALL A TOOL first.
 - If a tool returns no matching data, say so explicitly ("I don't see X in the current project data").
-- Cite specifics: person names, activity names, day counts. Keep answers tight — bullets over prose.
-- To ACT (create alert, nudge, escalate), call a proposeXxx tool. Never say "I'll send" or "I'll create" — those tools QUEUE a proposal for human approval. Tell the user: "Queued for your approval — review at /agent/approvals."
-
-When you have enough information, produce a short, direct answer.`;
+- Cite specifics: person names, activity names, day counts. Prefer bullets over prose.
+- Write tools (createAlert / draftEmail / scheduleStandup / proposeCreateAlert / proposeNudgeAssignee) QUEUE proposals for human approval — they never send or create anything directly. When you use one, tell the user: "Queued for your approval — review at /agent/approvals."
+- Chain up to ~50 tool steps when it produces a better answer, but stop as soon as you have enough.`;
 
 export const Route = createFileRoute("/api/chat")({
   server: {
