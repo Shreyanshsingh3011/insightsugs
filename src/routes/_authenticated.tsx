@@ -165,7 +165,7 @@ function AuthLayout() {
         <BrandMark />
         <div className="px-3 pb-2">
           <button
-            onClick={goToSearch}
+            onClick={openPalette}
             className="group flex w-full items-center gap-2 rounded-lg border border-border bg-background/60 px-3 py-2 text-left text-sm text-muted-foreground transition-all hover:border-foreground/20 hover:bg-background hover:text-foreground"
           >
             <Search className="h-4 w-4" />
@@ -197,7 +197,7 @@ function AuthLayout() {
             <Menu className="h-5 w-5" />
           </button>
           <button
-            onClick={goToSearch}
+            onClick={openPalette}
             className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
           >
             <Search className="h-4 w-4" />
