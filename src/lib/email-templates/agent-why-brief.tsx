@@ -29,7 +29,7 @@ const Email = ({ subject, items = [] }: Props) => (
           <Text style={p}>No items to brief on.</Text>
         ) : (
           items.map((it) => (
-            <Section key={it.index} style={box}>
+            <Section key={String(it.index)} style={box}>
               <Text style={h2}>
                 #{it.index} — {it.title}
               </Text>
