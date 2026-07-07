@@ -362,6 +362,7 @@ function SignupRequestsTab() {
     return () => { supabase.removeChannel(channel); };
   }, [qc]);
 
+  const approveMut = useMutation({
     mutationFn: (v: { requestId: string; role: "user" | "admin" | "super_admin" }) =>
       approve({ data: v }),
     onSuccess: () => {
