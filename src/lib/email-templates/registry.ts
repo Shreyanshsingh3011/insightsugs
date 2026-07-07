@@ -2,6 +2,7 @@ import type { ComponentType } from 'react'
 import { template as agentNotification } from './agent-notification'
 import { template as weeklyBriefing } from './weekly-briefing'
 import { template as signupPendingReview } from './signup-pending-review'
+import { template as agentMorningDigest } from './agent-morning-digest'
 
 export interface TemplateEntry {
   component: ComponentType<any>
@@ -20,5 +21,6 @@ export const TEMPLATES: Record<string, TemplateEntry> = {
   'agent-notification': agentNotification,
   'weekly-briefing': weeklyBriefing,
   'signup-pending-review': signupPendingReview,
+  'agent-morning-digest': agentMorningDigest,
 }
 
