@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { listAuditLog, type AuditEntry } from "@/lib/audit-log.functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,12 +44,27 @@ function DiffPanel({ label, data, tone }: {
 
 function AuditLogPage() {
   const list = useServerFn(listAuditLog);
+  const qc = useQueryClient();
   const [filter, setFilter] = useState<FilterKey>("all");
   const { data, isLoading, error } = useQuery({
     queryKey: ["audit-log", filter],
     queryFn: () => list({ data: { filter } }),
   });
   const items = (data ?? []) as AuditEntry[];
+
+  // Realtime: refresh when a new audit_log entry is inserted.
+  useEffect(() => {
+    const channel = supabase
+      .channel("audit-log-stream")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "audit_log" },
+        () => qc.invalidateQueries({ queryKey: ["audit-log"] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
+
 
   return (
     <div className="space-y-4">

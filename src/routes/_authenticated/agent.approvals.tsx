@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import {
   listPendingActions,
   decidePendingAction,
@@ -129,6 +130,22 @@ function AgentActionsTab() {
     queryKey: ["pending-actions", status],
     queryFn: () => list({ data: { status } }),
   });
+
+  // Realtime: refresh the list whenever any pending_action row changes.
+  useEffect(() => {
+    const channel = supabase
+      .channel("approvals-pending-actions")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "pending_actions" },
+        () => {
+          qc.invalidateQueries({ queryKey: ["pending-actions"] });
+          qc.invalidateQueries({ queryKey: ["pending-actions-count"] });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
 
   const decideMut = useMutation({
     mutationFn: (v: { id: string; decision: "approve" | "reject"; note?: string }) => decide({ data: v }),
@@ -331,6 +348,19 @@ function SignupRequestsTab() {
     queryKey: ["signup-requests"],
     queryFn: () => list(),
   });
+
+  // Realtime: refresh whenever a signup_request row changes.
+  useEffect(() => {
+    const channel = supabase
+      .channel("approvals-signup-requests")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "signup_requests" },
+        () => qc.invalidateQueries({ queryKey: ["signup-requests"] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
 
   const approveMut = useMutation({
     mutationFn: (v: { requestId: string; role: "user" | "admin" | "super_admin" }) =>
