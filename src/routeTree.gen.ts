@@ -31,6 +31,7 @@ import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent.index'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
+import { Route as ApiAgentPlanRouteImport } from './routes/api/agent/plan'
 import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authenticated/sheets.$sheetId'
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAgentRunsRouteImport } from './routes/_authenticated/agent.runs'
@@ -173,6 +174,11 @@ const AuthenticatedAgentIndexRoute = AuthenticatedAgentIndexRouteImport.update({
 const LovableEmailSuppressionRoute = LovableEmailSuppressionRouteImport.update({
   id: '/lovable/email/suppression',
   path: '/lovable/email/suppression',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAgentPlanRoute = ApiAgentPlanRouteImport.update({
+  id: '/api/agent/plan',
+  path: '/api/agent/plan',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedSheetsSheetIdRoute =
@@ -386,6 +392,7 @@ export interface FileRoutesByFullPath {
   '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/api/agent/plan': typeof ApiAgentPlanRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
@@ -438,6 +445,7 @@ export interface FileRoutesByTo {
   '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/api/agent/plan': typeof ApiAgentPlanRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
@@ -494,6 +502,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
   '/_authenticated/sheets/$sheetId': typeof AuthenticatedSheetsSheetIdRoute
+  '/api/agent/plan': typeof ApiAgentPlanRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
@@ -550,6 +559,7 @@ export interface FileRouteTypes {
     | '/agent/runs'
     | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/api/agent/plan'
     | '/lovable/email/suppression'
     | '/agent/'
     | '/alerts/'
@@ -602,6 +612,7 @@ export interface FileRouteTypes {
     | '/agent/runs'
     | '/alerts/$id'
     | '/sheets/$sheetId'
+    | '/api/agent/plan'
     | '/lovable/email/suppression'
     | '/agent'
     | '/alerts'
@@ -657,6 +668,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/runs'
     | '/_authenticated/alerts/$id'
     | '/_authenticated/sheets/$sheetId'
+    | '/api/agent/plan'
     | '/lovable/email/suppression'
     | '/_authenticated/agent/'
     | '/_authenticated/alerts/'
@@ -686,6 +698,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiChatRoute: typeof ApiChatRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
+  ApiAgentPlanRoute: typeof ApiAgentPlanRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
@@ -856,6 +869,13 @@ declare module '@tanstack/react-router' {
       path: '/lovable/email/suppression'
       fullPath: '/lovable/email/suppression'
       preLoaderRoute: typeof LovableEmailSuppressionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/agent/plan': {
+      id: '/api/agent/plan'
+      path: '/api/agent/plan'
+      fullPath: '/api/agent/plan'
+      preLoaderRoute: typeof ApiAgentPlanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/sheets/$sheetId': {
@@ -1190,6 +1210,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiChatRoute: ApiChatRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
+  ApiAgentPlanRoute: ApiAgentPlanRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
