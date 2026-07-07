@@ -49,6 +49,7 @@ import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminEmailRouteImport } from './routes/_authenticated/admin.email'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
+import { Route as AuthenticatedAdminAllowlistRouteImport } from './routes/_authenticated/admin.allowlist'
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
 import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
@@ -280,6 +281,12 @@ const AuthenticatedAdminAuditRoute = AuthenticatedAdminAuditRouteImport.update({
   path: '/admin/audit',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminAllowlistRoute =
+  AuthenticatedAdminAllowlistRouteImport.update({
+    id: '/admin/allowlist',
+    path: '/admin/allowlist',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const LovableEmailTransactionalSendRoute =
   LovableEmailTransactionalSendRouteImport.update({
     id: '/lovable/email/transactional/send',
@@ -407,6 +414,7 @@ export interface FileRoutesByFullPath {
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email': typeof AuthenticatedAdminEmailRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
@@ -464,6 +472,7 @@ export interface FileRoutesByTo {
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/admin/email': typeof AuthenticatedAdminEmailRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
@@ -525,6 +534,7 @@ export interface FileRoutesById {
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/_authenticated/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
   '/_authenticated/admin/email': typeof AuthenticatedAdminEmailRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
@@ -586,6 +596,7 @@ export interface FileRouteTypes {
     | '/sheets'
     | '/api/chat'
     | '/email/unsubscribe'
+    | '/admin/allowlist'
     | '/admin/audit'
     | '/admin/email'
     | '/admin/email-groups'
@@ -643,6 +654,7 @@ export interface FileRouteTypes {
     | '/sheets'
     | '/api/chat'
     | '/email/unsubscribe'
+    | '/admin/allowlist'
     | '/admin/audit'
     | '/admin/email'
     | '/admin/email-groups'
@@ -703,6 +715,7 @@ export interface FileRouteTypes {
     | '/_authenticated/sheets'
     | '/api/chat'
     | '/email/unsubscribe'
+    | '/_authenticated/admin/allowlist'
     | '/_authenticated/admin/audit'
     | '/_authenticated/admin/email'
     | '/_authenticated/admin/email-groups'
@@ -1048,6 +1061,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminAuditRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/allowlist': {
+      id: '/_authenticated/admin/allowlist'
+      path: '/admin/allowlist'
+      fullPath: '/admin/allowlist'
+      preLoaderRoute: typeof AuthenticatedAdminAllowlistRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/lovable/email/transactional/send': {
       id: '/lovable/email/transactional/send'
       path: '/lovable/email/transactional/send'
@@ -1257,6 +1277,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
+  AuthenticatedAdminAllowlistRoute: typeof AuthenticatedAdminAllowlistRoute
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminEmailRoute: typeof AuthenticatedAdminEmailRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
@@ -1280,6 +1301,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
+  AuthenticatedAdminAllowlistRoute: AuthenticatedAdminAllowlistRoute,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminEmailRoute: AuthenticatedAdminEmailRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
