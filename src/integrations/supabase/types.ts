@@ -2095,6 +2095,42 @@ export type Database = {
         Args: { payload: Json; queue_name: string }
         Returns: number
       }
+      find_cross_sheet_rows: {
+        Args: { _limit?: number; _needle: string; _user_id: string }
+        Returns: {
+          activity: string
+          matched_on: string
+          owner: string
+          row_index: number
+          sheet_name: string
+          sheet_registry_id: string
+          status: string
+        }[]
+      }
+      find_cross_task_links: {
+        Args: { _activity_id: string; _limit?: number; _user_id: string }
+        Returns: {
+          assignee_id: string
+          assignee_name: string
+          id: string
+          project_id: string
+          project_name: string
+          relation: string
+          status: Database["public"]["Enums"]["activity_status"]
+          title: string
+        }[]
+      }
+      find_person_footprint: {
+        Args: { _limit?: number; _person_id: string; _user_id: string }
+        Returns: {
+          activity_count: number
+          blocked_count: number
+          latest_activity: string
+          overdue_count: number
+          project_id: string
+          project_name: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
