@@ -118,6 +118,7 @@ export function CommandPalette({
       { id: "nav:ingest", group: "Navigate", label: "Data ingestion", icon: <Zap className="h-4 w-4" />, run: () => go("/ingest") },
       { id: "nav:briefings", group: "Navigate", label: "Briefings", icon: <Newspaper className="h-4 w-4" />, run: () => go("/briefings") },
       { id: "nav:settings", group: "Navigate", label: "Settings", icon: <Settings className="h-4 w-4" />, run: () => go("/settings") },
+      { id: "nav:correlations", group: "Navigate", label: "Find correlations", icon: <Network className="h-4 w-4" />, run: () => go("/correlations") },
     ];
     if (isAdmin) {
       base.push(
