@@ -18,8 +18,9 @@ import { useIsAdmin } from "@/hooks/useSession";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDecisionDialog, type ConfirmDiff } from "@/components/ConfirmDecisionDialog";
 import {
-  Check, X, Loader2, ShieldCheck, ArrowLeft, UserPlus, Bot, ArrowRight, MinusCircle, PlusCircle,
+  Check, X, Loader2, ShieldCheck, ArrowLeft, UserPlus, Bot, ArrowRight, MinusCircle, PlusCircle, ScrollText,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
