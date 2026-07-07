@@ -172,10 +172,10 @@ function AgentActionsTab() {
         </div>
         {status === "pending" && pendingItems.length > 1 && (
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={bulkReject} disabled={decideMut.isPending}>
+            <Button size="sm" variant="outline" onClick={() => setConfirmState({ bulk: "reject" })} disabled={decideMut.isPending}>
               <X className="h-3.5 w-3.5 mr-1" /> Reject all ({pendingItems.length})
             </Button>
-            <Button size="sm" onClick={bulkApprove} disabled={decideMut.isPending}>
+            <Button size="sm" onClick={() => setConfirmState({ bulk: "approve" })} disabled={decideMut.isPending}>
               <Check className="h-3.5 w-3.5 mr-1" /> Approve all ({pendingItems.length})
             </Button>
           </div>
