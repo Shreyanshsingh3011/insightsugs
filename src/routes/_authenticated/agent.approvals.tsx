@@ -143,6 +143,12 @@ function AgentActionsTab() {
   const items = (data ?? []) as PendingAction[];
   const pendingItems = items.filter((i) => i.status === "pending");
 
+  const [confirmState, setConfirmState] = useState<
+    | null
+    | { action: PendingAction; decision: "approve" | "reject" }
+    | { bulk: "approve" | "reject" }
+  >(null);
+
   const bulkApprove = () => {
     pendingItems.forEach((a) => decideMut.mutate({ id: a.id, decision: "approve" }));
   };
