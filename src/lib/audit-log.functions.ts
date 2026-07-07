@@ -4,11 +4,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+type Json = string | number | boolean | null | { [k: string]: Json } | Json[];
+
 export type AuditEntry = {
   id: string;
   actor_id: string | null;
   event_type: string;
-  details: Record<string, unknown>;
+  details: Json;
   created_at: string;
   actor_name?: string | null;
   actor_email?: string | null;
