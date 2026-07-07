@@ -9,7 +9,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
 import {
-  LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText,
+  LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
   Menu, X, Command, Keyboard,
