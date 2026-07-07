@@ -37,6 +37,7 @@ function EmailGroupsPage() {
   const { data: groups, isLoading } = useQuery<GroupRow[]>({
     queryKey: ["email-groups"],
     queryFn: () => listFn(),
+    enabled: isAdmin,
   });
 
   const [editing, setEditing] = useState<Partial<GroupRow> | null>(null);
