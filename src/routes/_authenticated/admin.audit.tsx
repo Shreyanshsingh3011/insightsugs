@@ -4,8 +4,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useMemo } from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Eye } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/audit")({
   head: () => ({ meta: [{ title: "Audit Log — DelayLens" }] }),
@@ -166,10 +176,63 @@ function AuditPage() {
     return m;
   }, [projects]);
 
+  // Latest successful sync per project (most recent, no error)
+  const latestByProject = useMemo(() => {
+    const map = new Map<string, SyncEntry>();
+    (syncs ?? []).forEach((s) => {
+      if (s.error) return;
+      if (!map.has(s.project_id)) map.set(s.project_id, s);
+    });
+    return Array.from(map.values());
+  }, [syncs]);
+
   if (!isAdmin) return <div className="mx-auto max-w-5xl px-4 py-8 text-muted-foreground">Admins only.</div>;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Latest Sync Impact</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          What changed in each project since the last successful fetch.
+        </p>
+        <Card className="mt-4 divide-y divide-border/60 overflow-hidden">
+          {syncsLoading && <p className="p-6 text-sm text-muted-foreground">Loading…</p>}
+          {!syncsLoading && latestByProject.length === 0 && (
+            <p className="p-6 text-sm text-muted-foreground">No successful syncs yet.</p>
+          )}
+          {latestByProject.map((s) => {
+            const added = s.rows_added ?? 0;
+            const changed = s.rows_changed ?? 0;
+            const removed = s.rows_removed ?? 0;
+            const name = projectNameMap.get(s.project_id) ?? s.project_label ?? `Project · ${s.project_id.slice(0, 8)}`;
+            return (
+              <div key={s.project_id} className="flex items-center justify-between gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    to="/agent/project/$projectId"
+                    params={{ projectId: s.project_id }}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {name}
+                  </Link>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Last fetch {new Date(s.fetched_at).toLocaleString()}
+                    {s.tab_name ? ` · Tab ${s.tab_name}` : ""}
+                    {s.rows_total != null ? ` · ${s.rows_total} rows total` : ""}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs shrink-0">
+                  <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">+{added} added</span>
+                  <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">~{changed} changed</span>
+                  <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">−{removed} removed</span>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Sheet Sync Activity</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -303,19 +366,19 @@ function SyncRow({ sync, projectName }: { sync: SyncEntry; projectName?: string 
           </div>
         )}
 
-        {cols.length > 0 && (
-          <div className="text-xs">
-            <span className="text-muted-foreground">Columns updated:</span>{" "}
-            <span className="text-foreground">{cols.join(", ")}</span>
-          </div>
-        )}
-        {rowIdx.length > 0 && (
-          <div className="text-xs">
-            <span className="text-muted-foreground">Rows:</span>{" "}
-            <span className="text-foreground">
-              {rowIdx.slice(0, 20).map((n) => `#${n}`).join(", ")}
-              {rowIdx.length > 20 && ` +${rowIdx.length - 20} more`}
-            </span>
+        {(cols.length > 0 || rowIdx.length > 0 || hasDelta) && (
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {cols.length > 0 && (
+              <span className="text-muted-foreground">
+                {cols.length} column{cols.length === 1 ? "" : "s"} updated
+              </span>
+            )}
+            {rowIdx.length > 0 && (
+              <span className="text-muted-foreground">
+                {rowIdx.length} row{rowIdx.length === 1 ? "" : "s"} indexed
+              </span>
+            )}
+            <ChangedRowsDialog sync={sync} projectName={projectName} />
           </div>
         )}
 
@@ -334,4 +397,80 @@ function SyncRow({ sync, projectName }: { sync: SyncEntry; projectName?: string 
     </div>
   );
 }
+
+function ChangedRowsDialog({ sync, projectName }: { sync: SyncEntry; projectName?: string }) {
+  const added = sync.rows_added ?? 0;
+  const changed = sync.rows_changed ?? 0;
+  const removed = sync.rows_removed ?? 0;
+  const cols = sync.changed_columns ?? [];
+  const rowIdx = sync.changed_row_indexes ?? [];
+  const label = projectName ?? sync.project_label ?? `Project · ${sync.project_id.slice(0, 8)}`;
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="h-6 px-2 text-xs">
+          <Eye className="h-3 w-3 mr-1" /> View changed rows
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Changed rows — {label}</DialogTitle>
+          <DialogDescription>
+            Fetched {new Date(sync.fetched_at).toLocaleString()}
+            {sync.tab_name ? ` · Tab ${sync.tab_name}` : ""}
+            {sync.rows_total != null ? ` · ${sync.rows_total} rows total` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">+{added} added</span>
+          <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">~{changed} changed</span>
+          <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">−{removed} removed</span>
+        </div>
+
+        <div className="space-y-3">
+          <section>
+            <h3 className="text-sm font-medium mb-1.5">Changed columns ({cols.length})</h3>
+            {cols.length === 0 ? (
+              <p className="text-xs text-muted-foreground">None</p>
+            ) : (
+              <ScrollArea className="max-h-40 rounded-md border p-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {cols.map((c) => (
+                    <Badge key={c} variant="secondary" className="text-xs">{c}</Badge>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </section>
+
+          <section>
+            <h3 className="text-sm font-medium mb-1.5">Row indexes ({rowIdx.length})</h3>
+            {rowIdx.length === 0 ? (
+              <p className="text-xs text-muted-foreground">None</p>
+            ) : (
+              <ScrollArea className="max-h-56 rounded-md border p-2">
+                <div className="flex flex-wrap gap-1">
+                  {rowIdx.map((n) => (
+                    <span key={n} className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">
+                      #{n}
+                    </span>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </section>
+
+          {(added > 0 || removed > 0) && (
+            <p className="text-xs text-muted-foreground">
+              Note: added and removed row positions are inferred from the fetch delta (rows appended/truncated at the end of the sheet); only in-place edits are tracked as explicit row indexes.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
