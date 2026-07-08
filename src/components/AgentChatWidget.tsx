@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, MessageCircle, X, Sparkles, ThumbsUp, ThumbsDown, ShieldCheck } from "lucide-react";
+import { Bot, MessageCircle, X, Sparkles, ThumbsUp, ThumbsDown, ShieldCheck, FileText } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { submitAgentRunFeedback } from "@/lib/agent-runs.functions";
@@ -253,6 +253,56 @@ export default function AgentChatWidget({
                       }
                       return null;
                     })}
+                    {m.role === "assistant" && (() => {
+                      // Extract unique [sheet:X row N] / [doc:X p.N] citations
+                      // from the streamed answer text and render as chips so
+                      // the source of every fact is one click away.
+                      const text = m.parts
+                        .filter((pp) => pp.type === "text")
+                        .map((pp) => (pp as { text: string }).text)
+                        .join("\n");
+                      const sheetRe = /\[sheet:([^\]]+?)\s+row\s+(\d+)\]/gi;
+                      const docRe = /\[doc:([^\]]+?)\s+p\.(\d+)\]/gi;
+                      const sheets = new Map<string, { label: string; row: number }>();
+                      const docs = new Map<string, { name: string; page: number }>();
+                      let mm: RegExpExecArray | null;
+                      while ((mm = sheetRe.exec(text)) !== null) {
+                        const key = `s:${mm[1]}:${mm[2]}`;
+                        if (!sheets.has(key)) sheets.set(key, { label: mm[1].trim(), row: Number(mm[2]) });
+                      }
+                      while ((mm = docRe.exec(text)) !== null) {
+                        const key = `d:${mm[1]}:${mm[2]}`;
+                        if (!docs.has(key)) docs.set(key, { name: mm[1].trim(), page: Number(mm[2]) });
+                      }
+                      if (sheets.size === 0 && docs.size === 0) return null;
+                      return (
+                        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/50 pt-2">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                            Sources
+                          </span>
+                          {Array.from(sheets.values()).map((c, idx) => (
+                            <span
+                              key={`s${idx}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] text-primary"
+                              title={`From sheet "${c.label}", row ${c.row}`}
+                            >
+                              <FileText className="h-3 w-3" aria-hidden />
+                              {c.label} · row {c.row}
+                            </span>
+                          ))}
+                          {Array.from(docs.values()).map((c, idx) => (
+                            <span
+                              key={`d${idx}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[10px] text-foreground"
+                              title={`From document "${c.name}", page ${c.page}`}
+                            >
+                              <FileText className="h-3 w-3" aria-hidden />
+                              {c.name} · p.{c.page}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </MessageContent>
                 </Message>
               ))}

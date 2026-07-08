@@ -1825,6 +1825,81 @@ export type Database = {
           },
         ]
       }
+      sheet_sync_audit: {
+        Row: {
+          actor_id: string | null
+          changed_columns: string[] | null
+          changed_row_indexes: number[] | null
+          created_at: string
+          embed_embedded: number | null
+          embed_ms: number | null
+          embed_refreshed: number | null
+          embed_remaining: number | null
+          error: string | null
+          fetch_ms: number | null
+          fetched_at: string
+          id: string
+          project_id: string
+          project_label: string | null
+          rows_added: number | null
+          rows_changed: number | null
+          rows_removed: number | null
+          rows_total: number | null
+          sheet_url: string
+          tab_name: string | null
+          trigger_kind: string
+          warning: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          changed_columns?: string[] | null
+          changed_row_indexes?: number[] | null
+          created_at?: string
+          embed_embedded?: number | null
+          embed_ms?: number | null
+          embed_refreshed?: number | null
+          embed_remaining?: number | null
+          error?: string | null
+          fetch_ms?: number | null
+          fetched_at?: string
+          id?: string
+          project_id: string
+          project_label?: string | null
+          rows_added?: number | null
+          rows_changed?: number | null
+          rows_removed?: number | null
+          rows_total?: number | null
+          sheet_url: string
+          tab_name?: string | null
+          trigger_kind?: string
+          warning?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          changed_columns?: string[] | null
+          changed_row_indexes?: number[] | null
+          created_at?: string
+          embed_embedded?: number | null
+          embed_ms?: number | null
+          embed_refreshed?: number | null
+          embed_remaining?: number | null
+          error?: string | null
+          fetch_ms?: number | null
+          fetched_at?: string
+          id?: string
+          project_id?: string
+          project_label?: string | null
+          rows_added?: number | null
+          rows_changed?: number | null
+          rows_removed?: number | null
+          rows_total?: number | null
+          sheet_url?: string
+          tab_name?: string | null
+          trigger_kind?: string
+          warning?: string | null
+        }
+        Relationships: []
+      }
       signup_allowlist: {
         Row: {
           added_by: string | null

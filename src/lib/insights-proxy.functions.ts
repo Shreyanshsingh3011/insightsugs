@@ -130,12 +130,13 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => InputSchema.parse(input))
   .handler(async ({ data }) => {
     const url = assertSafePublicUrl(data.url);
+    const started = Date.now();
 
     // Google Sheets URL → route through the Google Sheets connector so the
     // registry can point at live sheets instead of sheet2api proxies.
     if (isGoogleSheetsUrl(url)) {
       const payload = await fetchGoogleSheetRows(url, data.tab);
-      return { payload, fetchedAt: Date.now(), url: url.toString() };
+      return { payload, fetchedAt: Date.now(), fetchMs: Date.now() - started, url: url.toString() };
     }
 
     const controller = new AbortController();
@@ -152,7 +153,7 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
         throw new Error("Source did not return JSON.");
       }
       const payload = await res.json();
-      return { payload, fetchedAt: Date.now(), url: url.toString() };
+      return { payload, fetchedAt: Date.now(), fetchMs: Date.now() - started, url: url.toString() };
     } catch (error) {
       if ((error as { name?: string })?.name === "AbortError") {
         throw new Error("Source timed out while loading analytics data.");
