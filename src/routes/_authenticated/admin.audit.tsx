@@ -214,7 +214,7 @@ function AuditPage() {
             const removed = s.rows_removed ?? 0;
             const name = projectNameMap.get(s.project_id) ?? s.project_label ?? `Project · ${s.project_id.slice(0, 8)}`;
             return (
-              <div key={s.project_id} className="flex items-center justify-between gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
+              <div key={s.id} className="flex items-center justify-between gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
                 <div className="min-w-0 flex-1">
                   <Link
                     to="/agent/project/$projectId"
