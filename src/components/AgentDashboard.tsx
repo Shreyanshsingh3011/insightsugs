@@ -1440,6 +1440,49 @@ export default function AgentDashboard() {
                 {anyFetching ? "Syncing" : "Live"} · updated {new Date(lastSyncedAt).toLocaleTimeString()}
               </div>
             )}
+            {/* Per-project sync perf stats: fetch duration, rows, diff since last poll. */}
+            {projects.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
+                {projects.map((p) => {
+                  const s = perf[p.id];
+                  if (!s) return null;
+                  const diff = s.diff;
+                  const changedBits: string[] = [];
+                  if (diff?.added) changedBits.push(`+${diff.added}`);
+                  if (diff?.removed) changedBits.push(`-${diff.removed}`);
+                  if (diff?.changed) changedBits.push(`~${diff.changed}`);
+                  return (
+                    <span
+                      key={p.id}
+                      title={
+                        diff?.changedColumns?.length
+                          ? `Changed cols: ${diff.changedColumns.slice(0, 6).join(", ")}`
+                          : "No column changes since last poll"
+                      }
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2 py-0.5 text-muted-foreground"
+                    >
+                      <span className="font-medium text-foreground">{p.label}</span>
+                      <span className="tabular-nums">{s.rowsTotal ?? 0}r</span>
+                      {typeof s.fetchMs === "number" && (
+                        <span className="tabular-nums">· {s.fetchMs}ms</span>
+                      )}
+                      {changedBits.length > 0 && (
+                        <span className="tabular-nums text-warning">· Δ {changedBits.join(" ")}</span>
+                      )}
+                    </span>
+                  );
+                })}
+                {embedStats.at && (
+                  <span
+                    title={`Semantic index rebuild — embedded ${embedStats.embedded ?? 0}, remaining ${embedStats.remaining ?? 0}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2 py-0.5 text-muted-foreground"
+                  >
+                    <Sparkles className="h-3 w-3" aria-hidden />
+                    embed {embedStats.embedded ?? 0} · {embedStats.ms ?? 0}ms
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col items-start gap-3 lg:items-end">
