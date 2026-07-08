@@ -223,9 +223,21 @@ function AuditPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs shrink-0">
-                  <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">+{added} added</span>
-                  <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">~{changed} changed</span>
-                  <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">−{removed} removed</span>
+                  {added + changed + removed === 0 ? (
+                    <span className="rounded bg-muted text-muted-foreground px-2 py-0.5">No changes</span>
+                  ) : (
+                    <>
+                      {added > 0 && (
+                        <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">+{added} added</span>
+                      )}
+                      {changed > 0 && (
+                        <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">~{changed} changed</span>
+                      )}
+                      {removed > 0 && (
+                        <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">−{removed} removed</span>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             );
