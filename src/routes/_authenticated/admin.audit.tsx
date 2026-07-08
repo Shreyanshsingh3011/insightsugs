@@ -366,19 +366,19 @@ function SyncRow({ sync, projectName }: { sync: SyncEntry; projectName?: string 
           </div>
         )}
 
-        {cols.length > 0 && (
-          <div className="text-xs">
-            <span className="text-muted-foreground">Columns updated:</span>{" "}
-            <span className="text-foreground">{cols.join(", ")}</span>
-          </div>
-        )}
-        {rowIdx.length > 0 && (
-          <div className="text-xs">
-            <span className="text-muted-foreground">Rows:</span>{" "}
-            <span className="text-foreground">
-              {rowIdx.slice(0, 20).map((n) => `#${n}`).join(", ")}
-              {rowIdx.length > 20 && ` +${rowIdx.length - 20} more`}
-            </span>
+        {(cols.length > 0 || rowIdx.length > 0 || hasDelta) && (
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {cols.length > 0 && (
+              <span className="text-muted-foreground">
+                {cols.length} column{cols.length === 1 ? "" : "s"} updated
+              </span>
+            )}
+            {rowIdx.length > 0 && (
+              <span className="text-muted-foreground">
+                {rowIdx.length} row{rowIdx.length === 1 ? "" : "s"} indexed
+              </span>
+            )}
+            <ChangedRowsDialog sync={sync} projectName={projectName} />
           </div>
         )}
 
