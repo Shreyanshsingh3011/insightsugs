@@ -58,7 +58,7 @@ const REGISTRY_REFRESH_MS = 5 * 60_000;
 
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
-type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string };
+type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string; warning?: string };
 type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
 
 const TONE = {
