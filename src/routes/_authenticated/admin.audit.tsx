@@ -55,7 +55,7 @@ function humanizeKey(k: string) {
   return k.replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function DetailRow({ entry }: { entry: Entry }) {
+function DetailRow({ entry, projectName }: { entry: Entry; projectName?: string }) {
   const [expanded, setExpanded] = useState(false);
   const details = entry.details ?? {};
   const keys = Object.keys(details);
