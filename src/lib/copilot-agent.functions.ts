@@ -310,7 +310,10 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
           const { embedQuery } = await import("./embeddings.server");
-          await ensureSheetEmbeddings(supabase, sheet_id);
+          // Async: don't block the copilot response on embedding maintenance.
+          // The pg_cron `embed-backfill-tick` job keeps embeddings current;
+          // this call opportunistically nudges it during the request.
+          void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
           const qvec = await embedQuery(query);
           const { data: matches, error } = await supabase.rpc("match_sheet_rows", {
             _user_id: userId,
