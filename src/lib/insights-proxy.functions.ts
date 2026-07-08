@@ -78,14 +78,24 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   const sheets = (meta.sheets ?? []).slice().sort((a, b) => a.properties.index - b.properties.index);
   if (!sheets.length) throw new Error("Spreadsheet has no worksheets.");
   let chosen: { sheetId: number; title: string } | undefined;
+  let tabFallbackReason: string | undefined;
+  const available = sheets.map(s => s.properties.title);
   if (tabHint) {
     const needle = tabHint.trim().toLowerCase();
     chosen = sheets.find(s => s.properties.title.trim().toLowerCase() === needle)?.properties
       ?? sheets.find(s => s.properties.title.toLowerCase().includes(needle))?.properties;
+    if (!chosen) {
+      tabFallbackReason = `Tab "${tabHint}" not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to ${parsed.gid ? "#gid match" : "first tab"}.`;
+      console.warn(`[insights-proxy] ${tabFallbackReason}`);
+    }
   }
   if (!chosen && parsed.gid) {
     const gid = Number(parsed.gid);
     chosen = sheets.find(s => s.properties.sheetId === gid)?.properties;
+    if (!chosen && !tabFallbackReason) {
+      tabFallbackReason = `gid=${gid} not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to first tab.`;
+      console.warn(`[insights-proxy] ${tabFallbackReason}`);
+    }
   }
   if (!chosen) chosen = sheets[0].properties;
 
