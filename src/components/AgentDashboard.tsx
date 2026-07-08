@@ -331,8 +331,15 @@ export default function AgentDashboard() {
     queries: projects.map(p => ({
       queryKey: ["agent-src", p.id, p.url, p.tab ?? ""],
       queryFn: async () => {
+        const started = performance.now();
         const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
-        return { project: p, payload: (res as { payload?: SourcePayload }).payload };
+        const clientMs = Math.round(performance.now() - started);
+        return {
+          project: p,
+          payload: (res as { payload?: SourcePayload }).payload,
+          fetchMs: (res as { fetchMs?: number }).fetchMs ?? clientMs,
+          fetchedAt: (res as { fetchedAt?: number }).fetchedAt ?? Date.now(),
+        };
       },
       staleTime: AUTO_REFRESH_MS,
       refetchInterval: AUTO_REFRESH_MS,
