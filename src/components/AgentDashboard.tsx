@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
@@ -50,8 +51,8 @@ const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "ula",   label: "ULA 1.1 Bihar", url: "https://sheet2api-bypassed-login.vercel.app/api/public/f84b4f7ebb2380bc85f27cba8a676a1d" },
   { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
-const AUTO_REFRESH_MS = 60_000;
-const REGISTRY_REFRESH_MS = 60_000;
+const AUTO_REFRESH_MS = 5 * 60_000;
+const REGISTRY_REFRESH_MS = 5 * 60_000;
 
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
@@ -535,7 +536,56 @@ export default function AgentDashboard() {
 
 
 
-  const refetchAll = () => { registryQ.refetch(); queries.forEach(q => q.refetch()); };
+  const refetchAll = async () => {
+    const tid = toast.loading("Refreshing live sheet data…");
+    try {
+      await Promise.all([registryQ.refetch(), ...queries.map(q => q.refetch())]);
+      // Fire-and-forget: rebuild semantic embeddings so new/changed rows are
+      // searchable in chat immediately (hash-diff inside skips unchanged rows).
+      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (apikey) {
+        fetch("/api/public/hooks/embed-backfill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey },
+          body: "{}",
+        }).catch(() => {});
+      }
+      toast.success("Live data refreshed", { id: tid });
+    } catch (e) {
+      toast.error(`Refresh failed: ${(e as Error)?.message ?? "unknown error"}`, { id: tid });
+    }
+  };
+
+  // Surface per-project fetch errors and tab-fallback warnings as toasts, so
+  // an invalid Sheet URL / renamed tab is visible instead of silently empty.
+  const errorSigRef = useRef<string>("");
+  const warnSigRef = useRef<string>("");
+  useEffect(() => {
+    const errs = queries
+      .map((q, i) => (q.isError ? `${projects[i]?.label}: ${(q.error as Error)?.message ?? "fetch failed"}` : null))
+      .filter(Boolean) as string[];
+    const sig = errs.join("|");
+    if (sig && sig !== errorSigRef.current) {
+      errorSigRef.current = sig;
+      errs.slice(0, 3).forEach(msg => toast.error(msg, { duration: 8000 }));
+    } else if (!sig) {
+      errorSigRef.current = "";
+    }
+    const warns = queries
+      .map((q, i) => {
+        const w = (q.data as { payload?: { warning?: string } } | undefined)?.payload?.warning;
+        return w ? `${projects[i]?.label}: ${w}` : null;
+      })
+      .filter(Boolean) as string[];
+    const wsig = warns.join("|");
+    if (wsig && wsig !== warnSigRef.current) {
+      warnSigRef.current = wsig;
+      warns.slice(0, 3).forEach(msg => toast.warning(msg, { duration: 10000 }));
+    } else if (!wsig) {
+      warnSigRef.current = "";
+    }
+  }, [queries.map(q => `${q.status}:${q.dataUpdatedAt}:${q.errorUpdatedAt}`).join("|")]);
+
 
 
   // AI Executive Brief
@@ -1242,9 +1292,9 @@ export default function AgentDashboard() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {scope.isSuper
-                ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 1000)}s${registryLive ? " · project list pulled from master sheet" : " · using built-in list"}.`
+                ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 60_000)} min${registryLive ? " · project list pulled from master sheet" : " · using built-in list"} · use Sync for instant refresh.`
                 : scope.isAdmin
-                ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · syncing every ${Math.round(AUTO_REFRESH_MS / 1000)}s.`
+                ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · auto-syncs every ${Math.round(AUTO_REFRESH_MS / 60_000)} min.`
                 : `Showing only work assigned to ${scope.profile?.full_name || "you"} across your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
             </p>
             {lastSyncedAt && (

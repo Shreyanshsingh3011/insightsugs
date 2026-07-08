@@ -61,7 +61,7 @@ export async function ensureSheetEmbeddings(
   supabase: any,
   registryId: string,
   opts?: { batchCap?: number },
-): Promise<{ embedded: number; total: number; remaining: number }> {
+): Promise<{ embedded: number; total: number; remaining: number; refreshed: number }> {
   const { embedTexts, contentHash } = await import("./embeddings.server");
   const batchCap = opts?.batchCap ?? 2000;
 
@@ -70,32 +70,31 @@ export async function ensureSheetEmbeddings(
     .select("row_index", { count: "exact", head: true })
     .eq("sheet_registry_id", registryId);
   const total = totalCount ?? 0;
-  if (total === 0) return { embedded: 0, total: 0, remaining: 0 };
+  if (total === 0) return { embedded: 0, total: 0, remaining: 0, refreshed: 0 };
 
-  // Pull existing embedded row_indexes up-front so we only fetch/embed misses.
-  const have = new Set<number>();
+  // Pull existing (row_index, content_hash) so we can detect changed rows too.
+  const existing = new Map<number, string>();
   {
     const PAGE = 1000;
     for (let offset = 0; ; offset += PAGE) {
       const { data, error } = await supabase
         .from("sheet_row_embeddings")
-        .select("row_index")
+        .select("row_index, content_hash")
         .eq("sheet_registry_id", registryId)
         .order("row_index", { ascending: true })
         .range(offset, offset + PAGE - 1);
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
-      for (const r of data as any[]) have.add(r.row_index);
+      for (const r of data as any[]) existing.set(r.row_index, r.content_hash);
       if (data.length < PAGE) break;
     }
   }
-  const remainingBefore = Math.max(total - have.size, 0);
-  if (remainingBefore === 0) return { embedded: 0, total, remaining: 0 };
 
-  // Fetch just enough missing rows to fill this batch.
-  const missing: Array<{ row_index: number; data: Record<string, unknown> }> = [];
+  // Walk sheet_rows, keep track of missing OR content-changed rows.
+  const needsWork: Array<{ row_index: number; data: Record<string, unknown> }> = [];
+  const liveIndexes = new Set<number>();
   const PAGE = 1000;
-  for (let offset = 0; missing.length < batchCap; offset += PAGE) {
+  for (let offset = 0; needsWork.length < batchCap; offset += PAGE) {
     const { data, error } = await supabase
       .from("sheet_rows")
       .select("row_index, canonical, extras")
@@ -105,17 +104,40 @@ export async function ensureSheetEmbeddings(
     if (error) throw new Error(error.message);
     if (!data || data.length === 0) break;
     for (const r of data as any[]) {
-      if (have.has(r.row_index)) continue;
-      missing.push({ row_index: r.row_index, data: mergeRow(r) });
-      if (missing.length >= batchCap) break;
+      liveIndexes.add(r.row_index);
+      const merged = mergeRow(r);
+      const snippet = stringifyRow(merged);
+      const hash = contentHash(snippet);
+      const prev = existing.get(r.row_index);
+      if (prev !== hash) {
+        needsWork.push({ row_index: r.row_index, data: merged });
+        if (needsWork.length >= batchCap) break;
+      }
     }
     if (data.length < PAGE) break;
   }
-  if (missing.length === 0) return { embedded: 0, total, remaining: remainingBefore };
 
-  const snippets = missing.map((r) => stringifyRow(r.data));
+  // Prune stale embeddings for rows that no longer exist in sheet_rows.
+  const stale: number[] = [];
+  for (const idx of existing.keys()) if (!liveIndexes.has(idx)) stale.push(idx);
+  if (stale.length) {
+    const CHUNK = 500;
+    for (let i = 0; i < stale.length; i += CHUNK) {
+      await supabase
+        .from("sheet_row_embeddings")
+        .delete()
+        .eq("sheet_registry_id", registryId)
+        .in("row_index", stale.slice(i, i + CHUNK));
+    }
+  }
+
+  if (needsWork.length === 0) {
+    return { embedded: 0, total, remaining: 0, refreshed: stale.length };
+  }
+
+  const snippets = needsWork.map((r) => stringifyRow(r.data));
   const vectors = await embedTexts(snippets);
-  const toInsert = missing.map((r, i) => ({
+  const toUpsert = needsWork.map((r, i) => ({
     sheet_registry_id: registryId,
     row_index: r.row_index,
     content_snippet: snippets[i].slice(0, 2000),
@@ -123,15 +145,18 @@ export async function ensureSheetEmbeddings(
     embedding: vectors[i] as any,
   }));
   const CHUNK = 200;
-  for (let i = 0; i < toInsert.length; i += CHUNK) {
+  for (let i = 0; i < toUpsert.length; i += CHUNK) {
     const { error } = await supabase
       .from("sheet_row_embeddings")
-      .upsert(toInsert.slice(i, i + CHUNK), {
+      .upsert(toUpsert.slice(i, i + CHUNK), {
         onConflict: "sheet_registry_id,row_index",
       });
-    if (error) throw new Error(`Embed insert failed: ${error.message}`);
+    if (error) throw new Error(`Embed upsert failed: ${error.message}`);
   }
-  return { embedded: missing.length, total, remaining: remainingBefore - missing.length };
+  // Rough "remaining" — anything past this batch that still differs will be
+  // picked up on the next call (backfill hook or next chat question).
+  const remaining = Math.max(total - (existing.size - stale.length) - needsWork.length, 0);
+  return { embedded: needsWork.length, total, remaining, refreshed: stale.length };
 }
 
 // -------------------- ledger --------------------

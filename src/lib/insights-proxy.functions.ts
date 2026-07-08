@@ -51,6 +51,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   connector: string;
   data: Record<string, string>[];
   generated_at: string;
+  warning?: string;
 }> {
   const lovable = process.env.LOVABLE_API_KEY;
   const key = process.env.GOOGLE_SHEETS_API_KEY;
@@ -78,14 +79,24 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   const sheets = (meta.sheets ?? []).slice().sort((a, b) => a.properties.index - b.properties.index);
   if (!sheets.length) throw new Error("Spreadsheet has no worksheets.");
   let chosen: { sheetId: number; title: string } | undefined;
+  let tabFallbackReason: string | undefined;
+  const available = sheets.map(s => s.properties.title);
   if (tabHint) {
     const needle = tabHint.trim().toLowerCase();
     chosen = sheets.find(s => s.properties.title.trim().toLowerCase() === needle)?.properties
       ?? sheets.find(s => s.properties.title.toLowerCase().includes(needle))?.properties;
+    if (!chosen) {
+      tabFallbackReason = `Tab "${tabHint}" not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to ${parsed.gid ? "#gid match" : "first tab"}.`;
+      console.warn(`[insights-proxy] ${tabFallbackReason}`);
+    }
   }
   if (!chosen && parsed.gid) {
     const gid = Number(parsed.gid);
     chosen = sheets.find(s => s.properties.sheetId === gid)?.properties;
+    if (!chosen && !tabFallbackReason) {
+      tabFallbackReason = `gid=${gid} not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to first tab.`;
+      console.warn(`[insights-proxy] ${tabFallbackReason}`);
+    }
   }
   if (!chosen) chosen = sheets[0].properties;
 
@@ -98,7 +109,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   const vjson = (await valRes.json()) as { values?: string[][] };
   const values = vjson.values ?? [];
   if (values.length === 0) {
-    return { connector: `${meta.properties?.title ?? chosen.title} — view`, data: [], generated_at: new Date().toISOString() };
+    return { connector: `${meta.properties?.title ?? chosen.title} — view`, data: [], generated_at: new Date().toISOString(), warning: tabFallbackReason };
   }
   const cols = values[0].map((h, i) => String(h || `Col${i + 1}`).trim());
   const rows: Record<string, string>[] = values.slice(1).map(r => {
@@ -110,6 +121,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
     connector: `${meta.properties?.title ?? chosen.title} — view`,
     data: rows,
     generated_at: new Date().toISOString(),
+    warning: tabFallbackReason,
   };
 }
 

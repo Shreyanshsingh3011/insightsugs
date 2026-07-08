@@ -19,8 +19,8 @@ const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "ula",   label: "ULA 1.1 Bihar", url: "https://sheet2api-bypassed-login.vercel.app/api/public/f84b4f7ebb2380bc85f27cba8a676a1d" },
   { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
-const AUTO_REFRESH_MS = 60_000;
-const REGISTRY_REFRESH_MS = 60_000;
+const AUTO_REFRESH_MS = 5 * 60_000;
+const REGISTRY_REFRESH_MS = 5 * 60_000;
 
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string };
 
