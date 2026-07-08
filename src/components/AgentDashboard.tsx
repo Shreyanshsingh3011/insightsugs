@@ -327,9 +327,9 @@ export default function AgentDashboard() {
 
   const queries = useQueries({
     queries: projects.map(p => ({
-      queryKey: ["agent-src", p.id, p.url],
+      queryKey: ["agent-src", p.id, p.url, p.tab ?? ""],
       queryFn: async () => {
-        const res = await fetchUrl({ data: { url: p.url } });
+        const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
         return { project: p, payload: (res as { payload?: SourcePayload }).payload };
       },
       staleTime: AUTO_REFRESH_MS,

@@ -7,7 +7,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 const MASTER_SHEET_ID = "1N8JUhzKgLpxlCj61XUkLj85vDilpL0vartwfgxJGGpk";
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
-export type AgentProject = { id: string; label: string; url: string; note?: string };
+export type AgentProject = { id: string; label: string; url: string; tab?: string; note?: string };
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "src";
@@ -21,10 +21,12 @@ function extractUrl(cells: string[]): string | undefined {
   return undefined;
 }
 
+function idxByHeader(headers: string[], needles: string[]): number {
+  return headers.findIndex(h => needles.some(n => h.toLowerCase().includes(n)));
+}
+
 function pickLabel(headers: string[], row: string[]): string {
-  const idxByHeader = (needles: string[]) =>
-    headers.findIndex(h => needles.some(n => h.toLowerCase().includes(n)));
-  const labelIdx = idxByHeader(["name", "project", "label", "title", "site", "department"]);
+  const labelIdx = idxByHeader(headers, ["project name", "project", "name", "label", "title", "site", "department"]);
   if (labelIdx >= 0 && row[labelIdx]) return String(row[labelIdx]).trim();
   // fallback: first non-URL, non-empty cell
   for (const c of row) {
@@ -32,6 +34,15 @@ function pickLabel(headers: string[], row: string[]): string {
     if (s && !/^https?:\/\//i.test(s)) return s;
   }
   return "";
+}
+
+function pickTab(headers: string[], row: string[]): string | undefined {
+  // Prefer an explicit tab/worksheet column. "Sheet Link" often holds the URL
+  // now, so match "sheetname" / "worksheet" / "tab" instead.
+  const idx = idxByHeader(headers, ["sheetname", "sheet name", "worksheet", "tab"]);
+  if (idx < 0) return undefined;
+  const v = String(row[idx] ?? "").trim();
+  return v || undefined;
 }
 
 // Minimal CSV parser (handles quoted fields with commas / escaped quotes / CRLF).
@@ -71,11 +82,12 @@ function buildProjects(values: string[][]): AgentProject[] {
     const url = extractUrl(row);
     if (!url) continue;
     const label = pickLabel(hdrs, row) || `Project ${projects.length + 1}`;
+    const tab = pickTab(hdrs, row);
     let id = slug(label);
     let n = 2;
     while (seen.has(id)) id = `${slug(label)}-${n++}`;
     seen.add(id);
-    projects.push({ id, label, url });
+    projects.push({ id, label, url, tab });
   }
   return projects;
 }
