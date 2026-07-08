@@ -159,7 +159,7 @@ function AuditPage() {
         {!isLoading && data?.length === 0 && (
           <p className="p-6 text-sm text-muted-foreground">No events yet.</p>
         )}
-        {data?.map((e) => <DetailRow key={e.id} entry={e} />)}
+        {data?.map((e) => <DetailRow key={e.id} entry={e} projectName={e.project_id ? projectNameMap.get(e.project_id) : undefined} />)}
       </Card>
     </div>
   );
