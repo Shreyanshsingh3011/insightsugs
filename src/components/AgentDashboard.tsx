@@ -545,19 +545,124 @@ export default function AgentDashboard() {
 
 
 
+  // ── Sync audit + perf stats ──────────────────────────────────────────
+  const recordAudit = useServerFn(recordSyncAudit);
+  const prevPayloadRef = useRef<Map<string, Row[]>>(new Map());
+  const [perf, setPerf] = useState<Record<string, {
+    fetchMs?: number;
+    fetchedAt?: number;
+    rowsTotal?: number;
+    diff?: RowDiff;
+    lastEmbedMs?: number;
+  }>>({});
+  const [embedStats, setEmbedStats] = useState<{
+    ms?: number; embedded?: number; refreshed?: number; remaining?: number; at?: number;
+  }>({});
+  const auditSigRef = useRef<Map<string, string>>(new Map());
+  const manualTriggerRef = useRef(false);
+
+  // Watch every project query; when a new payload arrives, diff vs previous,
+  // update the perf panel, and record an audit row.
+  useEffect(() => {
+    queries.forEach((q, i) => {
+      if (q.status !== "success" || !q.data) return;
+      const p = projects[i];
+      if (!p) return;
+      const key = `${p.id}::${p.url}::${p.tab ?? ""}`;
+      const d = q.data as { payload?: SourcePayload; fetchMs?: number; fetchedAt?: number };
+      const rows = d.payload?.data ?? [];
+      const sig = `${d.fetchedAt ?? 0}:${rows.length}`;
+      if (auditSigRef.current.get(key) === sig) return; // already audited
+      auditSigRef.current.set(key, sig);
+
+      const prev = prevPayloadRef.current.get(key);
+      const diff = diffRows(prev, rows);
+      const isInitial = !prev;
+      prevPayloadRef.current.set(key, rows);
+
+      setPerf((prevPerf) => ({
+        ...prevPerf,
+        [p.id]: {
+          fetchMs: d.fetchMs,
+          fetchedAt: d.fetchedAt,
+          rowsTotal: rows.length,
+          diff,
+          lastEmbedMs: prevPerf[p.id]?.lastEmbedMs,
+        },
+      }));
+
+      const trigger: "auto" | "manual" | "initial" =
+        isInitial ? "initial" : manualTriggerRef.current ? "manual" : "auto";
+      const warning = d.payload?.warning ?? null;
+
+      recordAudit({
+        data: {
+          project_id: p.id,
+          project_label: p.label,
+          sheet_url: p.url,
+          tab_name: p.tab ?? null,
+          fetch_ms: d.fetchMs ?? null,
+          rows_total: rows.length,
+          rows_added: diff.added,
+          rows_removed: diff.removed,
+          rows_changed: diff.changed,
+          changed_row_indexes: diff.changedIndexes,
+          changed_columns: diff.changedColumns,
+          trigger_kind: trigger,
+          warning,
+        },
+      }).catch(() => {});
+    });
+    // Reset the manual flag once all outstanding fetches have settled.
+    if (!queries.some((q) => q.isFetching)) manualTriggerRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queries.map((q) => `${q.status}:${q.dataUpdatedAt}`).join("|")]);
+
   const refetchAll = async () => {
     const tid = toast.loading("Refreshing live sheet data…");
+    manualTriggerRef.current = true;
+    const embedStart = performance.now();
     try {
-      await Promise.all([registryQ.refetch(), ...queries.map(q => q.refetch())]);
-      // Fire-and-forget: rebuild semantic embeddings so new/changed rows are
-      // searchable in chat immediately (hash-diff inside skips unchanged rows).
+      await Promise.all([registryQ.refetch(), ...queries.map((q) => q.refetch())]);
+      // Rebuild semantic embeddings so new/changed rows are searchable in chat
+      // immediately (hash-diff inside skips unchanged rows).
       const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       if (apikey) {
         fetch("/api/public/hooks/embed-backfill", {
           method: "POST",
           headers: { "Content-Type": "application/json", apikey },
           body: "{}",
-        }).catch(() => {});
+        })
+          .then(async (r) => {
+            if (!r.ok) return;
+            const body = (await r.json().catch(() => null)) as
+              | { embedded_this_run?: number; total_remaining?: number; results?: Array<{ embedded: number; remaining: number }> }
+              | null;
+            const ms = Math.round(performance.now() - embedStart);
+            const embedded = body?.embedded_this_run ?? 0;
+            const refreshed = (body?.results ?? []).reduce((a, r2) => a + (r2.embedded ?? 0), 0);
+            setEmbedStats({
+              ms,
+              embedded,
+              refreshed,
+              remaining: body?.total_remaining ?? 0,
+              at: Date.now(),
+            });
+            // Aggregate audit row for the embed rebuild.
+            recordAudit({
+              data: {
+                project_id: "__embed_backfill__",
+                project_label: "Semantic index rebuild",
+                sheet_url: "backfill://all",
+                embed_ms: ms,
+                embed_embedded: embedded,
+                embed_refreshed: refreshed,
+                embed_remaining: body?.total_remaining ?? 0,
+                trigger_kind: "manual",
+              },
+            }).catch(() => {});
+          })
+          .catch(() => {});
       }
       toast.success("Live data refreshed", { id: tid });
     } catch (e) {
@@ -577,6 +682,22 @@ export default function AgentDashboard() {
     if (sig && sig !== errorSigRef.current) {
       errorSigRef.current = sig;
       errs.slice(0, 3).forEach(msg => toast.error(msg, { duration: 8000 }));
+      // Record a failure audit row per errored project.
+      queries.forEach((q, i) => {
+        if (!q.isError) return;
+        const p = projects[i];
+        if (!p) return;
+        recordAudit({
+          data: {
+            project_id: p.id,
+            project_label: p.label,
+            sheet_url: p.url,
+            tab_name: p.tab ?? null,
+            trigger_kind: manualTriggerRef.current ? "manual" : "auto",
+            error: (q.error as Error)?.message ?? "fetch failed",
+          },
+        }).catch(() => {});
+      });
     } else if (!sig) {
       errorSigRef.current = "";
     }
@@ -593,6 +714,7 @@ export default function AgentDashboard() {
     } else if (!wsig) {
       warnSigRef.current = "";
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queries.map(q => `${q.status}:${q.dataUpdatedAt}:${q.errorUpdatedAt}`).join("|")]);
 
 
