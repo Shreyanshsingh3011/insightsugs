@@ -124,6 +124,28 @@ function AuditPage() {
     },
   });
 
+  const projectIds = useMemo(
+    () => Array.from(new Set((data ?? []).map((e) => e.project_id).filter(Boolean) as string[])),
+    [data],
+  );
+
+  const { data: projects } = useQuery({
+    queryKey: ["audit_log_projects", projectIds],
+    enabled: isAdmin && projectIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projects").select("id,name").in("id", projectIds);
+      if (error) throw error;
+      return data as { id: string; name: string }[];
+    },
+  });
+
+  const projectNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    (projects ?? []).forEach((p) => m.set(p.id, p.name));
+    return m;
+  }, [projects]);
+
   if (!isAdmin) return <div className="mx-auto max-w-5xl px-4 py-8 text-muted-foreground">Admins only.</div>;
 
   return (
