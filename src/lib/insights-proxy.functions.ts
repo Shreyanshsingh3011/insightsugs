@@ -51,6 +51,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   connector: string;
   data: Record<string, string>[];
   generated_at: string;
+  warning?: string;
 }> {
   const lovable = process.env.LOVABLE_API_KEY;
   const key = process.env.GOOGLE_SHEETS_API_KEY;
