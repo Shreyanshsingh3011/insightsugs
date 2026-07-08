@@ -20,7 +20,7 @@ const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
 const AUTO_REFRESH_MS = 60_000;
-const REGISTRY_REFRESH_MS = 5 * 60_000;
+const REGISTRY_REFRESH_MS = 60_000;
 
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string };
 
@@ -34,7 +34,8 @@ export function useAgentSources() {
     queryFn: () => fetchRegistry(),
     staleTime: REGISTRY_REFRESH_MS,
     refetchInterval: REGISTRY_REFRESH_MS,
-    refetchOnWindowFocus: false,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const allProjects: AgentProject[] = useMemo(() => {
@@ -51,13 +52,14 @@ export function useAgentSources() {
 
   const queries = useQueries({
     queries: projects.map((p) => ({
-      queryKey: ["agent-src", p.id, p.url] as const,
+      queryKey: ["agent-src", p.id, p.url, p.tab ?? ""] as const,
       queryFn: async () => {
         const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
         return { project: p, payload: (res as { payload?: SourcePayload }).payload };
       },
       staleTime: AUTO_REFRESH_MS,
       refetchInterval: AUTO_REFRESH_MS,
+      refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
     })),
   });

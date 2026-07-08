@@ -51,7 +51,7 @@ const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
 const AUTO_REFRESH_MS = 60_000;
-const REGISTRY_REFRESH_MS = 5 * 60_000;
+const REGISTRY_REFRESH_MS = 60_000;
 
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
@@ -303,7 +303,8 @@ export default function AgentDashboard() {
     queryFn: () => fetchRegistry(),
     staleTime: REGISTRY_REFRESH_MS,
     refetchInterval: REGISTRY_REFRESH_MS,
-    refetchOnWindowFocus: false,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const allProjects: AgentProject[] = useMemo(() => {
@@ -334,6 +335,7 @@ export default function AgentDashboard() {
       },
       staleTime: AUTO_REFRESH_MS,
       refetchInterval: AUTO_REFRESH_MS,
+      refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
     })),
   });
