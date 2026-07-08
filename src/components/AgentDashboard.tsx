@@ -303,7 +303,8 @@ export default function AgentDashboard() {
     queryFn: () => fetchRegistry(),
     staleTime: REGISTRY_REFRESH_MS,
     refetchInterval: REGISTRY_REFRESH_MS,
-    refetchOnWindowFocus: false,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const allProjects: AgentProject[] = useMemo(() => {
@@ -334,6 +335,7 @@ export default function AgentDashboard() {
       },
       staleTime: AUTO_REFRESH_MS,
       refetchInterval: AUTO_REFRESH_MS,
+      refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
     })),
   });
