@@ -144,7 +144,9 @@ export async function ensureSheetEmbeddings(
     content_hash: contentHash(snippets[i]),
     embedding: vectors[i] as any,
   }));
-  const CHUNK = 200;
+  // Small batches keep pgvector HNSW index maintenance per statement short,
+  // which avoids the multi-second upsert stalls seen with larger chunks.
+  const CHUNK = 25;
   for (let i = 0; i < toUpsert.length; i += CHUNK) {
     const { error } = await supabase
       .from("sheet_row_embeddings")
@@ -152,7 +154,13 @@ export async function ensureSheetEmbeddings(
         onConflict: "sheet_registry_id,row_index",
       });
     if (error) throw new Error(`Embed upsert failed: ${error.message}`);
+    // Yield between batches so concurrent row writes aren't starved by
+    // back-to-back HNSW index updates.
+    if (i + CHUNK < toUpsert.length) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
+
   // Rough "remaining" — anything past this batch that still differs will be
   // picked up on the next call (backfill hook or next chat question).
   const remaining = Math.max(total - (existing.size - stale.length) - needsWork.length, 0);
