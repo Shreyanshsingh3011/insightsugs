@@ -71,9 +71,14 @@ function DetailRow({ entry, projectName }: { entry: Entry; projectName?: string 
             {humanizeEventType(entry.event_type)}
           </Badge>
           {entry.project_id && (
-            <span className="text-xs text-muted-foreground">
-              Project · {entry.project_id.slice(0, 8)}
-            </span>
+            <Link
+              to="/agent/project/$projectId"
+              params={{ projectId: entry.project_id }}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {projectName ?? `Project · ${entry.project_id.slice(0, 8)}`}
+            </Link>
           )}
           {entry.actor_id && (
             <span className="text-xs text-muted-foreground">
