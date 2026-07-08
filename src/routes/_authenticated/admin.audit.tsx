@@ -176,14 +176,22 @@ function AuditPage() {
     return m;
   }, [projects]);
 
-  // Latest successful sync per project (most recent, no error)
+  // Latest successful fetch per (project, sheet, tab). Skips errored syncs so a
+  // partial failure doesn't hide the last good delta, and keeps one row per
+  // sheet/tab when a project fans out across multiple sheets.
   const latestByProject = useMemo(() => {
     const map = new Map<string, SyncEntry>();
     (syncs ?? []).forEach((s) => {
       if (s.error) return;
-      if (!map.has(s.project_id)) map.set(s.project_id, s);
+      const key = `${s.project_id}::${s.sheet_url ?? ""}::${s.tab_name ?? ""}`;
+      const existing = map.get(key);
+      if (!existing || new Date(s.fetched_at) > new Date(existing.fetched_at)) {
+        map.set(key, s);
+      }
     });
-    return Array.from(map.values());
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.fetched_at).getTime() - new Date(a.fetched_at).getTime(),
+    );
   }, [syncs]);
 
   if (!isAdmin) return <div className="mx-auto max-w-5xl px-4 py-8 text-muted-foreground">Admins only.</div>;
@@ -206,7 +214,7 @@ function AuditPage() {
             const removed = s.rows_removed ?? 0;
             const name = projectNameMap.get(s.project_id) ?? s.project_label ?? `Project · ${s.project_id.slice(0, 8)}`;
             return (
-              <div key={s.project_id} className="flex items-center justify-between gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
+              <div key={s.id} className="flex items-center justify-between gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
                 <div className="min-w-0 flex-1">
                   <Link
                     to="/agent/project/$projectId"
