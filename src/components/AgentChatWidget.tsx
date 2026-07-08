@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { Bot, MessageCircle, X, Sparkles, ThumbsUp, ThumbsDown, ShieldCheck } from "lucide-react";
+import { Bot, MessageCircle, X, Sparkles, ThumbsUp, ThumbsDown, ShieldCheck, FileText } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { submitAgentRunFeedback } from "@/lib/agent-runs.functions";
