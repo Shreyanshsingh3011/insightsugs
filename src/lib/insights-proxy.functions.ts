@@ -109,7 +109,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   const vjson = (await valRes.json()) as { values?: string[][] };
   const values = vjson.values ?? [];
   if (values.length === 0) {
-    return { connector: `${meta.properties?.title ?? chosen.title} — view`, data: [], generated_at: new Date().toISOString() };
+    return { connector: `${meta.properties?.title ?? chosen.title} — view`, data: [], generated_at: new Date().toISOString(), warning: tabFallbackReason };
   }
   const cols = values[0].map((h, i) => String(h || `Col${i + 1}`).trim());
   const rows: Record<string, string>[] = values.slice(1).map(r => {
@@ -121,6 +121,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
     connector: `${meta.properties?.title ?? chosen.title} — view`,
     data: rows,
     generated_at: new Date().toISOString(),
+    warning: tabFallbackReason,
   };
 }
 
