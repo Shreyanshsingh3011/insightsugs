@@ -536,7 +536,56 @@ export default function AgentDashboard() {
 
 
 
-  const refetchAll = () => { registryQ.refetch(); queries.forEach(q => q.refetch()); };
+  const refetchAll = async () => {
+    const tid = toast.loading("Refreshing live sheet data…");
+    try {
+      await Promise.all([registryQ.refetch(), ...queries.map(q => q.refetch())]);
+      // Fire-and-forget: rebuild semantic embeddings so new/changed rows are
+      // searchable in chat immediately (hash-diff inside skips unchanged rows).
+      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      if (apikey) {
+        fetch("/api/public/hooks/embed-backfill", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey },
+          body: "{}",
+        }).catch(() => {});
+      }
+      toast.success("Live data refreshed", { id: tid });
+    } catch (e) {
+      toast.error(`Refresh failed: ${(e as Error)?.message ?? "unknown error"}`, { id: tid });
+    }
+  };
+
+  // Surface per-project fetch errors and tab-fallback warnings as toasts, so
+  // an invalid Sheet URL / renamed tab is visible instead of silently empty.
+  const errorSigRef = useRef<string>("");
+  const warnSigRef = useRef<string>("");
+  useEffect(() => {
+    const errs = queries
+      .map((q, i) => (q.isError ? `${projects[i]?.label}: ${(q.error as Error)?.message ?? "fetch failed"}` : null))
+      .filter(Boolean) as string[];
+    const sig = errs.join("|");
+    if (sig && sig !== errorSigRef.current) {
+      errorSigRef.current = sig;
+      errs.slice(0, 3).forEach(msg => toast.error(msg, { duration: 8000 }));
+    } else if (!sig) {
+      errorSigRef.current = "";
+    }
+    const warns = queries
+      .map((q, i) => {
+        const w = (q.data as { payload?: { warning?: string } } | undefined)?.payload?.warning;
+        return w ? `${projects[i]?.label}: ${w}` : null;
+      })
+      .filter(Boolean) as string[];
+    const wsig = warns.join("|");
+    if (wsig && wsig !== warnSigRef.current) {
+      warnSigRef.current = wsig;
+      warns.slice(0, 3).forEach(msg => toast.warning(msg, { duration: 10000 }));
+    } else if (!wsig) {
+      warnSigRef.current = "";
+    }
+  }, [queries.map(q => `${q.status}:${q.dataUpdatedAt}:${q.errorUpdatedAt}`).join("|")]);
+
 
 
   // AI Executive Brief
