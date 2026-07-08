@@ -398,3 +398,79 @@ function SyncRow({ sync, projectName }: { sync: SyncEntry; projectName?: string 
   );
 }
 
+function ChangedRowsDialog({ sync, projectName }: { sync: SyncEntry; projectName?: string }) {
+  const added = sync.rows_added ?? 0;
+  const changed = sync.rows_changed ?? 0;
+  const removed = sync.rows_removed ?? 0;
+  const cols = sync.changed_columns ?? [];
+  const rowIdx = sync.changed_row_indexes ?? [];
+  const label = projectName ?? sync.project_label ?? `Project · ${sync.project_id.slice(0, 8)}`;
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="h-6 px-2 text-xs">
+          <Eye className="h-3 w-3 mr-1" /> View changed rows
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Changed rows — {label}</DialogTitle>
+          <DialogDescription>
+            Fetched {new Date(sync.fetched_at).toLocaleString()}
+            {sync.tab_name ? ` · Tab ${sync.tab_name}` : ""}
+            {sync.rows_total != null ? ` · ${sync.rows_total} rows total` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">+{added} added</span>
+          <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">~{changed} changed</span>
+          <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">−{removed} removed</span>
+        </div>
+
+        <div className="space-y-3">
+          <section>
+            <h3 className="text-sm font-medium mb-1.5">Changed columns ({cols.length})</h3>
+            {cols.length === 0 ? (
+              <p className="text-xs text-muted-foreground">None</p>
+            ) : (
+              <ScrollArea className="max-h-40 rounded-md border p-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {cols.map((c) => (
+                    <Badge key={c} variant="secondary" className="text-xs">{c}</Badge>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </section>
+
+          <section>
+            <h3 className="text-sm font-medium mb-1.5">Row indexes ({rowIdx.length})</h3>
+            {rowIdx.length === 0 ? (
+              <p className="text-xs text-muted-foreground">None</p>
+            ) : (
+              <ScrollArea className="max-h-56 rounded-md border p-2">
+                <div className="flex flex-wrap gap-1">
+                  {rowIdx.map((n) => (
+                    <span key={n} className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">
+                      #{n}
+                    </span>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </section>
+
+          {(added > 0 || removed > 0) && (
+            <p className="text-xs text-muted-foreground">
+              Note: added and removed row positions are inferred from the fetch delta (rows appended/truncated at the end of the sheet); only in-place edits are tracked as explicit row indexes.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
