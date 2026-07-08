@@ -176,10 +176,63 @@ function AuditPage() {
     return m;
   }, [projects]);
 
+  // Latest successful sync per project (most recent, no error)
+  const latestByProject = useMemo(() => {
+    const map = new Map<string, SyncEntry>();
+    (syncs ?? []).forEach((s) => {
+      if (s.error) return;
+      if (!map.has(s.project_id)) map.set(s.project_id, s);
+    });
+    return Array.from(map.values());
+  }, [syncs]);
+
   if (!isAdmin) return <div className="mx-auto max-w-5xl px-4 py-8 text-muted-foreground">Admins only.</div>;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Latest Sync Impact</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          What changed in each project since the last successful fetch.
+        </p>
+        <Card className="mt-4 divide-y divide-border/60 overflow-hidden">
+          {syncsLoading && <p className="p-6 text-sm text-muted-foreground">Loading…</p>}
+          {!syncsLoading && latestByProject.length === 0 && (
+            <p className="p-6 text-sm text-muted-foreground">No successful syncs yet.</p>
+          )}
+          {latestByProject.map((s) => {
+            const added = s.rows_added ?? 0;
+            const changed = s.rows_changed ?? 0;
+            const removed = s.rows_removed ?? 0;
+            const name = projectNameMap.get(s.project_id) ?? s.project_label ?? `Project · ${s.project_id.slice(0, 8)}`;
+            return (
+              <div key={s.project_id} className="flex items-center justify-between gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    to="/agent/project/$projectId"
+                    params={{ projectId: s.project_id }}
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {name}
+                  </Link>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    Last fetch {new Date(s.fetched_at).toLocaleString()}
+                    {s.tab_name ? ` · Tab ${s.tab_name}` : ""}
+                    {s.rows_total != null ? ` · ${s.rows_total} rows total` : ""}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs shrink-0">
+                  <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">+{added} added</span>
+                  <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">~{changed} changed</span>
+                  <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">−{removed} removed</span>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Sheet Sync Activity</h1>
         <p className="mt-1 text-sm text-muted-foreground">
