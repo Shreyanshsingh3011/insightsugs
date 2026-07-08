@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { ExternalLink } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/audit")({
   head: () => ({ meta: [{ title: "Audit Log — DelayLens" }] }),
