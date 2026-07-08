@@ -124,9 +124,29 @@ function AuditPage() {
     },
   });
 
+  const { data: syncs, isLoading: syncsLoading } = useQuery({
+    queryKey: ["sheet_sync_audit"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sheet_sync_audit")
+        .select("*")
+        .order("fetched_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return data as SyncEntry[];
+    },
+  });
+
   const projectIds = useMemo(
-    () => Array.from(new Set((data ?? []).map((e) => e.project_id).filter(Boolean) as string[])),
-    [data],
+    () =>
+      Array.from(
+        new Set([
+          ...((data ?? []).map((e) => e.project_id).filter(Boolean) as string[]),
+          ...((syncs ?? []).map((s) => s.project_id).filter(Boolean) as string[]),
+        ]),
+      ),
+    [data, syncs],
   );
 
   const { data: projects } = useQuery({
@@ -149,18 +169,169 @@ function AuditPage() {
   if (!isAdmin) return <div className="mx-auto max-w-5xl px-4 py-8 text-muted-foreground">Admins only.</div>;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Audit Log</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Recent system events across projects and users.
-      </p>
-      <Card className="mt-6 divide-y divide-border/60 overflow-hidden">
-        {isLoading && <p className="p-6 text-sm text-muted-foreground">Loading…</p>}
-        {!isLoading && data?.length === 0 && (
-          <p className="p-6 text-sm text-muted-foreground">No events yet.</p>
-        )}
-        {data?.map((e) => <DetailRow key={e.id} entry={e} projectName={e.project_id ? projectNameMap.get(e.project_id) : undefined} />)}
-      </Card>
+    <div className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Sheet Sync Activity</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          What each fetch picked up from Google Sheets — rows added, changed, removed, and embeddings rebuilt.
+        </p>
+        <Card className="mt-4 divide-y divide-border/60 overflow-hidden">
+          {syncsLoading && <p className="p-6 text-sm text-muted-foreground">Loading…</p>}
+          {!syncsLoading && syncs?.length === 0 && (
+            <p className="p-6 text-sm text-muted-foreground">No sync activity yet.</p>
+          )}
+          {syncs?.map((s) => (
+            <SyncRow
+              key={s.id}
+              sync={s}
+              projectName={projectNameMap.get(s.project_id)}
+            />
+          ))}
+        </Card>
+      </div>
+
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">System Events</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Recent system events across projects and users.
+        </p>
+        <Card className="mt-4 divide-y divide-border/60 overflow-hidden">
+          {isLoading && <p className="p-6 text-sm text-muted-foreground">Loading…</p>}
+          {!isLoading && data?.length === 0 && (
+            <p className="p-6 text-sm text-muted-foreground">No events yet.</p>
+          )}
+          {data?.map((e) => (
+            <DetailRow
+              key={e.id}
+              entry={e}
+              projectName={e.project_id ? projectNameMap.get(e.project_id) : undefined}
+            />
+          ))}
+        </Card>
+      </div>
     </div>
   );
 }
+
+type SyncEntry = {
+  id: string;
+  project_id: string;
+  project_label: string | null;
+  sheet_url: string;
+  tab_name: string | null;
+  trigger_kind: string;
+  fetched_at: string;
+  fetch_ms: number | null;
+  rows_total: number | null;
+  rows_added: number | null;
+  rows_removed: number | null;
+  rows_changed: number | null;
+  changed_columns: string[] | null;
+  changed_row_indexes: number[] | null;
+  embed_embedded: number | null;
+  embed_refreshed: number | null;
+  embed_remaining: number | null;
+  embed_ms: number | null;
+  warning: string | null;
+  error: string | null;
+};
+
+function SyncRow({ sync, projectName }: { sync: SyncEntry; projectName?: string }) {
+  const added = sync.rows_added ?? 0;
+  const removed = sync.rows_removed ?? 0;
+  const changed = sync.rows_changed ?? 0;
+  const hasDelta = added + removed + changed > 0;
+  const embedded = sync.embed_embedded ?? 0;
+  const refreshed = sync.embed_refreshed ?? 0;
+  const cols = sync.changed_columns ?? [];
+  const rowIdx = sync.changed_row_indexes ?? [];
+
+  return (
+    <div className="grid grid-cols-[170px_1fr] gap-4 p-4 text-sm hover:bg-muted/30 transition-colors">
+      <div className="text-xs text-muted-foreground">
+        {new Date(sync.fetched_at).toLocaleString()}
+        {sync.fetch_ms != null && (
+          <div className="mt-0.5 text-[10px]">{sync.fetch_ms} ms fetch</div>
+        )}
+      </div>
+      <div className="min-w-0 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant={sync.error ? "destructive" : hasDelta ? "default" : "secondary"}>
+            {sync.trigger_kind}
+          </Badge>
+          {sync.project_id && (
+            <Link
+              to="/agent/project/$projectId"
+              params={{ projectId: sync.project_id }}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {projectName ?? sync.project_label ?? `Project · ${sync.project_id.slice(0, 8)}`}
+            </Link>
+          )}
+          {sync.tab_name && (
+            <span className="text-xs text-muted-foreground">Tab · {sync.tab_name}</span>
+          )}
+        </div>
+
+        {sync.error ? (
+          <div className="text-xs text-destructive">{sync.error}</div>
+        ) : hasDelta ? (
+          <div className="flex flex-wrap gap-3 text-xs">
+            {added > 0 && (
+              <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5">
+                +{added} added
+              </span>
+            )}
+            {changed > 0 && (
+              <span className="rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5">
+                ~{changed} changed
+              </span>
+            )}
+            {removed > 0 && (
+              <span className="rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 py-0.5">
+                −{removed} removed
+              </span>
+            )}
+            {sync.rows_total != null && (
+              <span className="text-muted-foreground">Total {sync.rows_total} rows</span>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-foreground">
+            No changes detected{sync.rows_total != null ? ` · ${sync.rows_total} rows scanned` : ""}
+          </div>
+        )}
+
+        {cols.length > 0 && (
+          <div className="text-xs">
+            <span className="text-muted-foreground">Columns updated:</span>{" "}
+            <span className="text-foreground">{cols.join(", ")}</span>
+          </div>
+        )}
+        {rowIdx.length > 0 && (
+          <div className="text-xs">
+            <span className="text-muted-foreground">Rows:</span>{" "}
+            <span className="text-foreground">
+              {rowIdx.slice(0, 20).map((n) => `#${n}`).join(", ")}
+              {rowIdx.length > 20 && ` +${rowIdx.length - 20} more`}
+            </span>
+          </div>
+        )}
+
+        {(embedded > 0 || refreshed > 0 || sync.embed_ms) && (
+          <div className="text-xs text-muted-foreground">
+            Embeddings: {embedded} new, {refreshed} refreshed
+            {sync.embed_remaining ? `, ${sync.embed_remaining} pending` : ""}
+            {sync.embed_ms ? ` · ${sync.embed_ms} ms` : ""}
+          </div>
+        )}
+
+        {sync.warning && (
+          <div className="text-xs text-amber-600 dark:text-amber-400">{sync.warning}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
