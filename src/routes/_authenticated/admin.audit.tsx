@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsAdmin } from "@/hooks/useSession";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { ExternalLink } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/audit")({
   head: () => ({ meta: [{ title: "Audit Log — DelayLens" }] }),
@@ -54,7 +55,7 @@ function humanizeKey(k: string) {
   return k.replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function DetailRow({ entry }: { entry: Entry }) {
+function DetailRow({ entry, projectName }: { entry: Entry; projectName?: string }) {
   const [expanded, setExpanded] = useState(false);
   const details = entry.details ?? {};
   const keys = Object.keys(details);
@@ -70,9 +71,14 @@ function DetailRow({ entry }: { entry: Entry }) {
             {humanizeEventType(entry.event_type)}
           </Badge>
           {entry.project_id && (
-            <span className="text-xs text-muted-foreground">
-              Project · {entry.project_id.slice(0, 8)}
-            </span>
+            <Link
+              to="/agent/project/$projectId"
+              params={{ projectId: entry.project_id }}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {projectName ?? `Project · ${entry.project_id.slice(0, 8)}`}
+            </Link>
           )}
           {entry.actor_id && (
             <span className="text-xs text-muted-foreground">
@@ -118,6 +124,28 @@ function AuditPage() {
     },
   });
 
+  const projectIds = useMemo(
+    () => Array.from(new Set((data ?? []).map((e) => e.project_id).filter(Boolean) as string[])),
+    [data],
+  );
+
+  const { data: projects } = useQuery({
+    queryKey: ["audit_log_projects", projectIds],
+    enabled: isAdmin && projectIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projects").select("id,name").in("id", projectIds);
+      if (error) throw error;
+      return data as { id: string; name: string }[];
+    },
+  });
+
+  const projectNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    (projects ?? []).forEach((p) => m.set(p.id, p.name));
+    return m;
+  }, [projects]);
+
   if (!isAdmin) return <div className="mx-auto max-w-5xl px-4 py-8 text-muted-foreground">Admins only.</div>;
 
   return (
@@ -131,7 +159,7 @@ function AuditPage() {
         {!isLoading && data?.length === 0 && (
           <p className="p-6 text-sm text-muted-foreground">No events yet.</p>
         )}
-        {data?.map((e) => <DetailRow key={e.id} entry={e} />)}
+        {data?.map((e) => <DetailRow key={e.id} entry={e} projectName={e.project_id ? projectNameMap.get(e.project_id) : undefined} />)}
       </Card>
     </div>
   );
