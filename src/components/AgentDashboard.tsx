@@ -1292,9 +1292,9 @@ export default function AgentDashboard() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {scope.isSuper
-                ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 1000)}s${registryLive ? " · project list pulled from master sheet" : " · using built-in list"}.`
+                ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 60_000)} min${registryLive ? " · project list pulled from master sheet" : " · using built-in list"} · use Sync for instant refresh.`
                 : scope.isAdmin
-                ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · syncing every ${Math.round(AUTO_REFRESH_MS / 1000)}s.`
+                ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · auto-syncs every ${Math.round(AUTO_REFRESH_MS / 60_000)} min.`
                 : `Showing only work assigned to ${scope.profile?.full_name || "you"} across your ${projects.length} project${projects.length === 1 ? "" : "s"}.`}
             </p>
             {lastSyncedAt && (
