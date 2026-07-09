@@ -898,6 +898,7 @@ export async function runCopilotAgent(
         filter_sheet_rows: filterSheetRows,
         aggregate_column: aggregateColumn,
         get_row: getRow,
+        get_cell: getCell,
         search_doc_chunks: searchDocChunks,
         create_alert: createAlert,
         draft_email: draftEmail,
