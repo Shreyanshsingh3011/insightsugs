@@ -592,6 +592,51 @@ export async function runCopilotAgent(
         }),
     });
 
+    const getCell = tool({
+      description:
+        "Fetch ONE exact cell value: the value at (row_index, column) in a sheet. Use this when the user's question is about a specific field of a specific record (e.g. 'phone of X', 'status of order 42', 'due date of task Y'). Prefer this over get_row when you only need one column so the citation pins the exact source cell.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        row_index: z.number().int().min(0),
+        column: z.string().min(1).max(120),
+      }),
+      execute: async ({ sheet_id, row_index, column }) =>
+        withTrace("get_cell", { sheet_id, row_index, column }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const hit = rows.find((r) => r.row_index === row_index);
+          if (!hit) return { error: "No such row_index" };
+          // Case-insensitive column resolution.
+          const key = Object.keys(hit.data).find(
+            (k) => k.toLowerCase().trim() === column.toLowerCase().trim(),
+          );
+          if (!key) {
+            return {
+              error: `Column not found. Available: ${Object.keys(hit.data).slice(0, 40).join(", ")}`,
+            };
+          }
+          const value = hit.data[key];
+          ledger.push({
+            kind: "sheet_row",
+            registryId: sheet_id,
+            sheetLabel: reg.display_name,
+            rowIndex: row_index,
+            data: hit.data,
+          });
+          return {
+            _summary: `${key} @ row ${row_index + 1} of "${reg.display_name}" = ${String(value ?? "").slice(0, 80)}`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              row_index,
+              column: key,
+              value,
+              cite: `[sheet:${reg.display_name} row ${row_index + 1} col ${key}]`,
+            },
+          };
+        }),
+    });
+
     const searchDocChunks = tool({
       description:
         "Semantic search over the text of a specific document. Returns up to k page-scoped chunks.",
