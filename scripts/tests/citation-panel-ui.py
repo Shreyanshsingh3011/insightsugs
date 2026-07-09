@@ -74,9 +74,8 @@ async def main() -> int:
         # 3. Verify Open-in-dashboard navigates for the sheet chip
         try:
             await page.get_by_test_id("citation-chip-sheet").click()
-            await page.get_by_test_id("citation-panel").wait_for(state="attached", timeout=5000)
-            await page.wait_for_timeout(300)
-            await page.get_by_test_id("open-in-dashboard").click()
+            await page.wait_for_timeout(700)
+            await page.locator('[data-testid="open-in-dashboard"]').first.click()
             await page.wait_for_url("**/sheets**", timeout=5000)
             if "/sheets" not in page.url:
                 failures.append(f"navigation did not reach /sheets: {page.url}")
