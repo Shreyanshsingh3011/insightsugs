@@ -649,8 +649,11 @@ export async function runCopilotAgent(
         withTrace("search_doc_chunks", { document_id, query, k }, async () => {
           const doc = docById.get(document_id);
           if (!doc) return { error: "Unknown document_id" };
-          const { embedQuery } = await import("./embeddings.server");
-          const qvec = await embedQuery(query);
+          // Doc chunks are stored at 768d (google/gemini-embedding-001 via
+          // documents.server.embedTexts). Must query with the SAME model or
+          // pgvector's <=> errors on dim mismatch and the RPC returns nothing.
+          const { embedTexts: embedDocQuery } = await import("./documents.server");
+          const [qvec] = await embedDocQuery([query]);
           const { data: matches, error } = await supabase.rpc("match_doc_chunks", {
             _user_id: userId,
             _query: qvec as any,
