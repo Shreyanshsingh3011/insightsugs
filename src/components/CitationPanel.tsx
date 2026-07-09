@@ -166,6 +166,34 @@ export function CitationPanel({
   );
 }
 
+type NavDest = { to: string; params?: Record<string, string>; search?: Record<string, unknown> };
+
+function dashboardDestination(target: CitationTarget | null, ctx: CitationContext | null): NavDest | null {
+  if (!target) return null;
+  if (target.kind === "sheet") {
+    if (ctx && ctx.kind === "sheet" && ctx.sheet?.id) {
+      return {
+        to: "/sheets/$sheetId",
+        params: { sheetId: ctx.sheet.id },
+        search: { highlight: target.row },
+      };
+    }
+    return { to: "/sheets" };
+  }
+  if (target.kind === "doc") {
+    return { to: "/documents" };
+  }
+  // dashboard field → main dashboard view
+  return { to: "/agent" };
+}
+
+function canOpenInDashboard(target: CitationTarget | null, ctx: CitationContext | null): boolean {
+  if (!target) return false;
+  if (target.kind === "sheet") return !!(ctx && ctx.kind === "sheet" && ctx.sheet?.id) || true;
+  return true;
+}
+
+
 function formatValue(v: unknown): string {
   if (v === undefined || v === null) return "(not captured)";
   if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
