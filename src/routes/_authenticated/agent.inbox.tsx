@@ -807,9 +807,13 @@ function RunWatchersButton({ onDone }: { onDone: (result: Awaited<ReturnType<typ
       const visibleHint = r.created === 0 && r.skipped_dedupe > 0
         ? ` · ${r.surfaced_existing || r.skipped_dedupe} existing draft${(r.surfaced_existing || r.skipped_dedupe) === 1 ? "" : "s"} already queued`
         : "";
+      const autoHint = r.auto_dismissed
+        ? ` · ${r.auto_dismissed} auto-dismissed (source completed)`
+        : "";
       toast.success(
-        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${visibleHint}${errs}`,
+        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${visibleHint}${autoHint}${errs}`,
       );
+
       onDone(r);
     },
     onError: (e) => toast.error((e as Error).message),
