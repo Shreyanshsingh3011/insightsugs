@@ -23,7 +23,10 @@ const PAGE_SIZES = [100, 500, 1000, 2000];
 
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
-  const { highlight } = Route.useSearch();
+  const { highlight, col: highlightCol } = Route.useSearch();
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const normHighlightCol = highlightCol ? norm(highlightCol) : null;
+  const isHitCell = (c: string) => normHighlightCol != null && norm(c) === normHighlightCol;
   const qc = useQueryClient();
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
