@@ -65,6 +65,7 @@ export default function AgentChatWidget({
 }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [selectedCitation, setSelectedCitation] = useState<CitationTarget | null>(null);
 
   const contextRef = useRef(context);
   useEffect(() => {
