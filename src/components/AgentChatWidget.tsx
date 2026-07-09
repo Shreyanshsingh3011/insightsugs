@@ -267,7 +267,7 @@ export default function AgentChatWidget({
                       return (
                         <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
                           {refusal.isRefusal && (
-                            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+                            <div data-testid="refusal-card" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
                               <div className="font-medium text-amber-700 dark:text-amber-300">
                                 Not found in your dashboard data
                               </div>
