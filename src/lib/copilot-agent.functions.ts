@@ -982,8 +982,8 @@ async function _runCopilotAgentImpl({ data, context }: { data: z.infer<typeof In
       citationOk,
       unverifiedCitations: unverified,
     };
-  });
-}
+  }
+
 
 export const askCopilotV2 = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
