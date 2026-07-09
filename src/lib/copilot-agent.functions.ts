@@ -886,7 +886,7 @@ export async function runCopilotAgent(
       const sheetRowMatch = /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body);
       const sheetOnlyMatch = !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
       if (sheetRowMatch || sheetOnlyMatch) {
-        const label = (sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "").trim();
+        const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
         const reg = sheetByLabel.get(label);
         if (!reg) {
           unverified.push(marker);
@@ -914,7 +914,7 @@ export async function runCopilotAgent(
       const docPageMatch = /^doc:\s*(.+?)\s+p\.?\s*(\d+)\s*$/i.exec(body);
       const docOnlyMatch = !docPageMatch ? /^doc:\s*(.+?)\s*$/i.exec(body) : null;
       if (docPageMatch || docOnlyMatch) {
-        const label = (docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "").trim();
+        const label = normalizeCitationLabel(docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "");
         const doc = docByLabel.get(label);
         if (!doc) {
           unverified.push(marker);
