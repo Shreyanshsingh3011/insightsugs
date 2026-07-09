@@ -191,29 +191,39 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
     const normalized: NormalizedRow[] = [];
     const sheetsMeta: { label: string; name: string; rows: number; columns: number }[] = [];
 
+    // Single round-trip: fetch rows for ALL requested sheets in one query,
+    // then group in memory. Replaces the previous per-sheet N+1 loop.
+    const regById = new Map(regs.map((r) => [r.id, r]));
+    const { data: allRows, error: rowsErr } = await supabase
+      .from("sheet_rows")
+      .select("sheet_registry_id, canonical, extras")
+      .in("sheet_registry_id", regs.map((r) => r.id))
+      .order("sheet_registry_id", { ascending: true })
+      .order("row_index", { ascending: true });
+    if (rowsErr) throw new Error(rowsErr.message);
+
+    const perSheetCounts = new Map<string, number>();
+    for (const row of (allRows ?? []) as Array<{ sheet_registry_id: string; canonical: unknown; extras: unknown }>) {
+      const r = regById.get(row.sheet_registry_id);
+      if (!r) continue;
+      const used = perSheetCounts.get(r.id) ?? 0;
+      if (used >= PER_SHEET) continue;
+      perSheetCounts.set(r.id, used + 1);
+      const merged: Row = {};
+      for (const [k, v] of Object.entries((row.canonical as Record<string, unknown>) ?? {})) merged[k] = String(v ?? "");
+      for (const [k, v] of Object.entries((row.extras as Record<string, unknown>) ?? {})) {
+        const key = k.toLowerCase().replace(/\s+/g, "_");
+        if (!(key in merged)) merged[key] = String(v ?? "");
+      }
+      normalized.push(normalizeRow(r.display_name, r.sheet_type, merged, directory));
+    }
     for (const r of regs) {
-      const { data: rows } = await supabase
-        .from("sheet_rows")
-        .select("canonical, extras")
-        .eq("sheet_registry_id", r.id)
-        .order("row_index", { ascending: true })
-        .limit(PER_SHEET);
-      const slice = rows ?? [];
       sheetsMeta.push({
         label: r.sheet_type,
         name: r.display_name,
-        rows: slice.length,
+        rows: perSheetCounts.get(r.id) ?? 0,
         columns: 0,
       });
-      for (const row of slice) {
-        const merged: Row = {};
-        for (const [k, v] of Object.entries(row.canonical ?? {})) merged[k] = String(v ?? "");
-        for (const [k, v] of Object.entries(row.extras ?? {})) {
-          const key = k.toLowerCase().replace(/\s+/g, "_");
-          if (!(key in merged)) merged[key] = String(v ?? "");
-        }
-        normalized.push(normalizeRow(r.display_name, r.sheet_type, merged, directory));
-      }
     }
 
 
