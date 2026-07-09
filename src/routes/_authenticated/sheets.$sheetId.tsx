@@ -82,13 +82,15 @@ function SheetDetailPage() {
   const reg = detail.data.registry;
   const type = reg.sheet_type as SheetType;
   const canonicalCols = CANONICAL_FIELDS[type];
-  const visibleCanonicalCols = canonicalCols.filter((c) =>
-    detail.data.rows.some((r: any) => String(r.canonical?.[c] ?? "").trim().length > 0),
-  );
   const extraCols = Array.from(
     new Set(detail.data.rows.flatMap((r: any) => Object.keys(r.extras ?? {}))),
   );
-  const dataCols = [...visibleCanonicalCols, ...extraCols];
+  const visibleCanonicalCols = canonicalCols.filter((c) => {
+    if (!detail.data.rows.length) return true;
+    const filled = detail.data.rows.filter((r: any) => String(r.canonical?.[c] ?? "").trim().length > 0).length;
+    return extraCols.length === 0 || filled / detail.data.rows.length >= 0.2;
+  });
+  const dataCols = [...extraCols, ...visibleCanonicalCols];
   const total = detail.data.totalRows ?? 0;
   const end = Math.min(offset + pageSize, total);
 
@@ -133,11 +135,11 @@ function SheetDetailPage() {
             <thead className="sticky top-0 bg-muted text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">#</th>
-                {visibleCanonicalCols.map((c) => (
+                {extraCols.map((c) => (
                   <th key={c} className="px-3 py-2 font-medium">{c}</th>
                 ))}
-                {extraCols.map((c) => (
-                  <th key={c} className="px-3 py-2 font-medium italic">{c}</th>
+                {visibleCanonicalCols.map((c) => (
+                  <th key={c} className="px-3 py-2 font-medium text-muted-foreground">{c}</th>
                 ))}
               </tr>
             </thead>
@@ -160,11 +162,11 @@ function SheetDetailPage() {
                       }`}
                     >
                       <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.row_index + 1}</td>
-                      {visibleCanonicalCols.map((c) => (
-                        <td key={c} className="px-3 py-1.5">{r.canonical?.[c] ?? ""}</td>
-                      ))}
                       {extraCols.map((c) => (
-                        <td key={c} className="px-3 py-1.5 text-muted-foreground">{r.extras?.[c] ?? ""}</td>
+                        <td key={c} className="px-3 py-1.5">{r.extras?.[c] ?? ""}</td>
+                      ))}
+                      {visibleCanonicalCols.map((c) => (
+                        <td key={c} className="px-3 py-1.5 text-muted-foreground">{r.canonical?.[c] ?? ""}</td>
                       ))}
                     </tr>
                   );
