@@ -38,6 +38,7 @@ function SheetDetailPage() {
   const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
 
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
+  const highlightCellRef = useRef<HTMLTableCellElement | null>(null);
 
   const detail = useQuery({
     queryKey: ["sheet-detail", sheetId, offset, pageSize],
@@ -76,9 +77,33 @@ function SheetDetailPage() {
 
   useEffect(() => {
     if (highlight == null) return;
-    if (!highlightRef.current) return;
-    highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlight, detail.data]);
+    const row = highlightRef.current;
+    const cell = highlightCellRef.current;
+    
+    if (!row) return;
+
+    // Prefer the exact cell so far-right columns aren't clipped on narrow
+    // (mobile) viewports; fall back to the row when no column was requested.
+    const target = cell ?? row;
+    const scroller = target.closest<HTMLElement>(".overflow-auto");
+    if (!scroller) {
+      target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      return;
+    }
+    const tRect = target.getBoundingClientRect();
+    const sRect = scroller.getBoundingClientRect();
+    const nextLeft = Math.max(
+      0,
+      scroller.scrollLeft + (tRect.left - sRect.left) - Math.max(0, (sRect.width - tRect.width) / 2),
+    );
+    const nextTop = Math.max(
+      0,
+      scroller.scrollTop + (tRect.top - sRect.top) - Math.max(0, (sRect.height - tRect.height) / 2),
+    );
+    scroller.scrollTo({ left: nextLeft, top: nextTop, behavior: "auto" });
+    // Also nudge the page so the scroller itself is on-screen on mobile.
+    scroller.scrollIntoView({ behavior: "auto", block: "nearest" });
+  }, [highlight, highlightCol, detail.data]);
 
 
   const refreshMut = useMutation({
@@ -247,6 +272,7 @@ function SheetDetailPage() {
                         return (
                           <td
                             key={c}
+                            ref={hitCell ? highlightCellRef : undefined}
                             className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium" : ""}`}
                           >
                             {r.extras?.[c] ?? ""}
@@ -258,6 +284,7 @@ function SheetDetailPage() {
                         return (
                           <td
                             key={c}
+                            ref={hitCell ? highlightCellRef : undefined}
                             className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium text-foreground" : "text-muted-foreground"}`}
                           >
                             {r.canonical?.[c] ?? ""}
