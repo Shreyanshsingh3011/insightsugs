@@ -2,7 +2,8 @@
 // Shows the exact referenced row / doc excerpt / dashboard field snapshot
 // used to ground the assistant's answer.
 import { useEffect, useState } from "react";
-import { useServerFn, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useNavigate } from "@tanstack/react-router";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { getCitationContext, type CitationContext } from "@/lib/citations.functions";
