@@ -43,7 +43,25 @@ function SheetDetailPage() {
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 15000),
   });
+
+  // Surface background-refetch failures (initial load errors already render below)
+  const lastToastedError = useRef<string | null>(null);
+  useEffect(() => {
+    if (!detail.isError || !detail.data) return; // only when we have cached data + a failed refetch
+    const msg = detail.error instanceof Error ? detail.error.message : "Refetch failed";
+    if (lastToastedError.current === msg) return;
+    lastToastedError.current = msg;
+    toast.error("Auto-refresh failed", {
+      description: msg,
+      action: { label: "Retry", onClick: () => detail.refetch() },
+    });
+  }, [detail.isError, detail.error, detail.data, detail.refetch]);
+  useEffect(() => {
+    if (detail.isSuccess) lastToastedError.current = null;
+  }, [detail.isSuccess, detail.dataUpdatedAt]);
 
   useEffect(() => {
     if (highlight == null) return;
