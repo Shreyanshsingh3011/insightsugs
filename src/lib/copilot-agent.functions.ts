@@ -649,8 +649,11 @@ export async function runCopilotAgent(
         withTrace("search_doc_chunks", { document_id, query, k }, async () => {
           const doc = docById.get(document_id);
           if (!doc) return { error: "Unknown document_id" };
-          const { embedQuery } = await import("./embeddings.server");
-          const qvec = await embedQuery(query);
+          // Doc chunks are stored at 768d (google/gemini-embedding-001 via
+          // documents.server.embedTexts). Must query with the SAME model or
+          // pgvector's <=> errors on dim mismatch and the RPC returns nothing.
+          const { embedTexts: embedDocQuery } = await import("./documents.server");
+          const [qvec] = await embedDocQuery([query]);
           const { data: matches, error } = await supabase.rpc("match_doc_chunks", {
             _user_id: userId,
             _query: qvec as any,
@@ -850,6 +853,15 @@ export async function runCopilotAgent(
       "    4. Use search_doc_chunks on every selected document with multiple query rewrites.",
       "- Only after all reasonable probes return nothing may you refuse.",
       "- Never say 'I can only answer X'. If the data supports it, answer it.",
+      "",
+      "POSITIONAL / STRUCTURAL RULES (strict — apply BEFORE semantic search):",
+      "- 'row N', 'the Nth row', 'first row', 'last row' → call get_row with row_index = N - 1 (the user's row numbers are ONE-BASED; internal row_index is ZERO-BASED). NEVER use search_sheet_rows for these — semantic search is useless for positional lookups.",
+      "- 'first N rows' / 'top N rows' / 'show me a few rows' → call get_row for row_index 0, 1, ..., N-1 (max 10). Do not use search_sheet_rows.",
+      "- 'how many rows', 'row count', 'size of the sheet' → call get_sheet_schema (its total_rows field is authoritative).",
+      "- 'what columns/fields/headers are in <sheet>' → call get_sheet_schema and list the column names verbatim.",
+      "",
+      "DOCUMENT-SUMMARY RULE:",
+      "- 'summarize this document', 'what is this doc about', 'overview of <doc>' → call search_doc_chunks on that document with several generic queries in parallel: 'introduction', 'overview', 'summary', 'purpose', 'conclusion', 'key points'. Then answer from the returned chunks and cite pages.",
       "",
       "PIN-TO-CELL RULE (strict):",
       "- When the user's question is about a specific field of a specific record (a single value: a phone, an email, a status, a date, a quantity, a name, etc.), you MUST call get_cell to fetch that exact (row, column) and cite it as [sheet:<display_name> row <n> col <ColumnName>]. Do NOT paraphrase the value from search results — fetch the exact cell.",
