@@ -84,8 +84,8 @@ export async function logServerError(
       details: {
         name: norm.name,
         message: norm.message,
-        extra: ctx.extra ?? null,
-      },
+        extra: (ctx.extra ?? null) as never,
+      } as never,
     });
   } catch {
     /* swallow — logger must never surface secondary errors */
