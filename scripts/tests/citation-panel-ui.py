@@ -26,7 +26,8 @@ async def main() -> int:
         browser = await p.chromium.launch(headless=True)
         ctx = await browser.new_context(viewport={"width": 1280, "height": 1800})
         page = await ctx.new_page()
-        await page.goto(URL, wait_until="domcontentloaded")
+        await page.goto(URL, wait_until="networkidle")
+        await page.wait_for_timeout(500)
 
         # 1. Refusal card
         try:
