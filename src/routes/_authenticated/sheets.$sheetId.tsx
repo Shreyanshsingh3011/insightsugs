@@ -150,6 +150,33 @@ function SheetDetailPage() {
         </Button>
       </div>
 
+      {detail.isError && detail.data ? (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+          <div className="flex-1">
+            <div className="font-medium">Auto-refresh failed</div>
+            <div className="text-xs opacity-90">
+              {detail.error instanceof Error ? detail.error.message : "Unknown error"}
+              {" · showing last successful data"}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => detail.refetch()}
+            disabled={detail.isFetching}
+          >
+            {detail.isFetching ? (
+              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1.5 h-3 w-3" />
+            )}
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
+
       {detail.data.syncWarning ? (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
