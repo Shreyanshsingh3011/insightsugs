@@ -1015,14 +1015,14 @@ export const askCopilot = createServerFn({ method: "POST" })
       })
       .parse(input),
   )
-  .handler(async ({ data }) => {
-    const { askCopilotV2 } = await import("./copilot-agent.functions");
-    // Call the server fn in-process; TanStack executes the handler directly
-    // when invoked server-side and honors the same auth context we already
-    // established via requireSupabaseAuth above.
-    const res = await (askCopilotV2 as any)({ data });
-    return res;
+  .handler(async ({ data, context }) => {
+    const { runCopilotAgent } = await import("./copilot-agent.functions");
+    return await runCopilotAgent(data, {
+      supabase: context.supabase,
+      userId: context.userId,
+    });
   });
+
 
 const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
