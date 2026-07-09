@@ -205,10 +205,17 @@ const InputSchema = z
     message: "Select at least one sheet or document.",
   });
 
-export const askCopilotV2 = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => InputSchema.parse(input))
-  .handler(async ({ data, context }) => {
+// Core handler body extracted so other server-fn handlers (auto-insights,
+// document auto-insights, etc.) can invoke it in-process instead of going
+// through the client RPC stub — the stub path fails with
+// "Server function info not found for <hash>" when the callee isn't in the
+// client manifest.
+export async function runCopilotAgent(
+  data: z.infer<typeof InputSchema>,
+  context: { supabase: any; userId: string },
+) {
+
+
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("Missing LOVABLE_API_KEY");
@@ -968,4 +975,13 @@ export const askCopilotV2 = createServerFn({ method: "POST" })
       citationOk,
       unverifiedCitations: unverified,
     };
+  }
+
+
+export const askCopilotV2 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => InputSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    return await runCopilotAgent(data, { supabase: context.supabase, userId: context.userId });
   });
+

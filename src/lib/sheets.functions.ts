@@ -1015,14 +1015,14 @@ export const askCopilot = createServerFn({ method: "POST" })
       })
       .parse(input),
   )
-  .handler(async ({ data }) => {
-    const { askCopilotV2 } = await import("./copilot-agent.functions");
-    // Call the server fn in-process; TanStack executes the handler directly
-    // when invoked server-side and honors the same auth context we already
-    // established via requireSupabaseAuth above.
-    const res = await (askCopilotV2 as any)({ data });
-    return res;
+  .handler(async ({ data, context }) => {
+    const { runCopilotAgent } = await import("./copilot-agent.functions");
+    return await runCopilotAgent(data, {
+      supabase: context.supabase,
+      userId: context.userId,
+    });
   });
+
 
 const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1623,9 +1623,11 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found or you don't have access");
 
-    // Reuse askCopilot with a curated prompt to keep the answer grounded.
-    const out = await (askCopilot as any)({
-      data: {
+    // Call the copilot agent directly in-process (not via RPC stub, which
+    // would fail with "Server function info not found" in production).
+    const { runCopilotAgent } = await import("./copilot-agent.functions");
+    const out = await runCopilotAgent(
+      {
         question:
           "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this sheet.\n" +
           "Output ONLY a JSON object with this exact shape:\n" +
@@ -1637,7 +1639,9 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
         documentIds: [],
         history: [],
       },
-    });
+      { supabase, userId },
+    );
+
 
     let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
     let questions: string[] = [];
@@ -1684,7 +1688,7 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     z.object({ documentId: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     const { data: doc, error: docErr } = await supabase
       .from("documents")
       .select("id, name")
@@ -1693,8 +1697,9 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     if (docErr) throw new Error(docErr.message);
     if (!doc) throw new Error("Document not found or you don't have access");
 
-    const out = await (askCopilot as any)({
-      data: {
+    const { runCopilotAgent } = await import("./copilot-agent.functions");
+    const out = await runCopilotAgent(
+      {
         question:
           "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this document.\n" +
           "Output ONLY a JSON object with this exact shape:\n" +
@@ -1706,7 +1711,9 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
         documentIds: [data.documentId],
         history: [],
       },
-    });
+      { supabase, userId },
+    );
+
 
     let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
     let questions: string[] = [];
