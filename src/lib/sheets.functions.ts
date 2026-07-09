@@ -98,9 +98,11 @@ function storedRowsLookMisread(rows: { canonical?: unknown; extras?: unknown }[]
     const numericKeyRatio = keys.filter(isNumericLike).length / keys.length;
     if (numericKeyRatio >= 0.5) return true;
     if (isSequentialSpreadsheetHeader(keys)) return true;
+    // Only fall back to value-based header detection when keys ALSO look
+    // like generic placeholders (A/B/C or 1/2/3). Real column names mean
+    // the row is data even if values happen to contain text labels.
+    return false;
   }
-  // A common API shape stores row 0 as the real header values under A/B/C keys.
-  // If those header-like labels landed as data, refresh with the stricter parser.
   return looksLikeHeaderRow(Object.values(merged));
 }
 
