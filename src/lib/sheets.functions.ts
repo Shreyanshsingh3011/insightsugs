@@ -931,30 +931,15 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       if (!allowed) throw new Error("Sheet not found.");
     }
 
+    let syncWarning: string | null = null;
     const { data: probeRows } = await supabase
       .from("sheet_rows")
       .select("canonical, extras")
       .eq("sheet_registry_id", data.registryId)
       .order("row_index", { ascending: true })
       .limit(12);
-    let syncWarning: string | null = null;
     if (storedRowsLookMisread(probeRows ?? [])) {
-      try {
-        await syncRowsInternal(supabase, reg.user_id, data.registryId);
-      } catch (error) {
-        syncWarning = error instanceof Error ? error.message : "Live sheet refresh failed.";
-      }
-    }
-    if (syncWarning == null && storedRowsLookMisread(probeRows ?? [])) {
-      const refreshed = await supabase
-        .from("sheet_registry")
-        .select(
-          "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at, user_id, visibility",
-        )
-        .eq("id", data.registryId)
-        .maybeSingle();
-      if (refreshed.error) throw new Error(refreshed.error.message);
-      reg = refreshed.data ?? reg;
+      syncWarning = "This sheet may need a refresh, but the saved rows are shown below.";
     }
 
 
