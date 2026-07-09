@@ -257,67 +257,96 @@ export default function AgentChatWidget({
                       return null;
                     })}
                     {m.role === "assistant" && (() => {
-                      // Extract unique [sheet:X row N] / [doc:X p.N] citations
-                      // from the streamed answer text and render as chips so
-                      // the source of every fact is one click away.
                       const text = m.parts
                         .filter((pp) => pp.type === "text")
                         .map((pp) => (pp as { text: string }).text)
                         .join("\n");
-                      const sheetRe = /\[sheet:([^\]]+?)\s+row\s+(\d+)\]/gi;
-                      const docRe = /\[doc:([^\]]+?)\s+p\.(\d+)\]/gi;
-                      const dashRe = /\[dashboard:([^\]]+?)\]/gi;
-                      const sheets = new Map<string, { label: string; row: number }>();
-                      const docs = new Map<string, { name: string; page: number }>();
-                      const dash = new Map<string, { field: string }>();
-                      let mm: RegExpExecArray | null;
-                      while ((mm = sheetRe.exec(text)) !== null) {
-                        const key = `s:${mm[1]}:${mm[2]}`;
-                        if (!sheets.has(key)) sheets.set(key, { label: mm[1].trim(), row: Number(mm[2]) });
-                      }
-                      while ((mm = docRe.exec(text)) !== null) {
-                        const key = `d:${mm[1]}:${mm[2]}`;
-                        if (!docs.has(key)) docs.set(key, { name: mm[1].trim(), page: Number(mm[2]) });
-                      }
-                      while ((mm = dashRe.exec(text)) !== null) {
-                        const key = `x:${mm[1]}`;
-                        if (!dash.has(key)) dash.set(key, { field: mm[1].trim() });
-                      }
-                      if (sheets.size === 0 && docs.size === 0 && dash.size === 0) return null;
+                      const refusal = parseRefusal(text);
+                      const cites = extractCitations(text);
+                      if (!refusal.isRefusal && cites.length === 0) return null;
                       return (
-                        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/50 pt-2">
-                          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                            Sources
-                          </span>
-                          {Array.from(sheets.values()).map((c, idx) => (
-                            <span
-                              key={`s${idx}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] text-primary"
-                              title={`From sheet "${c.label}", row ${c.row}`}
-                            >
-                              <FileText className="h-3 w-3" aria-hidden />
-                              {c.label} · row {c.row}
-                            </span>
-                          ))}
-                          {Array.from(docs.values()).map((c, idx) => (
-                            <span
-                              key={`d${idx}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[10px] text-foreground"
-                              title={`From document "${c.name}", page ${c.page}`}
-                            >
-                              <FileText className="h-3 w-3" aria-hidden />
-                              {c.name} · p.{c.page}
-                            </span>
-                          ))}
-                          {Array.from(dash.values()).map((c, idx) => (
-                            <span
-                              key={`x${idx}`}
-                              className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/30 bg-muted/40 px-2 py-0.5 text-[10px] text-foreground"
-                              title={`From current dashboard: ${c.field}`}
-                            >
-                              dashboard · {c.field}
-                            </span>
-                          ))}
+                        <div className="mt-2 space-y-2 border-t border-border/50 pt-2">
+                          {refusal.isRefusal && (
+                            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+                              <div className="font-medium text-amber-700 dark:text-amber-300">
+                                Not found in your dashboard data
+                              </div>
+                              {refusal.missing.length > 0 ? (
+                                <>
+                                  <div className="mt-1 text-muted-foreground">
+                                    To answer this I'd need:
+                                  </div>
+                                  <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                                    {refusal.missing.map((m2, i) => (
+                                      <li key={i}>{m2}</li>
+                                    ))}
+                                  </ul>
+                                </>
+                              ) : (
+                                <div className="mt-1 text-muted-foreground">
+                                  The referenced fields or sheets aren't part of the current data snapshot.
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {cites.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                Sources
+                              </span>
+                              {cites.map((c, idx) => {
+                                if (c.kind === "sheet") {
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={`s${idx}`}
+                                      onClick={() =>
+                                        setSelectedCitation({ kind: "sheet", label: c.label, row: c.row })
+                                      }
+                                      className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] text-primary hover:bg-primary/10 transition"
+                                      title={`Open sheet "${c.label}" row ${c.row}`}
+                                    >
+                                      <FileText className="h-3 w-3" aria-hidden />
+                                      {c.label} · row {c.row}
+                                    </button>
+                                  );
+                                }
+                                if (c.kind === "doc") {
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={`d${idx}`}
+                                      onClick={() =>
+                                        setSelectedCitation({ kind: "doc", label: c.label, page: c.page })
+                                      }
+                                      className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[10px] text-foreground hover:bg-accent/10 transition"
+                                      title={`Open document "${c.label}" p.${c.page}`}
+                                    >
+                                      <FileText className="h-3 w-3" aria-hidden />
+                                      {c.label} · p.{c.page}
+                                    </button>
+                                  );
+                                }
+                                const ctxSnap = contextRef.current as unknown as Record<string, unknown>;
+                                const val =
+                                  ctxSnap?.[c.field] ??
+                                  (ctxSnap?.totals as Record<string, unknown> | undefined)?.[c.field];
+                                return (
+                                  <button
+                                    type="button"
+                                    key={`x${idx}`}
+                                    onClick={() =>
+                                      setSelectedCitation({ kind: "dashboard", field: c.field, value: val })
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/30 bg-muted/40 px-2 py-0.5 text-[10px] text-foreground hover:bg-muted transition"
+                                    title={`Inspect dashboard field "${c.field}"`}
+                                  >
+                                    dashboard · {c.field}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
