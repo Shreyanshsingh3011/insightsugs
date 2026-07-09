@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
+import { Route as DevCitationsRouteImport } from './routes/dev.citations'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AuthenticatedSheetsRouteImport } from './routes/_authenticated/sheets'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
@@ -91,6 +92,11 @@ const IndexRoute = IndexRouteImport.update({
 const EmailUnsubscribeRoute = EmailUnsubscribeRouteImport.update({
   id: '/email/unsubscribe',
   path: '/email/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DevCitationsRoute = DevCitationsRouteImport.update({
+  id: '/dev/citations',
+  path: '/dev/citations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiChatRoute = ApiChatRouteImport.update({
@@ -446,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
+  '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
@@ -509,6 +516,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
+  '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
@@ -576,6 +584,7 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
+  '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/_authenticated/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
@@ -643,6 +652,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sheets'
     | '/api/chat'
+    | '/dev/citations'
     | '/email/unsubscribe'
     | '/admin/allowlist'
     | '/admin/audit'
@@ -706,6 +716,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sheets'
     | '/api/chat'
+    | '/dev/citations'
     | '/email/unsubscribe'
     | '/admin/allowlist'
     | '/admin/audit'
@@ -772,6 +783,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/_authenticated/sheets'
     | '/api/chat'
+    | '/dev/citations'
     | '/email/unsubscribe'
     | '/_authenticated/admin/allowlist'
     | '/_authenticated/admin/audit'
@@ -824,6 +836,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiChatRoute: typeof ApiChatRoute
+  DevCitationsRoute: typeof DevCitationsRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   ApiAgentPlanRoute: typeof ApiAgentPlanRoute
   ApiPublicAgentDigestRoute: typeof ApiPublicAgentDigestRoute
@@ -875,6 +888,13 @@ declare module '@tanstack/react-router' {
       path: '/email/unsubscribe'
       fullPath: '/email/unsubscribe'
       preLoaderRoute: typeof EmailUnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dev/citations': {
+      id: '/dev/citations'
+      path: '/dev/citations'
+      fullPath: '/dev/citations'
+      preLoaderRoute: typeof DevCitationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/chat': {
@@ -1421,6 +1441,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiChatRoute: ApiChatRoute,
+  DevCitationsRoute: DevCitationsRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   ApiAgentPlanRoute: ApiAgentPlanRoute,
   ApiPublicAgentDigestRoute: ApiPublicAgentDigestRoute,
