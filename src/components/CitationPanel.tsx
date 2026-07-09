@@ -34,7 +34,7 @@ export function CitationPanel({
           ? { kind: "sheet", label: target.label, row: target.row }
           : { kind: "doc", label: target.label, page: target.page },
     })
-      .then((r) => alive && setCtx(r))
+      .then((r) => alive && setCtx(r as CitationContext))
       .catch(() => alive && setCtx(null))
       .finally(() => alive && setLoading(false));
     return () => {
