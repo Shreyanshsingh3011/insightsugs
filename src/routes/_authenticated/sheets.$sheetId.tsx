@@ -77,9 +77,28 @@ function SheetDetailPage() {
 
   useEffect(() => {
     if (highlight == null) return;
-    if (!highlightRef.current) return;
-    highlightRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlight, detail.data]);
+    const row = highlightRef.current;
+    const cell = highlightCellRef.current;
+    if (!row) return;
+    // Vertical scroll on the row so surrounding rows stay in context.
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Horizontal scroll on the exact cell so a far-right column isn't clipped
+    // (critical on mobile where the table scroller is narrow).
+    if (cell) {
+      const scroller = cell.closest<HTMLElement>(".overflow-auto");
+      if (scroller) {
+        const cRect = cell.getBoundingClientRect();
+        const sRect = scroller.getBoundingClientRect();
+        const currentLeft = scroller.scrollLeft;
+        const cellLeftInScroller = cRect.left - sRect.left + currentLeft;
+        const target = Math.max(
+          0,
+          cellLeftInScroller - (sRect.width - cRect.width) / 2,
+        );
+        scroller.scrollTo({ left: target, behavior: "smooth" });
+      }
+    }
+  }, [highlight, highlightCol, detail.data]);
 
 
   const refreshMut = useMutation({
