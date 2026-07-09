@@ -5,14 +5,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
+
 export type CitationContext =
   | {
       kind: "sheet";
       label: string;
       row: number;
       sheet?: { id: string; display_name: string; source_url: string | null; last_refreshed_at: string | null };
-      canonical?: Record<string, unknown>;
-      extras?: Record<string, unknown>;
+      canonical?: Record<string, Json>;
+      extras?: Record<string, Json>;
       found: boolean;
     }
   | {
@@ -20,7 +22,7 @@ export type CitationContext =
       label: string;
       page: number;
       doc?: { id: string; name: string; page_count: number | null; summary: string | null };
-      key_points?: unknown;
+      key_points?: Json;
       found: boolean;
     };
 
