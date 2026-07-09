@@ -951,7 +951,6 @@ export async function runCopilotAgent(
         continue;
       }
       if (sheetRowMatch || sheetOnlyMatch) {
-      if (sheetRowMatch || sheetOnlyMatch) {
         const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
         const reg = sheetByLabel.get(label);
         if (!reg) {
