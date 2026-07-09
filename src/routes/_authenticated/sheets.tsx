@@ -118,6 +118,16 @@ function SheetsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  title="View sheet data in app"
+                >
+                  <Link to="/sheets/$sheetId" params={{ sheetId: s.id }}>
+                    <SheetIcon className="mr-1.5 h-4 w-4" /> View
+                  </Link>
+                </Button>
                 {s.source_url ? (
                   <Button
                     variant="outline"
