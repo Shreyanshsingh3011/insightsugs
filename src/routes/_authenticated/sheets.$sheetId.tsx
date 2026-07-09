@@ -80,24 +80,28 @@ function SheetDetailPage() {
     const row = highlightRef.current;
     const cell = highlightCellRef.current;
     if (!row) return;
-    // Vertical scroll on the row so surrounding rows stay in context.
-    row.scrollIntoView({ behavior: "smooth", block: "center" });
-    // Horizontal scroll on the exact cell so a far-right column isn't clipped
-    // (critical on mobile where the table scroller is narrow).
-    if (cell) {
-      const scroller = cell.closest<HTMLElement>(".overflow-auto");
-      if (scroller) {
-        const cRect = cell.getBoundingClientRect();
-        const sRect = scroller.getBoundingClientRect();
-        const currentLeft = scroller.scrollLeft;
-        const cellLeftInScroller = cRect.left - sRect.left + currentLeft;
-        const target = Math.max(
-          0,
-          cellLeftInScroller - (sRect.width - cRect.width) / 2,
-        );
-        scroller.scrollTo({ left: target, behavior: "smooth" });
-      }
+
+    // Prefer the exact cell so far-right columns aren't clipped on narrow
+    // (mobile) viewports; fall back to the row when no column was requested.
+    const target = cell ?? row;
+    const scroller = target.closest<HTMLElement>(".overflow-auto");
+    if (!scroller) {
+      target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      return;
     }
+    const tRect = target.getBoundingClientRect();
+    const sRect = scroller.getBoundingClientRect();
+    const nextLeft = Math.max(
+      0,
+      scroller.scrollLeft + (tRect.left - sRect.left) - Math.max(0, (sRect.width - tRect.width) / 2),
+    );
+    const nextTop = Math.max(
+      0,
+      scroller.scrollTop + (tRect.top - sRect.top) - Math.max(0, (sRect.height - tRect.height) / 2),
+    );
+    scroller.scrollTo({ left: nextLeft, top: nextTop, behavior: "smooth" });
+    // Also nudge the page so the scroller itself is on-screen on mobile.
+    scroller.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [highlight, highlightCol, detail.data]);
 
 
