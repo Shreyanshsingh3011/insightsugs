@@ -93,7 +93,7 @@ function SheetDetailPage() {
       </div>
     );
   }
-  if (detail.isError || !detail.data) {
+  if (!detail.data) {
     return (
       <div className="p-6 text-sm text-destructive">
         {detail.error instanceof Error ? detail.error.message : "Failed to load sheet."}
