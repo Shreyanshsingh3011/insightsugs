@@ -55,8 +55,8 @@ export const getCitationContext = createServerFn({ method: "POST" })
         label: data.label,
         row,
         sheet: reg,
-        canonical: (r?.canonical as Record<string, unknown>) ?? undefined,
-        extras: (r?.extras as Record<string, unknown>) ?? undefined,
+        canonical: (r?.canonical as Record<string, Json> | null) ?? undefined,
+        extras: (r?.extras as Record<string, Json> | null) ?? undefined,
         found: !!r,
       };
     }
