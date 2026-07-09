@@ -48,7 +48,7 @@ export function CitationPanel({
 
   return (
     <Sheet open={!!target} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto" data-testid="citation-panel">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -59,7 +59,26 @@ export function CitationPanel({
           <SheetDescription>Exact source used to ground this answer.</SheetDescription>
         </SheetHeader>
 
+        <div className="mt-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="open-in-dashboard"
+            disabled={!canOpenInDashboard(target, ctx)}
+            onClick={() => {
+              const dest = dashboardDestination(target, ctx);
+              if (!dest) return;
+              onOpenChange(false);
+              navigate(dest);
+            }}
+          >
+            <ArrowUpRight className="h-4 w-4 mr-1" />
+            Open in dashboard
+          </Button>
+        </div>
+
         <div className="mt-4 space-y-3 text-sm">
+
           {target?.kind === "dashboard" && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Value at query time</div>
