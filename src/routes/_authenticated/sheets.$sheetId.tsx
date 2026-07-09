@@ -136,6 +136,27 @@ function SheetDetailPage() {
         </div>
       ) : null}
 
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">View:</span>
+        {([
+          ["source", `Source columns (${allExtraCols.length})`],
+          ["mapped", `Mapped fields (${canonicalCols.length})`],
+          ["both", "Both"],
+        ] as const).map(([val, label]) => (
+          <Button
+            key={val}
+            size="sm"
+            variant={viewMode === val ? "default" : "outline"}
+            onClick={() => setViewMode(val)}
+          >
+            {label}
+          </Button>
+        ))}
+        <span className="ml-auto text-muted-foreground">
+          Rendering {dataCols.length} column{dataCols.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
       <Card className="overflow-hidden">
         <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
