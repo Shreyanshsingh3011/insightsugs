@@ -40,6 +40,9 @@ function SheetDetailPage() {
     queryFn: () =>
       fetchDetail({ data: { registryId: sheetId, offset, limit: pageSize } }),
     placeholderData: (prev) => prev,
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 
   useEffect(() => {
