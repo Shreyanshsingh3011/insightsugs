@@ -26,7 +26,7 @@ import { VisibilityPicker, VisibilityBadge, type Visibility } from "@/components
 import { ChangeVisibilityDialog } from "@/components/ChangeVisibilityDialog";
 
 
-export const Route = createFileRoute("/_authenticated/sheets")({
+export const Route = createFileRoute("/_authenticated/sheets/")({
   component: SheetsPage,
 });
 

@@ -15,7 +15,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as DevCitationsRouteImport } from './routes/dev.citations'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
-import { Route as AuthenticatedSheetsRouteImport } from './routes/_authenticated/sheets'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
@@ -30,6 +29,7 @@ import { Route as AuthenticatedConcernsRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedBriefingsRouteImport } from './routes/_authenticated/briefings'
 import { Route as AuthenticatedAlertsRouteImport } from './routes/_authenticated/alerts'
 import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/agent'
+import { Route as AuthenticatedSheetsIndexRouteImport } from './routes/_authenticated/sheets.index'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent.index'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
@@ -104,11 +104,6 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedSheetsRoute = AuthenticatedSheetsRouteImport.update({
-  id: '/sheets',
-  path: '/sheets',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -182,6 +177,12 @@ const AuthenticatedAgentRoute = AuthenticatedAgentRouteImport.update({
   path: '/agent',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedSheetsIndexRoute =
+  AuthenticatedSheetsIndexRouteImport.update({
+    id: '/sheets/',
+    path: '/sheets/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAlertsIndexRoute =
   AuthenticatedAlertsIndexRouteImport.update({
     id: '/',
@@ -215,9 +216,9 @@ const ApiAgentPlanRoute = ApiAgentPlanRouteImport.update({
 } as any)
 const AuthenticatedSheetsSheetIdRoute =
   AuthenticatedSheetsSheetIdRouteImport.update({
-    id: '/$sheetId',
-    path: '/$sheetId',
-    getParentRoute: () => AuthenticatedSheetsRoute,
+    id: '/sheets/$sheetId',
+    path: '/sheets/$sheetId',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedAlertsIdRoute = AuthenticatedAlertsIdRouteImport.update({
   id: '/$id',
@@ -450,7 +451,6 @@ export interface FileRoutesByFullPath {
   '/projects': typeof AuthenticatedProjectsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -477,6 +477,7 @@ export interface FileRoutesByFullPath {
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
+  '/sheets/': typeof AuthenticatedSheetsIndexRoute
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
@@ -514,7 +515,6 @@ export interface FileRoutesByTo {
   '/projects': typeof AuthenticatedProjectsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
-  '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -541,6 +541,7 @@ export interface FileRoutesByTo {
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
+  '/sheets': typeof AuthenticatedSheetsIndexRoute
   '/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
@@ -582,7 +583,6 @@ export interface FileRoutesById {
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
-  '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -609,6 +609,7 @@ export interface FileRoutesById {
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
+  '/_authenticated/sheets/': typeof AuthenticatedSheetsIndexRoute
   '/_authenticated/agent/kpi/$id': typeof AuthenticatedAgentKpiIdRoute
   '/_authenticated/agent/person/$key': typeof AuthenticatedAgentPersonKeyRoute
   '/_authenticated/agent/project/$projectId': typeof AuthenticatedAgentProjectProjectIdRoute
@@ -650,7 +651,6 @@ export interface FileRouteTypes {
     | '/projects'
     | '/search'
     | '/settings'
-    | '/sheets'
     | '/api/chat'
     | '/dev/citations'
     | '/email/unsubscribe'
@@ -677,6 +677,7 @@ export interface FileRouteTypes {
     | '/lovable/email/suppression'
     | '/agent/'
     | '/alerts/'
+    | '/sheets/'
     | '/agent/kpi/$id'
     | '/agent/person/$key'
     | '/agent/project/$projectId'
@@ -714,7 +715,6 @@ export interface FileRouteTypes {
     | '/projects'
     | '/search'
     | '/settings'
-    | '/sheets'
     | '/api/chat'
     | '/dev/citations'
     | '/email/unsubscribe'
@@ -741,6 +741,7 @@ export interface FileRouteTypes {
     | '/lovable/email/suppression'
     | '/agent'
     | '/alerts'
+    | '/sheets'
     | '/agent/kpi/$id'
     | '/agent/person/$key'
     | '/agent/project/$projectId'
@@ -781,7 +782,6 @@ export interface FileRouteTypes {
     | '/_authenticated/projects'
     | '/_authenticated/search'
     | '/_authenticated/settings'
-    | '/_authenticated/sheets'
     | '/api/chat'
     | '/dev/citations'
     | '/email/unsubscribe'
@@ -808,6 +808,7 @@ export interface FileRouteTypes {
     | '/lovable/email/suppression'
     | '/_authenticated/agent/'
     | '/_authenticated/alerts/'
+    | '/_authenticated/sheets/'
     | '/_authenticated/agent/kpi/$id'
     | '/_authenticated/agent/person/$key'
     | '/_authenticated/agent/project/$projectId'
@@ -903,13 +904,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/chat'
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/sheets': {
-      id: '/_authenticated/sheets'
-      path: '/sheets'
-      fullPath: '/sheets'
-      preLoaderRoute: typeof AuthenticatedSheetsRouteImport
-      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
@@ -1009,6 +1003,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/sheets/': {
+      id: '/_authenticated/sheets/'
+      path: '/sheets'
+      fullPath: '/sheets/'
+      preLoaderRoute: typeof AuthenticatedSheetsIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/alerts/': {
       id: '/_authenticated/alerts/'
       path: '/'
@@ -1053,10 +1054,10 @@ declare module '@tanstack/react-router' {
     }
     '/_authenticated/sheets/$sheetId': {
       id: '/_authenticated/sheets/$sheetId'
-      path: '/$sheetId'
+      path: '/sheets/$sheetId'
       fullPath: '/sheets/$sheetId'
       preLoaderRoute: typeof AuthenticatedSheetsSheetIdRouteImport
-      parentRoute: typeof AuthenticatedSheetsRoute
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/alerts/$id': {
       id: '/_authenticated/alerts/$id'
@@ -1373,17 +1374,6 @@ const AuthenticatedAlertsRouteChildren: AuthenticatedAlertsRouteChildren = {
 const AuthenticatedAlertsRouteWithChildren =
   AuthenticatedAlertsRoute._addFileChildren(AuthenticatedAlertsRouteChildren)
 
-interface AuthenticatedSheetsRouteChildren {
-  AuthenticatedSheetsSheetIdRoute: typeof AuthenticatedSheetsSheetIdRoute
-}
-
-const AuthenticatedSheetsRouteChildren: AuthenticatedSheetsRouteChildren = {
-  AuthenticatedSheetsSheetIdRoute: AuthenticatedSheetsSheetIdRoute,
-}
-
-const AuthenticatedSheetsRouteWithChildren =
-  AuthenticatedSheetsRoute._addFileChildren(AuthenticatedSheetsRouteChildren)
-
 interface AuthenticatedRouteChildren {
   AuthenticatedAgentRoute: typeof AuthenticatedAgentRouteWithChildren
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
@@ -1399,13 +1389,14 @@ interface AuthenticatedRouteChildren {
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
-  AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAllowlistRoute: typeof AuthenticatedAdminAllowlistRoute
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminEmailRoute: typeof AuthenticatedAdminEmailRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
   AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedSheetsSheetIdRoute: typeof AuthenticatedSheetsSheetIdRoute
+  AuthenticatedSheetsIndexRoute: typeof AuthenticatedSheetsIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1423,13 +1414,14 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
-  AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAllowlistRoute: AuthenticatedAdminAllowlistRoute,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminEmailRoute: AuthenticatedAdminEmailRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
   AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+  AuthenticatedSheetsSheetIdRoute: AuthenticatedSheetsSheetIdRoute,
+  AuthenticatedSheetsIndexRoute: AuthenticatedSheetsIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
