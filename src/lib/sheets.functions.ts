@@ -1623,9 +1623,11 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found or you don't have access");
 
-    // Reuse askCopilot with a curated prompt to keep the answer grounded.
-    const out = await (askCopilot as any)({
-      data: {
+    // Call the copilot agent directly in-process (not via RPC stub, which
+    // would fail with "Server function info not found" in production).
+    const { runCopilotAgent } = await import("./copilot-agent.functions");
+    const out = await runCopilotAgent(
+      {
         question:
           "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this sheet.\n" +
           "Output ONLY a JSON object with this exact shape:\n" +
@@ -1637,7 +1639,9 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
         documentIds: [],
         history: [],
       },
-    });
+      { supabase, userId },
+    );
+
 
     let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
     let questions: string[] = [];
