@@ -300,6 +300,7 @@ export default function AgentChatWidget({
                                     <button
                                       type="button"
                                       key={`s${idx}`}
+                                      data-testid="citation-chip-sheet"
                                       onClick={() =>
                                         setSelectedCitation({ kind: "sheet", label: c.label, row: c.row })
                                       }
