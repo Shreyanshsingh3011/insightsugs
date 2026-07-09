@@ -83,14 +83,20 @@ function SheetDetailPage() {
   const reg = detail.data.registry;
   const type = reg.sheet_type as SheetType;
   const canonicalCols = CANONICAL_FIELDS[type];
-  const extraCols = Array.from(
+  const allExtraCols = Array.from(
     new Set(detail.data.rows.flatMap((r: any) => Object.keys(r.extras ?? {}))),
   );
-  const visibleCanonicalCols = canonicalCols.filter((c) => {
+  const populatedCanonicalCols = canonicalCols.filter((c) => {
     if (!detail.data.rows.length) return true;
     const filled = detail.data.rows.filter((r: any) => String(r.canonical?.[c] ?? "").trim().length > 0).length;
-    return extraCols.length === 0 || filled / detail.data.rows.length >= 0.2;
+    return allExtraCols.length === 0 || filled / detail.data.rows.length >= 0.2;
   });
+  const showSource = viewMode !== "mapped";
+  const showMapped = viewMode !== "source";
+  const extraCols = showSource ? allExtraCols : [];
+  const visibleCanonicalCols = showMapped
+    ? (viewMode === "mapped" ? canonicalCols : populatedCanonicalCols)
+    : [];
   const dataCols = [...extraCols, ...visibleCanonicalCols];
   const total = detail.data.totalRows ?? 0;
   const end = Math.min(offset + pageSize, total);
