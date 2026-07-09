@@ -213,7 +213,9 @@ const InputSchema = z
 export async function runCopilotAgent(
   data: z.infer<typeof InputSchema>,
   context: { supabase: any; userId: string },
+  opts: { skipCitationEnforcement?: boolean } = {},
 ) {
+
 
 
     const { supabase, userId } = context;
