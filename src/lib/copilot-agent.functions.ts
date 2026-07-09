@@ -213,7 +213,9 @@ const InputSchema = z
 export async function runCopilotAgent(
   data: z.infer<typeof InputSchema>,
   context: { supabase: any; userId: string },
+  opts: { skipCitationEnforcement?: boolean } = {},
 ) {
+
 
 
     const { supabase, userId } = context;
@@ -897,9 +899,10 @@ export async function runCopilotAgent(
 
     // 7) If nothing verified and not a fallback, replace with refusal.
     let finalAnswer = rawAnswer;
-    if (!citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
+    if (!opts.skipCitationEnforcement && !citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
       finalAnswer = "I don't have that in the current dashboard data.";
     }
+
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
     const rowsUsedBySheet = new Map<string, number>();
