@@ -74,7 +74,7 @@ export const getCitationContext = createServerFn({ method: "POST" })
       label: data.label,
       page,
       doc: { id: doc.id, name: doc.name, page_count: doc.page_count, summary: doc.summary },
-      key_points: doc.key_points,
+      key_points: (doc.key_points as Json | null) ?? undefined,
       found: true,
     };
   });
