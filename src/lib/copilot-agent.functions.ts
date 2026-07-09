@@ -983,3 +983,12 @@ async function _runCopilotAgentImpl({ data, context }: { data: z.infer<typeof In
       unverifiedCitations: unverified,
     };
   });
+}
+
+export const askCopilotV2 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => InputSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    return await runCopilotAgent(data, { supabase: context.supabase, userId: context.userId });
+  });
+
