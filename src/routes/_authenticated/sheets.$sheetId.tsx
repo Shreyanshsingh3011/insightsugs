@@ -267,6 +267,7 @@ function SheetDetailPage() {
                         return (
                           <td
                             key={c}
+                            ref={hitCell ? highlightCellRef : undefined}
                             className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium" : ""}`}
                           >
                             {r.extras?.[c] ?? ""}
@@ -278,6 +279,7 @@ function SheetDetailPage() {
                         return (
                           <td
                             key={c}
+                            ref={hitCell ? highlightCellRef : undefined}
                             className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium text-foreground" : "text-muted-foreground"}`}
                           >
                             {r.canonical?.[c] ?? ""}
