@@ -389,8 +389,9 @@ export async function runAgentWatchersFromHook(): Promise<WatcherRunResult> {
   } catch (e) {
     return {
       projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0, surfaced_existing: 0,
-      by_rule: {}, errors: [`registry: ${(e as Error).message}`],
+      auto_dismissed: 0, by_rule: {}, errors: [`registry: ${(e as Error).message}`],
     };
+
   }
   return runWatchersCore(projects, supabaseAdmin, null);
 }
