@@ -454,6 +454,7 @@ export default function AgentChatWidget({
           <MessageCircle className="h-6 w-6" />
         </Button>
       )}
+      <CitationPanel target={selectedCitation} onOpenChange={(o) => !o && setSelectedCitation(null)} />
     </div>
   );
 }
