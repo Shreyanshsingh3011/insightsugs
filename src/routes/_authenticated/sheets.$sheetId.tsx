@@ -38,6 +38,7 @@ function SheetDetailPage() {
   const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
 
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
+  const highlightCellRef = useRef<HTMLTableCellElement | null>(null);
 
   const detail = useQuery({
     queryKey: ["sheet-detail", sheetId, offset, pageSize],
