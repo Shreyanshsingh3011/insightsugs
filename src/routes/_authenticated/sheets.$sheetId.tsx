@@ -14,6 +14,7 @@ import { SHEET_TYPE_LABELS, CANONICAL_FIELDS, type SheetType } from "@/lib/sheet
 export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
   validateSearch: z.object({
     highlight: z.coerce.number().int().nonnegative().optional(),
+    col: z.string().optional(),
   }),
   component: SheetDetailPage,
 });
@@ -22,7 +23,10 @@ const PAGE_SIZES = [100, 500, 1000, 2000];
 
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
-  const { highlight } = Route.useSearch();
+  const { highlight, col: highlightCol } = Route.useSearch();
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const normHighlightCol = highlightCol ? norm(highlightCol) : null;
+  const isHitCell = (c: string) => normHighlightCol != null && norm(c) === normHighlightCol;
   const qc = useQueryClient();
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
@@ -238,12 +242,28 @@ function SheetDetailPage() {
                       }`}
                     >
                       <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.row_index + 1}</td>
-                      {extraCols.map((c) => (
-                        <td key={c} className="px-3 py-1.5">{r.extras?.[c] ?? ""}</td>
-                      ))}
-                      {visibleCanonicalCols.map((c) => (
-                        <td key={c} className="px-3 py-1.5 text-muted-foreground">{r.canonical?.[c] ?? ""}</td>
-                      ))}
+                      {extraCols.map((c) => {
+                        const hitCell = isHit && isHitCell(c);
+                        return (
+                          <td
+                            key={c}
+                            className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium" : ""}`}
+                          >
+                            {r.extras?.[c] ?? ""}
+                          </td>
+                        );
+                      })}
+                      {visibleCanonicalCols.map((c) => {
+                        const hitCell = isHit && isHitCell(c);
+                        return (
+                          <td
+                            key={c}
+                            className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium text-foreground" : "text-muted-foreground"}`}
+                          >
+                            {r.canonical?.[c] ?? ""}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })
