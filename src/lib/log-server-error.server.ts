@@ -72,12 +72,16 @@ export async function logServerError(
   // Best-effort audit_log write. Never blocks or throws.
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Cast to string uuid | null — project_id in ctx may be a non-uuid label
+    // (e.g. project slug from a sync); only persist if it looks like a uuid.
+    const uuidRx = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const projectId =
+      ctx.projectId && uuidRx.test(ctx.projectId) ? ctx.projectId : null;
     await supabaseAdmin.from("audit_log").insert({
-      action: `error:${scope}`,
+      event_type: `error:${scope}`,
       actor_id: ctx.userId ?? null,
-      target_type: "server_error",
-      target_id: ctx.projectId ?? null,
-      metadata: {
+      project_id: projectId,
+      details: {
         name: norm.name,
         message: norm.message,
         extra: ctx.extra ?? null,
