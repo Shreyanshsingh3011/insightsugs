@@ -263,8 +263,10 @@ export default function AgentChatWidget({
                         .join("\n");
                       const sheetRe = /\[sheet:([^\]]+?)\s+row\s+(\d+)\]/gi;
                       const docRe = /\[doc:([^\]]+?)\s+p\.(\d+)\]/gi;
+                      const dashRe = /\[dashboard:([^\]]+?)\]/gi;
                       const sheets = new Map<string, { label: string; row: number }>();
                       const docs = new Map<string, { name: string; page: number }>();
+                      const dash = new Map<string, { field: string }>();
                       let mm: RegExpExecArray | null;
                       while ((mm = sheetRe.exec(text)) !== null) {
                         const key = `s:${mm[1]}:${mm[2]}`;
@@ -274,7 +276,11 @@ export default function AgentChatWidget({
                         const key = `d:${mm[1]}:${mm[2]}`;
                         if (!docs.has(key)) docs.set(key, { name: mm[1].trim(), page: Number(mm[2]) });
                       }
-                      if (sheets.size === 0 && docs.size === 0) return null;
+                      while ((mm = dashRe.exec(text)) !== null) {
+                        const key = `x:${mm[1]}`;
+                        if (!dash.has(key)) dash.set(key, { field: mm[1].trim() });
+                      }
+                      if (sheets.size === 0 && docs.size === 0 && dash.size === 0) return null;
                       return (
                         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/50 pt-2">
                           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -298,6 +304,15 @@ export default function AgentChatWidget({
                             >
                               <FileText className="h-3 w-3" aria-hidden />
                               {c.name} · p.{c.page}
+                            </span>
+                          ))}
+                          {Array.from(dash.values()).map((c, idx) => (
+                            <span
+                              key={`x${idx}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/30 bg-muted/40 px-2 py-0.5 text-[10px] text-foreground"
+                              title={`From current dashboard: ${c.field}`}
+                            >
+                              dashboard · {c.field}
                             </span>
                           ))}
                         </div>
