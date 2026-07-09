@@ -927,9 +927,30 @@ export async function runCopilotAgent(
       inlineCount++;
 
       // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
-      // [sheet:<name> row 3, 9], and sheet-level [sheet:<name>].
-      const sheetRowMatch = /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body);
-      const sheetOnlyMatch = !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+      // [sheet:<name> row 3, 9], [sheet:<name> row <n> col <column>], and
+      // sheet-level [sheet:<name>].
+      const sheetRowColMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s+col\s+(.+?)\s*$/i.exec(body);
+      const sheetRowMatch = !sheetRowColMatch
+        ? /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body)
+        : null;
+      const sheetOnlyMatch =
+        !sheetRowColMatch && !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+      if (sheetRowColMatch) {
+        const label = normalizeCitationLabel(sheetRowColMatch[1]);
+        const reg = sheetByLabel.get(label);
+        if (!reg) {
+          unverified.push(marker);
+          continue;
+        }
+        const rowN = Number(sheetRowColMatch[2]);
+        const inLedger = ledger.some(
+          (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
+        );
+        if (inLedger) verified.add(marker);
+        else unverified.push(marker);
+        continue;
+      }
+      if (sheetRowMatch || sheetOnlyMatch) {
       if (sheetRowMatch || sheetOnlyMatch) {
         const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
         const reg = sheetByLabel.get(label);
