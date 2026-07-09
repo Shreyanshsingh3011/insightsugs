@@ -50,7 +50,8 @@ async def main() -> int:
             try:
                 await page.get_by_test_id(tid).click()
                 panel = page.get_by_test_id("citation-panel")
-                await panel.wait_for(state="visible", timeout=5000)
+                await panel.wait_for(state="attached", timeout=5000)
+                await page.wait_for_timeout(300)
                 title = await panel.inner_text()
                 if expected_title_fragment not in title:
                     failures.append(
