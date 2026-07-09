@@ -903,13 +903,27 @@ export const getSheetDetail = createServerFn({ method: "POST" })
     let { data: reg, error: regErr } = await supabase
       .from("sheet_registry")
       .select(
-        "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
+        "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at, user_id, visibility",
       )
       .eq("id", data.registryId)
-      .eq("user_id", userId)
       .maybeSingle();
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found.");
+
+    if (reg.user_id !== userId) {
+      const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+      let allowed = !!isAdmin || reg.visibility === "public";
+      if (!allowed && reg.visibility === "shared") {
+        const { data: share } = await supabase
+          .from("sheet_registry_shares")
+          .select("sheet_registry_id")
+          .eq("sheet_registry_id", data.registryId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        allowed = !!share;
+      }
+      if (!allowed) throw new Error("Sheet not found.");
+    }
 
     const { data: probeRows } = await supabase
       .from("sheet_rows")
@@ -918,18 +932,18 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .order("row_index", { ascending: true })
       .limit(12);
     if (storedRowsLookMisread(probeRows ?? [])) {
-      await syncRowsInternal(supabase, userId, data.registryId);
+      await syncRowsInternal(supabase, reg.user_id, data.registryId);
       const refreshed = await supabase
         .from("sheet_registry")
         .select(
-          "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at",
+          "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at, user_id, visibility",
         )
         .eq("id", data.registryId)
-        .eq("user_id", userId)
         .maybeSingle();
       if (refreshed.error) throw new Error(refreshed.error.message);
       reg = refreshed.data ?? reg;
     }
+
 
     const { data: maps } = await supabase
       .from("sheet_column_mappings")
