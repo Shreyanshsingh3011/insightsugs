@@ -23,9 +23,11 @@ export type WatcherRunResult = {
   created: number;
   skipped_dedupe: number;
   surfaced_existing: number;
+  auto_dismissed: number;
   errors: string[];
   by_rule: Record<string, number>;
 };
+
 
 // ── Row helpers (mirror src/lib/entity-scope.ts) ───────────────────────
 
