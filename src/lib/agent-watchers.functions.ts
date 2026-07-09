@@ -259,9 +259,11 @@ async function runWatchersCore(
     created: 0,
     skipped_dedupe: 0,
     surfaced_existing: 0,
+    auto_dismissed: 0,
     errors: [],
     by_rule: {},
   };
+
 
   const { resolve, directory } = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
 
