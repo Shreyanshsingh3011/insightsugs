@@ -407,7 +407,13 @@ function toFetchableUrl(url: string): string {
 
 async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: string[][] }> {
   const target = toFetchableUrl(url);
-  const res = await fetch(target, { redirect: "follow" });
+  let res: Response;
+  try {
+    res = await fetch(target, { redirect: "follow" });
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : "fetch failed";
+    throw new Error(`Unable to reach the sheet source right now (${message}). Showing the last synced rows if available.`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Source URL returned ${res.status}: ${text.slice(0, 300)}`);
@@ -931,8 +937,15 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .eq("sheet_registry_id", data.registryId)
       .order("row_index", { ascending: true })
       .limit(12);
+    let syncWarning: string | null = null;
     if (storedRowsLookMisread(probeRows ?? [])) {
-      await syncRowsInternal(supabase, reg.user_id, data.registryId);
+      try {
+        await syncRowsInternal(supabase, reg.user_id, data.registryId);
+      } catch (error) {
+        syncWarning = error instanceof Error ? error.message : "Live sheet refresh failed.";
+      }
+    }
+    if (syncWarning == null && storedRowsLookMisread(probeRows ?? [])) {
       const refreshed = await supabase
         .from("sheet_registry")
         .select(
@@ -970,6 +983,7 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       totalRows: count ?? 0,
       offset: data.offset,
       limit: data.limit,
+      syncWarning,
     };
   });
 
