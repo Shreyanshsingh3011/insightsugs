@@ -93,14 +93,21 @@ export const semanticSearch = createServerFn({ method: "POST" })
     };
     const needsMeta = hasDateFilter || sort === "newest";
 
-    const [qVec] = await embedTexts([q]);
-    const qStr = toPgVector(qVec);
+    // Doc chunks are stored at 768d (google/gemini-embedding-001), sheet rows
+    // at 1536d (openai/text-embedding-3-small). Embed the query per source or
+    // pgvector's <=> throws on dimension mismatch.
+    const [docVecArr, sheetVec] = await Promise.all([
+      wants("document") ? embedDocQuery([q]) : Promise.resolve([[] as number[]]),
+      wants("sheet") ? embedSheetQuery(q) : Promise.resolve([] as number[]),
+    ]);
+    const docQStr = wants("document") ? toPgVector(docVecArr[0]) : null;
+    const sheetQStr = wants("sheet") ? toPgVector(sheetVec) : null;
 
     const [docsRes, sheetsRes] = await Promise.all([
       wants("document")
         ? supabase.rpc("match_doc_chunks", {
             _user_id: userId,
-            _query: qStr,
+            _query: docQStr,
             _scope_folder: null,
             _scope_document: null,
             _match_count: perSourceCount,
@@ -109,7 +116,7 @@ export const semanticSearch = createServerFn({ method: "POST" })
       wants("sheet")
         ? supabase.rpc("match_all_sheet_rows", {
             _user_id: userId,
-            _query: qStr,
+            _query: sheetQStr,
             _match_count: perSourceCount,
           })
         : Promise.resolve({ data: [] }),
