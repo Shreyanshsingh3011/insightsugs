@@ -1714,7 +1714,9 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
         history: [],
       },
       { supabase, userId },
+      { skipCitationEnforcement: true },
     );
+
 
 
     let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
