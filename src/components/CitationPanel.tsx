@@ -2,10 +2,11 @@
 // Shows the exact referenced row / doc excerpt / dashboard field snapshot
 // used to ground the assistant's answer.
 import { useEffect, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
+import { useServerFn, useNavigate } from "@tanstack/react-router";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { getCitationContext, type CitationContext } from "@/lib/citations.functions";
-import { FileText, Loader2, ExternalLink } from "lucide-react";
+import { FileText, Loader2, ExternalLink, ArrowUpRight } from "lucide-react";
 
 export type CitationTarget =
   | { kind: "sheet"; label: string; row: number }
