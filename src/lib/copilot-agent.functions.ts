@@ -28,6 +28,31 @@ function stringifyRow(data: Record<string, unknown>): string {
   return parts.join(" | ").slice(0, 1200);
 }
 
+function normalizeCitationLabel(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function parseCitationRowSpec(spec: string): number[] | null {
+  const clean = spec.trim();
+  if (/^\d+$/.test(clean)) return [Number(clean)];
+
+  const range = /^(\d+)\s*-\s*(\d+)$/.exec(clean);
+  if (range) {
+    const start = Number(range[1]);
+    const end = Number(range[2]);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start || end - start > 200) {
+      return null;
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+
+  if (/^\d+(?:\s*,\s*\d+)+$/.test(clean)) {
+    return clean.split(/\s*,\s*/).map((part) => Number(part));
+  }
+
+  return null;
+}
+
 async function fetchAllRows(
   supabase: any,
   registryId: string,
@@ -266,9 +291,9 @@ export async function runCopilotAgent(
     }[];
 
     const sheetById = new Map(regs.map((r) => [r.id, r]));
-    const sheetByLabel = new Map(regs.map((r) => [r.display_name.toLowerCase(), r]));
+    const sheetByLabel = new Map(regs.map((r) => [normalizeCitationLabel(r.display_name), r]));
     const docById = new Map(docs.map((d) => [d.id, d]));
-    const docByLabel = new Map(docs.map((d) => [d.name.toLowerCase(), d]));
+    const docByLabel = new Map(docs.map((d) => [normalizeCitationLabel(d.name), d]));
 
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
@@ -783,8 +808,9 @@ export async function runCopilotAgent(
       "",
       "CITATION RULES (strict):",
       "- Every factual sentence must include an inline citation marker:",
-      "    [sheet:<display_name> row <one-based row number>]  or",
+      "    [sheet:<display_name> row <one-based row number>] or, for compact row summaries only, [sheet:<display_name> row 3, 9] / [sheet:<display_name> row 1-14] when every cited row was returned by a tool, or",
       "    [doc:<name> p.<page>]",
+      "- Use [sheet:<display_name>] only for sheet-level facts such as total row count or schema/column coverage.",
       "- Only cite rows/chunks a tool actually returned in THIS turn.",
       "- End the answer with a `Sources:` list, one marker per line (deduplicated).",
       "- If you cannot support a claim from tool output, do not make it.",
@@ -841,6 +867,7 @@ export async function runCopilotAgent(
     // 6) Structural citation validator against the ledger.
     const inlineRe = /\[([^\]\n]{2,}?)\]/g;
     const seen = new Set<string>();
+    const verified = new Set<string>();
     const unverified: string[] = [];
     let inlineCount = 0;
     let m: RegExpExecArray | null;
@@ -848,57 +875,82 @@ export async function runCopilotAgent(
       // Skip markdown links [text](url)
       if (rawAnswer[m.index + m[0].length] === "(") continue;
       const marker = m[0];
-      const body = m[1];
-      inlineCount++;
+      const body = m[1].trim();
+      if (!/^(sheet:|doc:|flags?\[)/i.test(body)) continue;
       if (seen.has(marker)) continue;
       seen.add(marker);
+      inlineCount++;
 
-      // [sheet:<name> row <n>]
-      const sheetMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s*$/i.exec(body);
-      if (sheetMatch) {
-        const label = sheetMatch[1].trim().toLowerCase();
-        const rowN = Number(sheetMatch[2]);
+      // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
+      // [sheet:<name> row 3, 9], and sheet-level [sheet:<name>].
+      const sheetRowMatch = /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body);
+      const sheetOnlyMatch = !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+      if (sheetRowMatch || sheetOnlyMatch) {
+        const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
         const reg = sheetByLabel.get(label);
         if (!reg) {
           unverified.push(marker);
           continue;
         }
-        const zeroIdx = rowN - 1;
-        const inLedger = ledger.some(
-          (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === zeroIdx,
+        if (!sheetRowMatch) {
+          verified.add(marker);
+          continue;
+        }
+        const rows = parseCitationRowSpec(sheetRowMatch[2]);
+        if (!rows) {
+          unverified.push(marker);
+          continue;
+        }
+        const allInLedger = rows.every((rowN) =>
+          ledger.some(
+            (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
+          ),
         );
-        if (!inLedger) unverified.push(marker);
+        if (allInLedger) verified.add(marker);
+        else unverified.push(marker);
         continue;
       }
-      // [doc:<name> p.<n>]
-      const docMatch = /^doc:\s*(.+?)\s+p\.\s*(\d+)\s*$/i.exec(body);
-      if (docMatch) {
-        const label = docMatch[1].trim().toLowerCase();
-        const page = Number(docMatch[2]);
+      // [doc:<name> p.<n>] and document-level [doc:<name>].
+      const docPageMatch = /^doc:\s*(.+?)\s+p\.?\s*(\d+)\s*$/i.exec(body);
+      const docOnlyMatch = !docPageMatch ? /^doc:\s*(.+?)\s*$/i.exec(body) : null;
+      if (docPageMatch || docOnlyMatch) {
+        const label = normalizeCitationLabel(docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "");
         const doc = docByLabel.get(label);
         if (!doc) {
           unverified.push(marker);
           continue;
         }
+        if (!docPageMatch) {
+          verified.add(marker);
+          continue;
+        }
+        const page = Number(docPageMatch[2]);
         const inLedger = ledger.some(
           (l) => l.kind === "doc_chunk" && l.documentId === doc.id && l.pageNo === page,
         );
-        if (!inLedger) unverified.push(marker);
+        if (inLedger) verified.add(marker);
+        else unverified.push(marker);
         continue;
       }
-      // Unknown marker shape — allow legacy [flags[...]] etc but flag as unverified
-      unverified.push(marker);
+      // Legacy flag references are not row/doc grounded, but they are intentional
+      // citation markers from older answers and should not make unrelated sheet/doc
+      // citations look malformed.
+      if (/^flags?\[.+\]$/i.test(body)) verified.add(marker);
     }
 
     const isFallback =
       /^i don'?t have that in the current dashboard data\.?$/i.test(rawAnswer);
     const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(rawAnswer);
+    let finalAnswer = rawAnswer;
+    if (!opts.skipCitationEnforcement && !isFallback && !hasSourcesSection && verified.size > 0) {
+      finalAnswer = `${rawAnswer}\n\nSources:\n${Array.from(verified).map((marker) => `- ${marker}`).join("\n")}`;
+    }
+    const finalHasSourcesSection = /(^|\n)\s*sources\s*:/i.test(finalAnswer);
     const citationOk =
       isFallback ||
-      (inlineCount > 0 && unverified.length === 0 && hasSourcesSection);
+      (inlineCount > 0 && verified.size > 0 && unverified.length === 0 && finalHasSourcesSection);
 
     // 7) If nothing verified and not a fallback, replace with refusal.
-    let finalAnswer = rawAnswer;
     if (!opts.skipCitationEnforcement && !citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
       finalAnswer = "I don't have that in the current dashboard data.";
     }

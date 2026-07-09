@@ -116,7 +116,7 @@ function decorateChildren(children: React.ReactNode, sources: Source[]): React.R
   return walk(children, "d");
 }
 const KNOWN_SHAPES = [
-  /^sheet:\s*[^,\s]+(?:\s+row\s+\d+)?$/i,
+  /^sheet:\s*.+?(?:\s+row\s+(?:\d+|\d+\s*-\s*\d+|\d+(?:\s*,\s*\d+)+))?$/i,
   /^flags?\[.+\]$/i,
   /^doc:\s*.+?(?:\s+p\.?\s*\d+)?$/i,
 ];
@@ -198,15 +198,19 @@ function parseCitations(answer: string, sources: Source[]): ParsedCitation[] {
     let kind = "reference";
     let ref = raw;
     let matched: Source | undefined;
-    const sheetMatch = raw.match(/^sheet:\s*([^,\s]+)(?:\s+row\s+(\d+))?/i);
+    const sheetMatch = raw.match(/^sheet:\s*(.+?)(?:\s+row\s+([\d\s,-]+))?$/i);
     const flagMatch = raw.match(/^flags?\[(.+)\]$/i);
     const docMatch = raw.match(/^doc:\s*(.+?)(?:\s+p\.?\s*(\d+))?$/i);
     if (sheetMatch) {
       kind = "sheet";
       ref = sheetMatch[2] ? `${sheetMatch[1]} · row ${sheetMatch[2]}` : sheetMatch[1];
-      const needle = sheetMatch[1].toLowerCase();
+      const needle = sheetMatch[1].toLowerCase().replace(/\s+/g, " ").trim();
       matched = sources.find(
-        (s) => s.type === "sheet" && (s.name.toLowerCase().includes(needle) || s.id.toLowerCase() === needle),
+        (s) =>
+          s.type !== "document" &&
+          (s.name.toLowerCase().replace(/\s+/g, " ").trim() === needle ||
+            s.name.toLowerCase().replace(/\s+/g, " ").trim().includes(needle) ||
+            s.id.toLowerCase() === needle),
       );
     } else if (flagMatch) {
       kind = "flag";
