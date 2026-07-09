@@ -79,6 +79,7 @@ function SheetDetailPage() {
     if (highlight == null) return;
     const row = highlightRef.current;
     const cell = highlightCellRef.current;
+    console.log("[hl] effect", { highlight, highlightCol, hasRow: !!row, hasCell: !!cell });
     if (!row) return;
 
     // Prefer the exact cell so far-right columns aren't clipped on narrow
