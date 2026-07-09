@@ -14,6 +14,7 @@ import { SHEET_TYPE_LABELS, CANONICAL_FIELDS, type SheetType } from "@/lib/sheet
 export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
   validateSearch: z.object({
     highlight: z.coerce.number().int().nonnegative().optional(),
+    col: z.string().optional(),
   }),
   component: SheetDetailPage,
 });
