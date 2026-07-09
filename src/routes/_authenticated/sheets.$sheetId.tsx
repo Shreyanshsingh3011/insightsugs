@@ -99,9 +99,9 @@ function SheetDetailPage() {
       0,
       scroller.scrollTop + (tRect.top - sRect.top) - Math.max(0, (sRect.height - tRect.height) / 2),
     );
-    scroller.scrollTo({ left: nextLeft, top: nextTop, behavior: "smooth" });
+    scroller.scrollTo({ left: nextLeft, top: nextTop, behavior: "auto" });
     // Also nudge the page so the scroller itself is on-screen on mobile.
-    scroller.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    scroller.scrollIntoView({ behavior: "auto", block: "nearest" });
   }, [highlight, highlightCol, detail.data]);
 
 
