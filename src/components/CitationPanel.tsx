@@ -3,9 +3,11 @@
 // used to ground the assistant's answer.
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { useNavigate } from "@tanstack/react-router";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import { getCitationContext, type CitationContext } from "@/lib/citations.functions";
-import { FileText, Loader2, ExternalLink } from "lucide-react";
+import { FileText, Loader2, ExternalLink, ArrowUpRight } from "lucide-react";
 
 export type CitationTarget =
   | { kind: "sheet"; label: string; row: number }
@@ -20,8 +22,10 @@ export function CitationPanel({
   onOpenChange: (open: boolean) => void;
 }) {
   const fetchCtx = useServerFn(getCitationContext);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [ctx, setCtx] = useState<CitationContext | null>(null);
+
 
   useEffect(() => {
     setCtx(null);
@@ -34,7 +38,7 @@ export function CitationPanel({
           ? { kind: "sheet", label: target.label, row: target.row }
           : { kind: "doc", label: target.label, page: target.page },
     })
-      .then((r) => alive && setCtx(r as CitationContext))
+      .then((r: CitationContext) => alive && setCtx(r))
       .catch(() => alive && setCtx(null))
       .finally(() => alive && setLoading(false));
     return () => {
@@ -44,7 +48,7 @@ export function CitationPanel({
 
   return (
     <Sheet open={!!target} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto" data-testid="citation-panel">
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
@@ -55,7 +59,26 @@ export function CitationPanel({
           <SheetDescription>Exact source used to ground this answer.</SheetDescription>
         </SheetHeader>
 
+        <div className="mt-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            data-testid="open-in-dashboard"
+            disabled={!canOpenInDashboard(target, ctx)}
+            onClick={() => {
+              const dest = dashboardDestination(target, ctx);
+              if (!dest) return;
+              onOpenChange(false);
+              navigate(dest);
+            }}
+          >
+            <ArrowUpRight className="h-4 w-4 mr-1" />
+            Open in dashboard
+          </Button>
+        </div>
+
         <div className="mt-4 space-y-3 text-sm">
+
           {target?.kind === "dashboard" && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Value at query time</div>
@@ -142,6 +165,34 @@ export function CitationPanel({
     </Sheet>
   );
 }
+
+type NavDest = { to: string; params?: Record<string, string>; search?: Record<string, unknown> };
+
+function dashboardDestination(target: CitationTarget | null, ctx: CitationContext | null): NavDest | null {
+  if (!target) return null;
+  if (target.kind === "sheet") {
+    if (ctx && ctx.kind === "sheet" && ctx.sheet?.id) {
+      return {
+        to: "/sheets/$sheetId",
+        params: { sheetId: ctx.sheet.id },
+        search: { highlight: target.row },
+      };
+    }
+    return { to: "/sheets" };
+  }
+  if (target.kind === "doc") {
+    return { to: "/documents" };
+  }
+  // dashboard field → main dashboard view
+  return { to: "/agent" };
+}
+
+function canOpenInDashboard(target: CitationTarget | null, ctx: CitationContext | null): boolean {
+  if (!target) return false;
+  if (target.kind === "sheet") return !!(ctx && ctx.kind === "sheet" && ctx.sheet?.id) || true;
+  return true;
+}
+
 
 function formatValue(v: unknown): string {
   if (v === undefined || v === null) return "(not captured)";
