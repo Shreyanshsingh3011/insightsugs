@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { embedTexts, toPgVector } from "./documents.server";
+import { embedTexts as embedDocQuery, toPgVector } from "./documents.server";
+import { embedQuery as embedSheetQuery } from "./embeddings.server";
 
 export type SearchKind = "document" | "sheet" | "activity";
 export type SearchSort = "relevance" | "newest";
