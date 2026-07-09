@@ -31,6 +31,7 @@ function SheetDetailPage() {
   const [offset, setOffset] = useState(() =>
     typeof highlight === "number" ? Math.floor(highlight / 500) * 500 : 0,
   );
+  const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
 
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
 
@@ -82,14 +83,20 @@ function SheetDetailPage() {
   const reg = detail.data.registry;
   const type = reg.sheet_type as SheetType;
   const canonicalCols = CANONICAL_FIELDS[type];
-  const extraCols = Array.from(
+  const allExtraCols = Array.from(
     new Set(detail.data.rows.flatMap((r: any) => Object.keys(r.extras ?? {}))),
   );
-  const visibleCanonicalCols = canonicalCols.filter((c) => {
+  const populatedCanonicalCols = canonicalCols.filter((c) => {
     if (!detail.data.rows.length) return true;
     const filled = detail.data.rows.filter((r: any) => String(r.canonical?.[c] ?? "").trim().length > 0).length;
-    return extraCols.length === 0 || filled / detail.data.rows.length >= 0.2;
+    return allExtraCols.length === 0 || filled / detail.data.rows.length >= 0.2;
   });
+  const showSource = viewMode !== "mapped";
+  const showMapped = viewMode !== "source";
+  const extraCols = showSource ? allExtraCols : [];
+  const visibleCanonicalCols = showMapped
+    ? (viewMode === "mapped" ? canonicalCols : populatedCanonicalCols)
+    : [];
   const dataCols = [...extraCols, ...visibleCanonicalCols];
   const total = detail.data.totalRows ?? 0;
   const end = Math.min(offset + pageSize, total);
@@ -128,6 +135,27 @@ function SheetDetailPage() {
           <span>{detail.data.syncWarning}</span>
         </div>
       ) : null}
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted-foreground">View:</span>
+        {([
+          ["source", `Source columns (${allExtraCols.length})`],
+          ["mapped", `Mapped fields (${canonicalCols.length})`],
+          ["both", "Both"],
+        ] as const).map(([val, label]) => (
+          <Button
+            key={val}
+            size="sm"
+            variant={viewMode === val ? "default" : "outline"}
+            onClick={() => setViewMode(val)}
+          >
+            {label}
+          </Button>
+        ))}
+        <span className="ml-auto text-muted-foreground">
+          Rendering {dataCols.length} column{dataCols.length === 1 ? "" : "s"}
+        </span>
+      </div>
 
       <Card className="overflow-hidden">
         <div className="max-h-[70vh] overflow-auto">
