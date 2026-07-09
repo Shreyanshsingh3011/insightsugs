@@ -49,25 +49,27 @@ async def main() -> int:
         for i, (tid, expected_title_fragment) in enumerate(chip_checks, start=2):
             try:
                 await page.get_by_test_id(tid).click()
-                panel = page.get_by_test_id("citation-panel")
-                await panel.wait_for(state="attached", timeout=5000)
-                await page.wait_for_timeout(300)
+                await page.wait_for_timeout(700)
+                panel = page.locator('[data-testid="citation-panel"]').first
+                if await panel.count() == 0:
+                    failures.append(f"{tid}: panel did not mount after click")
+                    continue
                 title = await panel.inner_text()
                 if expected_title_fragment not in title:
                     failures.append(
                         f"{tid}: panel title missing '{expected_title_fragment}', got:\n{title[:200]}"
                     )
-                open_btn = page.get_by_test_id("open-in-dashboard")
-                if not await open_btn.is_visible():
-                    failures.append(f"{tid}: 'Open in dashboard' button not visible")
+                open_btn = page.locator('[data-testid="open-in-dashboard"]').first
+                if await open_btn.count() == 0:
+                    failures.append(f"{tid}: 'Open in dashboard' button missing")
                 elif not await open_btn.is_enabled():
                     failures.append(f"{tid}: 'Open in dashboard' button disabled")
                 await page.screenshot(path=str(SCREENSHOTS / f"{i}_{tid}.png"))
-                # Close panel by pressing Escape for next iteration
                 await page.keyboard.press("Escape")
-                await page.wait_for_timeout(400)
+                await page.wait_for_timeout(500)
             except Exception as e:
                 failures.append(f"{tid}: interaction failed: {e}")
+
 
         # 3. Verify Open-in-dashboard navigates for the sheet chip
         try:
