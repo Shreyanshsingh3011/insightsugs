@@ -214,14 +214,7 @@ export async function runCopilotAgent(
   data: z.infer<typeof InputSchema>,
   context: { supabase: any; userId: string },
 ) {
-  {
-    const _ctx = context;
-    void _ctx;
-  }
-  return await _runCopilotAgentImpl({ data, context });
-}
 
-async function _runCopilotAgentImpl({ data, context }: { data: z.infer<typeof InputSchema>; context: { supabase: any; userId: string } }) {
 
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
