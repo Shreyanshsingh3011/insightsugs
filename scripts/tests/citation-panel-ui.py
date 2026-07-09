@@ -65,7 +65,7 @@ async def main() -> int:
                 await page.screenshot(path=str(SCREENSHOTS / f"{i}_{tid}.png"))
                 # Close panel by pressing Escape for next iteration
                 await page.keyboard.press("Escape")
-                await panel.wait_for(state="hidden", timeout=3000)
+                await page.wait_for_timeout(400)
             except Exception as e:
                 failures.append(f"{tid}: interaction failed: {e}")
 
