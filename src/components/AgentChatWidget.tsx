@@ -35,6 +35,8 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { cn } from "@/lib/utils";
+import { CitationPanel, type CitationTarget } from "@/components/CitationPanel";
+import { REFUSAL_PHRASE, extractCitations, parseRefusal } from "@/lib/citation-parser";
 
 export type AgentChatContext = {
   projectId?: string;
