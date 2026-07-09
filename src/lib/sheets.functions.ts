@@ -611,7 +611,7 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
   });
 
 
-async function syncRowsInternal(supabase: any, userId: string, registryId: string) {
+export async function syncRowsInternal(supabase: any, userId: string, registryId: string) {
   const { data: reg, error: regErr } = await supabase
     .from("sheet_registry")
     .select("apps_script_url, user_id")

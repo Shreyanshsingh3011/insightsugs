@@ -61,6 +61,7 @@ import { Route as ApiPublicHooksWeeklyReportRouteImport } from './routes/api/pub
 import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/public/hooks/weekly-briefing'
 import { Route as ApiPublicHooksStaleCriticalWatcherRouteImport } from './routes/api/public/hooks/stale-critical-watcher'
 import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
+import { Route as ApiPublicHooksSheetsRefreshRouteImport } from './routes/api/public/hooks/sheets-refresh'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksEmbedBackfillRouteImport } from './routes/api/public/hooks/embed-backfill'
 import { Route as ApiPublicHooksEmailInboundRouteImport } from './routes/api/public/hooks/email-inbound'
@@ -357,6 +358,12 @@ const ApiPublicHooksSmartAlertsScanRoute =
     path: '/api/public/hooks/smart-alerts-scan',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksSheetsRefreshRoute =
+  ApiPublicHooksSheetsRefreshRouteImport.update({
+    id: '/api/public/hooks/sheets-refresh',
+    path: '/api/public/hooks/sheets-refresh',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
   id: '/api/public/hooks/escalate',
   path: '/api/public/hooks/escalate',
@@ -498,6 +505,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/embed-backfill': typeof ApiPublicHooksEmbedBackfillRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
@@ -562,6 +570,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/embed-backfill': typeof ApiPublicHooksEmbedBackfillRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
@@ -631,6 +640,7 @@ export interface FileRoutesById {
   '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/embed-backfill': typeof ApiPublicHooksEmbedBackfillRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
   '/api/public/hooks/weekly-briefing': typeof ApiPublicHooksWeeklyBriefingRoute
@@ -700,6 +710,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/embed-backfill'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
     | '/api/public/hooks/weekly-briefing'
@@ -764,6 +775,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/embed-backfill'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
     | '/api/public/hooks/weekly-briefing'
@@ -832,6 +844,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/embed-backfill'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
     | '/api/public/hooks/weekly-briefing'
@@ -861,6 +874,7 @@ export interface RootRouteChildren {
   ApiPublicHooksEmailInboundRoute: typeof ApiPublicHooksEmailInboundRoute
   ApiPublicHooksEmbedBackfillRoute: typeof ApiPublicHooksEmbedBackfillRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
+  ApiPublicHooksSheetsRefreshRoute: typeof ApiPublicHooksSheetsRefreshRoute
   ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
   ApiPublicHooksStaleCriticalWatcherRoute: typeof ApiPublicHooksStaleCriticalWatcherRoute
   ApiPublicHooksWeeklyBriefingRoute: typeof ApiPublicHooksWeeklyBriefingRoute
@@ -1237,6 +1251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSmartAlertsScanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/sheets-refresh': {
+      id: '/api/public/hooks/sheets-refresh'
+      path: '/api/public/hooks/sheets-refresh'
+      fullPath: '/api/public/hooks/sheets-refresh'
+      preLoaderRoute: typeof ApiPublicHooksSheetsRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/escalate': {
       id: '/api/public/hooks/escalate'
       path: '/api/public/hooks/escalate'
@@ -1475,6 +1496,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksEmailInboundRoute: ApiPublicHooksEmailInboundRoute,
   ApiPublicHooksEmbedBackfillRoute: ApiPublicHooksEmbedBackfillRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
+  ApiPublicHooksSheetsRefreshRoute: ApiPublicHooksSheetsRefreshRoute,
   ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
   ApiPublicHooksStaleCriticalWatcherRoute:
     ApiPublicHooksStaleCriticalWatcherRoute,
