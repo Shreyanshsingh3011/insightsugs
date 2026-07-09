@@ -242,12 +242,28 @@ function SheetDetailPage() {
                       }`}
                     >
                       <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.row_index + 1}</td>
-                      {extraCols.map((c) => (
-                        <td key={c} className="px-3 py-1.5">{r.extras?.[c] ?? ""}</td>
-                      ))}
-                      {visibleCanonicalCols.map((c) => (
-                        <td key={c} className="px-3 py-1.5 text-muted-foreground">{r.canonical?.[c] ?? ""}</td>
-                      ))}
+                      {extraCols.map((c) => {
+                        const hitCell = isHit && isHitCell(c);
+                        return (
+                          <td
+                            key={c}
+                            className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium" : ""}`}
+                          >
+                            {r.extras?.[c] ?? ""}
+                          </td>
+                        );
+                      })}
+                      {visibleCanonicalCols.map((c) => {
+                        const hitCell = isHit && isHitCell(c);
+                        return (
+                          <td
+                            key={c}
+                            className={`px-3 py-1.5 ${hitCell ? "bg-amber-300 dark:bg-amber-500/50 ring-2 ring-amber-500 font-medium text-foreground" : "text-muted-foreground"}`}
+                          >
+                            {r.canonical?.[c] ?? ""}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })
