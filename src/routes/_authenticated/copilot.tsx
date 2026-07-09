@@ -928,9 +928,10 @@ function CopilotPage() {
                           ),
                         }}
                       >
-                        {t.answer}
+                        {stripCitations(t.answer)}
                       </ReactMarkdown>
                     </div>
+                    <PrimarySourceLink answer={t.answer} sources={t.sources} />
 
                     {t.charts && t.charts.length > 0 && (
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
