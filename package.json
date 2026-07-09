@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test:rls": "bun run scripts/tests/rls-role-regression.ts",
-    "test:rls:ui": "python3 scripts/tests/rls-ui-smoke.py"
+    "test:rls:ui": "python3 scripts/tests/rls-ui-smoke.py",
+    "test:citations": "bun run scripts/tests/citation-contract.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.5",
