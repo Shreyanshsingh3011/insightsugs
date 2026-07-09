@@ -831,7 +831,7 @@ export async function runCopilotAgent(
         create_activity: createActivity,
         list_projects: listProjects,
       },
-      stopWhen: stepCountIs(20),
+      stopWhen: stepCountIs(50),
     });
 
     const rawAnswer = (result.text ?? "").trim();
