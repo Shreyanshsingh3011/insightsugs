@@ -633,6 +633,23 @@ function DraftDrawer({
                 )}
               </section>
 
+              {/* Dismissal reason if dismissed */}
+              {draft.state === "dismissed" && (
+                <section className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Dismissal reason
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-foreground">
+                    {draft.dismiss_reason || <span className="text-muted-foreground">— (no reason recorded)</span>}
+                  </p>
+                  {draft.dismiss_reason === "auto:source_completed" && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Auto-dismissed by Run Watchers because the source sheet row is now marked Completed/Done/Closed.
+                    </p>
+                  )}
+                </section>
+              )}
+
               {/* Send result if terminal */}
               {isTerminal && draft.send_result && (
                 <section className="rounded-md border border-border bg-muted/20 p-3 text-xs">
@@ -644,6 +661,7 @@ function DraftDrawer({
                   </pre>
                 </section>
               )}
+
             </div>
 
             {/* Footer actions */}
@@ -807,9 +825,13 @@ function RunWatchersButton({ onDone }: { onDone: (result: Awaited<ReturnType<typ
       const visibleHint = r.created === 0 && r.skipped_dedupe > 0
         ? ` · ${r.surfaced_existing || r.skipped_dedupe} existing draft${(r.surfaced_existing || r.skipped_dedupe) === 1 ? "" : "s"} already queued`
         : "";
+      const autoHint = r.auto_dismissed
+        ? ` · ${r.auto_dismissed} auto-dismissed (source completed)`
+        : "";
       toast.success(
-        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${visibleHint}${errs}`,
+        `Scanned ${r.projects_scanned} project${r.projects_scanned === 1 ? "" : "s"} · ${r.rows_scanned} rows · ${r.created} new draft${r.created === 1 ? "" : "s"}${r.skipped_dedupe ? ` (${r.skipped_dedupe} deduped)` : ""}${visibleHint}${autoHint}${errs}`,
       );
+
       onDone(r);
     },
     onError: (e) => toast.error((e as Error).message),

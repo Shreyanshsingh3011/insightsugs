@@ -23,9 +23,11 @@ export type WatcherRunResult = {
   created: number;
   skipped_dedupe: number;
   surfaced_existing: number;
+  auto_dismissed: number;
   errors: string[];
   by_rule: Record<string, number>;
 };
+
 
 // ── Row helpers (mirror src/lib/entity-scope.ts) ───────────────────────
 
@@ -257,9 +259,11 @@ async function runWatchersCore(
     created: 0,
     skipped_dedupe: 0,
     surfaced_existing: 0,
+    auto_dismissed: 0,
     errors: [],
     by_rule: {},
   };
+
 
   const { resolve, directory } = await buildAssigneeResolver(supabaseAdmin, preferredFallbackUserId);
 
@@ -274,7 +278,19 @@ async function runWatchersCore(
     result.projects_scanned++;
     result.rows_scanned += rows.length;
 
+    const completedKeys: string[] = [];
+
     for (const row of rows) {
+      // Detect completed rows up-front and collect their source_key so we can
+      // auto-dismiss any prior drafts that are still pending/snoozed.
+      const status = pick(row, "Status Category", "Status as on Date");
+      if (isCompleted(status)) {
+        const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
+        const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
+        completedKeys.push(`${proj.label}::${srNo || activity}`.slice(0, 400));
+        continue;
+      }
+
       const seeds = ruleSeeds(row, proj.label, directory);
       for (const s of seeds) {
         const { assigned_to, recipient_user_id } = resolve(s._recipient_email_norm);
@@ -318,7 +334,26 @@ async function runWatchersCore(
         }
       }
     }
+
+    // Auto-dismiss stale drafts whose source row is now completed. Batched in
+    // groups so URL/IN() lists stay comfortably under Postgres limits.
+    const uniqueCompleted = Array.from(new Set(completedKeys));
+    for (let i = 0; i < uniqueCompleted.length; i += 200) {
+      const batch = uniqueCompleted.slice(i, i + 200);
+      const { data: dismissed, error: dErr } = await supabaseAdmin
+        .from("agent_drafts")
+        .update({ state: "dismissed", dismiss_reason: "auto:source_completed" })
+        .in("source_key", batch)
+        .in("state", ["pending", "snoozed"])
+        .select("id");
+      if (dErr) {
+        result.errors.push(`${proj.label}: auto-dismiss ${dErr.message}`);
+      } else {
+        result.auto_dismissed += dismissed?.length ?? 0;
+      }
+    }
   }
+
 
   // Best-effort audit
   try {
@@ -385,8 +420,9 @@ export async function runAgentWatchersFromHook(): Promise<WatcherRunResult> {
   } catch (e) {
     return {
       projects_scanned: 0, rows_scanned: 0, created: 0, skipped_dedupe: 0, surfaced_existing: 0,
-      by_rule: {}, errors: [`registry: ${(e as Error).message}`],
+      auto_dismissed: 0, by_rule: {}, errors: [`registry: ${(e as Error).message}`],
     };
+
   }
   return runWatchersCore(projects, supabaseAdmin, null);
 }
