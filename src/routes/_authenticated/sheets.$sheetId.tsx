@@ -43,7 +43,25 @@ function SheetDetailPage() {
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 15000),
   });
+
+  // Surface background-refetch failures (initial load errors already render below)
+  const lastToastedError = useRef<string | null>(null);
+  useEffect(() => {
+    if (!detail.isError || !detail.data) return; // only when we have cached data + a failed refetch
+    const msg = detail.error instanceof Error ? detail.error.message : "Refetch failed";
+    if (lastToastedError.current === msg) return;
+    lastToastedError.current = msg;
+    toast.error("Auto-refresh failed", {
+      description: msg,
+      action: { label: "Retry", onClick: () => detail.refetch() },
+    });
+  }, [detail.isError, detail.error, detail.data, detail.refetch]);
+  useEffect(() => {
+    if (detail.isSuccess) lastToastedError.current = null;
+  }, [detail.isSuccess, detail.dataUpdatedAt]);
 
   useEffect(() => {
     if (highlight == null) return;
@@ -75,7 +93,7 @@ function SheetDetailPage() {
       </div>
     );
   }
-  if (detail.isError || !detail.data) {
+  if (!detail.data) {
     return (
       <div className="p-6 text-sm text-destructive">
         {detail.error instanceof Error ? detail.error.message : "Failed to load sheet."}
@@ -131,6 +149,33 @@ function SheetDetailPage() {
           Refresh
         </Button>
       </div>
+
+      {detail.isError && detail.data ? (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+          <div className="flex-1">
+            <div className="font-medium">Auto-refresh failed</div>
+            <div className="text-xs opacity-90">
+              {detail.error instanceof Error ? detail.error.message : "Unknown error"}
+              {" · showing last successful data"}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => detail.refetch()}
+            disabled={detail.isFetching}
+          >
+            {detail.isFetching ? (
+              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-1.5 h-3 w-3" />
+            )}
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
 
       {detail.data.syncWarning ? (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
