@@ -31,6 +31,7 @@ function SheetDetailPage() {
   const [offset, setOffset] = useState(() =>
     typeof highlight === "number" ? Math.floor(highlight / 500) * 500 : 0,
   );
+  const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
 
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
 
