@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as DevCitationsRouteImport } from './routes/dev.citations'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as AuthenticatedSheetsRouteImport } from './routes/_authenticated/sheets'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedSearchRouteImport } from './routes/_authenticated/search'
 import { Route as AuthenticatedProjectsRouteImport } from './routes/_authenticated/projects'
@@ -104,6 +105,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedSheetsRoute = AuthenticatedSheetsRouteImport.update({
+  id: '/sheets',
+  path: '/sheets',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -179,9 +185,9 @@ const AuthenticatedAgentRoute = AuthenticatedAgentRouteImport.update({
 } as any)
 const AuthenticatedSheetsIndexRoute =
   AuthenticatedSheetsIndexRouteImport.update({
-    id: '/sheets/',
-    path: '/sheets/',
-    getParentRoute: () => AuthenticatedRoute,
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedSheetsRoute,
   } as any)
 const AuthenticatedAlertsIndexRoute =
   AuthenticatedAlertsIndexRouteImport.update({
@@ -216,9 +222,9 @@ const ApiAgentPlanRoute = ApiAgentPlanRouteImport.update({
 } as any)
 const AuthenticatedSheetsSheetIdRoute =
   AuthenticatedSheetsSheetIdRouteImport.update({
-    id: '/sheets/$sheetId',
-    path: '/sheets/$sheetId',
-    getParentRoute: () => AuthenticatedRoute,
+    id: '/$sheetId',
+    path: '/$sheetId',
+    getParentRoute: () => AuthenticatedSheetsRoute,
   } as any)
 const AuthenticatedAlertsIdRoute = AuthenticatedAlertsIdRouteImport.update({
   id: '/$id',
@@ -451,6 +457,7 @@ export interface FileRoutesByFullPath {
   '/projects': typeof AuthenticatedProjectsRoute
   '/search': typeof AuthenticatedSearchRoute
   '/settings': typeof AuthenticatedSettingsRoute
+  '/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -583,6 +590,7 @@ export interface FileRoutesById {
   '/_authenticated/projects': typeof AuthenticatedProjectsRoute
   '/_authenticated/search': typeof AuthenticatedSearchRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
+  '/_authenticated/sheets': typeof AuthenticatedSheetsRouteWithChildren
   '/api/chat': typeof ApiChatRoute
   '/dev/citations': typeof DevCitationsRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
@@ -651,6 +659,7 @@ export interface FileRouteTypes {
     | '/projects'
     | '/search'
     | '/settings'
+    | '/sheets'
     | '/api/chat'
     | '/dev/citations'
     | '/email/unsubscribe'
@@ -782,6 +791,7 @@ export interface FileRouteTypes {
     | '/_authenticated/projects'
     | '/_authenticated/search'
     | '/_authenticated/settings'
+    | '/_authenticated/sheets'
     | '/api/chat'
     | '/dev/citations'
     | '/email/unsubscribe'
@@ -905,6 +915,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/sheets': {
+      id: '/_authenticated/sheets'
+      path: '/sheets'
+      fullPath: '/sheets'
+      preLoaderRoute: typeof AuthenticatedSheetsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
@@ -1005,10 +1022,10 @@ declare module '@tanstack/react-router' {
     }
     '/_authenticated/sheets/': {
       id: '/_authenticated/sheets/'
-      path: '/sheets'
+      path: '/'
       fullPath: '/sheets/'
       preLoaderRoute: typeof AuthenticatedSheetsIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
+      parentRoute: typeof AuthenticatedSheetsRoute
     }
     '/_authenticated/alerts/': {
       id: '/_authenticated/alerts/'
@@ -1054,10 +1071,10 @@ declare module '@tanstack/react-router' {
     }
     '/_authenticated/sheets/$sheetId': {
       id: '/_authenticated/sheets/$sheetId'
-      path: '/sheets/$sheetId'
+      path: '/$sheetId'
       fullPath: '/sheets/$sheetId'
       preLoaderRoute: typeof AuthenticatedSheetsSheetIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
+      parentRoute: typeof AuthenticatedSheetsRoute
     }
     '/_authenticated/alerts/$id': {
       id: '/_authenticated/alerts/$id'
@@ -1374,6 +1391,19 @@ const AuthenticatedAlertsRouteChildren: AuthenticatedAlertsRouteChildren = {
 const AuthenticatedAlertsRouteWithChildren =
   AuthenticatedAlertsRoute._addFileChildren(AuthenticatedAlertsRouteChildren)
 
+interface AuthenticatedSheetsRouteChildren {
+  AuthenticatedSheetsSheetIdRoute: typeof AuthenticatedSheetsSheetIdRoute
+  AuthenticatedSheetsIndexRoute: typeof AuthenticatedSheetsIndexRoute
+}
+
+const AuthenticatedSheetsRouteChildren: AuthenticatedSheetsRouteChildren = {
+  AuthenticatedSheetsSheetIdRoute: AuthenticatedSheetsSheetIdRoute,
+  AuthenticatedSheetsIndexRoute: AuthenticatedSheetsIndexRoute,
+}
+
+const AuthenticatedSheetsRouteWithChildren =
+  AuthenticatedSheetsRoute._addFileChildren(AuthenticatedSheetsRouteChildren)
+
 interface AuthenticatedRouteChildren {
   AuthenticatedAgentRoute: typeof AuthenticatedAgentRouteWithChildren
   AuthenticatedAlertsRoute: typeof AuthenticatedAlertsRouteWithChildren
@@ -1389,14 +1419,13 @@ interface AuthenticatedRouteChildren {
   AuthenticatedProjectsRoute: typeof AuthenticatedProjectsRoute
   AuthenticatedSearchRoute: typeof AuthenticatedSearchRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedSheetsRoute: typeof AuthenticatedSheetsRouteWithChildren
   AuthenticatedAdminAllowlistRoute: typeof AuthenticatedAdminAllowlistRoute
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
   AuthenticatedAdminEmailRoute: typeof AuthenticatedAdminEmailRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
   AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
-  AuthenticatedSheetsSheetIdRoute: typeof AuthenticatedSheetsSheetIdRoute
-  AuthenticatedSheetsIndexRoute: typeof AuthenticatedSheetsIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1414,14 +1443,13 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedProjectsRoute: AuthenticatedProjectsRoute,
   AuthenticatedSearchRoute: AuthenticatedSearchRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedSheetsRoute: AuthenticatedSheetsRouteWithChildren,
   AuthenticatedAdminAllowlistRoute: AuthenticatedAdminAllowlistRoute,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
   AuthenticatedAdminEmailRoute: AuthenticatedAdminEmailRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
   AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
-  AuthenticatedSheetsSheetIdRoute: AuthenticatedSheetsSheetIdRoute,
-  AuthenticatedSheetsIndexRoute: AuthenticatedSheetsIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
