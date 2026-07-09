@@ -337,6 +337,7 @@ export default function AgentChatWidget({
                                   <button
                                     type="button"
                                     key={`x${idx}`}
+                                    data-testid="citation-chip-dashboard"
                                     onClick={() =>
                                       setSelectedCitation({ kind: "dashboard", field: c.field, value: val })
                                     }
