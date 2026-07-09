@@ -407,7 +407,13 @@ function toFetchableUrl(url: string): string {
 
 async function fetchAppsScript(url: string): Promise<{ headers: string[]; rows: string[][] }> {
   const target = toFetchableUrl(url);
-  const res = await fetch(target, { redirect: "follow" });
+  let res: Response;
+  try {
+    res = await fetch(target, { redirect: "follow" });
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : "fetch failed";
+    throw new Error(`Unable to reach the sheet source right now (${message}). Showing the last synced rows if available.`);
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Source URL returned ${res.status}: ${text.slice(0, 300)}`);
@@ -925,6 +931,7 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       if (!allowed) throw new Error("Sheet not found.");
     }
 
+    let syncWarning: string | null = null;
     const { data: probeRows } = await supabase
       .from("sheet_rows")
       .select("canonical, extras")
@@ -932,16 +939,7 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .order("row_index", { ascending: true })
       .limit(12);
     if (storedRowsLookMisread(probeRows ?? [])) {
-      await syncRowsInternal(supabase, reg.user_id, data.registryId);
-      const refreshed = await supabase
-        .from("sheet_registry")
-        .select(
-          "id, sheet_type, display_name, apps_script_url, row_count, last_refreshed_at, user_id, visibility",
-        )
-        .eq("id", data.registryId)
-        .maybeSingle();
-      if (refreshed.error) throw new Error(refreshed.error.message);
-      reg = refreshed.data ?? reg;
+      syncWarning = "This sheet may need a refresh, but the saved rows are shown below.";
     }
 
 
@@ -970,6 +968,7 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       totalRows: count ?? 0,
       offset: data.offset,
       limit: data.limit,
+      syncWarning,
     };
   });
 

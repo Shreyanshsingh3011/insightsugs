@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { getSheetDetail, refreshSheet } from "@/lib/sheets.functions";
 import { SHEET_TYPE_LABELS, CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 
@@ -115,6 +115,13 @@ function SheetDetailPage() {
           Refresh
         </Button>
       </div>
+
+      {detail.data.syncWarning ? (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+          <span>{detail.data.syncWarning}</span>
+        </div>
+      ) : null}
 
       <Card className="overflow-hidden">
         <div className="max-h-[70vh] overflow-auto">
