@@ -82,9 +82,13 @@ function SheetDetailPage() {
   const reg = detail.data.registry;
   const type = reg.sheet_type as SheetType;
   const canonicalCols = CANONICAL_FIELDS[type];
+  const visibleCanonicalCols = canonicalCols.filter((c) =>
+    detail.data.rows.some((r: any) => String(r.canonical?.[c] ?? "").trim().length > 0),
+  );
   const extraCols = Array.from(
     new Set(detail.data.rows.flatMap((r: any) => Object.keys(r.extras ?? {}))),
   );
+  const dataCols = [...visibleCanonicalCols, ...extraCols];
   const total = detail.data.totalRows ?? 0;
   const end = Math.min(offset + pageSize, total);
 
@@ -129,7 +133,7 @@ function SheetDetailPage() {
             <thead className="sticky top-0 bg-muted text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-3 py-2">#</th>
-                {canonicalCols.map((c) => (
+                {visibleCanonicalCols.map((c) => (
                   <th key={c} className="px-3 py-2 font-medium">{c}</th>
                 ))}
                 {extraCols.map((c) => (
@@ -140,7 +144,7 @@ function SheetDetailPage() {
             <tbody>
               {detail.data.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={canonicalCols.length + extraCols.length + 1} className="px-3 py-8 text-center text-muted-foreground">
+                  <td colSpan={dataCols.length + 1} className="px-3 py-8 text-center text-muted-foreground">
                     No rows synced yet.
                   </td>
                 </tr>
@@ -156,7 +160,7 @@ function SheetDetailPage() {
                       }`}
                     >
                       <td className="px-3 py-1.5 text-xs text-muted-foreground">{r.row_index + 1}</td>
-                      {canonicalCols.map((c) => (
+                      {visibleCanonicalCols.map((c) => (
                         <td key={c} className="px-3 py-1.5">{r.canonical?.[c] ?? ""}</td>
                       ))}
                       {extraCols.map((c) => (
