@@ -633,6 +633,23 @@ function DraftDrawer({
                 )}
               </section>
 
+              {/* Dismissal reason if dismissed */}
+              {draft.state === "dismissed" && (
+                <section className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Dismissal reason
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-foreground">
+                    {draft.dismiss_reason || <span className="text-muted-foreground">— (no reason recorded)</span>}
+                  </p>
+                  {draft.dismiss_reason === "auto:source_completed" && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Auto-dismissed by Run Watchers because the source sheet row is now marked Completed/Done/Closed.
+                    </p>
+                  )}
+                </section>
+              )}
+
               {/* Send result if terminal */}
               {isTerminal && draft.send_result && (
                 <section className="rounded-md border border-border bg-muted/20 p-3 text-xs">
@@ -644,6 +661,7 @@ function DraftDrawer({
                   </pre>
                 </section>
               )}
+
             </div>
 
             {/* Footer actions */}
