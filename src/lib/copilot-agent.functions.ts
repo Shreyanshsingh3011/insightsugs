@@ -592,6 +592,51 @@ export async function runCopilotAgent(
         }),
     });
 
+    const getCell = tool({
+      description:
+        "Fetch ONE exact cell value: the value at (row_index, column) in a sheet. Use this when the user's question is about a specific field of a specific record (e.g. 'phone of X', 'status of order 42', 'due date of task Y'). Prefer this over get_row when you only need one column so the citation pins the exact source cell.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        row_index: z.number().int().min(0),
+        column: z.string().min(1).max(120),
+      }),
+      execute: async ({ sheet_id, row_index, column }) =>
+        withTrace("get_cell", { sheet_id, row_index, column }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const hit = rows.find((r) => r.row_index === row_index);
+          if (!hit) return { error: "No such row_index" };
+          // Case-insensitive column resolution.
+          const key = Object.keys(hit.data).find(
+            (k) => k.toLowerCase().trim() === column.toLowerCase().trim(),
+          );
+          if (!key) {
+            return {
+              error: `Column not found. Available: ${Object.keys(hit.data).slice(0, 40).join(", ")}`,
+            };
+          }
+          const value = hit.data[key];
+          ledger.push({
+            kind: "sheet_row",
+            registryId: sheet_id,
+            sheetLabel: reg.display_name,
+            rowIndex: row_index,
+            data: hit.data,
+          });
+          return {
+            _summary: `${key} @ row ${row_index + 1} of "${reg.display_name}" = ${String(value ?? "").slice(0, 80)}`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              row_index,
+              column: key,
+              value,
+              cite: `[sheet:${reg.display_name} row ${row_index + 1} col ${key}]`,
+            },
+          };
+        }),
+    });
+
     const searchDocChunks = tool({
       description:
         "Semantic search over the text of a specific document. Returns up to k page-scoped chunks.",
@@ -801,13 +846,18 @@ export async function runCopilotAgent(
       "- Before refusing, you MUST exhaustively probe the selected sources:",
       "    1. Call get_sheet_schema on every selected sheet to learn its columns (canonical AND extras keys — contact info like phone/mobile/email often lives in extras).",
       "    2. Use search_sheet_rows with several rephrasings of the user's intent (synonyms, partial names, related terms).",
-      "    3. Use filter_sheet_rows / aggregate_column / get_row on the most likely columns (including extras columns).",
+      "    3. Use filter_sheet_rows / aggregate_column / get_row / get_cell on the most likely columns (including extras columns).",
       "    4. Use search_doc_chunks on every selected document with multiple query rewrites.",
       "- Only after all reasonable probes return nothing may you refuse.",
       "- Never say 'I can only answer X'. If the data supports it, answer it.",
       "",
+      "PIN-TO-CELL RULE (strict):",
+      "- When the user's question is about a specific field of a specific record (a single value: a phone, an email, a status, a date, a quantity, a name, etc.), you MUST call get_cell to fetch that exact (row, column) and cite it as [sheet:<display_name> row <n> col <ColumnName>]. Do NOT paraphrase the value from search results — fetch the exact cell.",
+      "- The answer for such questions must state the column name and the exact value returned by get_cell, e.g. `Phone (col Mobile) = +91 98xxx — [sheet:Contacts row 42 col Mobile]`.",
+      "",
       "CITATION RULES (strict):",
       "- Every factual sentence must include an inline citation marker:",
+      "    [sheet:<display_name> row <n> col <ColumnName>] for a single-cell fact (preferred when the answer is one value), or",
       "    [sheet:<display_name> row <one-based row number>] or, for compact row summaries only, [sheet:<display_name> row 3, 9] / [sheet:<display_name> row 1-14] when every cited row was returned by a tool, or",
       "    [doc:<name> p.<page>]",
       "- Use [sheet:<display_name>] only for sheet-level facts such as total row count or schema/column coverage.",
@@ -853,6 +903,7 @@ export async function runCopilotAgent(
         filter_sheet_rows: filterSheetRows,
         aggregate_column: aggregateColumn,
         get_row: getRow,
+        get_cell: getCell,
         search_doc_chunks: searchDocChunks,
         create_alert: createAlert,
         draft_email: draftEmail,
@@ -882,9 +933,29 @@ export async function runCopilotAgent(
       inlineCount++;
 
       // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
-      // [sheet:<name> row 3, 9], and sheet-level [sheet:<name>].
-      const sheetRowMatch = /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body);
-      const sheetOnlyMatch = !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+      // [sheet:<name> row 3, 9], [sheet:<name> row <n> col <column>], and
+      // sheet-level [sheet:<name>].
+      const sheetRowColMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s+col\s+(.+?)\s*$/i.exec(body);
+      const sheetRowMatch = !sheetRowColMatch
+        ? /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body)
+        : null;
+      const sheetOnlyMatch =
+        !sheetRowColMatch && !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+      if (sheetRowColMatch) {
+        const label = normalizeCitationLabel(sheetRowColMatch[1]);
+        const reg = sheetByLabel.get(label);
+        if (!reg) {
+          unverified.push(marker);
+          continue;
+        }
+        const rowN = Number(sheetRowColMatch[2]);
+        const inLedger = ledger.some(
+          (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
+        );
+        if (inLedger) verified.add(marker);
+        else unverified.push(marker);
+        continue;
+      }
       if (sheetRowMatch || sheetOnlyMatch) {
         const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
         const reg = sheetByLabel.get(label);
