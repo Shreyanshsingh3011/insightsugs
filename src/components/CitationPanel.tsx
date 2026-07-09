@@ -22,8 +22,10 @@ export function CitationPanel({
   onOpenChange: (open: boolean) => void;
 }) {
   const fetchCtx = useServerFn(getCitationContext);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [ctx, setCtx] = useState<CitationContext | null>(null);
+
 
   useEffect(() => {
     setCtx(null);
