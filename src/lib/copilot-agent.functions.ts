@@ -1329,9 +1329,13 @@ export async function runCopilotAgent(
       "- After a successful action, confirm in one line and include the returned url/message.",
       "- Never take an action based on your own inference. Only act on an explicit user request in the current turn.",
       "",
-      "AVAILABLE DATA CATALOG (these are the ONLY sources you may use; call get_sheet_schema for column details before filtering):",
-      JSON.stringify(catalog).slice(0, 4000),
+      "SHEET AUTO-INSIGHTS (already computed for the selected sheet(s) — treat these as trusted context, use them to interpret the user's question, and cite them as [sheet:<display_name>] when the answer restates one):",
+      JSON.stringify(sheetInsightSnapshot).slice(0, 6000),
+      "",
+      "AVAILABLE DATA CATALOG (these are the ONLY sources you may use; each sheet has `detected_shape` and `columns` — filter and search using those column names, not guesses):",
+      JSON.stringify(catalog).slice(0, 8000),
     ].join("\n");
+
 
     // 5) Assemble messages: prior history + new question.
     const messages = [
