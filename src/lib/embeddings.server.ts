@@ -73,9 +73,17 @@ export async function embedTexts(
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      if (isQuotaOrBilling(res.status, t) && process.env.GEMINI_API_KEY && /^google\/gemini-/i.test(model)) {
-        const fallback = await embedWithGemini(inputs, dimensions);
-        return fallback;
+      // Fall back to direct Gemini embeddings on any quota/billing/rate-limit/5xx
+      // regardless of the requested model — Gemini's outputDimensionality matches
+      // whatever caller (e.g. 1536 for the openai/text-embedding-3-small path).
+      if (isQuotaOrBilling(res.status, t) && process.env.GEMINI_API_KEY) {
+        try {
+          return await embedWithGemini(inputs, dimensions);
+        } catch (geminiErr) {
+          throw new Error(
+            `Embeddings error ${res.status} and Gemini fallback failed: ${(geminiErr as Error)?.message ?? "unknown"}`,
+          );
+        }
       }
       throw new Error(`Embeddings error ${res.status}: ${t.slice(0, 300)}`);
     }
