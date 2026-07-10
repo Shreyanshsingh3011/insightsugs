@@ -498,7 +498,7 @@ export default function AgentDashboard() {
     if (!s?.payload) return undefined;
     const scoped = nameFilter(s.payload.data);
     if (!scoped.length && scope.mode === "name-scoped") return undefined;
-    const tagged = scoped.map((r) => ({ ...r, __department: s.payload?.department }));
+    const tagged = scoped.map((r) => ({ ...r, __project: s.project.label, __department: s.payload?.department }));
     const data = focusFilter(tagged);
     return {
       project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
