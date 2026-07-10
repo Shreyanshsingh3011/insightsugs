@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 import { callEmergent } from "@/lib/emergent-client";
+import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 
 
 const SHEET_TYPE_ENUM = z.enum([
@@ -1716,7 +1717,7 @@ async function callInsightsAi(system: string, user: string): Promise<string> {
 // terminal-status breakdown, top categorical values, numeric stats, and a
 // small sample of active (non-completed) rows. Keeps token usage predictable.
 function buildSheetContext(sheetName: string, storedRows: any[]): { context: string; rowCount: number } {
-  const { isTerminalRow, statusBucketForRow } = require("./status-utils") as typeof import("./status-utils");
+  
   const rows: Record<string, unknown>[] = storedRows.map((r) => ({
     ...(r.canonical ?? {}),
     ...(r.extras ?? {}),
