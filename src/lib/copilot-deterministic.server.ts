@@ -355,15 +355,30 @@ export async function deterministicAnswer(params: {
     }
   }
 
-  if (parts.length === 0) {
-    return { answer: "", citations: [], matched: false };
+  const uniqCites = Array.from(new Set(cites));
+
+  // If we produced no cited findings, emit the canonical refusal instead of an
+  // uncited "0 rows" summary — the client-side citation validator rejects any
+  // answer that has no inline [..] markers, which turned into a bogus
+  // "Answer rejected — grounding check failed" for the user.
+  if (parts.length === 0 || uniqCites.length === 0) {
+    const scope = [
+      regs.length ? `${regs.length} sheet${regs.length === 1 ? "" : "s"}` : "",
+      docs.length ? `${docs.length} document${docs.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(" and ") || "the selected sources";
+    const missing = tokens.length ? tokens.slice(0, 6).join(", ") : "matching data";
+    const answer =
+      `I don't have that in the current dashboard data.\n\n` +
+      `Searched ${scope} but found no rows or document excerpts matching your query. ` +
+      `Missing: ${missing}.\n\n` +
+      `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.`;
+    return { answer, citations: [], matched: false };
   }
 
-  const uniqCites = Array.from(new Set(cites));
   const answer =
     `Answered directly from the selected sources (AI provider unavailable — used local search over your sheets and documents):\n\n` +
     parts.join("\n") +
-    (uniqCites.length ? `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}` : "");
+    `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}`;
   return { answer, citations: uniqCites, matched: true };
 }
 
