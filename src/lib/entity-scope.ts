@@ -64,7 +64,7 @@ export function toScopedRow(row: Row, i: number, projectLabel?: string): ScopedR
     status: statusText(row) || "—",
     tat: num(row["TAT"]),
     taken: num(row["Days Taken"]),
-    delay: num(row["Delay in Days"]),
+    delay: isTerminalRow(row) ? 0 : num(row["Delay in Days"]),
   };
 }
 

@@ -127,7 +127,7 @@ function derive(payload: Payload | undefined) {
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const delay = num(r["Delay in Days"]);
+    const delay = st === "Completed" ? 0 : num(r["Delay in Days"]);
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
 
@@ -795,7 +795,7 @@ export default function AgentDashboard() {
       criticality: pick(r, "Criticality"),
       tat: num(r["TAT"]),
       days_taken: num(r["Days Taken"]),
-      delay: num(r["Delay in Days"]),
+      delay: isTerminalRow(r) ? 0 : num(r["Delay in Days"]),
     }));
     const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
       person: p.person,
