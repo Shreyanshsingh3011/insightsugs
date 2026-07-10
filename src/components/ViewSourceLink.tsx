@@ -18,14 +18,18 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
  *          (optionally scoped to `matchCol`).
  */
 export function ViewSourceLink({
+  projectId,
   projectLabel,
+  sourceUrl,
   activity,
   matchCol,
   fallbackUrl,
   className,
   compact,
 }: {
+  projectId?: string | null;
   projectLabel?: string | null;
+  sourceUrl?: string | null;
   activity?: string | null;
   matchCol?: string | null;
   fallbackUrl?: string | null;
@@ -39,19 +43,41 @@ export function ViewSourceLink({
     staleTime: 5 * 60 * 1000,
   });
 
+  const list = (q.data?.sheets ?? []) as {
+    id: string;
+    display_name: string;
+    source_url?: string | null;
+  }[];
   const label = projectLabel ? norm(projectLabel) : "";
-  const fallbackNorm = fallbackUrl ? fallbackUrl.trim().toLowerCase() : "";
-  const sheet = (q.data?.sheets ?? []).find((s: { display_name: string; source_url?: string | null }) => {
-    const n = norm(s.display_name);
-    const src = (s.source_url ?? "").trim().toLowerCase();
-    if (label && (n === label || n.includes(label) || label.includes(n))) return true;
-    if (fallbackNorm && src && (src === fallbackNorm || src.includes(fallbackNorm) || fallbackNorm.includes(src))) return true;
-    return false;
-  }) as { id: string; display_name: string; source_url?: string | null } | undefined;
+  const pid = projectId ? norm(projectId) : "";
+  const srcNorm = sourceUrl ? sourceUrl.trim().toLowerCase() : "";
+  const fbNorm = fallbackUrl ? fallbackUrl.trim().toLowerCase() : "";
+
+  // Deterministic resolution order — first hit wins so the chip always lands
+  // on the same sheet for the same project:
+  //   1. Exact source_url match (project identity).
+  //   2. source_url contains / is contained by the project's URL (proxy vs
+  //      canonical Google Sheets URL variance).
+  //   3. display_name exactly equals the project label OR the project id slug.
+  //   4. display_name fuzzy contains / is contained by the label.
+  const eqUrl = (a: string, b: string) => !!a && !!b && (a === b || a.includes(b) || b.includes(a));
+  const sheet =
+    list.find((s) => (s.source_url ?? "").trim().toLowerCase() === srcNorm && srcNorm) ??
+    list.find((s) => eqUrl((s.source_url ?? "").trim().toLowerCase(), srcNorm)) ??
+    list.find((s) => eqUrl((s.source_url ?? "").trim().toLowerCase(), fbNorm)) ??
+    list.find((s) => {
+      const n = norm(s.display_name);
+      return (label && n === label) || (pid && n === pid);
+    }) ??
+    list.find((s) => {
+      const n = norm(s.display_name);
+      return label && (n.includes(label) || label.includes(n));
+    });
 
   const base =
     "inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/5 px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10";
   const cls = className ?? base + (compact ? "" : " mt-1");
+
 
   if (sheet) {
     const search: Record<string, unknown> = {};
