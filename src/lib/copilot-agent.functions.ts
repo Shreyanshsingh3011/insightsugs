@@ -259,15 +259,13 @@ export async function runCopilotAgent(
 
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("Missing LOVABLE_API_KEY");
+    const directGeminiKey = process.env.GEMINI_API_KEY;
+    if (!key && !directGeminiKey) throw new Error("Missing AI provider configuration");
 
     // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
-    const [
-      { generateText, stepCountIs, tool },
-      { createLovableAiGatewayProvider },
-    ] = await Promise.all([
+    const [{ generateText, stepCountIs, tool }, gatewayModule] = await Promise.all([
       import("ai"),
-      import("@/lib/ai-gateway"),
+      key ? import("@/lib/ai-gateway") : Promise.resolve(null),
     ]);
 
 
@@ -957,9 +955,6 @@ export async function runCopilotAgent(
       { role: "user" as const, content: data.question },
     ];
 
-    const gateway = createLovableAiGatewayProvider(key);
-    const model = gateway("google/gemini-3-flash-preview");
-
     const toolset = {
       get_sheet_schema: getSheetSchema,
       search_sheet_rows: searchSheetRows,
@@ -975,15 +970,14 @@ export async function runCopilotAgent(
     };
 
     async function runWithGeminiFallback(): Promise<{ text?: string }> {
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (!geminiKey) {
+      if (!directGeminiKey) {
         return {
           text:
             "I can't generate this right now because the AI provider is unavailable due to payment or quota limits, and no Gemini fallback key is configured. Your sheet data is still available; please retry after credits refresh.",
         };
       }
       const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-      const google = createGoogleGenerativeAI({ apiKey: geminiKey });
+      const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
       toolTrace.push({
         name: "ai_model",
         args: { provider: "gemini_direct_fallback", model: "gemini-2.5-flash" },
@@ -1001,30 +995,36 @@ export async function runCopilotAgent(
     }
 
     let result: { text?: string };
-    try {
-      result = await generateText({
-        model,
-        system,
-        messages: messages as any,
-        tools: toolset,
-        stopWhen: stepCountIs(50),
-      });
-    } catch (error) {
-      if (!isAiBillingOrQuotaError(error)) throw error;
+    if (!key) {
+      result = await runWithGeminiFallback();
+    } else {
       try {
-        result = await runWithGeminiFallback();
-      } catch (fallbackError) {
-        toolTrace.push({
-          name: "ai_model",
-          args: { provider: "gemini_direct_fallback" },
-          ok: false,
-          ms: 0,
-          summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
+        const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
+        const model = gateway("google/gemini-3-flash-preview");
+        result = await generateText({
+          model,
+          system,
+          messages: messages as any,
+          tools: toolset,
+          stopWhen: stepCountIs(50),
         });
-        result = {
-          text:
-            "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
-        };
+      } catch (error) {
+        if (!isAiBillingOrQuotaError(error)) throw error;
+        try {
+          result = await runWithGeminiFallback();
+        } catch (fallbackError) {
+          toolTrace.push({
+            name: "ai_model",
+            args: { provider: "gemini_direct_fallback" },
+            ok: false,
+            ms: 0,
+            summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
+          });
+          result = {
+            text:
+              "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
+          };
+        }
       }
     }
 
