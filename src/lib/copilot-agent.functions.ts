@@ -752,7 +752,7 @@ export async function runCopilotAgent(
               page: m.page_no ?? 0,
               snippet: (m.content ?? "").slice(0, 400),
               similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
-              cite: `[doc:${m.document_name} p.${m.page_no ?? 0}]`,
+              cite: `[doc:${m.document_name ?? doc.name} p.${m.page_no ?? 0}]`,
             };
           });
           return {
