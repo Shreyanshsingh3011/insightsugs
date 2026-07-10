@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Loader2,
   Sparkles,
@@ -317,6 +318,15 @@ function CopilotPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<Turn[]>([]);
+  const [strictMatch, setStrictMatch] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("copilot:strictMatch") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("copilot:strictMatch", strictMatch ? "1" : "0");
+    }
+  }, [strictMatch]);
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [insightsSheet, setInsightsSheet] = useState<string | null>(null);
   const [insightQuestions, setInsightQuestions] = useState<string[]>([]);
@@ -353,6 +363,7 @@ function CopilotPage() {
           sheetIds: Array.from(selected),
           documentIds: Array.from(selectedDocs),
           history: vars.history,
+          strictMatch,
         },
       });
     },
@@ -1049,8 +1060,19 @@ function CopilotPage() {
               }
             }}
           />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</span>
+          <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</span>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <Switch checked={strictMatch} onCheckedChange={setStrictMatch} aria-label="Strict match" />
+                <span>
+                  Strict match
+                  <span className="ml-1 text-[10px] opacity-70">
+                    {strictMatch ? "(exact phrase only — no surname fallback)" : "(broader keyword match)"}
+                  </span>
+                </span>
+              </label>
+            </div>
             <Button onClick={() => sendAsk(question.trim())} disabled={!canSend}>
               {askMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Ask
