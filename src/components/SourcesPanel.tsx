@@ -151,8 +151,13 @@ export function SourcesPanel() {
                   ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  <Button variant="ghost" size="sm" asChild title="View source sheet data">
+                    <Link to="/sheets/$sheetId" params={{ sheetId: s.id }}>
+                      <Eye className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
                   {s.source_url ? (
-                    <Button variant="ghost" size="sm" asChild title="Open sheet">
+                    <Button variant="ghost" size="sm" asChild title="Open in Google Sheets">
                       <a href={s.source_url} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
