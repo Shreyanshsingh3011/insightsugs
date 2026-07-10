@@ -304,10 +304,27 @@ export async function runCopilotAgent(
       page_count: number | null;
     }[];
 
+
+    // SCOPE GUARD: if none of the requested sheet/doc IDs resolved to real
+    // records the user can access, refuse immediately. Never fall back to
+    // dashboard aggregates, cached rows, or any other data source.
+    if (regs.length === 0 && docs.length === 0) {
+      return {
+        answer:
+          "No sheet or document is selected for this turn. Select a sheet or document and ask again — I only read from what you explicitly select, never from dashboard-level cached data.",
+        sources: [],
+        suggestions: [],
+        toolTrace: [],
+        citationOk: true,
+        scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+      };
+    }
+
     const sheetById = new Map(regs.map((r) => [r.id, r]));
     const sheetByLabel = new Map(regs.map((r) => [normalizeCitationLabel(r.display_name), r]));
     const docById = new Map(docs.map((d) => [d.id, d]));
     const docByLabel = new Map(docs.map((d) => [normalizeCitationLabel(d.name), d]));
+
 
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
