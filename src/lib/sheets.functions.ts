@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 import { callEmergent } from "@/lib/emergent-client";
+import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 
 
 const SHEET_TYPE_ENUM = z.enum([
