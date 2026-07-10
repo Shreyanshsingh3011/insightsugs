@@ -192,11 +192,6 @@ export async function deterministicAnswer(params: {
     }),
   );
 
-  for (const { reg, rows } of sheetRows) {
-    if (rows.length === 0) continue;
-    const cols = allColumns(rows);
-    const statusCol = statusColumn(cols);
-    const activeRows = rows.filter((r) => !isTerminal(r, statusCol));
   const phrases = extractPhrases(question);
   for (const { reg, rows } of sheetRows) {
     if (rows.length === 0) continue;
