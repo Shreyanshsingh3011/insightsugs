@@ -1524,10 +1524,46 @@ export async function runCopilotAgent(
       isFallback ||
       (inlineCount > 0 && verified.size > 0 && unverified.length === 0 && finalHasSourcesSection);
 
-    // 7) If nothing verified and not a fallback, replace with refusal.
+    // 7) If nothing verified and not a fallback, replace with refusal —
+    // unless a deterministic pre-flight already seeded rows into the ledger,
+    // in which case synthesize a grounded answer from those rows so we never
+    // refuse when the selected sheet actually contains the data.
     if (!opts.skipCitationEnforcement && !citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
-      finalAnswer = "I don't have that in the current dashboard data.";
+      const preflightRows = ledger.filter((l): l is Extract<LedgerEntry, { kind: "sheet_row" }> => l.kind === "sheet_row");
+      if (temporalOp && preflightRows.length > 0) {
+        const lines: string[] = [];
+        const seenReg = new Set<string>();
+        const bySheet = new Map<string, typeof preflightRows>();
+        for (const r of preflightRows) {
+          if (!bySheet.has(r.registryId)) bySheet.set(r.registryId, [] as any);
+          (bySheet.get(r.registryId) as any).push(r);
+        }
+        const cites: string[] = [];
+        for (const [regId, rows] of bySheet) {
+          const reg = sheetById.get(regId);
+          if (!reg) continue;
+          seenReg.add(reg.display_name);
+          lines.push(`**${reg.display_name}** — top ${rows.length} by \`${temporalOp}\`:`);
+          for (const r of rows.slice(0, 10)) {
+            const preview = Object.entries(r.data)
+              .filter(([, v]) => v != null && String(v).trim() !== "")
+              .slice(0, 4)
+              .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`)
+              .join(" · ");
+            const marker = `[sheet:${reg.display_name} row ${r.rowIndex + 1}]`;
+            lines.push(`- ${preview} ${marker}`);
+            cites.push(marker);
+          }
+        }
+        finalAnswer =
+          `Here are the ${temporalOp === "overdue" ? "overdue" : temporalOp === "tat_breached" ? "TAT-breached" : temporalOp} entries from ${Array.from(seenReg).join(", ")}:\n\n` +
+          lines.join("\n") +
+          `\n\nSources:\n${Array.from(new Set(cites)).map((m) => `- ${m}`).join("\n")}`;
+      } else {
+        finalAnswer = "I don't have that in the current dashboard data.";
+      }
     }
+
 
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
