@@ -53,6 +53,20 @@ function parseCitationRowSpec(spec: string): number[] | null {
   return null;
 }
 
+function isAiBillingOrQuotaError(error: unknown): boolean {
+  const err = error as { statusCode?: number; status?: number; message?: string; cause?: unknown };
+  const status = err?.statusCode ?? err?.status;
+  const message = `${err?.message ?? String(error ?? "")} ${(err?.cause as any)?.message ?? ""}`.toLowerCase();
+  return (
+    status === 402 ||
+    status === 429 ||
+    message.includes("payment required") ||
+    message.includes("credits exhausted") ||
+    message.includes("quota") ||
+    message.includes("rate limit")
+  );
+}
+
 async function fetchAllRows(
   supabase: any,
   registryId: string,
@@ -905,25 +919,41 @@ export async function runCopilotAgent(
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-3-flash-preview");
 
-    const result = await generateText({
-      model,
-      system,
-      messages: messages as any,
-      tools: {
-        get_sheet_schema: getSheetSchema,
-        search_sheet_rows: searchSheetRows,
-        filter_sheet_rows: filterSheetRows,
-        aggregate_column: aggregateColumn,
-        get_row: getRow,
-        get_cell: getCell,
-        search_doc_chunks: searchDocChunks,
-        create_alert: createAlert,
-        draft_email: draftEmail,
-        create_activity: createActivity,
-        list_projects: listProjects,
-      },
-      stopWhen: stepCountIs(50),
-    });
+    let result: { text?: string };
+    try {
+      result = await generateText({
+        model,
+        system,
+        messages: messages as any,
+        tools: {
+          get_sheet_schema: getSheetSchema,
+          search_sheet_rows: searchSheetRows,
+          filter_sheet_rows: filterSheetRows,
+          aggregate_column: aggregateColumn,
+          get_row: getRow,
+          get_cell: getCell,
+          search_doc_chunks: searchDocChunks,
+          create_alert: createAlert,
+          draft_email: draftEmail,
+          create_activity: createActivity,
+          list_projects: listProjects,
+        },
+        stopWhen: stepCountIs(50),
+      });
+    } catch (error) {
+      if (!isAiBillingOrQuotaError(error)) throw error;
+      toolTrace.push({
+        name: "ai_model",
+        args: { provider: "lovable_gateway_with_gemini_fallback" },
+        ok: false,
+        ms: 0,
+        summary: "AI provider unavailable due to payment/quota limits.",
+      });
+      result = {
+        text:
+          "I can't generate this right now because the AI provider is unavailable due to payment or quota limits. Your sheet data is still available; please retry after credits/quota refresh or update the configured AI provider billing.",
+      };
+    }
 
     const rawAnswer = (result.text ?? "").trim();
 

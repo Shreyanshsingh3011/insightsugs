@@ -13,9 +13,21 @@ function isChatCompletions(url: string) {
 
 function mapModel(model: unknown): string | undefined {
   if (typeof model !== "string") return undefined;
-  // Strip vendor prefix; Gemini OpenAI-compat expects bare model id.
-  if (model.startsWith("google/")) return model.slice("google/".length);
-  // For non-google models, fall back to a sensible Gemini default.
+  // Lovable Gateway model ids do not always map 1:1 to Google AI Studio ids.
+  // Keep the user-facing feature working by routing preview/new gateway models
+  // to the stable Gemini API model available behind GEMINI_API_KEY.
+  const normalized = model.startsWith("google/") ? model.slice("google/".length) : model;
+  if (
+    normalized === "gemini-3-flash-preview" ||
+    normalized === "gemini-3.1-flash-lite" ||
+    normalized === "gemini-3.5-flash" ||
+    normalized === "gemini-3.1-pro-preview"
+  ) {
+    return "gemini-2.5-flash";
+  }
+  if (normalized === "gemini-2.5-pro") return "gemini-2.5-pro";
+  if (normalized === "gemini-2.5-flash" || normalized === "gemini-2.5-flash-lite") return normalized;
+  // For OpenAI or unknown model ids, fall back to a sensible Gemini default.
   if (model.startsWith("openai/") || !model.includes("/")) return "gemini-2.5-flash";
   return model;
 }

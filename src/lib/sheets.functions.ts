@@ -1641,22 +1641,28 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     // Call the copilot agent directly in-process (not via RPC stub, which
     // would fail with "Server function info not found" in production).
     const { runCopilotAgent } = await import("./copilot-agent.functions");
-    const out = await runCopilotAgent(
-      {
-        question:
-          "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this sheet.\n" +
-          "Output ONLY a JSON object with this exact shape:\n" +
-          '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
-          "- insights: 5 to 7 short, surprising or important findings — anomalies, outliers, top movers, concentrations, risk signals, or noteworthy trends. Each title <= 60 chars, each detail 1-2 sentences with at least one specific number/name from the data.\n" +
-          "- questions: 4 to 6 concise, specific follow-up questions a user would want to ask next, phrased naturally and referencing actual entities/columns/values seen in the data (e.g. names, project codes, dates). No generic questions. Each question <= 120 chars.\n" +
-          "No prose outside the JSON.",
-        sheetIds: [data.sheetId],
-        documentIds: [],
-        history: [],
-      },
-      { supabase, userId },
-      { skipCitationEnforcement: true },
-    );
+    let out: { answer: string } = { answer: "" };
+    try {
+      out = await runCopilotAgent(
+        {
+          question:
+            "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this sheet.\n" +
+            "Output ONLY a JSON object with this exact shape:\n" +
+            '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
+            "- insights: 5 to 7 short, surprising or important findings — anomalies, outliers, top movers, concentrations, risk signals, or noteworthy trends. Each title <= 60 chars, each detail 1-2 sentences with at least one specific number/name from the data.\n" +
+            "- questions: 4 to 6 concise, specific follow-up questions a user would want to ask next, phrased naturally and referencing actual entities/columns/values seen in the data (e.g. names, project codes, dates). No generic questions. Each question <= 120 chars.\n" +
+            "No prose outside the JSON.",
+          sheetIds: [data.sheetId],
+          documentIds: [],
+          history: [],
+        },
+        { supabase, userId },
+        { skipCitationEnforcement: true },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/payment required|credits exhausted|quota|rate limit/i.test(message)) throw error;
+    }
 
 
 
@@ -1715,22 +1721,28 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     if (!doc) throw new Error("Document not found or you don't have access");
 
     const { runCopilotAgent } = await import("./copilot-agent.functions");
-    const out = await runCopilotAgent(
-      {
-        question:
-          "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this document.\n" +
-          "Output ONLY a JSON object with this exact shape:\n" +
-          '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
-          "- insights: 5 to 7 short, important findings from the document — key clauses, dates, deadlines, obligations, risks, financials, named parties, or notable statements. Each title <= 60 chars, each detail 1-2 sentences quoting or referencing a specific value/name/section from the document.\n" +
-          "- questions: 4 to 6 concise, specific follow-up questions a reader would naturally want to ask about THIS document, referencing actual entities/sections/terms seen. No generic questions. Each question <= 120 chars.\n" +
-          "No prose outside the JSON.",
-        sheetIds: [],
-        documentIds: [data.documentId],
-        history: [],
-      },
-      { supabase, userId },
-      { skipCitationEnforcement: true },
-    );
+    let out: { answer: string } = { answer: "" };
+    try {
+      out = await runCopilotAgent(
+        {
+          question:
+            "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this document.\n" +
+            "Output ONLY a JSON object with this exact shape:\n" +
+            '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
+            "- insights: 5 to 7 short, important findings from the document — key clauses, dates, deadlines, obligations, risks, financials, named parties, or notable statements. Each title <= 60 chars, each detail 1-2 sentences quoting or referencing a specific value/name/section from the document.\n" +
+            "- questions: 4 to 6 concise, specific follow-up questions a reader would naturally want to ask about THIS document, referencing actual entities/sections/terms seen. No generic questions. Each question <= 120 chars.\n" +
+            "No prose outside the JSON.",
+          sheetIds: [],
+          documentIds: [data.documentId],
+          history: [],
+        },
+        { supabase, userId },
+        { skipCitationEnforcement: true },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/payment required|credits exhausted|quota|rate limit/i.test(message)) throw error;
+    }
 
 
 
