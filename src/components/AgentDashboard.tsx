@@ -1829,25 +1829,46 @@ export default function AgentDashboard() {
                   to = "/agent/person/$key";
                   params = { key: encodeEntityKey(a.person || a.title) };
                 }
+                const projectLabel = String((a.row as Row | undefined)?.["__project"] ?? payload?.project ?? "");
+                const activity = String(
+                  (a.row as Row | undefined)?.["Activity List"] ??
+                  (a.row as Row | undefined)?.["Process Descriptions"] ??
+                  (a.row as Row | undefined)?.["Process"] ??
+                  a.title ?? "",
+                );
+                const projectUrl = sources.find(s => s.project.label === projectLabel)?.project.url;
                 return (
-                  <Link
+                  <div
                     key={a.id}
-                    to={to}
-                    params={params}
-                    className={`group block rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-md ${TONE[a.severity]}`}
+                    className={`group relative rounded-xl border p-3 transition hover:translate-y-[-1px] hover:shadow-md ${TONE[a.severity]}`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
+                      <Link
+                        to={to}
+                        params={params}
+                        className="min-w-0 flex-1 outline-none"
+                      >
                         <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
                         <div className="mt-0.5 text-sm font-semibold leading-tight">{a.title}</div>
                         <div className="mt-1 text-xs opacity-90">{a.detail}</div>
                         <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium opacity-80 group-hover:opacity-100">
                           Open source & take action <ArrowRight className="h-3 w-3" />
                         </div>
-                      </div>
+                      </Link>
                       <Badge variant="outline" className="shrink-0 capitalize">{a.severity}</Badge>
                     </div>
-                  </Link>
+                    {(projectLabel || projectUrl) && (
+                      <div className="mt-2">
+                        <ViewSourceLink
+                          projectLabel={projectLabel}
+                          activity={activity}
+                          matchCol="Activity List"
+                          fallbackUrl={projectUrl}
+                          compact
+                        />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </CardContent>
