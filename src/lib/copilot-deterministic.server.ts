@@ -188,7 +188,7 @@ export async function deterministicAnswer(params: {
     const activeRows = rows.filter((r) => !isTerminal(r, statusCol));
     const matched = (tokens.length > 0 || phrases.length > 0)
       ? activeRows
-          .map((row) => ({ row, score: rowMatchesTokens(row, tokens, phrases) }))
+          .map((row) => ({ row, score: rowMatchesStrict(row, phrases, tokens) }))
           .filter((x) => x.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)
