@@ -24,6 +24,7 @@ import {
 import { useIsAdmin } from "@/hooks/useSession";
 import { VisibilityPicker, VisibilityBadge, type Visibility } from "@/components/VisibilityPicker";
 import { ChangeVisibilityDialog } from "@/components/ChangeVisibilityDialog";
+import { SourcesPanel } from "@/components/SourcesPanel";
 
 
 export const Route = createFileRoute("/_authenticated/sheets/")({
@@ -79,6 +80,10 @@ function SheetsPage() {
         </div>
 
       </div>
+
+      <SourcesPanel />
+
+
 
       {sheets.isLoading ? (
         <div className="flex justify-center py-8 text-muted-foreground">
