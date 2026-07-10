@@ -409,44 +409,40 @@ export async function runCopilotAgent(
 
           if (matches.length === 0) {
             mode = "keyword";
-            const tokens = query
-              .toLowerCase()
-              .split(/[^a-z0-9]+/i)
-              .filter((t) => t.length >= 3);
-            // Extract proper-noun phrases (e.g. "Kunti Devi") from the
-            // original query so we can require them as contiguous matches.
-            const phraseRe = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b/g;
-            const phrases: string[] = [];
-            let pm: RegExpExecArray | null;
-            while ((pm = phraseRe.exec(query))) phrases.push(pm[1].toLowerCase());
-            const hasSpecificTarget = phrases.length > 0 || tokens.length >= 2;
+            const { strictPhrases, normalizeHaystack, matchesAllPhrases, contentTokens } =
+              await import("./query-match");
+            const phrases = strictPhrases(query);
+            const tokens = contentTokens(query);
+            const hasSpecificTarget = phrases.length > 0;
             const scored = rows.map((r) => {
-              // Search VALUES only (not column headers) to avoid header-based
-              // false positives, and require ALL tokens to appear (AND) so
-              // "Kunti Devi" does not match every row containing "Devi".
-              const hay = Object.values(r.data)
-                .map((v) => String(v ?? ""))
-                .join(" \u0001 ")
-                .toLowerCase();
+              const hay = normalizeHaystack(Object.values(r.data));
+              // Strict rule: when the user's query contains a phrase (proper
+              // noun, quoted text, or 2+ content tokens), the row must
+              // contain EVERY such phrase as a contiguous substring. This
+              // prevents "Kunti Devi" from matching "Ram Devi" rows.
+              if (phrases.length > 0) {
+                if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
+                return { row_index: r.row_index, similarity: 10 + tokens.length };
+              }
+              // No strict target — fall back to per-token AND matching for
+              // single-word or purely generic queries.
               if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) {
                 return { row_index: r.row_index, similarity: 0 };
               }
-              let score = tokens.length;
-              for (const p of phrases) if (hay.includes(p)) score += 10;
-              return { row_index: r.row_index, similarity: score };
+              return { row_index: r.row_index, similarity: tokens.length };
             });
             scored.sort((a, b) => b.similarity - a.similarity);
             const anyHit = scored.some((s) => s.similarity > 0);
             if (anyHit) {
               matches = scored.filter((s) => s.similarity > 0).slice(0, k);
-            } else if (hasSpecificTarget) {
-              // User targeted a specific name/phrase and nothing matched —
-              // return empty rather than leaking unrelated rows.
+            } else if (hasSpecificTarget || tokens.length >= 1) {
+              // User asked for something specific and nothing matched —
+              // return empty rather than leaking unrelated rows. The model
+              // will then say it can't find that record in the selected sheet.
               matches = [];
             } else {
-              // Last-resort: hand the model the first k rows so it can still
-              // answer generic/temporal questions from the selected sheet
-              // instead of refusing with "no data".
+              // Truly empty/generic query — hand back the first k rows so
+              // the model can still answer positional/temporal questions.
               mode = "recent";
               matches = rows.slice(0, k).map((r) => ({ row_index: r.row_index, similarity: 0 }));
             }
