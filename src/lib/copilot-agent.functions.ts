@@ -1606,6 +1606,18 @@ export async function runCopilotAgent(
 
 
 
+    const finalMarkers = new Set<string>();
+    const finalInlineRe = /\[([^\]\n]{2,}?)\]/g;
+    let finalMarkerMatch: RegExpExecArray | null;
+    while ((finalMarkerMatch = finalInlineRe.exec(finalAnswer)) !== null) {
+      if (finalAnswer[finalMarkerMatch.index + finalMarkerMatch[0].length] === "(") continue;
+      const body = finalMarkerMatch[1].trim();
+      if (/^(sheet:|doc:|flags?\[)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
+    }
+    const finalCitationOk =
+      /^i don'?t have that in the current dashboard data\.?$/i.test(finalAnswer.trim()) ||
+      (finalMarkers.size > 0 && /(^|\n)\s*sources\s*:/i.test(finalAnswer));
+
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
     const rowsUsedBySheet = new Map<string, number>();
     const docsUsed = new Map<string, number>();
@@ -1695,8 +1707,8 @@ export async function runCopilotAgent(
               pageNo: l.pageNo,
             },
       ),
-      citationOk,
-      unverifiedCitations: unverified,
+      citationOk: finalCitationOk,
+      unverifiedCitations: finalCitationOk ? [] : unverified,
     };
   }
 
