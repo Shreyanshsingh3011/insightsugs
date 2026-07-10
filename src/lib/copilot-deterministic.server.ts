@@ -164,9 +164,13 @@ export async function deterministicAnswer(params: {
   docs: DocMeta[];
   maxRowsPerSheet?: number;
   ledgerSink?: DeterministicLedgerEntry[];
+  /** When true: only contiguous full-phrase matches are returned. No token
+   * AND fallback, no "recent rows" fallback, no surname-only leakage. */
+  strictMatch?: boolean;
 }): Promise<{ answer: string; citations: string[]; matched: boolean }> {
   const { supabase, question, regs, docs } = params;
   const cap = params.maxRowsPerSheet ?? 8000;
+  const strict = params.strictMatch === true;
   const intent = detectIntent(question);
   const tokens = tokenize(question);
   const cites: string[] = [];
