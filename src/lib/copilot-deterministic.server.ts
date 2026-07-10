@@ -184,7 +184,13 @@ export async function deterministicAnswer(params: {
     }),
   );
 
-  const phrases = extractPhrases(question);
+  const basePhrases = extractPhrases(question);
+  // In strict mode, if the query has no explicit phrase, treat the full
+  // content-token phrase as required — so a single-word query still needs
+  // a contiguous match of that word.
+  const phrases = strict && basePhrases.length === 0 && tokens.length >= 1
+    ? [tokens.join(" ")]
+    : basePhrases;
   for (const { reg, rows } of sheetRows) {
     if (rows.length === 0) continue;
     const cols = allColumns(rows);
