@@ -1622,14 +1622,140 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
 
 // ============================================================================
 // Auto-Insights digest: proactive "things you should know" per sheet
+// ----------------------------------------------------------------------------
+// We DO NOT route this through the grounded copilot agent — that agent is
+// tuned for Q&A with strict citations and mangles/refuses JSON-shaped
+// prompts, which is what previously produced "rubbish" cards. Instead we
+// build a compact structured context from the actual sheet/document data
+// and ask the AI to summarise it into meaningful, specific findings. If the
+// AI is unavailable we fall back to a much richer deterministic engine.
 // ============================================================================
+
+type InsightSeverity = "info" | "warning" | "critical";
+type ParsedInsights = {
+  insights: { title: string; detail: string; severity: InsightSeverity }[];
+  questions: string[];
+};
+
+function parseInsightsJson(raw: string): ParsedInsights {
+  const out: ParsedInsights = { insights: [], questions: [] };
+  if (!raw) return out;
+  const text = raw.trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return out;
+  let parsed: any;
+  try { parsed = JSON.parse(text.slice(start, end + 1)); } catch { return out; }
+  const rawInsights = Array.isArray(parsed?.insights) ? parsed.insights : [];
+  out.insights = rawInsights
+    .filter((i: any) => i && typeof i.title === "string" && typeof i.detail === "string")
+    .map((i: any) => ({
+      title: String(i.title).slice(0, 100),
+      detail: String(i.detail).slice(0, 400),
+      severity: (i.severity === "critical" || i.severity === "warning" ? i.severity : "info") as InsightSeverity,
+    }))
+    .slice(0, 7);
+  const rawQ = Array.isArray(parsed?.questions) ? parsed.questions : [];
+  out.questions = rawQ
+    .filter((q: any) => typeof q === "string" && q.trim().length > 0)
+    .map((q: string) => q.trim().slice(0, 160))
+    .slice(0, 6);
+  return out;
+}
+
+async function callInsightsAi(system: string, user: string): Promise<string> {
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const body = {
+    model: "google/gemini-2.5-flash",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    temperature: 0.2,
+    response_format: { type: "json_object" as const },
+  };
+  if (lovableKey) {
+    try {
+      const { lovableAiFetchWithFallback } = await import("./ai-fallback.server");
+      const res = await lovableAiFetchWithFallback(
+        "https://ai.gateway.lovable.dev/v1/chat/completions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKey },
+          body: JSON.stringify(body),
+        },
+      );
+      if (res.ok) {
+        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        const txt = j.choices?.[0]?.message?.content ?? "";
+        if (txt.trim()) return txt;
+      }
+    } catch { /* fall through */ }
+  }
+  if (geminiKey) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${geminiKey}` },
+          body: JSON.stringify({ ...body, model: "gemini-2.5-flash" }),
+        },
+      );
+      if (res.ok) {
+        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+        return j.choices?.[0]?.message?.content ?? "";
+      }
+    } catch { /* fall through */ }
+  }
+  return "";
+}
+
+// Build a compact, information-dense context for a sheet: column list,
+// terminal-status breakdown, top categorical values, numeric stats, and a
+// small sample of active (non-completed) rows. Keeps token usage predictable.
+function buildSheetContext(sheetName: string, storedRows: any[]): { context: string; rowCount: number } {
+  const { isTerminalRow, statusBucketForRow } = require("./status-utils") as typeof import("./status-utils");
+  const rows: Record<string, unknown>[] = storedRows.map((r) => ({
+    ...(r.canonical ?? {}),
+    ...(r.extras ?? {}),
+  }));
+  const active = rows.filter((r) => !isTerminalRow(r));
+  const cols = Array.from(rows.reduce((s, r) => { Object.keys(r).forEach((k) => s.add(k)); return s; }, new Set<string>()));
+  const buckets: Record<string, number> = {};
+  for (const r of rows) {
+    const b = statusBucketForRow(r);
+    buckets[b] = (buckets[b] ?? 0) + 1;
+  }
+  const lines: string[] = [];
+  lines.push(`SHEET: ${sheetName}`);
+  lines.push(`TOTAL ROWS: ${rows.length}  ACTIVE (non-terminal): ${active.length}`);
+  lines.push(`STATUS BREAKDOWN: ${Object.entries(buckets).map(([k, v]) => `${k}=${v}`).join(", ")}`);
+  lines.push(`COLUMNS (${cols.length}): ${cols.slice(0, 40).join(" | ")}`);
+  // Sample active rows first, then a few terminal for contrast.
+  const sample = [...active.slice(0, 12), ...rows.filter((r) => !active.includes(r)).slice(0, 3)];
+  lines.push(`SAMPLE ROWS (JSON, active-first):`);
+  for (const r of sample) {
+    const compact: Record<string, unknown> = {};
+    for (const k of Object.keys(r).slice(0, 18)) {
+      const v = r[k];
+      if (v == null || v === "") continue;
+      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+      compact[k] = s.length > 80 ? s.slice(0, 80) + "…" : s;
+    }
+    lines.push(JSON.stringify(compact));
+  }
+  return { context: lines.join("\n"), rowCount: rows.length };
+}
+
 export const generateAutoInsights = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
     z.object({ sheetId: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase } = context;
     const { data: reg, error: regErr } = await supabase
       .from("sheet_registry")
       .select("id, display_name, sheet_type")
@@ -1638,81 +1764,39 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found or you don't have access");
 
-    // Call the copilot agent directly in-process (not via RPC stub, which
-    // would fail with "Server function info not found" in production).
-    const { runCopilotAgent } = await import("./copilot-agent.functions");
-    let out: { answer: string } = { answer: "" };
-    try {
-      out = await runCopilotAgent(
-        {
-          question:
-            "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this sheet.\n" +
-            "Output ONLY a JSON object with this exact shape:\n" +
-            '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
-            "- insights: 5 to 7 short, surprising or important findings — anomalies, outliers, top movers, concentrations, risk signals, or noteworthy trends. Each title <= 60 chars, each detail 1-2 sentences with at least one specific number/name from the data.\n" +
-            "- questions: 4 to 6 concise, specific follow-up questions a user would want to ask next, phrased naturally and referencing actual entities/columns/values seen in the data (e.g. names, project codes, dates). No generic questions. Each question <= 120 chars.\n" +
-            "No prose outside the JSON.",
-          sheetIds: [data.sheetId],
-          documentIds: [],
-          history: [],
-        },
-        { supabase, userId },
-        { skipCitationEnforcement: true },
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/payment required|credits exhausted|quota|rate limit/i.test(message)) throw error;
+    const { data: rows } = await supabase
+      .from("sheet_rows")
+      .select("row_index, canonical, extras")
+      .eq("sheet_registry_id", data.sheetId)
+      .order("row_index", { ascending: true })
+      .range(0, 4999);
+
+    const storedRows = (rows ?? []) as any[];
+    const { context: ctx, rowCount } = buildSheetContext(reg.display_name, storedRows);
+
+    const system =
+      "You produce grounded, specific Auto-Insights for a single spreadsheet. " +
+      "You MUST use the actual values (names, numbers, dates, statuses) from the SAMPLE and STATUS BREAKDOWN provided. " +
+      "Do NOT invent data. Do NOT write generic advice. Every insight must cite at least one concrete value or count from the context. " +
+      "Focus on: pending/delayed items, upcoming or overdue dates, concentrations, outliers, data gaps, and notable named entities. " +
+      "Ignore rows that are already Completed unless they are contextually important. " +
+      'Return ONLY JSON: {"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}],"questions":[string]}. ' +
+      "5-7 insights (title ≤ 60 chars, detail 1-2 sentences with specifics). 4-6 questions (≤ 120 chars) referencing real values/columns.";
+
+    let parsed: ParsedInsights = { insights: [], questions: [] };
+    if (rowCount > 0) {
+      const raw = await callInsightsAi(system, ctx);
+      parsed = parseInsightsJson(raw);
     }
 
-
-
-    let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
-    let questions: string[] = [];
-    try {
-      const text = (out.answer as string).trim();
-      const start = text.indexOf("{");
-      const end = text.lastIndexOf("}");
-      if (start >= 0 && end > start) {
-        const parsed = JSON.parse(text.slice(start, end + 1));
-        const rawInsights = Array.isArray(parsed?.insights) ? parsed.insights : [];
-        insights = rawInsights
-          .filter(
-            (i: unknown): i is { title: string; detail: string; severity?: string } =>
-              !!i && typeof (i as any).title === "string" && typeof (i as any).detail === "string",
-          )
-          .map((i: any) => ({
-            title: i.title.slice(0, 100),
-            detail: i.detail.slice(0, 400),
-            severity: (i.severity === "critical" || i.severity === "warning"
-              ? i.severity
-              : "info") as "info" | "warning" | "critical",
-          }))
-          .slice(0, 7);
-        const rawQ = Array.isArray(parsed?.questions) ? parsed.questions : [];
-        questions = rawQ
-          .filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
-          .map((q: string) => q.trim().slice(0, 160))
-          .slice(0, 6);
-      }
-    } catch {
-      insights = [];
-      questions = [];
-    }
-
-    if (insights.length === 0) {
+    if (parsed.insights.length === 0) {
       const { buildSheetAutoInsights } = await import("./auto-insights-fallback.server");
-      const { data: rows } = await supabase
-        .from("sheet_rows")
-        .select("row_index, canonical, extras")
-        .eq("sheet_registry_id", data.sheetId)
-        .order("row_index", { ascending: true })
-        .range(0, 4999);
-      const fallback = buildSheetAutoInsights(reg.display_name, (rows ?? []) as any[]);
-      insights = fallback.insights;
-      if (questions.length === 0) questions = fallback.questions;
+      const fallback = buildSheetAutoInsights(reg.display_name, storedRows);
+      parsed.insights = fallback.insights;
+      if (parsed.questions.length === 0) parsed.questions = fallback.questions;
     }
 
-    return { sheetId: reg.id, sheetName: reg.display_name, insights, questions };
+    return { sheetId: reg.id, sheetName: reg.display_name, insights: parsed.insights, questions: parsed.questions };
   });
 
 // ============================================================================
@@ -1724,7 +1808,7 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     z.object({ documentId: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
+    const { supabase } = context;
     const { data: doc, error: docErr } = await supabase
       .from("documents")
       .select("id, name, summary, key_points, page_count")
@@ -1733,73 +1817,51 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     if (docErr) throw new Error(docErr.message);
     if (!doc) throw new Error("Document not found or you don't have access");
 
-    const { runCopilotAgent } = await import("./copilot-agent.functions");
-    let out: { answer: string } = { answer: "" };
-    try {
-      out = await runCopilotAgent(
-        {
-          question:
-            "You are producing an Auto-Insights digest AND a set of suggested follow-up questions grounded in this document.\n" +
-            "Output ONLY a JSON object with this exact shape:\n" +
-            '{"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}], "questions":[string]}\n' +
-            "- insights: 5 to 7 short, important findings from the document — key clauses, dates, deadlines, obligations, risks, financials, named parties, or notable statements. Each title <= 60 chars, each detail 1-2 sentences quoting or referencing a specific value/name/section from the document.\n" +
-            "- questions: 4 to 6 concise, specific follow-up questions a reader would naturally want to ask about THIS document, referencing actual entities/sections/terms seen. No generic questions. Each question <= 120 chars.\n" +
-            "No prose outside the JSON.",
-          sheetIds: [],
-          documentIds: [data.documentId],
-          history: [],
-        },
-        { supabase, userId },
-        { skipCitationEnforcement: true },
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/payment required|credits exhausted|quota|rate limit/i.test(message)) throw error;
+    const { data: chunks } = await supabase
+      .from("document_chunks")
+      .select("content, page_no, chunk_index")
+      .eq("document_id", data.documentId)
+      .order("chunk_index", { ascending: true })
+      .range(0, 79);
+
+    const keyPoints = Array.isArray((doc as any).key_points)
+      ? ((doc as any).key_points as unknown[]).map((p) => String(p)).filter(Boolean)
+      : [];
+    const snippets = (chunks ?? [])
+      .map((c: any) => ({ p: c.page_no ?? 0, t: String(c.content ?? "").trim() }))
+      .filter((c) => c.t.length > 0);
+
+    const lines: string[] = [];
+    lines.push(`DOCUMENT: ${doc.name}`);
+    if ((doc as any).page_count) lines.push(`PAGES: ${(doc as any).page_count}`);
+    if ((doc as any).summary) lines.push(`SUMMARY: ${String((doc as any).summary).slice(0, 800)}`);
+    if (keyPoints.length) lines.push(`KEY POINTS:\n- ${keyPoints.slice(0, 10).join("\n- ")}`);
+    lines.push(`EXCERPTS (page:text):`);
+    let budget = 8000;
+    for (const s of snippets) {
+      const seg = `p.${s.p}: ${s.t.slice(0, 500)}`;
+      if (seg.length > budget) break;
+      lines.push(seg);
+      budget -= seg.length;
+    }
+    const ctx = lines.join("\n");
+
+    const system =
+      "You produce grounded Auto-Insights for a single document. " +
+      "You MUST reference specific clauses, dates, amounts, obligations, parties, or terms drawn from the SUMMARY, KEY POINTS, or EXCERPTS. " +
+      "Do NOT invent facts. Do NOT write generic advice. " +
+      'Return ONLY JSON: {"insights":[{"title":string,"detail":string,"severity":"info"|"warning"|"critical"}],"questions":[string]}. ' +
+      "5-7 insights (title ≤ 60 chars, detail 1-2 sentences quoting or paraphrasing specific document content). " +
+      "4-6 questions (≤ 120 chars) tied to real terms/sections seen in the document.";
+
+    let parsed: ParsedInsights = { insights: [], questions: [] };
+    if (snippets.length > 0 || keyPoints.length > 0 || (doc as any).summary) {
+      const raw = await callInsightsAi(system, ctx);
+      parsed = parseInsightsJson(raw);
     }
 
-
-
-    let insights: { title: string; detail: string; severity: "info" | "warning" | "critical" }[] = [];
-    let questions: string[] = [];
-    try {
-      const text = (out.answer as string).trim();
-      const start = text.indexOf("{");
-      const end = text.lastIndexOf("}");
-      if (start >= 0 && end > start) {
-        const parsed = JSON.parse(text.slice(start, end + 1));
-        const rawInsights = Array.isArray(parsed?.insights) ? parsed.insights : [];
-        insights = rawInsights
-          .filter(
-            (i: unknown): i is { title: string; detail: string; severity?: string } =>
-              !!i && typeof (i as any).title === "string" && typeof (i as any).detail === "string",
-          )
-          .map((i: any) => ({
-            title: i.title.slice(0, 100),
-            detail: i.detail.slice(0, 400),
-            severity: (i.severity === "critical" || i.severity === "warning"
-              ? i.severity
-              : "info") as "info" | "warning" | "critical",
-          }))
-          .slice(0, 7);
-        const rawQ = Array.isArray(parsed?.questions) ? parsed.questions : [];
-        questions = rawQ
-          .filter((q: unknown) => typeof q === "string" && q.trim().length > 0)
-          .map((q: string) => q.trim().slice(0, 160))
-          .slice(0, 6);
-      }
-    } catch {
-      insights = [];
-      questions = [];
-    }
-
-    if (insights.length === 0) {
+    if (parsed.insights.length === 0) {
       const { buildDocumentAutoInsights } = await import("./auto-insights-fallback.server");
-      const { data: chunks } = await supabase
-        .from("document_chunks")
-        .select("content, page_no")
-        .eq("document_id", data.documentId)
-        .order("chunk_index", { ascending: true })
-        .range(0, 49);
       const fallback = buildDocumentAutoInsights({
         name: doc.name,
         summary: (doc as any).summary ?? null,
@@ -1807,11 +1869,11 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
         page_count: (doc as any).page_count ?? null,
         chunks: (chunks ?? []) as any[],
       });
-      insights = fallback.insights;
-      if (questions.length === 0) questions = fallback.questions;
+      parsed.insights = fallback.insights;
+      if (parsed.questions.length === 0) parsed.questions = fallback.questions;
     }
 
-    return { documentId: doc.id, documentName: doc.name, insights, questions };
+    return { documentId: doc.id, documentName: doc.name, insights: parsed.insights, questions: parsed.questions };
   });
 
 
