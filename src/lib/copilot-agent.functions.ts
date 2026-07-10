@@ -1272,6 +1272,74 @@ export async function runCopilotAgent(
       { role: "user" as const, content: data.question },
     ];
 
+    // 5a) TEMPORAL PRE-FLIGHT — deterministically run date_query_rows for
+    // temporal questions on every scoped sheet, seed the ledger, and inject
+    // the results into the system prompt. This guarantees the answer is
+    // grounded in the selected sheet even when the model skips the tool
+    // (e.g. Gemini fallback under 402 pressure).
+    const qLower = data.question.toLowerCase();
+    const temporalOp: "earliest" | "latest" | "overdue" | "tat_breached" | null =
+      /\b(earliest|oldest|first\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
+        ? "earliest"
+        : /\b(latest|most\s+recent|newest|last\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
+          ? "latest"
+          : /\b(overdue|past\s+due|late|slipped|behind\s+schedule)\b/.test(qLower)
+            ? "overdue"
+            : /\btat\b.*\b(breach|missed|exceed|over)|sla\s+(missed|breach)/.test(qLower)
+              ? "tat_breached"
+              : null;
+    const columnHint = /start/.test(qLower)
+      ? "start"
+      : /due|deadline/.test(qLower)
+        ? "due"
+        : /deliver/.test(qLower)
+          ? "delivery"
+          : /\beta\b/.test(qLower)
+            ? "eta"
+            : /receipt/.test(qLower)
+              ? "receipt"
+              : /dispatch/.test(qLower)
+                ? "dispatch"
+                : null;
+
+    const preflightBlocks: string[] = [];
+    if (temporalOp && regs.length > 0) {
+      for (const r of regs) {
+        try {
+          const res: any = await (dateQueryRows as any).execute?.({
+            sheet_id: r.id,
+            op: temporalOp,
+            column: null,
+            column_hint: columnHint,
+            days: null,
+            from: null,
+            to: null,
+            tat_column: null,
+            status_column: null,
+            limit: 15,
+          });
+          if (res?._resultForModel?.rows?.length) {
+            preflightBlocks.push(
+              `Sheet "${r.display_name}" — op=${temporalOp}${columnHint ? `, hint=${columnHint}` : ""}, date_column=${res._resultForModel.date_column}:\n` +
+                JSON.stringify(res._resultForModel.rows).slice(0, 3500),
+            );
+          } else if (res?.error) {
+            preflightBlocks.push(`Sheet "${r.display_name}" — ${res.error}`);
+          } else {
+            preflightBlocks.push(`Sheet "${r.display_name}" — 0 rows matched op=${temporalOp}.`);
+          }
+        } catch (e) {
+          preflightBlocks.push(`Sheet "${r.display_name}" — preflight failed: ${(e as Error)?.message ?? "error"}`);
+        }
+      }
+    }
+    const systemWithPreflight = preflightBlocks.length
+      ? system +
+        "\n\nPRE-FLIGHT RESULTS (already executed against the selected sheet(s) — DO NOT call date_query_rows again for the same question; answer directly from these rows and cite each one using the `cite` marker from the row):\n\n" +
+        preflightBlocks.join("\n\n")
+      : system;
+
+
     const toolset = {
       get_sheet_schema: getSheetSchema,
       search_sheet_rows: searchSheetRows,
