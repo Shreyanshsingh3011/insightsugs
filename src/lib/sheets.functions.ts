@@ -1716,7 +1716,7 @@ async function callInsightsAi(system: string, user: string): Promise<string> {
 // terminal-status breakdown, top categorical values, numeric stats, and a
 // small sample of active (non-completed) rows. Keeps token usage predictable.
 function buildSheetContext(sheetName: string, storedRows: any[]): { context: string; rowCount: number } {
-  const { isTerminalRow, statusBucketForRow } = require("./status-utils") as typeof import("./status-utils");
+  
   const rows: Record<string, unknown>[] = storedRows.map((r) => ({
     ...(r.canonical ?? {}),
     ...(r.extras ?? {}),
