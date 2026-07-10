@@ -1699,6 +1699,19 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
       questions = [];
     }
 
+    if (insights.length === 0) {
+      const { buildSheetAutoInsights } = await import("./auto-insights-fallback.server");
+      const { data: rows } = await supabase
+        .from("sheet_rows")
+        .select("row_index, canonical, extras")
+        .eq("sheet_registry_id", data.sheetId)
+        .order("row_index", { ascending: true })
+        .range(0, 4999);
+      const fallback = buildSheetAutoInsights(reg.display_name, (rows ?? []) as any[]);
+      insights = fallback.insights;
+      if (questions.length === 0) questions = fallback.questions;
+    }
+
     return { sheetId: reg.id, sheetName: reg.display_name, insights, questions };
   });
 
@@ -1714,7 +1727,7 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { data: doc, error: docErr } = await supabase
       .from("documents")
-      .select("id, name")
+      .select("id, name, summary, key_points, page_count")
       .eq("id", data.documentId)
       .maybeSingle();
     if (docErr) throw new Error(docErr.message);
@@ -1777,6 +1790,25 @@ export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
     } catch {
       insights = [];
       questions = [];
+    }
+
+    if (insights.length === 0) {
+      const { buildDocumentAutoInsights } = await import("./auto-insights-fallback.server");
+      const { data: chunks } = await supabase
+        .from("document_chunks")
+        .select("content, page_no")
+        .eq("document_id", data.documentId)
+        .order("chunk_index", { ascending: true })
+        .range(0, 49);
+      const fallback = buildDocumentAutoInsights({
+        name: doc.name,
+        summary: (doc as any).summary ?? null,
+        key_points: (doc as any).key_points ?? [],
+        page_count: (doc as any).page_count ?? null,
+        chunks: (chunks ?? []) as any[],
+      });
+      insights = fallback.insights;
+      if (questions.length === 0) questions = fallback.questions;
     }
 
     return { documentId: doc.id, documentName: doc.name, insights, questions };
