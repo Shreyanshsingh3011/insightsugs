@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { lovableAiFetchWithFallback } from "./ai-fallback.server";
+
 
 const InputSchema = z.object({
   system: z.string().optional(),
@@ -18,7 +20,7 @@ export const generateGeminiFn = createServerFn({ method: "POST" })
     if (data.system) messages.push({ role: "system", content: data.system });
     messages.push({ role: "user", content: data.prompt });
 
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const res = await lovableAiFetchWithFallback("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -30,6 +32,7 @@ export const generateGeminiFn = createServerFn({ method: "POST" })
         temperature: data.temperature ?? 0.4,
       }),
     });
+
 
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
