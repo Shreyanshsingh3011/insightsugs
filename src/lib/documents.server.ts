@@ -8,6 +8,43 @@ const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY!;
 
+function isQuotaOrBilling(status: number, text: string) {
+  return status === 402 || status === 429 || status >= 500 || /payment required|credits exhausted|quota|rate limit/i.test(text);
+}
+
+async function embedTextsWithGemini(inputs: string[]): Promise<number[][]> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Missing GEMINI_API_KEY on the server");
+  const model = "models/gemini-embedding-001";
+  const BATCH = 96;
+  const out: number[][] = [];
+  for (let i = 0; i < inputs.length; i += BATCH) {
+    const batch = inputs.slice(i, i + BATCH);
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${model}:batchEmbedContents?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: batch.map((text) => ({
+            model,
+            content: { parts: [{ text }] },
+            taskType: "RETRIEVAL_DOCUMENT",
+            outputDimensionality: 768,
+          })),
+        }),
+      },
+    );
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Gemini embedding failed (${res.status}): ${t.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as { embeddings?: { values?: number[] }[] };
+    for (const row of json.embeddings ?? []) out.push(row.values ?? []);
+  }
+  return out;
+}
+
 export function getAdminSupabase() {
   return createClient<Database>(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -192,6 +229,7 @@ export function chunkText(
 
 export async function embedTexts(inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
+  if (!LOVABLE_API_KEY) return embedTextsWithGemini(inputs);
   // Larger batches reduce HTTP round-trips for big documents.
   const BATCH = 96;
   const out: number[][] = [];
@@ -211,6 +249,9 @@ export async function embedTexts(inputs: string[]): Promise<number[][]> {
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
+      if (isQuotaOrBilling(res.status, t) && process.env.GEMINI_API_KEY) {
+        return embedTextsWithGemini(inputs);
+      }
       throw new Error(`Embedding failed (${res.status}): ${t.slice(0, 200)}`);
     }
     const j = (await res.json()) as { data?: { embedding: number[] }[] };

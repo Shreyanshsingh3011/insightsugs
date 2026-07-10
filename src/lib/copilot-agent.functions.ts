@@ -259,15 +259,13 @@ export async function runCopilotAgent(
 
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
-    if (!key) throw new Error("Missing LOVABLE_API_KEY");
+    const directGeminiKey = process.env.GEMINI_API_KEY;
+    if (!key && !directGeminiKey) throw new Error("Missing AI provider configuration");
 
     // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
-    const [
-      { generateText, stepCountIs, tool },
-      { createLovableAiGatewayProvider },
-    ] = await Promise.all([
+    const [{ generateText, stepCountIs, tool }, gatewayModule] = await Promise.all([
       import("ai"),
-      import("@/lib/ai-gateway"),
+      key ? import("@/lib/ai-gateway") : Promise.resolve(null),
     ]);
 
 
@@ -702,38 +700,64 @@ export async function runCopilotAgent(
         withTrace("search_doc_chunks", { document_id, query, k }, async () => {
           const doc = docById.get(document_id);
           if (!doc) return { error: "Unknown document_id" };
-          // Doc chunks are stored at 768d (google/gemini-embedding-001 via
-          // documents.server.embedTexts). Must query with the SAME model or
-          // pgvector's <=> errors on dim mismatch and the RPC returns nothing.
-          const { embedTexts: embedDocQuery } = await import("./documents.server");
-          const [qvec] = await embedDocQuery([query]);
-          const { data: matches, error } = await supabase.rpc("match_doc_chunks", {
-            _user_id: userId,
-            _query: qvec as any,
-            _scope_folder: null as unknown as string,
-            _scope_document: document_id,
-            _match_count: k,
-          });
-          if (error) return { error: error.message };
-          const results = (matches ?? []).map((m: any) => {
+          let matches: any[] = [];
+          let mode: "vector" | "keyword" = "vector";
+          try {
+            // Doc chunks are stored at 768d (google/gemini-embedding-001 via
+            // documents.server.embedTexts). Must query with the SAME model or
+            // pgvector's <=> errors on dim mismatch and the RPC returns nothing.
+            const { embedTexts: embedDocQuery } = await import("./documents.server");
+            const [qvec] = await embedDocQuery([query]);
+            const { data: vectorMatches, error } = await supabase.rpc("match_doc_chunks", {
+              _user_id: userId,
+              _query: qvec as any,
+              _scope_folder: null as unknown as string,
+              _scope_document: document_id,
+              _match_count: k,
+            });
+            if (error) throw new Error(error.message);
+            matches = (vectorMatches ?? []) as any[];
+          } catch {
+            mode = "keyword";
+            const { data: chunks, error } = await supabase
+              .from("document_chunks")
+              .select("document_id, content, page_no")
+              .eq("document_id", document_id)
+              .limit(300);
+            if (error) return { error: error.message };
+            const tokens = query
+              .toLowerCase()
+              .split(/[^a-z0-9]+/i)
+              .filter((t) => t.length >= 3);
+            const scored = ((chunks ?? []) as any[]).map((chunk) => {
+              const hay = String(chunk.content ?? "").toLowerCase();
+              let score = 0;
+              for (const token of tokens) if (hay.includes(token)) score++;
+              return { ...chunk, document_name: doc.name, similarity: score };
+            });
+            scored.sort((a, b) => Number(b.similarity ?? 0) - Number(a.similarity ?? 0));
+            const anyHit = scored.some((s) => Number(s.similarity ?? 0) > 0);
+            matches = (anyHit ? scored.filter((s) => Number(s.similarity ?? 0) > 0) : scored).slice(0, k);
+          }
+          const results = matches.map((m: any) => {
             ledger.push({
               kind: "doc_chunk",
-              documentId: m.document_id,
-              documentName: m.document_name,
+              documentId: m.document_id ?? document_id,
+              documentName: m.document_name ?? doc.name,
               pageNo: m.page_no ?? 0,
               snippet: m.content ?? "",
             });
             return {
-              document: m.document_name,
+              document: m.document_name ?? doc.name,
               page: m.page_no ?? 0,
               snippet: (m.content ?? "").slice(0, 400),
               similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
-              cite: `[doc:${m.document_name} p.${m.page_no ?? 0}]`,
+              cite: `[doc:${m.document_name ?? doc.name} p.${m.page_no ?? 0}]`,
             };
           });
           return {
-            _summary: `${results.length} chunks from "${doc.name}"`,
-            _resultForModel: { document: doc.name, matches: results },
+            _summary: `${results.length} chunks from "${doc.name}" (${mode})`,
+            _resultForModel: { document: doc.name, mode, matches: results },
           };
         }),
     });
@@ -957,9 +981,6 @@ export async function runCopilotAgent(
       { role: "user" as const, content: data.question },
     ];
 
-    const gateway = createLovableAiGatewayProvider(key);
-    const model = gateway("google/gemini-3-flash-preview");
-
     const toolset = {
       get_sheet_schema: getSheetSchema,
       search_sheet_rows: searchSheetRows,
@@ -975,15 +996,14 @@ export async function runCopilotAgent(
     };
 
     async function runWithGeminiFallback(): Promise<{ text?: string }> {
-      const geminiKey = process.env.GEMINI_API_KEY;
-      if (!geminiKey) {
+      if (!directGeminiKey) {
         return {
           text:
             "I can't generate this right now because the AI provider is unavailable due to payment or quota limits, and no Gemini fallback key is configured. Your sheet data is still available; please retry after credits refresh.",
         };
       }
       const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-      const google = createGoogleGenerativeAI({ apiKey: geminiKey });
+      const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
       toolTrace.push({
         name: "ai_model",
         args: { provider: "gemini_direct_fallback", model: "gemini-2.5-flash" },
@@ -1001,30 +1021,36 @@ export async function runCopilotAgent(
     }
 
     let result: { text?: string };
-    try {
-      result = await generateText({
-        model,
-        system,
-        messages: messages as any,
-        tools: toolset,
-        stopWhen: stepCountIs(50),
-      });
-    } catch (error) {
-      if (!isAiBillingOrQuotaError(error)) throw error;
+    if (!key) {
+      result = await runWithGeminiFallback();
+    } else {
       try {
-        result = await runWithGeminiFallback();
-      } catch (fallbackError) {
-        toolTrace.push({
-          name: "ai_model",
-          args: { provider: "gemini_direct_fallback" },
-          ok: false,
-          ms: 0,
-          summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
+        const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
+        const model = gateway("google/gemini-3-flash-preview");
+        result = await generateText({
+          model,
+          system,
+          messages: messages as any,
+          tools: toolset,
+          stopWhen: stepCountIs(50),
         });
-        result = {
-          text:
-            "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
-        };
+      } catch (error) {
+        if (!isAiBillingOrQuotaError(error)) throw error;
+        try {
+          result = await runWithGeminiFallback();
+        } catch (fallbackError) {
+          toolTrace.push({
+            name: "ai_model",
+            args: { provider: "gemini_direct_fallback" },
+            ok: false,
+            ms: 0,
+            summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
+          });
+          result = {
+            text:
+              "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
+          };
+        }
       }
     }
 
@@ -1192,8 +1218,16 @@ export async function runCopilotAgent(
     // 10) Follow-up suggestions (best-effort, non-blocking).
     let suggestions: string[] = [];
     try {
+      let suggestionModel: any;
+      if (directGeminiKey) {
+        const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+        suggestionModel = createGoogleGenerativeAI({ apiKey: directGeminiKey })("gemini-2.5-flash");
+      } else if (key && gatewayModule) {
+        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
+      }
+      if (!suggestionModel) throw new Error("No suggestion model available");
       const sug = await generateText({
-        model,
+        model: suggestionModel,
         system:
           "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
         prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
