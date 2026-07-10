@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { lovableAiFetchWithFallback } from "./ai-fallback.server";
+
 
 const InputSchema = z.object({
   system: z.string().optional(),
