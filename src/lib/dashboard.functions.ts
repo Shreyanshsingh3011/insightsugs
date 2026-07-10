@@ -9,19 +9,21 @@ import type {
   FlagEntry,
 } from "@/lib/dashboard-data";
 import { resolvePerson, type ProfileDirectory } from "@/lib/person-resolver";
+import { isTerminalRow, rowStatusText, statusBucket } from "@/lib/status-utils";
 
 
 type Row = Record<string, string>;
 
 // Normalize a status string into one of our display buckets.
 function bucketStatus(raw: string): string {
-  const v = (raw || "").trim().toLowerCase();
+  const v = (raw || "").trim();
   if (!v) return "Unknown";
-  if (/(complete|done|closed|paid|received)/.test(v)) return "Completed";
-  if (/(progress|ongoing|wip|active)/.test(v)) return "In Progress";
-  if (/(block|hold|stuck|stop)/.test(v)) return "Blocked";
-  if (/(delay|late|overdue|breach|pending|due)/.test(v)) return "Delayed";
-  if (/(not start|yet to|todo|planned|scheduled)/.test(v)) return "Yet to Start";
+  const terminalAware = statusBucket(v);
+  if (terminalAware !== "Other") return terminalAware === "Not Started" ? "Yet to Start" : terminalAware;
+  const lower = v.toLowerCase();
+  if (/(block|hold|stuck|stop)/.test(lower)) return "Blocked";
+  if (/(delay|late|overdue|breach|pending|due)/.test(lower)) return "Delayed";
+  if (/(not start|yet to|todo|planned|scheduled)/.test(lower)) return "Yet to Start";
   return raw;
 }
 
@@ -80,7 +82,7 @@ function normalizeRow(
 ): NormalizedRow {
 
   const now = new Date();
-  const status = bucketStatus(merged.status || merged.breach || "");
+  const status = isTerminalRow(merged) ? "Completed" : bucketStatus(rowStatusText(merged) || merged.status || merged.breach || "");
   const isCompleted = status === "Completed";
   const isBlocked = status === "Blocked";
 
