@@ -383,10 +383,12 @@ export async function runCopilotAgent(
           const rows = await getSheetRows(sheet_id);
           const byIndex = new Map(rows.map((r) => [r.row_index, r.data]));
 
-          // Try vector search first; fall back to keyword scan if embeddings
-          // are unavailable (e.g. Lovable AI credits exhausted → 402/429).
+          // Try vector search first; fall back to keyword scan when embeddings
+          // are unavailable (402/429) OR when the RPC returns zero matches
+          // (missing/mismatched embeddings for this sheet). Guarantees the
+          // model always gets rows so it never refuses on a valid selected sheet.
           let matches: Array<{ row_index: number; similarity?: number }> = [];
-          let mode: "vector" | "keyword" = "vector";
+          let mode: "vector" | "keyword" | "recent" = "vector";
           try {
             const { embedQuery } = await import("./embeddings.server");
             void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
@@ -400,24 +402,39 @@ export async function runCopilotAgent(
             if (error) throw new Error(error.message);
             matches = (data ?? []) as any;
           } catch {
-            // Keyword-scan fallback: rank rows by count of query-token hits
-            // across all cell values. Guarantees the model still gets rows
-            // when embeddings are down, so auto-insights doesn't come back
-            // empty on 402/429.
+            // handled below via keyword fallback
+          }
+
+          if (matches.length === 0) {
             mode = "keyword";
             const tokens = query
               .toLowerCase()
               .split(/[^a-z0-9]+/i)
               .filter((t) => t.length >= 3);
             const scored = rows.map((r) => {
-              const hay = Object.values(r.data).map((v) => String(v ?? "").toLowerCase()).join(" \u0001 ");
+              // Include column headers so questions like "Which Start Date…"
+              // still match rows in a "Start Date" column.
+              const hay = [
+                ...Object.keys(r.data),
+                ...Object.values(r.data).map((v) => String(v ?? "")),
+              ]
+                .join(" \u0001 ")
+                .toLowerCase();
               let score = 0;
               for (const t of tokens) if (hay.includes(t)) score++;
               return { row_index: r.row_index, similarity: score };
             });
             scored.sort((a, b) => b.similarity - a.similarity);
             const anyHit = scored.some((s) => s.similarity > 0);
-            matches = (anyHit ? scored.filter((s) => s.similarity > 0) : scored).slice(0, k);
+            if (anyHit) {
+              matches = scored.filter((s) => s.similarity > 0).slice(0, k);
+            } else {
+              // Last-resort: hand the model the first k rows so it can still
+              // answer generic/temporal questions from the selected sheet
+              // instead of refusing with "no data".
+              mode = "recent";
+              matches = rows.slice(0, k).map((r) => ({ row_index: r.row_index, similarity: 0 }));
+            }
           }
 
           const results = matches.map((m: any) => {
