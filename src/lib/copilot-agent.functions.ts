@@ -1626,7 +1626,19 @@ export async function runCopilotAgent(
           lines.join("\n") +
           `\n\nSources:\n${Array.from(new Set(cites)).map((m) => `- ${m}`).join("\n")}`;
       } else {
-        finalAnswer = "I don't have that in the current dashboard data.";
+        // Last resort: run the deterministic engine directly against the
+        // selected sources so a refusal is never sent when local data exists.
+        const { deterministicAnswer } = await import("./copilot-deterministic.server");
+        const det = await deterministicAnswer({
+          supabase,
+          question: data.question,
+          regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+          docs: docs.map((d) => ({ id: d.id, name: d.name })),
+          ledgerSink: ledger as any,
+        });
+        finalAnswer = det.matched
+          ? det.answer
+          : "I don't have that in the current dashboard data.";
       }
     }
 
