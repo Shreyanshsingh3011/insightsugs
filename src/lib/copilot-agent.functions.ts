@@ -1460,8 +1460,7 @@ export async function runCopilotAgent(
       });
       if (!det.matched) {
         return {
-          text:
-            "I couldn't reach the AI provider and my local search didn't find matching rows in the selected sheets or documents. Try a more specific keyword or select a different sheet.",
+          text: det.answer,
         };
       }
       return { text: det.answer };
@@ -1714,9 +1713,7 @@ export async function runCopilotAgent(
           ledgerSink: ledger as any,
           strictMatch: data.strictMatch === true,
         });
-        finalAnswer = det.matched
-          ? det.answer
-          : "I don't have that in the current dashboard data.";
+        finalAnswer = det.answer;
       }
     }
 
