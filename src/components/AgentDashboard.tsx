@@ -60,6 +60,9 @@ const REGISTRY_REFRESH_MS = 5 * 60_000;
 type Row = Record<string, unknown>;
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string; warning?: string };
 type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
+type ReportFilters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
+
+const DEFAULT_REPORT_FILTERS: ReportFilters = { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
 
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
@@ -76,6 +79,21 @@ function pick(r: Row, ...keys: string[]): string {
   }
   return "";
 }
+function statusOf(r: Row): string {
+  return pick(
+    r,
+    "Status Category",
+    "Status as on Date",
+    "Status",
+    "Current Status",
+    "Activity Status",
+    "Task Status",
+    "Progress Status",
+    "Completion Status",
+    "Work Status",
+    "Stage Status",
+  );
+}
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
@@ -85,11 +103,23 @@ function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Start
   const x = (s || "").toLowerCase().trim();
   // Treat every "finished" flavour as Completed so the filtered report and
   // "only overdue" toggle don't keep parading closed rows as incomplete.
-  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer/.test(x)) return "Completed";
+  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer|not required|fulfilled/.test(x)) return "Completed";
   if (/progress|ongoing|wip|active|working/.test(x)) return "In Progress";
   if (/delay|overdue|late|breach|slipp/.test(x)) return "Delayed";
   if (/not\s*start|yet\s*to|pending|new|open|awaiting|queued/.test(x)) return "Not Started";
   return "Other";
+}
+
+function loadReportFilters(key: string): ReportFilters {
+  if (typeof window === "undefined") return DEFAULT_REPORT_FILTERS;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return DEFAULT_REPORT_FILTERS;
+    const parsed = JSON.parse(raw) as Partial<ReportFilters>;
+    return { ...DEFAULT_REPORT_FILTERS, ...parsed, onlyOverdue: Boolean(parsed.onlyOverdue) };
+  } catch {
+    return DEFAULT_REPORT_FILTERS;
+  }
 }
 
 
@@ -107,7 +137,8 @@ function derive(payload: Payload | undefined) {
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
-    const st = bucket(pick(r, "Status Category", "Status as on Date"));
+    const rowStatus = statusOf(r);
+    const st = bucket(rowStatus);
     status[st] = (status[st] || 0) + 1;
     const stage = pick(r, "Stages", "Stages of Process") || "—";
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
@@ -142,7 +173,7 @@ function derive(payload: Payload | undefined) {
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
-        status: pick(r, "Status Category", "Status as on Date"), criticality: crit,
+        status: rowStatus, criticality: crit,
         email, row: r,
       });
     }
@@ -301,6 +332,10 @@ export default function AgentDashboard() {
   useEffect(() => {
     if (typeof window !== "undefined") sessionStorage.setItem("agent:selected", selected);
   }, [selected]);
+  const selectProject = (projectId: string) => {
+    setSelected(projectId);
+    setFilters(loadReportFilters(`agent:filters:${projectId}`));
+  };
 
   // Live registry pulled from the master Google Sheet — falls back if unavailable.
   const registryQ = useQuery({
@@ -463,7 +498,7 @@ export default function AgentDashboard() {
     if (!s?.payload) return undefined;
     const scoped = nameFilter(s.payload.data);
     if (!scoped.length && scope.mode === "name-scoped") return undefined;
-    const tagged = scoped.map((r) => ({ ...r, __department: s.payload?.department }));
+    const tagged = scoped.map((r) => ({ ...r, __project: s.project.label, __department: s.payload?.department }));
     const data = focusFilter(tagged);
     return {
       project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
@@ -773,7 +808,7 @@ export default function AgentDashboard() {
       activity: pick(r, "Activity List", "Process Descriptions", "Process"),
       person: pick(r, "Responsible Person", "Responsibility", "approvers name"),
       stage: pick(r, "Stages", "Stages of Process"),
-      status: pick(r, "Status Category", "Status as on Date"),
+      status: statusOf(r),
       criticality: pick(r, "Criticality"),
       tat: num(r["TAT"]),
       days_taken: num(r["Days Taken"]),
@@ -934,7 +969,7 @@ export default function AgentDashboard() {
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const stage = pick(r, "Stages", "Stages of Process");
-    const status = pick(r, "Status Category", "Status as on Date");
+    const status = statusOf(r);
     const crit = pick(r, "Criticality");
     const proj = pick(r, "__project");
     const tat = num(r["TAT"]);
@@ -1154,24 +1189,15 @@ export default function AgentDashboard() {
 
 
   // ── FILTERED REPORT / EXPORT
-  type Filters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
   const filterKey = `agent:filters:${selected}`;
-  const [filters, setFilters] = useState<Filters>(() => {
-    if (typeof window === "undefined") return { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
-    try {
-      const raw = sessionStorage.getItem(filterKey);
-      if (raw) return JSON.parse(raw) as Filters;
-    } catch { /* noop */ }
-    return { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
-  });
+  const [filters, setFilters] = useState<ReportFilters>(() => loadReportFilters(filterKey));
   useEffect(() => {
     if (typeof window !== "undefined") sessionStorage.setItem(filterKey, JSON.stringify(filters));
   }, [filterKey, filters]);
-  // Reset filters when the underlying project payload changes identity.
+  // Load the correct saved filter set immediately when switching project scope.
   useEffect(() => {
-    const raw = typeof window !== "undefined" ? sessionStorage.getItem(filterKey) : null;
-    if (!raw) setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false });
-  }, [payload?.project, filterKey]);
+    setFilters(loadReportFilters(filterKey));
+  }, [filterKey]);
 
   const filterOptions = useMemo(() => {
     const s = new Set<string>(), c = new Set<string>(), st = new Set<string>(), p = new Set<string>();
@@ -1193,12 +1219,14 @@ export default function AgentDashboard() {
     const min = Number(filters.minDelay) || 0;
     const q = filters.q.trim().toLowerCase();
     return rowIndex.filter(r => {
-      if (filters.status !== "all" && bucket(r.status) !== filters.status) return false;
+      const statusBucket = bucket(r.status);
+      if (filters.status !== "all" && statusBucket !== filters.status) return false;
+      if (filters.status === "all" && statusBucket === "Completed") return false;
       if (filters.crit !== "all" && r.crit !== filters.crit) return false;
       if (filters.stage !== "all" && r.stage !== filters.stage) return false;
       if (filters.person !== "all" && r.person !== filters.person) return false;
       if (min > 0 && r.delay < min) return false;
-      if (filters.onlyOverdue && !(r.delay > 0 && bucket(r.status) !== "Completed")) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && statusBucket !== "Completed")) return false;
       if (q && !r.hay.includes(q)) return false;
       return true;
     });
@@ -1578,7 +1606,7 @@ export default function AgentDashboard() {
           label="All merged" active={selected === "all"}
           count={sources.reduce((a, s) => a + (s.payload?.data?.length ?? 0), 0)}
           loading={anyFetching && selected === "all"}
-          onClick={() => setSelected("all")}
+          onClick={() => selectProject("all")}
         />
         {sources.map(s => (
           <ProjectChip
@@ -1588,7 +1616,7 @@ export default function AgentDashboard() {
             count={s.payload?.data?.length ?? 0}
             loading={s.isFetching}
             error={s.isError}
-            onClick={() => setSelected(s.project.id)}
+            onClick={() => selectProject(s.project.id)}
           />
         ))}
         {selected !== "all" && (
@@ -1894,6 +1922,9 @@ export default function AgentDashboard() {
               <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
                 <Filter className="h-4 w-4 text-primary" /> Filtered report
                 <Badge variant="secondary" className="ml-1">{filteredRows.length} / {rowIndex.length}</Badge>
+                <Badge variant="outline" className="max-w-full truncate text-[10px] font-normal">
+                  {selected === "all" ? "Scope: All projects" : `Scope: ${sources.find(s => s.project.id === selected)?.project.label ?? payload?.project ?? selected}`}
+                </Badge>
                 {(() => {
                   const latest = Math.max(0, ...queries.map((q) => q.dataUpdatedAt || 0));
                   const anyFetching = queries.some((q) => q.isFetching);
@@ -1930,7 +1961,7 @@ export default function AgentDashboard() {
                 <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
                   <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="all">Open statuses</SelectItem>
                     {filterOptions.status.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -1971,7 +2002,7 @@ export default function AgentDashboard() {
                   Only overdue (not completed & delay &gt; 0)
                 </label>
                 <Button size="sm" variant="ghost" className="h-7 px-2 text-xs ml-auto"
-                  onClick={() => setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false })}>
+                  onClick={() => setFilters(DEFAULT_REPORT_FILTERS)}>
                   Reset filters
                 </Button>
               </div>
@@ -1981,6 +2012,7 @@ export default function AgentDashboard() {
                   <TableHeader className="sticky top-0 bg-background">
                     <TableRow>
                       <TableHead>Activity</TableHead>
+                      <TableHead>Project</TableHead>
                       <TableHead>Person</TableHead>
                       <TableHead>Stage</TableHead>
                       <TableHead>Status</TableHead>
@@ -2007,6 +2039,7 @@ export default function AgentDashboard() {
                           <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>
                             <Link {...link} data-row-link className="hover:underline">{r.activity || "—"}</Link>
                           </TableCell>
+                          <TableCell className="max-w-[140px] truncate text-xs" title={r.proj || payload?.project || ""}>{r.proj || payload?.project || "—"}</TableCell>
                           <TableCell className="text-xs">{r.person || "—"}</TableCell>
                           <TableCell className="text-xs">{r.stage || "—"}</TableCell>
                           <TableCell>
@@ -2023,7 +2056,7 @@ export default function AgentDashboard() {
                       );
                     })}
                     {filteredRows.length === 0 && (
-                      <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
