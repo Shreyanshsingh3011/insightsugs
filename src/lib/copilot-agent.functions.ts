@@ -1289,6 +1289,13 @@ export async function runCopilotAgent(
       "- When the user's question is about a specific field of a specific record (a single value: a phone, an email, a status, a date, a quantity, a name, etc.), you MUST call get_cell to fetch that exact (row, column) and cite it as [sheet:<display_name> row <n> col <ColumnName>]. Do NOT paraphrase the value from search results — fetch the exact cell.",
       "- The answer for such questions must state the column name and the exact value returned by get_cell, e.g. `Phone (col Mobile) = +91 98xxx — [sheet:Contacts row 42 col Mobile]`.",
       "",
+      "EXACT-MATCH GUARDRAIL (strict — never violate):",
+      "- When the user references a specific identifier (ID like `IT76`, `#123`, `GSTIN…`), a quoted phrase, or a proper-noun name (e.g. `Kunti Devi`), the value you return MUST match that identifier/name character-for-character (case-insensitive) in the cited row/cell.",
+      "- Never return a neighbouring value: `IT76` is NOT `IT77`, `Kunti Devi` is NOT `Ram Devi`, `#123` is NOT `#1234`. Partial or fuzzy matches are FORBIDDEN for identifiers, IDs, numbers, and full names.",
+      "- If no row/cell contains the exact requested identifier or name, DO NOT return a similar one. Instead respond with a short clarifying question that (a) states you found no exact match for `<what the user typed>` in the selected sources, and (b) lists up to 5 closest candidates verbatim from the data so the user can pick one. Format: `No exact match for \"<query>\". Did you mean: <cand1>, <cand2>, … ? [sheet:… row …]` — each candidate cited.",
+      "- The same rule applies to numeric values the user asks for verbatim (an exact amount, an exact date, an exact count) — never round, substitute, or approximate.",
+      "",
+
       "CITATION RULES (strict):",
       "- Every factual sentence must include an inline citation marker:",
       "    [sheet:<display_name> row <n> col <ColumnName>] for a single-cell fact (preferred when the answer is one value), or",
