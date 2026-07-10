@@ -382,25 +382,47 @@ export async function runCopilotAgent(
         withTrace("search_sheet_rows", { sheet_id, query, k }, async () => {
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
-          const { embedQuery } = await import("./embeddings.server");
-          // Async: don't block the copilot response on embedding maintenance.
-          // The pg_cron `embed-backfill-tick` job keeps embeddings current;
-          // this call opportunistically nudges it during the request.
-          void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
-          const qvec = await embedQuery(query);
-          const { data: matches, error } = await supabase.rpc("match_sheet_rows", {
-            _user_id: userId,
-            _registry_id: sheet_id,
-            _query: qvec as any,
-            _match_count: k,
-          });
-          if (error) return { error: error.message };
-
-          // Fetch canonical/extras for the matched rows so the model sees columns.
-          const rowIdxs = (matches ?? []).map((m: any) => m.row_index);
           const rows = await getSheetRows(sheet_id);
           const byIndex = new Map(rows.map((r) => [r.row_index, r.data]));
-          const results = (matches ?? []).map((m: any) => {
+
+          // Try vector search first; fall back to keyword scan if embeddings
+          // are unavailable (e.g. Lovable AI credits exhausted → 402/429).
+          let matches: Array<{ row_index: number; similarity?: number }> = [];
+          let mode: "vector" | "keyword" = "vector";
+          try {
+            const { embedQuery } = await import("./embeddings.server");
+            void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
+            const qvec = await embedQuery(query);
+            const { data, error } = await supabase.rpc("match_sheet_rows", {
+              _user_id: userId,
+              _registry_id: sheet_id,
+              _query: qvec as any,
+              _match_count: k,
+            });
+            if (error) throw new Error(error.message);
+            matches = (data ?? []) as any;
+          } catch {
+            // Keyword-scan fallback: rank rows by count of query-token hits
+            // across all cell values. Guarantees the model still gets rows
+            // when embeddings are down, so auto-insights doesn't come back
+            // empty on 402/429.
+            mode = "keyword";
+            const tokens = query
+              .toLowerCase()
+              .split(/[^a-z0-9]+/i)
+              .filter((t) => t.length >= 3);
+            const scored = rows.map((r) => {
+              const hay = Object.values(r.data).map((v) => String(v ?? "").toLowerCase()).join(" \u0001 ");
+              let score = 0;
+              for (const t of tokens) if (hay.includes(t)) score++;
+              return { row_index: r.row_index, similarity: score };
+            });
+            scored.sort((a, b) => b.similarity - a.similarity);
+            const anyHit = scored.some((s) => s.similarity > 0);
+            matches = (anyHit ? scored.filter((s) => s.similarity > 0) : scored).slice(0, k);
+          }
+
+          const results = matches.map((m: any) => {
             const dataRow = byIndex.get(m.row_index) ?? {};
             ledger.push({
               kind: "sheet_row",
@@ -412,15 +434,15 @@ export async function runCopilotAgent(
             return {
               sheet: reg.display_name,
               row_index: m.row_index,
-              similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
+              similarity: Number(m.similarity?.toFixed?.(3) ?? m.similarity ?? 0),
               data: dataRow,
               cite: `[sheet:${reg.display_name} row ${m.row_index + 1}]`,
             };
           });
 
           return {
-            _summary: `${results.length} rows from "${reg.display_name}"`,
-            _resultForModel: { sheet: reg.display_name, matches: results },
+            _summary: `${results.length} rows from "${reg.display_name}" (${mode})`,
+            _resultForModel: { sheet: reg.display_name, mode, matches: results },
           };
         }),
     });
