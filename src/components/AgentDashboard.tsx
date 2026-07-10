@@ -1961,7 +1961,7 @@ export default function AgentDashboard() {
                 <Select value={filters.status} onValueChange={(v) => setFilters(f => ({ ...f, status: v }))}>
                   <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="all">Open statuses</SelectItem>
                     {filterOptions.status.map(x => <SelectItem key={x} value={x}>{x}</SelectItem>)}
                   </SelectContent>
                 </Select>
