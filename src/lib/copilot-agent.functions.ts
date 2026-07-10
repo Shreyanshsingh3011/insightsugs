@@ -705,6 +705,265 @@ export async function runCopilotAgent(
         }),
     });
 
+    // ---------- TEMPORAL QUERY TOOL ----------
+    // Translates "earliest / latest / overdue / due within N days / older than
+    // N days / between D1 and D2 / TAT breached" into deterministic filters
+    // over any date-like column. Semantic search is bad at these; this tool
+    // is exact.
+    const DATE_COL_HINTS = [
+      "date", "due", "deadline", "start", "end", "eta", "target",
+      "planned", "actual", "completion", "closed", "opened", "created",
+      "updated", "expires", "expiry", "receipt", "dispatch", "delivery",
+      "schedule", "milestone",
+    ];
+
+    function parseAnyDate(v: unknown): Date | null {
+      if (v == null || v === "") return null;
+      if (v instanceof Date) return isNaN(+v) ? null : v;
+      const s = String(v).trim();
+      if (!s) return null;
+      // Excel serial (rough): 5-digit number in a plausible range.
+      if (/^\d{4,6}$/.test(s)) {
+        const n = Number(s);
+        if (n > 20000 && n < 80000) {
+          const ms = (n - 25569) * 86400 * 1000;
+          const d = new Date(ms);
+          if (!isNaN(+d)) return d;
+        }
+      }
+      // dd/mm/yyyy or dd-mm-yyyy
+      const dmy = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(s);
+      if (dmy) {
+        let [, d, m, y] = dmy;
+        if (y.length === 2) y = (Number(y) > 50 ? "19" : "20") + y;
+        const iso = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+        const dt = new Date(iso);
+        if (!isNaN(+dt)) return dt;
+      }
+      const dt = new Date(s);
+      return isNaN(+dt) ? null : dt;
+    }
+
+    function pickDateColumns(rows: Array<{ data: Record<string, unknown> }>, hint?: string | null): string[] {
+      if (rows.length === 0) return [];
+      const keys = new Set<string>();
+      for (const r of rows.slice(0, 200)) for (const k of Object.keys(r.data)) keys.add(k);
+      const scored: Array<{ key: string; score: number; parseRate: number }> = [];
+      for (const k of keys) {
+        const kl = k.toLowerCase();
+        const nameHit = DATE_COL_HINTS.some((h) => kl.includes(h));
+        let parsed = 0;
+        let non_empty = 0;
+        for (const r of rows.slice(0, 150)) {
+          const v = r.data[k];
+          if (v == null || v === "") continue;
+          non_empty++;
+          if (parseAnyDate(v)) parsed++;
+        }
+        const rate = non_empty > 0 ? parsed / non_empty : 0;
+        // A column is date-like if either name matches AND >30% parse,
+        // OR >70% parse regardless of name.
+        if ((nameHit && rate >= 0.3) || rate >= 0.7) {
+          const hintBoost = hint && kl.includes(hint.toLowerCase()) ? 5 : 0;
+          scored.push({ key: k, score: (nameHit ? 2 : 0) + rate + hintBoost, parseRate: rate });
+        }
+      }
+      scored.sort((a, b) => b.score - a.score);
+      return scored.map((s) => s.key);
+    }
+
+    const dateQueryRows = tool({
+      description:
+        "Deterministic temporal filter for a sheet. Use for questions about 'earliest', 'latest', 'overdue', 'due within N days', 'older than N days', 'between D1 and D2', TAT breaches, or any date-range/ordering question. Auto-detects date columns; pass `column` to force one. Returns rows with the parsed date, sorted appropriately.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        op: z.enum([
+          "earliest",
+          "latest",
+          "overdue",
+          "due_within",
+          "older_than",
+          "between",
+          "tat_breached",
+        ]),
+        column: z.string().min(1).max(120).nullable().default(null).describe(
+          "Optional date column. If omitted, the tool picks the best date-like column (or the one whose name best matches the user's phrasing).",
+        ),
+        column_hint: z.string().max(60).nullable().default(null).describe(
+          "Optional word from the user's question to bias column pick (e.g. 'start', 'due', 'delivery').",
+        ),
+        days: z.number().int().min(0).max(3650).nullable().default(null).describe(
+          "Window size for due_within / older_than / tat_breached (defaults 7).",
+        ),
+        from: z.string().nullable().default(null).describe("ISO date for `between` (inclusive)."),
+        to: z.string().nullable().default(null).describe("ISO date for `between` (inclusive)."),
+        tat_column: z.string().max(120).nullable().default(null).describe(
+          "For tat_breached: name of the TAT-days numeric column. If omitted, a column whose name contains 'tat' is used.",
+        ),
+        status_column: z.string().max(120).nullable().default(null).describe(
+          "For overdue / tat_breached: name of the status column so completed/closed/done rows are excluded.",
+        ),
+        limit: z.number().int().min(1).max(50).default(15),
+      }),
+      execute: async ({ sheet_id, op, column, column_hint, days, from, to, tat_column, status_column, limit }) =>
+        withTrace(
+          "date_query_rows",
+          { sheet_id, op, column, column_hint, days, from, to, tat_column, status_column, limit },
+          async () => {
+            const reg = sheetById.get(sheet_id);
+            if (!reg) return { error: "Unknown sheet_id" };
+            const rows = await getSheetRows(sheet_id);
+            if (rows.length === 0) {
+              return { _summary: "0 rows in sheet", _resultForModel: { sheet: reg.display_name, op, rows: [] } };
+            }
+
+            // Resolve date column (case-insensitive match if user supplied one).
+            let dateCol = column
+              ? Object.keys(rows[0]?.data ?? {}).find(
+                  (k) => k.toLowerCase().trim() === column.toLowerCase().trim(),
+                ) ?? null
+              : null;
+            if (!dateCol) {
+              const candidates = pickDateColumns(rows, column_hint);
+              dateCol = candidates[0] ?? null;
+            }
+            if (!dateCol) {
+              return {
+                error:
+                  "No date-like column detected. Call get_sheet_schema and re-run with an explicit `column`.",
+              };
+            }
+
+            // Terminal-status exclusion (for overdue / tat_breached).
+            const terminal = /^(done|closed|complete|completed|finished|delivered|cancelled|canceled|dispatched|received)$/i;
+            const statusKey = status_column
+              ? Object.keys(rows[0]?.data ?? {}).find(
+                  (k) => k.toLowerCase().trim() === status_column.toLowerCase().trim(),
+                )
+              : Object.keys(rows[0]?.data ?? {}).find((k) => /status|stage|state/i.test(k));
+
+            const now = new Date();
+            const dayMs = 86400 * 1000;
+            const windowDays = days ?? 7;
+
+            // Build (row, parsedDate) tuples.
+            const parsed: Array<{
+              row_index: number;
+              data: Record<string, unknown>;
+              date: Date;
+              statusVal: string | null;
+            }> = [];
+            for (const r of rows) {
+              const dt = parseAnyDate(r.data[dateCol]);
+              if (!dt) continue;
+              parsed.push({
+                row_index: r.row_index,
+                data: r.data,
+                date: dt,
+                statusVal: statusKey ? String(r.data[statusKey] ?? "").trim() : null,
+              });
+            }
+
+            const excludeTerminal = (t: typeof parsed) =>
+              t.filter((r) => !(r.statusVal && terminal.test(r.statusVal)));
+
+            let picked: typeof parsed = [];
+            let explain = "";
+            if (op === "earliest") {
+              picked = [...parsed].sort((a, b) => +a.date - +b.date).slice(0, limit);
+              explain = `earliest by ${dateCol}`;
+            } else if (op === "latest") {
+              picked = [...parsed].sort((a, b) => +b.date - +a.date).slice(0, limit);
+              explain = `latest by ${dateCol}`;
+            } else if (op === "overdue") {
+              picked = excludeTerminal(parsed)
+                .filter((r) => +r.date < +now)
+                .sort((a, b) => +a.date - +b.date)
+                .slice(0, limit);
+              explain = `overdue on ${dateCol} (not in terminal status)`;
+            } else if (op === "due_within") {
+              const horizon = +now + windowDays * dayMs;
+              picked = excludeTerminal(parsed)
+                .filter((r) => +r.date >= +now && +r.date <= horizon)
+                .sort((a, b) => +a.date - +b.date)
+                .slice(0, limit);
+              explain = `${dateCol} due in next ${windowDays} days`;
+            } else if (op === "older_than") {
+              const cutoff = +now - windowDays * dayMs;
+              picked = parsed
+                .filter((r) => +r.date <= cutoff)
+                .sort((a, b) => +a.date - +b.date)
+                .slice(0, limit);
+              explain = `${dateCol} older than ${windowDays} days`;
+            } else if (op === "between") {
+              const f = from ? parseAnyDate(from) : null;
+              const t = to ? parseAnyDate(to) : null;
+              if (!f || !t) return { error: "`between` requires ISO `from` and `to`." };
+              picked = parsed
+                .filter((r) => +r.date >= +f && +r.date <= +t)
+                .sort((a, b) => +a.date - +b.date)
+                .slice(0, limit);
+              explain = `${dateCol} between ${f.toISOString().slice(0, 10)} and ${t.toISOString().slice(0, 10)}`;
+            } else if (op === "tat_breached") {
+              const tatKey = tat_column
+                ? Object.keys(rows[0]?.data ?? {}).find(
+                    (k) => k.toLowerCase().trim() === tat_column.toLowerCase().trim(),
+                  )
+                : Object.keys(rows[0]?.data ?? {}).find((k) => /\btat\b/i.test(k));
+              if (!tatKey) {
+                return {
+                  error:
+                    "No TAT column found. Call get_sheet_schema and pass `tat_column` (a numeric days column).",
+                };
+              }
+              const breached = excludeTerminal(parsed)
+                .map((r) => {
+                  const tat = Number(r.data[tatKey]);
+                  if (!Number.isFinite(tat)) return null;
+                  const ageDays = Math.floor((+now - +r.date) / dayMs);
+                  return ageDays > tat
+                    ? { ...r, tat, ageDays, over: ageDays - tat }
+                    : null;
+                })
+                .filter((x): x is NonNullable<typeof x> => x != null)
+                .sort((a, b) => b.over - a.over)
+                .slice(0, limit);
+              picked = breached as unknown as typeof parsed;
+              explain = `TAT breached: ${dateCol} vs ${tatKey}`;
+            }
+
+            for (const r of picked) {
+              ledger.push({
+                kind: "sheet_row",
+                registryId: sheet_id,
+                sheetLabel: reg.display_name,
+                rowIndex: r.row_index,
+                data: r.data,
+              });
+            }
+
+            return {
+              _summary: `${picked.length} rows — ${explain} in "${reg.display_name}"`,
+              _resultForModel: {
+                sheet: reg.display_name,
+                op,
+                date_column: dateCol,
+                status_column: statusKey ?? null,
+                window_days: op === "due_within" || op === "older_than" || op === "tat_breached" ? windowDays : null,
+                total_parsed: parsed.length,
+                total_rows: rows.length,
+                rows: picked.map((r) => ({
+                  row_index: r.row_index,
+                  date: r.date.toISOString().slice(0, 10),
+                  data: r.data,
+                  cite: `[sheet:${reg.display_name} row ${r.row_index + 1} col ${dateCol}]`,
+                })),
+              },
+            };
+          },
+        ),
+    });
+
     const searchDocChunks = tool({
       description:
         "Semantic search over the text of a specific document. Returns up to k page-scoped chunks.",
