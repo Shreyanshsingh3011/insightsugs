@@ -64,6 +64,17 @@ export function strictPhrases(query: string): string[] {
     if (p) out.add(p);
   }
 
+  // Identifier-like tokens: anything with a digit (IT76, IT-76, #123, 45678),
+  // or all-caps codes 2+ chars (SKU, GSTIN). These MUST appear verbatim —
+  // "76" and "77" are not the same project.
+  const idRe = /\b([A-Za-z]*\d+[A-Za-z0-9-]*|\d+[A-Za-z][A-Za-z0-9-]*|[A-Z]{2,}[A-Z0-9-]*)\b/g;
+  while ((m = idRe.exec(query))) {
+    const raw = m[1];
+    // Skip plain year-like tokens only if part of a longer date phrase — safest to keep.
+    const p = normalizeText(raw);
+    if (p && p.length >= 2) out.add(p);
+  }
+
   const tokens = contentTokens(query);
   if (tokens.length >= 2) out.add(tokens.join(" "));
 
