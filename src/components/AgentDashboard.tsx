@@ -7,6 +7,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { encodeKey as encodeEntityKey, encodeRowKey } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
+import { listSheets } from "@/lib/sheets.functions";
+
 import { recordSyncAudit } from "@/lib/sync-audit.functions";
 import { diffRows, type RowDiff } from "@/lib/row-diff";
 import { generateGeminiFn } from "@/lib/gemini.functions";
