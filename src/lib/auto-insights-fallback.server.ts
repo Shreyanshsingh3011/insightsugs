@@ -336,3 +336,347 @@ export function buildDocumentAutoInsights(input: {
 
   return { insights: insights.slice(0, 7), questions: questions.slice(0, 6) };
 }
+
+// ---------- Sheet-shape templates ----------
+
+type TemplateCtx = {
+  sheetName: string;
+  allRows: Record<string, unknown>[];
+  activeRows: Record<string, unknown>[];
+  columns: string[];
+  insights: AutoInsight[];
+  questions: string[];
+};
+
+function findCol(columns: string[], re: RegExp): string | undefined {
+  return columns.find((c) => re.test(c));
+}
+
+function sumCol(rows: Record<string, unknown>[], col: string): { sum: number; count: number } {
+  let sum = 0;
+  let count = 0;
+  for (const r of rows) {
+    const n = parseNumber(r[col]);
+    if (n != null) { sum += n; count += 1; }
+  }
+  return { sum, count };
+}
+
+function topByGroup(rows: Record<string, unknown>[], groupCol: string, valueCol: string, limit = 3) {
+  const acc = new Map<string, number>();
+  for (const r of rows) {
+    const key = cellText(r[groupCol]) || "(blank)";
+    const n = parseNumber(r[valueCol]);
+    if (n == null) continue;
+    acc.set(key, (acc.get(key) ?? 0) + n);
+  }
+  return Array.from(acc.entries())
+    .filter(([k]) => k !== "(blank)")
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+}
+
+type SheetShape = "payments" | "hr_attendance" | "contacts" | "inventory" | "contracts" | "timeline" | "sales_crm" | "tickets" | "generic";
+
+function detectSheetShape(columns: string[]): SheetShape {
+  const cols = columns.join("|").toLowerCase();
+  if (/invoice|payment|paid|due amount|outstanding|receivable|payable|bill|po number|purchase order/.test(cols)) return "payments";
+  if (/attendance|check[- ]?in|check[- ]?out|shift|leave|absent|present|hours worked|payroll/.test(cols)) return "hr_attendance";
+  if (/email|phone|mobile|contact|address|city|pincode|zip/.test(cols) && !/status|stage|progress/.test(cols)) return "contacts";
+  if (/stock|inventory|sku|units in|on hand|qty on|reorder|warehouse/.test(cols)) return "inventory";
+  if (/contract|agreement|expiry|expires|renewal|clause|nda|mou/.test(cols)) return "contracts";
+  if (/milestone|phase|planned|actual|baseline|start date|end date|target date|completion/.test(cols)) return "timeline";
+  if (/lead|opportunity|deal|pipeline|prospect|conversion|revenue|customer/.test(cols)) return "sales_crm";
+  if (/ticket|complaint|issue|resolution|sla|priority|reported/.test(cols)) return "tickets";
+  return "generic";
+}
+
+function applySheetTemplates(ctx: TemplateCtx) {
+  const shape = detectSheetShape(ctx.columns);
+  switch (shape) {
+    case "payments": return templatePayments(ctx);
+    case "hr_attendance": return templateHrAttendance(ctx);
+    case "contacts": return templateContacts(ctx);
+    case "inventory": return templateInventory(ctx);
+    case "contracts": return templateContracts(ctx);
+    case "timeline": return templateTimeline(ctx);
+    case "sales_crm": return templateSalesCrm(ctx);
+    case "tickets": return templateTickets(ctx);
+    default: return;
+  }
+}
+
+function templatePayments({ sheetName, allRows, activeRows, columns, insights, questions }: TemplateCtx) {
+  const amountCol = findCol(columns, /amount|total|invoice value|gross|net/i);
+  const paidCol = findCol(columns, /paid|received|settled/i);
+  const dueCol = findCol(columns, /outstanding|balance|due amount|pending amount/i);
+  const dueDateCol = findCol(columns, /due date|payment date|invoice date/i);
+  const vendorCol = findCol(columns, /vendor|supplier|party|client|customer/i);
+
+  if (amountCol) {
+    const { sum, count } = sumCol(allRows, amountCol);
+    if (count > 0) addInsight(insights, `Total ${amountCol}`, `${fmt(sum)} across ${fmt(count)} entries in ${sheetName}.`);
+  }
+  if (dueCol) {
+    const { sum, count } = sumCol(allRows, dueCol);
+    if (sum > 0) {
+      addInsight(insights, `Outstanding ${dueCol}`, `${fmt(sum)} still unpaid across ${fmt(count)} rows.`, "critical");
+      questions.push(`Which rows have the largest ${dueCol}?`);
+    }
+  }
+  if (paidCol && amountCol) {
+    const paid = sumCol(allRows, paidCol).sum;
+    const total = sumCol(allRows, amountCol).sum;
+    if (total > 0) {
+      const pct = (paid / total) * 100;
+      addInsight(insights, "Collection rate", `${fmt(pct)}% collected (${fmt(paid)} of ${fmt(total)}).`, pct < 60 ? "warning" : "info");
+    }
+  }
+  if (vendorCol && (dueCol || amountCol)) {
+    const valueCol = dueCol ?? amountCol!;
+    const top = topByGroup(allRows, vendorCol, valueCol);
+    if (top.length) {
+      addInsight(insights, `Top ${vendorCol} by ${valueCol}`, top.map(([k, v]) => `${k} (${fmt(v)})`).join(", "));
+      questions.push(`Break down ${valueCol} by ${vendorCol}.`);
+    }
+  }
+  if (dueDateCol) {
+    const today = Date.now();
+    let overdue = 0;
+    for (const r of activeRows) {
+      const t = parseDateMs(r[dueDateCol]);
+      if (t != null && t < today) overdue += 1;
+    }
+    if (overdue > 0) addInsight(insights, `Overdue ${dueDateCol}`, `${fmt(overdue)} rows are past their ${dueDateCol}.`, "critical");
+  }
+}
+
+function templateHrAttendance({ sheetName, allRows, columns, insights, questions }: TemplateCtx) {
+  const personCol = findCol(columns, /name|employee|staff|person/i);
+  const statusCol = findCol(columns, /status|attendance|present|absent|leave/i);
+  const hoursCol = findCol(columns, /hours|worked|duration|shift/i);
+  const dateCol = findCol(columns, /date|day/i);
+
+  if (statusCol) {
+    const counts = valueCounts(allRows, statusCol).filter((v) => v.value !== "(blank)").slice(0, 5);
+    if (counts.length) addInsight(insights, `Attendance mix — ${statusCol}`, counts.map((c) => `${c.value}: ${fmt(c.count)}`).join(", "));
+    const absent = counts.find((c) => /absent|leave/i.test(c.value));
+    if (absent && absent.count > 0) addInsight(insights, "Absences logged", `${fmt(absent.count)} absent/leave entries in ${sheetName}.`, "warning");
+  }
+  if (personCol && statusCol) {
+    const abs = new Map<string, number>();
+    for (const r of allRows) {
+      if (/absent|leave/i.test(cellText(r[statusCol]))) {
+        const k = cellText(r[personCol]) || "(unknown)";
+        abs.set(k, (abs.get(k) ?? 0) + 1);
+      }
+    }
+    const top = Array.from(abs.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (top.length) {
+      addInsight(insights, "Most absences", top.map(([k, v]) => `${k} (${fmt(v)})`).join(", "), "warning");
+      questions.push(`Why is ${top[0][0]} absent most often?`);
+    }
+  }
+  if (hoursCol) {
+    const { sum, count } = sumCol(allRows, hoursCol);
+    if (count > 0) addInsight(insights, `Total ${hoursCol}`, `${fmt(sum)} across ${fmt(count)} entries (avg ${fmt(sum / count)}).`);
+  }
+  if (dateCol) questions.push(`What is the attendance trend by ${dateCol}?`);
+}
+
+function templateContacts({ sheetName, allRows, columns, insights, questions }: TemplateCtx) {
+  const emailCol = findCol(columns, /email/i);
+  const phoneCol = findCol(columns, /phone|mobile|contact number/i);
+  const cityCol = findCol(columns, /city|location|region|state/i);
+  const nameCol = findCol(columns, /name/i);
+
+  addInsight(insights, "Contact directory", `${fmt(allRows.length)} contacts on file in ${sheetName}.`);
+
+  if (emailCol) {
+    const withEmail = allRows.filter((r) => /@/.test(cellText(r[emailCol]))).length;
+    const missing = allRows.length - withEmail;
+    addInsight(insights, "Email coverage", `${fmt(withEmail)} of ${fmt(allRows.length)} have an email${missing > 0 ? ` — ${fmt(missing)} missing` : ""}.`, missing > allRows.length * 0.2 ? "warning" : "info");
+  }
+  if (phoneCol) {
+    const withPhone = allRows.filter((r) => cellText(r[phoneCol]).replace(/\D/g, "").length >= 7).length;
+    addInsight(insights, "Phone coverage", `${fmt(withPhone)} of ${fmt(allRows.length)} have a usable phone number.`, withPhone < allRows.length * 0.8 ? "warning" : "info");
+  }
+  if (cityCol) {
+    const top = valueCounts(allRows, cityCol).filter((v) => v.value !== "(blank)").slice(0, 5);
+    if (top.length) addInsight(insights, `Top ${cityCol}`, top.map((v) => `${v.value} (${fmt(v.count)})`).join(", "));
+  }
+  if (nameCol) {
+    const dupes = valueCounts(allRows, nameCol).filter((v) => v.value !== "(blank)" && v.count > 1);
+    if (dupes.length) addInsight(insights, "Possible duplicates", `${fmt(dupes.length)} names appear more than once — e.g. ${dupes.slice(0, 3).map((d) => `${d.value} (${d.count})`).join(", ")}.`, "warning");
+    questions.push(`Show the full record for ${cellText(allRows[0]?.[nameCol])}.`);
+  }
+}
+
+function templateInventory({ sheetName, allRows, columns, insights, questions }: TemplateCtx) {
+  const qtyCol = findCol(columns, /qty|quantity|on hand|stock|units/i);
+  const reorderCol = findCol(columns, /reorder|min stock|threshold/i);
+  const skuCol = findCol(columns, /sku|item code|product/i);
+  const warehouseCol = findCol(columns, /warehouse|location|bin/i);
+
+  if (qtyCol) {
+    const { sum, count } = sumCol(allRows, qtyCol);
+    addInsight(insights, `Total ${qtyCol}`, `${fmt(sum)} units across ${fmt(count)} SKUs in ${sheetName}.`);
+    const zero = allRows.filter((r) => parseNumber(r[qtyCol]) === 0).length;
+    if (zero > 0) addInsight(insights, "Out of stock", `${fmt(zero)} rows show 0 ${qtyCol}.`, "critical");
+  }
+  if (qtyCol && reorderCol) {
+    const below = allRows.filter((r) => {
+      const q = parseNumber(r[qtyCol]);
+      const min = parseNumber(r[reorderCol]);
+      return q != null && min != null && q < min;
+    }).length;
+    if (below > 0) addInsight(insights, "Below reorder level", `${fmt(below)} SKUs are under their ${reorderCol}.`, "critical");
+  }
+  if (warehouseCol && qtyCol) {
+    const top = topByGroup(allRows, warehouseCol, qtyCol);
+    if (top.length) addInsight(insights, `Stock by ${warehouseCol}`, top.map(([k, v]) => `${k} (${fmt(v)})`).join(", "));
+  }
+  if (skuCol) questions.push(`What is the current stock for ${cellText(allRows[0]?.[skuCol])}?`);
+}
+
+function templateContracts({ sheetName, allRows, activeRows, columns, insights, questions }: TemplateCtx) {
+  const expiryCol = findCol(columns, /expiry|expires|end date|renewal/i);
+  const partyCol = findCol(columns, /party|counterparty|vendor|client|customer/i);
+  const valueCol = findCol(columns, /value|amount|worth/i);
+
+  if (expiryCol) {
+    const today = Date.now();
+    let expired = 0;
+    let soon = 0;
+    for (const r of activeRows) {
+      const t = parseDateMs(r[expiryCol]);
+      if (t == null) continue;
+      if (t < today) expired += 1;
+      else if (t - today < 60 * 86400_000) soon += 1;
+    }
+    if (expired > 0) addInsight(insights, `Expired contracts`, `${fmt(expired)} rows have ${expiryCol} in the past.`, "critical");
+    if (soon > 0) addInsight(insights, `Renewals within 60 days`, `${fmt(soon)} contracts expire within 2 months.`, "warning");
+  }
+  if (partyCol) {
+    const top = valueCounts(activeRows.length ? activeRows : allRows, partyCol).filter((v) => v.value !== "(blank)").slice(0, 3);
+    if (top.length) addInsight(insights, `Top ${partyCol}`, top.map((v) => `${v.value} (${fmt(v.count)})`).join(", "));
+  }
+  if (valueCol) {
+    const { sum, count } = sumCol(allRows, valueCol);
+    if (count > 0) addInsight(insights, `Contract portfolio ${valueCol}`, `${fmt(sum)} across ${fmt(count)} contracts.`);
+  }
+  questions.push(`Which contracts expire in the next 30 days in ${sheetName}?`);
+}
+
+function templateTimeline({ sheetName, activeRows, columns, insights, questions }: TemplateCtx) {
+  const startCol = findCol(columns, /start date|planned start|baseline start/i);
+  const endCol = findCol(columns, /end date|target date|planned end|completion|due date/i);
+  const actualCol = findCol(columns, /actual|actual end|actual completion/i);
+  const milestoneCol = findCol(columns, /milestone|phase|activity|task/i);
+
+  if (endCol) {
+    const today = Date.now();
+    let overdue = 0;
+    let next: { name: string; date: string } | null = null;
+    let soonest = Infinity;
+    for (const r of activeRows) {
+      const t = parseDateMs(r[endCol]);
+      if (t == null) continue;
+      if (t < today) overdue += 1;
+      else if (t < soonest) {
+        soonest = t;
+        next = { name: cellText(r[milestoneCol ?? ""]) || "next item", date: new Date(t).toISOString().slice(0, 10) };
+      }
+    }
+    if (overdue > 0) addInsight(insights, `Overdue by ${endCol}`, `${fmt(overdue)} active items past their ${endCol}.`, "critical");
+    if (next) addInsight(insights, "Next milestone", `${next.name} due ${next.date}.`, "info");
+  }
+  if (startCol && endCol) {
+    const durations: number[] = [];
+    for (const r of activeRows) {
+      const s = parseDateMs(r[startCol]);
+      const e = parseDateMs(r[endCol]);
+      if (s != null && e != null && e > s) durations.push((e - s) / 86400_000);
+    }
+    if (durations.length) {
+      const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+      addInsight(insights, "Planned duration", `Average planned span ${fmt(avg)} days across ${fmt(durations.length)} items.`);
+    }
+  }
+  if (endCol && actualCol) {
+    const slips: number[] = [];
+    for (const r of activeRows) {
+      const e = parseDateMs(r[endCol]);
+      const a = parseDateMs(r[actualCol]);
+      if (e != null && a != null) slips.push((a - e) / 86400_000);
+    }
+    const late = slips.filter((s) => s > 0);
+    if (late.length) addInsight(insights, "Schedule slippage", `${fmt(late.length)} items finished late by an average of ${fmt(late.reduce((a, b) => a + b, 0) / late.length)} days.`, "warning");
+  }
+  questions.push(`What's on the critical path for ${sheetName}?`);
+}
+
+function templateSalesCrm({ sheetName, allRows, activeRows, columns, insights, questions }: TemplateCtx) {
+  const stageCol = findCol(columns, /stage|status|pipeline/i);
+  const valueCol = findCol(columns, /value|amount|revenue|deal size/i);
+  const ownerCol = findCol(columns, /owner|rep|sales|assigned/i);
+  const closeCol = findCol(columns, /close date|expected close/i);
+
+  if (stageCol) {
+    const counts = valueCounts(activeRows, stageCol).filter((v) => v.value !== "(blank)").slice(0, 5);
+    if (counts.length) addInsight(insights, `Pipeline by ${stageCol}`, counts.map((c) => `${c.value}: ${fmt(c.count)}`).join(", "));
+    const won = counts.find((c) => /won|closed[- ]won/i.test(c.value));
+    const lost = counts.find((c) => /lost|closed[- ]lost/i.test(c.value));
+    if (won && lost) {
+      const rate = won.count / (won.count + lost.count) * 100;
+      addInsight(insights, "Win rate", `${fmt(rate)}% (${fmt(won.count)} won / ${fmt(lost.count)} lost).`, rate < 40 ? "warning" : "info");
+    }
+  }
+  if (valueCol) {
+    const openRows = activeRows.length ? activeRows : allRows;
+    const { sum } = sumCol(openRows, valueCol);
+    if (sum > 0) addInsight(insights, `Open ${valueCol}`, `${fmt(sum)} in open pipeline across ${fmt(openRows.length)} deals.`);
+  }
+  if (ownerCol && valueCol) {
+    const top = topByGroup(activeRows, ownerCol, valueCol);
+    if (top.length) addInsight(insights, `Top ${ownerCol} by ${valueCol}`, top.map(([k, v]) => `${k} (${fmt(v)})`).join(", "));
+  }
+  if (closeCol) questions.push(`Which deals are expected to close in the next 30 days in ${sheetName}?`);
+}
+
+function templateTickets({ sheetName, allRows, activeRows, columns, insights, questions }: TemplateCtx) {
+  const priorityCol = findCol(columns, /priority|severity/i);
+  const statusCol = findCol(columns, /status|state|resolution/i);
+  const slaCol = findCol(columns, /sla|breach/i);
+  const assigneeCol = findCol(columns, /assignee|owner|assigned/i);
+  const reportedCol = findCol(columns, /reported|created|opened/i);
+
+  if (priorityCol) {
+    const counts = valueCounts(activeRows, priorityCol).filter((v) => v.value !== "(blank)").slice(0, 5);
+    if (counts.length) addInsight(insights, `Open by ${priorityCol}`, counts.map((c) => `${c.value}: ${fmt(c.count)}`).join(", "));
+    const high = counts.find((c) => /high|critical|p0|p1|urgent/i.test(c.value));
+    if (high && high.count > 0) addInsight(insights, "High priority open", `${fmt(high.count)} open ${high.value} tickets.`, "critical");
+  }
+  if (statusCol) {
+    const open = activeRows.length;
+    const closed = allRows.length - open;
+    if (open + closed > 0) addInsight(insights, "Ticket load", `${fmt(open)} open vs ${fmt(closed)} closed in ${sheetName}.`);
+  }
+  if (slaCol) {
+    const breached = allRows.filter((r) => /breach|missed|violated|true|yes/i.test(cellText(r[slaCol]))).length;
+    if (breached > 0) addInsight(insights, "SLA breaches", `${fmt(breached)} tickets have breached ${slaCol}.`, "critical");
+  }
+  if (assigneeCol) {
+    const top = valueCounts(activeRows, assigneeCol).filter((v) => v.value !== "(blank)").slice(0, 3);
+    if (top.length) addInsight(insights, `Open workload — ${assigneeCol}`, top.map((v) => `${v.value} (${fmt(v.count)})`).join(", "));
+  }
+  if (reportedCol) {
+    const today = Date.now();
+    const aging = activeRows.filter((r) => {
+      const t = parseDateMs(r[reportedCol]);
+      return t != null && (today - t) > 7 * 86400_000;
+    }).length;
+    if (aging > 0) addInsight(insights, "Aging tickets (>7d)", `${fmt(aging)} open tickets have been open more than a week.`, "warning");
+  }
+  questions.push(`Which tickets breached SLA in ${sheetName}?`);
+}
