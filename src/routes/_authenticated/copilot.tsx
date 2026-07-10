@@ -26,7 +26,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-import { listSheets, askCopilot, generateAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
+import { listSheets, askCopilot, generateAutoInsights, generateCombinedAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
@@ -304,8 +304,10 @@ function CopilotPage() {
   const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
   const autoInsights = useServerFn(generateAutoInsights);
+  const autoCombinedInsights = useServerFn(generateCombinedAutoInsights);
   const autoDocInsights = useServerFn(generateDocumentAutoInsights);
   const chartFn = useServerFn(generateChart);
+
 
 
   const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
@@ -330,9 +332,13 @@ function CopilotPage() {
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [insightsSheet, setInsightsSheet] = useState<string | null>(null);
   const [insightQuestions, setInsightQuestions] = useState<string[]>([]);
+  const [combinedInsights, setCombinedInsights] = useState<Insight[] | null>(null);
+  const [combinedSheetNames, setCombinedSheetNames] = useState<string[]>([]);
+  const [combinedInsightQuestions, setCombinedInsightQuestions] = useState<string[]>([]);
   const [docInsights, setDocInsights] = useState<Insight[] | null>(null);
   const [docInsightsName, setDocInsightsName] = useState<string | null>(null);
   const [docInsightQuestions, setDocInsightQuestions] = useState<string[]>([]);
+
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -416,6 +422,19 @@ function CopilotPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
   });
 
+  const combinedInsightsMut = useMutation({
+    mutationFn: (sheetIds: string[]) => autoCombinedInsights({ data: { sheetIds } }),
+    onSuccess: (res) => {
+      setCombinedInsights(res.insights as any);
+      setCombinedSheetNames(res.sheetNames ?? []);
+      setCombinedInsightQuestions(res.questions ?? []);
+      if (!res.insights.length) toast.info("No notable findings across the selected sheets.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate combined insights"),
+  });
+
+
+
   const docInsightsMut = useMutation({
     mutationFn: (documentId: string) => autoDocInsights({ data: { documentId } }),
     onSuccess: (res) => {
@@ -453,6 +472,10 @@ function CopilotPage() {
     // Reset insights when sheet scope changes
     setInsights(null);
     setInsightsSheet(null);
+    setCombinedInsights(null);
+    setCombinedSheetNames([]);
+    setCombinedInsightQuestions([]);
+
   };
 
   const toggleDoc = (id: string) => {
@@ -494,7 +517,10 @@ function CopilotPage() {
   }, [askMut.isPending, history.length]);
 
   const singleSheetId = selected.size === 1 ? Array.from(selected)[0] : null;
+  const multiSheetIds = selected.size >= 2 ? Array.from(selected) : null;
   const singleDocId = selectedDocs.size === 1 && selected.size === 0 ? Array.from(selectedDocs)[0] : null;
+
+
 
 
   return (
@@ -696,7 +722,109 @@ function CopilotPage() {
           </Card>
         )}
 
+        {/* Combined Auto-Insights across multiple selected sheets */}
+        {multiSheetIds && history.length === 0 && (
+          <Card className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <Wand2 className="h-4 w-4 text-primary" /> Combined Auto-Insights
+                <span className="text-xs font-normal text-muted-foreground">
+                  · {multiSheetIds.length} sheets
+                </span>
+              </h3>
+              <Button
+                size="sm"
+                variant={combinedInsights ? "ghost" : "default"}
+                onClick={() => combinedInsightsMut.mutate(multiSheetIds)}
+                disabled={combinedInsightsMut.isPending}
+              >
+                {combinedInsightsMut.isPending ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {combinedInsights ? "Regenerate" : "Generate"}
+              </Button>
+            </div>
+            {!combinedInsights && !combinedInsightsMut.isPending && (
+              <p className="text-xs text-muted-foreground">
+                Copilot scans every selected sheet, merges duplicate findings, and tags each insight
+                with its source sheet via a <span className="font-medium">[sheet:Name]</span> citation.
+              </p>
+            )}
+            {combinedSheetNames.length > 0 && combinedInsights && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {combinedSheetNames.map((n) => (
+                  <Badge key={n} variant="secondary" className="text-[10px]">
+                    {n}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {combinedInsights && combinedInsights.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {combinedInsights.map((ins, i) => {
+                  const Icon =
+                    ins.severity === "critical"
+                      ? AlertCircle
+                      : ins.severity === "warning"
+                        ? AlertTriangle
+                        : Info;
+                  const tone =
+                    ins.severity === "critical"
+                      ? "border-destructive/40 bg-destructive/5"
+                      : ins.severity === "warning"
+                        ? "border-amber-400/40 bg-amber-50/40 dark:bg-amber-950/20"
+                        : "border-border bg-muted/30";
+                  // Extract [sheet:Name] citations to render as chips beneath.
+                  const cites = Array.from(ins.detail.matchAll(/\[sheet:([^\]]+)\]/g)).map((m) => m[1]);
+                  const cleanDetail = ins.detail.replace(/\s*\[sheet:[^\]]+\]/g, "").trim();
+                  return (
+                    <div key={i} className={`rounded-md border p-3 text-sm ${tone}`}>
+                      <div className="mb-1 flex items-start gap-1.5 font-medium">
+                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{ins.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{cleanDetail}</p>
+                      {cites.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {cites.map((c) => (
+                            <Badge key={c} variant="outline" className="text-[10px]">
+                              {c}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {combinedInsights && combinedInsightQuestions.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Suggested questions across these sheets
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {combinedInsightQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => sendAsk(q)}
+                      disabled={askMut.isPending}
+                      className="rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Auto-Insights for a single document */}
+
         {singleDocId && history.length === 0 && (
           <Card className="p-4">
             <div className="mb-3 flex items-center justify-between">

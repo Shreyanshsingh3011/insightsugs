@@ -1801,6 +1801,111 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
   });
 
 // ============================================================================
+// Combined Auto-Insights across MULTIPLE selected sheets.
+// Each insight is tagged with a [sheet:Name] citation so the UI can render
+// per-sheet attribution and let the user drill back to the source.
+// ============================================================================
+export const generateCombinedAutoInsights = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ sheetIds: z.array(z.string().uuid()).min(1).max(10) }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: regs, error: regErr } = await supabase
+      .from("sheet_registry")
+      .select("id, display_name, sheet_type")
+      .in("id", data.sheetIds);
+    if (regErr) throw new Error(regErr.message);
+    if (!regs || regs.length === 0) throw new Error("No sheets found or you don't have access");
+
+    const { buildSheetAutoInsights } = await import("./auto-insights-fallback.server");
+
+    type Ins = { title: string; detail: string; severity: "info" | "warning" | "critical"; sheetId: string; sheetName: string };
+    const allInsights: Ins[] = [];
+    const allQuestions: { q: string; sheetName: string }[] = [];
+    const perSheet: { sheetId: string; sheetName: string; count: number }[] = [];
+
+    for (const reg of regs) {
+      const { data: rows } = await supabase
+        .from("sheet_rows")
+        .select("row_index, canonical, extras")
+        .eq("sheet_registry_id", reg.id)
+        .order("row_index", { ascending: true })
+        .range(0, 4999);
+      const storedRows = (rows ?? []) as any[];
+      const { insights, questions } = buildSheetAutoInsights(reg.display_name, storedRows);
+      perSheet.push({ sheetId: reg.id, sheetName: reg.display_name, count: insights.length });
+      for (const ins of insights) {
+        allInsights.push({
+          title: ins.title,
+          // Append a citation so users can trace each insight back to its sheet.
+          detail: `${ins.detail} [sheet:${reg.display_name}]`,
+          severity: ins.severity,
+          sheetId: reg.id,
+          sheetName: reg.display_name,
+        });
+      }
+      for (const q of questions) allQuestions.push({ q, sheetName: reg.display_name });
+    }
+
+    // Deduplicate identical insight titles across sheets — keep the highest severity,
+    // and merge citation tags so a shared finding lists every sheet it applies to.
+    const bySignature = new Map<string, Ins>();
+    const sevRank = { info: 0, warning: 1, critical: 2 } as const;
+    for (const ins of allInsights) {
+      const key = ins.title.toLowerCase().trim();
+      const existing = bySignature.get(key);
+      if (!existing) {
+        bySignature.set(key, ins);
+      } else {
+        if (sevRank[ins.severity] > sevRank[existing.severity]) existing.severity = ins.severity;
+        if (!existing.detail.includes(`[sheet:${ins.sheetName}]`)) {
+          existing.detail = `${existing.detail} [sheet:${ins.sheetName}]`;
+        }
+      }
+    }
+
+    // Sort: critical → warning → info; keep at most 12 to avoid a wall of cards.
+    const merged = Array.from(bySignature.values())
+      .sort((a, b) => sevRank[b.severity] - sevRank[a.severity])
+      .slice(0, 12);
+
+    // Interleave questions round-robin across sheets so the suggestions feel
+    // representative rather than dominated by whichever sheet ran first.
+    const bySheetQs = new Map<string, string[]>();
+    for (const { q, sheetName } of allQuestions) {
+      if (!bySheetQs.has(sheetName)) bySheetQs.set(sheetName, []);
+      bySheetQs.get(sheetName)!.push(q);
+    }
+    const interleaved: string[] = [];
+    const seen = new Set<string>();
+    let more = true;
+    while (more) {
+      more = false;
+      for (const [, qs] of bySheetQs) {
+        const q = qs.shift();
+        if (q) {
+          more = true;
+          if (!seen.has(q.toLowerCase())) {
+            seen.add(q.toLowerCase());
+            interleaved.push(q);
+          }
+        }
+      }
+      if (interleaved.length >= 10) break;
+    }
+
+    return {
+      insights: merged,
+      questions: interleaved,
+      perSheet,
+      sheetNames: regs.map((r) => r.display_name),
+    };
+  });
+
+
+// ============================================================================
 // Document Auto-Insights: same shape as sheet auto-insights but grounded on a doc
 // ============================================================================
 export const generateDocumentAutoInsights = createServerFn({ method: "POST" })
