@@ -1198,7 +1198,7 @@ export default function AgentDashboard() {
       if (filters.stage !== "all" && r.stage !== filters.stage) return false;
       if (filters.person !== "all" && r.person !== filters.person) return false;
       if (min > 0 && r.delay < min) return false;
-      if (filters.onlyOverdue && !(r.delay > 0 && !/complete|done/i.test(r.status))) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && bucket(r.status) !== "Completed")) return false;
       if (q && !r.hay.includes(q)) return false;
       return true;
     });
