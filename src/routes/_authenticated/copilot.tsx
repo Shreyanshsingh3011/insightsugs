@@ -722,7 +722,109 @@ function CopilotPage() {
           </Card>
         )}
 
+        {/* Combined Auto-Insights across multiple selected sheets */}
+        {multiSheetIds && history.length === 0 && (
+          <Card className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-medium">
+                <Wand2 className="h-4 w-4 text-primary" /> Combined Auto-Insights
+                <span className="text-xs font-normal text-muted-foreground">
+                  · {multiSheetIds.length} sheets
+                </span>
+              </h3>
+              <Button
+                size="sm"
+                variant={combinedInsights ? "ghost" : "default"}
+                onClick={() => combinedInsightsMut.mutate(multiSheetIds)}
+                disabled={combinedInsightsMut.isPending}
+              >
+                {combinedInsightsMut.isPending ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {combinedInsights ? "Regenerate" : "Generate"}
+              </Button>
+            </div>
+            {!combinedInsights && !combinedInsightsMut.isPending && (
+              <p className="text-xs text-muted-foreground">
+                Copilot scans every selected sheet, merges duplicate findings, and tags each insight
+                with its source sheet via a <span className="font-medium">[sheet:Name]</span> citation.
+              </p>
+            )}
+            {combinedSheetNames.length > 0 && combinedInsights && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {combinedSheetNames.map((n) => (
+                  <Badge key={n} variant="secondary" className="text-[10px]">
+                    {n}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {combinedInsights && combinedInsights.length > 0 && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {combinedInsights.map((ins, i) => {
+                  const Icon =
+                    ins.severity === "critical"
+                      ? AlertCircle
+                      : ins.severity === "warning"
+                        ? AlertTriangle
+                        : Info;
+                  const tone =
+                    ins.severity === "critical"
+                      ? "border-destructive/40 bg-destructive/5"
+                      : ins.severity === "warning"
+                        ? "border-amber-400/40 bg-amber-50/40 dark:bg-amber-950/20"
+                        : "border-border bg-muted/30";
+                  // Extract [sheet:Name] citations to render as chips beneath.
+                  const cites = Array.from(ins.detail.matchAll(/\[sheet:([^\]]+)\]/g)).map((m) => m[1]);
+                  const cleanDetail = ins.detail.replace(/\s*\[sheet:[^\]]+\]/g, "").trim();
+                  return (
+                    <div key={i} className={`rounded-md border p-3 text-sm ${tone}`}>
+                      <div className="mb-1 flex items-start gap-1.5 font-medium">
+                        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>{ins.title}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{cleanDetail}</p>
+                      {cites.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {cites.map((c) => (
+                            <Badge key={c} variant="outline" className="text-[10px]">
+                              {c}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {combinedInsights && combinedInsightQuestions.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Suggested questions across these sheets
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {combinedInsightQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => sendAsk(q)}
+                      disabled={askMut.isPending}
+                      className="rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Auto-Insights for a single document */}
+
         {singleDocId && history.length === 0 && (
           <Card className="p-4">
             <div className="mb-3 flex items-center justify-between">
