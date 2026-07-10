@@ -1466,30 +1466,47 @@ export async function runCopilotAgent(
       return { text: det.answer };
     }
 
-    async function runWithGeminiFallback(): Promise<{ text?: string }> {
-      if (!directGeminiKey) {
-        return await runDeterministic("no_gemini_key");
+    async function polishWithGemini(factualAnswer: string): Promise<string> {
+      // Take a factually correct deterministic answer and ask Gemini to rewrite it
+      // as clean prose while preserving every number, name, ID, and [citation]
+      // exactly. If Gemini is unavailable or errors, return the raw answer.
+      if (!directGeminiKey || !factualAnswer.trim()) return factualAnswer;
+      try {
+        const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+        const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
+        const polish = await generateText({
+          model: google("gemini-2.5-flash"),
+          system:
+            "You are an editor. Rewrite the user's draft answer so it reads clearly and concisely. " +
+            "STRICT RULES: (1) Do NOT invent, add, remove, or change any number, name, ID, date, or [bracketed citation]. " +
+            "(2) Keep every citation like [sheet:X row N col Y] verbatim in place. " +
+            "(3) Preserve bullet lists and structure. (4) If the draft is a clarifying question or refusal, keep it as-is. " +
+            "Output only the rewritten answer, nothing else.",
+          prompt: `User question: ${data.question}\n\nDraft answer (facts are correct — polish the wording only):\n\n${factualAnswer}`,
+        });
+        const polished = (polish.text ?? "").trim();
+        return polished.length > 20 ? polished : factualAnswer;
+      } catch {
+        return factualAnswer;
       }
-      const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-      const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
+    }
+
+    async function runWithGeminiFallback(): Promise<{ text?: string }> {
+      // Combined mode: run deterministic local search first for correct facts,
+      // then let Gemini rewrite for better prose. Guarantees correct data even
+      // if Gemini fails; still gets nice writing when Gemini is available.
+      const det = await runDeterministic("combined_local_plus_gemini");
+      const factual = (det.text ?? "").trim();
+      if (!directGeminiKey || !factual) return det;
       toolTrace.push({
         name: "ai_model",
-        args: { provider: "gemini_direct_fallback", model: "gemini-2.5-flash" },
+        args: { provider: "gemini_direct_fallback", model: "gemini-2.5-flash", mode: "polish_deterministic" },
         ok: true,
         ms: 0,
-        summary: "Lovable AI unavailable — retrying with direct Gemini API (same tools).",
+        summary: "Local search produced the facts — Gemini rewriting for clarity.",
       });
-      try {
-        return await generateText({
-          model: google("gemini-2.5-flash"),
-          system: systemWithPreflight,
-          messages: messages as any,
-          tools: toolset,
-          stopWhen: stepCountIs(50),
-        });
-      } catch (e) {
-        return await runDeterministic(`gemini_error:${(e as Error)?.message ?? "unknown"}`);
-      }
+      const polished = await polishWithGemini(factual);
+      return { text: polished };
     }
 
     let result: { text?: string };
