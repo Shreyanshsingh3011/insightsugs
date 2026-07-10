@@ -700,29 +700,55 @@ export async function runCopilotAgent(
         withTrace("search_doc_chunks", { document_id, query, k }, async () => {
           const doc = docById.get(document_id);
           if (!doc) return { error: "Unknown document_id" };
-          // Doc chunks are stored at 768d (google/gemini-embedding-001 via
-          // documents.server.embedTexts). Must query with the SAME model or
-          // pgvector's <=> errors on dim mismatch and the RPC returns nothing.
-          const { embedTexts: embedDocQuery } = await import("./documents.server");
-          const [qvec] = await embedDocQuery([query]);
-          const { data: matches, error } = await supabase.rpc("match_doc_chunks", {
-            _user_id: userId,
-            _query: qvec as any,
-            _scope_folder: null as unknown as string,
-            _scope_document: document_id,
-            _match_count: k,
-          });
-          if (error) return { error: error.message };
-          const results = (matches ?? []).map((m: any) => {
+          let matches: any[] = [];
+          let mode: "vector" | "keyword" = "vector";
+          try {
+            // Doc chunks are stored at 768d (google/gemini-embedding-001 via
+            // documents.server.embedTexts). Must query with the SAME model or
+            // pgvector's <=> errors on dim mismatch and the RPC returns nothing.
+            const { embedTexts: embedDocQuery } = await import("./documents.server");
+            const [qvec] = await embedDocQuery([query]);
+            const { data: vectorMatches, error } = await supabase.rpc("match_doc_chunks", {
+              _user_id: userId,
+              _query: qvec as any,
+              _scope_folder: null as unknown as string,
+              _scope_document: document_id,
+              _match_count: k,
+            });
+            if (error) throw new Error(error.message);
+            matches = (vectorMatches ?? []) as any[];
+          } catch {
+            mode = "keyword";
+            const { data: chunks, error } = await supabase
+              .from("document_chunks")
+              .select("document_id, content, page_no")
+              .eq("document_id", document_id)
+              .limit(300);
+            if (error) return { error: error.message };
+            const tokens = query
+              .toLowerCase()
+              .split(/[^a-z0-9]+/i)
+              .filter((t) => t.length >= 3);
+            const scored = ((chunks ?? []) as any[]).map((chunk) => {
+              const hay = String(chunk.content ?? "").toLowerCase();
+              let score = 0;
+              for (const token of tokens) if (hay.includes(token)) score++;
+              return { ...chunk, document_name: doc.name, similarity: score };
+            });
+            scored.sort((a, b) => Number(b.similarity ?? 0) - Number(a.similarity ?? 0));
+            const anyHit = scored.some((s) => Number(s.similarity ?? 0) > 0);
+            matches = (anyHit ? scored.filter((s) => Number(s.similarity ?? 0) > 0) : scored).slice(0, k);
+          }
+          const results = matches.map((m: any) => {
             ledger.push({
               kind: "doc_chunk",
-              documentId: m.document_id,
-              documentName: m.document_name,
+              documentId: m.document_id ?? document_id,
+              documentName: m.document_name ?? doc.name,
               pageNo: m.page_no ?? 0,
               snippet: m.content ?? "",
             });
             return {
-              document: m.document_name,
+              document: m.document_name ?? doc.name,
               page: m.page_no ?? 0,
               snippet: (m.content ?? "").slice(0, 400),
               similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
@@ -730,8 +756,8 @@ export async function runCopilotAgent(
             };
           });
           return {
-            _summary: `${results.length} chunks from "${doc.name}"`,
-            _resultForModel: { document: doc.name, matches: results },
+            _summary: `${results.length} chunks from "${doc.name}" (${mode})`,
+            _resultForModel: { document: doc.name, mode, matches: results },
           };
         }),
     });
