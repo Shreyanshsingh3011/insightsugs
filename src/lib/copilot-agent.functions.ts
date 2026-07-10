@@ -1390,7 +1390,7 @@ export async function runCopilotAgent(
         const model = gateway("google/gemini-3-flash-preview");
         result = await generateText({
           model,
-          system,
+          system: systemWithPreflight,
           messages: messages as any,
           tools: toolset,
           stopWhen: stepCountIs(50),
