@@ -124,30 +124,35 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
     };
   }
 
-  // Status breakdown — a real, specific signal.
+  // Status breakdown — only surface when it reflects real workload.
   const buckets: Record<string, number> = {};
   for (const r of allRows) {
     const b = statusBucketForRow(r);
     buckets[b] = (buckets[b] ?? 0) + 1;
   }
-  const bucketSummary = Object.entries(buckets)
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `${k}: ${fmt(v)}`)
-    .join(", ");
   const pending = (buckets["In Progress"] ?? 0) + (buckets["Not Started"] ?? 0) + (buckets["Delayed"] ?? 0);
   const done = buckets["Completed"] ?? 0;
-  addInsight(
-    insights,
-    "Progress snapshot",
-    `${fmt(allRows.length)} rows: ${bucketSummary}. ${fmt(pending)} still open vs ${fmt(done)} completed.`,
-    (buckets["Delayed"] ?? 0) > 0 ? "warning" : "info",
-  );
+  const delayed = buckets["Delayed"] ?? 0;
 
-  if ((buckets["Delayed"] ?? 0) > 0) {
+  if (pending > 0 || done > 0 || delayed > 0) {
+    const bucketSummary = Object.entries(buckets)
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}: ${fmt(v)}`)
+      .join(", ");
+    addInsight(
+      insights,
+      "Progress snapshot",
+      `${fmt(allRows.length)} rows — ${bucketSummary}. ${fmt(pending)} still open vs ${fmt(done)} completed.`,
+      delayed > 0 ? "warning" : "info",
+    );
+  }
+
+  if (delayed > 0) {
     addInsight(
       insights,
       "Delayed items need attention",
-      `${fmt(buckets["Delayed"])} rows are marked delayed / overdue in ${sheetName}.`,
+      `${fmt(delayed)} rows are marked delayed / overdue in ${sheetName}.`,
       "critical",
     );
     questions.push(`Which rows in ${sheetName} are currently delayed and why?`);
@@ -159,40 +164,61 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
   for (const col of dateCols.slice(0, 2)) {
     let overdue = 0;
     let upcoming = 0;
+    const overdueExamples: string[] = [];
     const upcomingExamples: string[] = [];
     for (const r of activeRows) {
       const t = parseDateMs(r[col]);
       if (t == null) continue;
-      if (t < today) overdue += 1;
-      else if (t - today < 14 * 86400_000) {
+      if (t < today) {
+        overdue += 1;
+        if (overdueExamples.length < 3) overdueExamples.push(new Date(t).toISOString().slice(0, 10));
+      } else if (t - today < 14 * 86400_000) {
         upcoming += 1;
         if (upcomingExamples.length < 3) upcomingExamples.push(new Date(t).toISOString().slice(0, 10));
       }
     }
     if (overdue > 0) {
-      addInsight(insights, `Overdue by ${col}`, `${fmt(overdue)} active rows have a ${col} in the past.`, "critical");
+      addInsight(
+        insights,
+        `Overdue by ${col}`,
+        `${fmt(overdue)} active rows have a ${col} in the past${overdueExamples.length ? ` — e.g. ${overdueExamples.join(", ")}` : ""}.`,
+        "critical",
+      );
       questions.push(`List active rows with ${col} in the past in ${sheetName}.`);
     }
     if (upcoming > 0) {
-      addInsight(insights, `Due within 14 days (${col})`, `${fmt(upcoming)} active rows have ${col} within the next 2 weeks${upcomingExamples.length ? ` — e.g. ${upcomingExamples.join(", ")}` : ""}.`, "warning");
+      addInsight(
+        insights,
+        `Due within 14 days (${col})`,
+        `${fmt(upcoming)} active rows have ${col} within the next 2 weeks${upcomingExamples.length ? ` — e.g. ${upcomingExamples.join(", ")}` : ""}.`,
+        "warning",
+      );
     }
   }
 
   // Concentration on a categorical column (active only, so it reflects real workload).
-  const catColumn = chooseCategoricalColumn(activeRows.length ? activeRows : allRows, columns);
+  const catBase = activeRows.length ? activeRows : allRows;
+  const catColumn = chooseCategoricalColumn(catBase, columns);
   if (catColumn) {
-    const top = valueCounts(activeRows.length ? activeRows : allRows, catColumn).slice(0, 5);
-    const summary = top.map((v) => `${v.value}: ${fmt(v.count)}`).join(", ");
-    const hasRisk = top.some((v) => /pending|delay|delayed|open|hold|blocked|risk|not started/i.test(v.value));
-    addInsight(insights, `Top ${catColumn}`, `${catColumn} on active rows is concentrated in ${summary}.`, hasRisk ? "warning" : "info");
-    if (top[0]) questions.push(`Which rows are ${top[0].value} under ${catColumn}?`);
+    const top = valueCounts(catBase, catColumn).filter((v) => v.value !== "(blank)").slice(0, 5);
+    if (top.length > 0 && top[0].count > 1) {
+      const summary = top.map((v) => `${v.value}: ${fmt(v.count)}`).join(", ");
+      const hasRisk = top.some((v) => /pending|delay|delayed|open|hold|blocked|risk|not started/i.test(v.value));
+      addInsight(
+        insights,
+        `Top ${catColumn}`,
+        `${catColumn} on ${activeRows.length ? "active" : "all"} rows is concentrated in ${summary}.`,
+        hasRisk ? "warning" : "info",
+      );
+      if (top[0]) questions.push(`Which rows are ${top[0].value} under ${catColumn}?`);
+    }
   }
 
   // Owner / assignee workload if such a column exists.
   const ownerColumn = columns.find((c) => /owner|assignee|responsible|assigned|person|engineer|contractor|vendor/i.test(c));
   if (ownerColumn && activeRows.length > 0) {
     const counts = valueCounts(activeRows, ownerColumn).filter((v) => v.value !== "(blank)").slice(0, 3);
-    if (counts.length > 0) {
+    if (counts.length > 0 && counts[0].count > 0) {
       addInsight(
         insights,
         `Workload by ${ownerColumn}`,
@@ -202,36 +228,41 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
     }
   }
 
+  // Only surface numeric findings when they are meaningful (cost/amount/qty)
+  // and the spread is actually notable — skip generic avg/min/max noise.
   const numeric = chooseNumericColumn(allRows, columns);
-  if (numeric) {
+  if (numeric && /amount|cost|price|budget|value|total|qty|quantity|units|kw|mw|capacity/i.test(numeric.column)) {
     const values = numeric.values;
     const sum = values.reduce((a, b) => a + b, 0);
     const avg = sum / values.length;
     const max = Math.max(...values);
-    const min = Math.min(...values);
-    addInsight(
-      insights,
-      `${numeric.column} spread`,
-      `${fmt(values.length)} values — sum ${fmt(sum)}, avg ${fmt(avg)}, min ${fmt(min)}, max ${fmt(max)}.`,
-      max > avg * 3 ? "warning" : "info",
-    );
-    questions.push(`Show the top rows by ${numeric.column} in ${sheetName}.`);
+    if (values.length >= 3 && max > avg * 3) {
+      addInsight(
+        insights,
+        `${numeric.column} outliers`,
+        `${fmt(values.length)} values in ${numeric.column} — total ${fmt(sum)}, with a max of ${fmt(max)} well above the average (${fmt(avg)}).`,
+        "warning",
+      );
+      questions.push(`Show the top rows by ${numeric.column} in ${sheetName}.`);
+    }
   }
 
+  // Only report data gaps if they cover a meaningful share of the sheet.
   const gapStats = columns
     .map((column) => ({ column, blanks: allRows.filter((r) => !cellText(r[column])).length }))
-    .filter((g) => g.blanks > 0 && g.blanks < allRows.length)
+    .filter((g) => g.blanks >= Math.max(3, allRows.length * 0.2) && g.blanks < allRows.length)
     .sort((a, b) => b.blanks - a.blanks)
     .slice(0, 2);
   if (gapStats.length > 0) {
     addInsight(
       insights,
       "Data gaps",
-      `Largest blank areas: ${gapStats.map((g) => `${g.column} (${fmt(g.blanks)} blanks)`).join(", ")}.`,
+      `Largest blank areas: ${gapStats.map((g) => `${g.column} (${fmt(g.blanks)} blanks / ${fmt(allRows.length)} rows)`).join(", ")}.`,
       "warning",
     );
     questions.push(`Which rows have missing ${gapStats[0].column}?`);
   }
+
 
   const labelColumn = columns.find((c) => /project|activity|task|name|item|code|vendor|client/i.test(c));
   if (labelColumn) {
