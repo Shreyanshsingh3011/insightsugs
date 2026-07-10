@@ -332,6 +332,10 @@ export default function AgentDashboard() {
   useEffect(() => {
     if (typeof window !== "undefined") sessionStorage.setItem("agent:selected", selected);
   }, [selected]);
+  const selectProject = (projectId: string) => {
+    setSelected(projectId);
+    setFilters(loadReportFilters(`agent:filters:${projectId}`));
+  };
 
   // Live registry pulled from the master Google Sheet — falls back if unavailable.
   const registryQ = useQuery({
@@ -804,7 +808,7 @@ export default function AgentDashboard() {
       activity: pick(r, "Activity List", "Process Descriptions", "Process"),
       person: pick(r, "Responsible Person", "Responsibility", "approvers name"),
       stage: pick(r, "Stages", "Stages of Process"),
-      status: pick(r, "Status Category", "Status as on Date"),
+      status: statusOf(r),
       criticality: pick(r, "Criticality"),
       tat: num(r["TAT"]),
       days_taken: num(r["Days Taken"]),
@@ -965,7 +969,7 @@ export default function AgentDashboard() {
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const stage = pick(r, "Stages", "Stages of Process");
-    const status = pick(r, "Status Category", "Status as on Date");
+    const status = statusOf(r);
     const crit = pick(r, "Criticality");
     const proj = pick(r, "__project");
     const tat = num(r["TAT"]);
@@ -1185,24 +1189,15 @@ export default function AgentDashboard() {
 
 
   // ── FILTERED REPORT / EXPORT
-  type Filters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
   const filterKey = `agent:filters:${selected}`;
-  const [filters, setFilters] = useState<Filters>(() => {
-    if (typeof window === "undefined") return { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
-    try {
-      const raw = sessionStorage.getItem(filterKey);
-      if (raw) return JSON.parse(raw) as Filters;
-    } catch { /* noop */ }
-    return { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
-  });
+  const [filters, setFilters] = useState<ReportFilters>(() => loadReportFilters(filterKey));
   useEffect(() => {
     if (typeof window !== "undefined") sessionStorage.setItem(filterKey, JSON.stringify(filters));
   }, [filterKey, filters]);
-  // Reset filters when the underlying project payload changes identity.
+  // Load the correct saved filter set immediately when switching project scope.
   useEffect(() => {
-    const raw = typeof window !== "undefined" ? sessionStorage.getItem(filterKey) : null;
-    if (!raw) setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false });
-  }, [payload?.project, filterKey]);
+    setFilters(loadReportFilters(filterKey));
+  }, [filterKey]);
 
   const filterOptions = useMemo(() => {
     const s = new Set<string>(), c = new Set<string>(), st = new Set<string>(), p = new Set<string>();
@@ -1609,7 +1604,7 @@ export default function AgentDashboard() {
           label="All merged" active={selected === "all"}
           count={sources.reduce((a, s) => a + (s.payload?.data?.length ?? 0), 0)}
           loading={anyFetching && selected === "all"}
-          onClick={() => setSelected("all")}
+          onClick={() => selectProject("all")}
         />
         {sources.map(s => (
           <ProjectChip
@@ -1619,7 +1614,7 @@ export default function AgentDashboard() {
             count={s.payload?.data?.length ?? 0}
             loading={s.isFetching}
             error={s.isError}
-            onClick={() => setSelected(s.project.id)}
+            onClick={() => selectProject(s.project.id)}
           />
         ))}
         {selected !== "all" && (
@@ -2002,7 +1997,7 @@ export default function AgentDashboard() {
                   Only overdue (not completed & delay &gt; 0)
                 </label>
                 <Button size="sm" variant="ghost" className="h-7 px-2 text-xs ml-auto"
-                  onClick={() => setFilters({ status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false })}>
+                  onClick={() => setFilters(DEFAULT_REPORT_FILTERS)}>
                   Reset filters
                 </Button>
               </div>
