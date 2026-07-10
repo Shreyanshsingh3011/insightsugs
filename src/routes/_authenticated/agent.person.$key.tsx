@@ -5,6 +5,7 @@ import { useAgentSources } from "@/hooks/useAgentSources";
 import {
   decodeKey, personEmail, personName, toScopedRow, pick,
 } from "@/lib/entity-scope";
+import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/person/$key")({
   component: PersonPage,
@@ -52,7 +53,7 @@ function PersonPage() {
         responsibleEmail: email || null,
         defaultDept: dept || null,
         summaryLine: scoped.length
-          ? `Owns ${scoped.length} activities across ${new Set(scoped.map((r) => r.project)).size} project(s); ${scoped.filter((r) => r.delay > 0).length} currently delayed.`
+          ? `Owns ${scoped.length} activities across ${new Set(scoped.map((r) => r.project)).size} project(s); ${scoped.filter((r) => r.delay > 0 && !isTerminalRow(r.row)).length} currently delayed.`
           : undefined,
       }}
     />

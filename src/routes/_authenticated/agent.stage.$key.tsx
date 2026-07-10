@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { decodeKey, stageName, toScopedRow } from "@/lib/entity-scope";
+import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/stage/$key")({
   component: StagePage,
@@ -37,7 +38,7 @@ function StagePage() {
         scopeLabel: decoded,
         scopeRef: key,
         summaryLine: scoped.length
-          ? `Stage covers ${scoped.length} activities across ${projects.size} project(s); ${scoped.filter((r) => r.delay > 0).length} delayed.`
+          ? `Stage covers ${scoped.length} activities across ${projects.size} project(s); ${scoped.filter((r) => r.delay > 0 && !isTerminalRow(r.row)).length} delayed.`
           : undefined,
       }}
     />
