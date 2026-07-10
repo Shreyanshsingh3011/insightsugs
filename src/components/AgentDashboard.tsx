@@ -1920,6 +1920,9 @@ export default function AgentDashboard() {
               <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
                 <Filter className="h-4 w-4 text-primary" /> Filtered report
                 <Badge variant="secondary" className="ml-1">{filteredRows.length} / {rowIndex.length}</Badge>
+                <Badge variant="outline" className="max-w-full truncate text-[10px] font-normal">
+                  {selected === "all" ? "Scope: All projects" : `Scope: ${sources.find(s => s.project.id === selected)?.project.label ?? payload?.project ?? selected}`}
+                </Badge>
                 {(() => {
                   const latest = Math.max(0, ...queries.map((q) => q.dataUpdatedAt || 0));
                   const anyFetching = queries.some((q) => q.isFetching);
@@ -2007,6 +2010,7 @@ export default function AgentDashboard() {
                   <TableHeader className="sticky top-0 bg-background">
                     <TableRow>
                       <TableHead>Activity</TableHead>
+                      <TableHead>Project</TableHead>
                       <TableHead>Person</TableHead>
                       <TableHead>Stage</TableHead>
                       <TableHead>Status</TableHead>
@@ -2033,6 +2037,7 @@ export default function AgentDashboard() {
                           <TableCell className="max-w-[280px] truncate font-medium" title={r.activity}>
                             <Link {...link} data-row-link className="hover:underline">{r.activity || "—"}</Link>
                           </TableCell>
+                          <TableCell className="max-w-[140px] truncate text-xs" title={r.proj || payload?.project || ""}>{r.proj || payload?.project || "—"}</TableCell>
                           <TableCell className="text-xs">{r.person || "—"}</TableCell>
                           <TableCell className="text-xs">{r.stage || "—"}</TableCell>
                           <TableCell>
@@ -2049,7 +2054,7 @@ export default function AgentDashboard() {
                       );
                     })}
                     {filteredRows.length === 0 && (
-                      <TableRow><TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="py-6 text-center text-sm text-muted-foreground">No rows match.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
