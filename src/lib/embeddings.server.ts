@@ -7,28 +7,76 @@ const MODEL = "openai/text-embedding-3-small";
 const DIMS = 1536;
 const BATCH = 96; // OpenAI per-request cap on this model is generous; keep well under
 
+function isQuotaOrBilling(status: number, text: string) {
+  return status === 402 || status === 429 || status >= 500 || /payment required|credits exhausted|quota|rate limit/i.test(text);
+}
+
+async function embedWithGemini(inputs: string[], dimensions: number): Promise<number[][]> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("Missing GEMINI_API_KEY on the server");
+  const out: number[][] = [];
+  const model = "models/gemini-embedding-001";
+  for (let start = 0; start < inputs.length; start += BATCH) {
+    const chunk = inputs.slice(start, start + BATCH);
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${model}:batchEmbedContents?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: chunk.map((text) => ({
+            model,
+            content: { parts: [{ text }] },
+            taskType: "RETRIEVAL_DOCUMENT",
+            outputDimensionality: dimensions,
+          })),
+        }),
+      },
+    );
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`Gemini embeddings error ${res.status}: ${t.slice(0, 300)}`);
+    }
+    const json = (await res.json()) as { embeddings?: { values?: number[] }[] };
+    for (const item of json.embeddings ?? []) {
+      const values = item.values ?? [];
+      if (values.length !== dimensions) {
+        throw new Error(`Gemini embeddings returned ${values.length} dimensions, expected ${dimensions}`);
+      }
+      out.push(values);
+    }
+  }
+  return out;
+}
+
 export async function embedTexts(
   inputs: string[],
   opts?: { model?: string; dimensions?: number },
 ): Promise<number[][]> {
   const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("Missing LOVABLE_API_KEY on the server");
   const model = opts?.model ?? MODEL;
   const dimensions = opts?.dimensions ?? DIMS;
+
+  if (!key) return embedWithGemini(inputs, dimensions);
 
   const out: number[][] = new Array(inputs.length);
   for (let start = 0; start < inputs.length; start += BATCH) {
     const chunk = inputs.slice(start, start + BATCH);
+    const body = JSON.stringify({ model, input: chunk, dimensions });
     const res = await fetch(GATEWAY_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Lovable-API-Key": key,
       },
-      body: JSON.stringify({ model, input: chunk, dimensions }),
+      body,
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
+      if (isQuotaOrBilling(res.status, t) && process.env.GEMINI_API_KEY) {
+        const fallback = await embedWithGemini(inputs, dimensions);
+        return fallback;
+      }
       throw new Error(`Embeddings error ${res.status}: ${t.slice(0, 300)}`);
     }
     const json = (await res.json()) as {
