@@ -100,15 +100,34 @@ const STOP = new Set([
   "documents","data","information",
 ]);
 
-function rowMatchesTokens(row: StoredRow, tokens: string[]): number {
-  if (tokens.length === 0) return 0;
-  const hay = Object.entries(row.data)
-    .map(([k, v]) => `${k} ${cellText(v)}`)
-    .join(" ")
+function rowMatchesTokens(row: StoredRow, tokens: string[], phrases: string[] = []): number {
+  if (tokens.length === 0 && phrases.length === 0) return 0;
+  // Only search values, not column headers — headers create false positives
+  // (e.g. a column named "Devi..." would match every row).
+  const hay = Object.values(row.data)
+    .map((v) => cellText(v))
+    .join(" \u0001 ")
     .toLowerCase();
-  let hits = 0;
-  for (const t of tokens) if (hay.includes(t)) hits += 1;
-  return hits;
+  // Require ALL tokens to appear (AND semantics) so "Kunti Devi" does not
+  // match rows that only contain "Devi".
+  for (const t of tokens) if (!hay.includes(t)) return 0;
+  let score = tokens.length;
+  // Boost rows that contain the full contiguous phrase.
+  for (const p of phrases) if (p && hay.includes(p)) score += 10;
+  return score;
+}
+
+// Extract likely proper-noun phrases (2+ consecutive capitalised words) from
+// the ORIGINAL question so we can require them as contiguous substrings.
+function extractPhrases(q: string): string[] {
+  const out: string[] = [];
+  const re = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q))) out.push(m[1].toLowerCase());
+  // Also quoted phrases.
+  const qre = /["'"']([^"'"']{2,})["'"']/g;
+  while ((m = qre.exec(q))) out.push(m[1].toLowerCase());
+  return out;
 }
 
 function statusColumn(cols: string[]): string | null {
