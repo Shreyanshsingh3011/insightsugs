@@ -82,11 +82,13 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Started" | "Other" {
-  const x = (s || "").toLowerCase();
-  if (/complete|done/.test(x)) return "Completed";
-  if (/progress|ongoing|wip/.test(x)) return "In Progress";
-  if (/delay|overdue|late|breach/.test(x)) return "Delayed";
-  if (/not start|yet|pending/.test(x)) return "Not Started";
+  const x = (s || "").toLowerCase().trim();
+  // Treat every "finished" flavour as Completed so the filtered report and
+  // "only overdue" toggle don't keep parading closed rows as incomplete.
+  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer/.test(x)) return "Completed";
+  if (/progress|ongoing|wip|active|working/.test(x)) return "In Progress";
+  if (/delay|overdue|late|breach|slipp/.test(x)) return "Delayed";
+  if (/not\s*start|yet\s*to|pending|new|open|awaiting|queued/.test(x)) return "Not Started";
   return "Other";
 }
 
@@ -1196,7 +1198,7 @@ export default function AgentDashboard() {
       if (filters.stage !== "all" && r.stage !== filters.stage) return false;
       if (filters.person !== "all" && r.person !== filters.person) return false;
       if (min > 0 && r.delay < min) return false;
-      if (filters.onlyOverdue && !(r.delay > 0 && !/complete|done/i.test(r.status))) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && bucket(r.status) !== "Completed")) return false;
       if (q && !r.hay.includes(q)) return false;
       return true;
     });
@@ -1889,15 +1891,38 @@ export default function AgentDashboard() {
           <Card id="filtered-report">
 
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
                 <Filter className="h-4 w-4 text-primary" /> Filtered report
-                <Badge variant="secondary" className="ml-2">{filteredRows.length} / {rowIndex.length}</Badge>
-                <Button
-                  size="sm" variant="outline" className="ml-auto h-8"
-                  onClick={downloadCSV} disabled={filteredRows.length === 0}
-                >
-                  <Download className="h-4 w-4" /> Export CSV
-                </Button>
+                <Badge variant="secondary" className="ml-1">{filteredRows.length} / {rowIndex.length}</Badge>
+                {(() => {
+                  const latest = Math.max(0, ...queries.map((q) => q.dataUpdatedAt || 0));
+                  const anyFetching = queries.some((q) => q.isFetching);
+                  return (
+                    <span className="text-[10px] font-normal text-muted-foreground">
+                      {anyFetching
+                        ? "Refreshing live sheet data…"
+                        : latest
+                          ? `Data as of ${new Date(latest).toLocaleTimeString()} · auto-refreshes every 5 min`
+                          : "Waiting for live sheet data…"}
+                    </span>
+                  );
+                })()}
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    size="sm" variant="ghost" className="h-8"
+                    onClick={refetchAll}
+                    disabled={queries.some((q) => q.isFetching)}
+                    title="Re-pull sheet data now so completed rows drop out of the report"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${queries.some((q) => q.isFetching) ? "animate-spin" : ""}`} /> Refresh now
+                  </Button>
+                  <Button
+                    size="sm" variant="outline" className="h-8"
+                    onClick={downloadCSV} disabled={filteredRows.length === 0}
+                  >
+                    <Download className="h-4 w-4" /> Export CSV
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
