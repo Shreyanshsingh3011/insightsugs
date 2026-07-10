@@ -363,7 +363,7 @@ export async function deterministicAnswer(params: {
   // "Answer rejected — grounding check failed" for the user.
   if (parts.length === 0 || uniqCites.length === 0) {
     const scope = [
-      sheets.length ? `${sheets.length} sheet${sheets.length === 1 ? "" : "s"}` : "",
+      regs.length ? `${regs.length} sheet${regs.length === 1 ? "" : "s"}` : "",
       docs.length ? `${docs.length} document${docs.length === 1 ? "" : "s"}` : "",
     ].filter(Boolean).join(" and ") || "the selected sources";
     const missing = tokens.length ? tokens.slice(0, 6).join(", ") : "matching data";
