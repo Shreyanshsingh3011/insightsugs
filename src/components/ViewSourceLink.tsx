@@ -40,10 +40,13 @@ export function ViewSourceLink({
   });
 
   const label = projectLabel ? norm(projectLabel) : "";
-  const sheet = (q.data?.sheets ?? []).find((s: { display_name: string }) => {
-    if (!label) return false;
+  const fallbackNorm = fallbackUrl ? fallbackUrl.trim().toLowerCase() : "";
+  const sheet = (q.data?.sheets ?? []).find((s: { display_name: string; source_url?: string | null }) => {
     const n = norm(s.display_name);
-    return n === label || n.includes(label) || label.includes(n);
+    const src = (s.source_url ?? "").trim().toLowerCase();
+    if (label && (n === label || n.includes(label) || label.includes(n))) return true;
+    if (fallbackNorm && src && (src === fallbackNorm || src.includes(fallbackNorm) || fallbackNorm.includes(src))) return true;
+    return false;
   }) as { id: string; display_name: string; source_url?: string | null } | undefined;
 
   const base =
@@ -69,7 +72,11 @@ export function ViewSourceLink({
     );
   }
 
-  if (fallbackUrl) {
+  // Only fall back to an external URL when it's a human-viewable page
+  // (e.g. Google Sheets). Never link to raw JSON API endpoints like
+  // sheet2api / gviz — those render a wall of JSON with no context.
+  const isViewable = /docs\.google\.com\/spreadsheets|\/edit(\?|#|$)/i.test(fallbackUrl ?? "");
+  if (fallbackUrl && isViewable) {
     return (
       <a
         href={fallbackUrl}
@@ -87,3 +94,4 @@ export function ViewSourceLink({
 
   return null;
 }
+
