@@ -13,11 +13,11 @@ import type { Row } from "@/lib/entity-scope";
 
 // Kept in sync with AgentDashboard.FALLBACK_PROJECTS.
 const FALLBACK_PROJECTS: AgentProject[] = [
-  { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
-  { id: "pspcl", label: "PSPCL Kharar",  url: "https://sheet2api-bypassed-login.vercel.app/api/public/80d914878c5b9a85de90b59f5eaec11a" },
-  { id: "hp",    label: "Himachal",      url: "https://sheet2api-bypassed-login.vercel.app/api/public/f0fc62c15a274dc4c149c2b0a69e2f86" },
-  { id: "ula",   label: "ULA 1.1 Bihar", url: "https://sheet2api-bypassed-login.vercel.app/api/public/f84b4f7ebb2380bc85f27cba8a676a1d" },
-  { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
+  { id: "nit58", label: "NIT-58",   url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
+  { id: "bihar", label: "Bihar",    url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1685983370#gid=1685983370" },
+  { id: "hp",    label: "Himachal", url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1063989895#gid=1063989895" },
+  { id: "pspcl", label: "PSPCL",    url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=318275095#gid=318275095" },
+  { id: "nit76", label: "NIT-76",   url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
 const AUTO_REFRESH_MS = 5 * 60_000;
 const REGISTRY_REFRESH_MS = 5 * 60_000;
