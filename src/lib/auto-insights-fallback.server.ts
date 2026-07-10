@@ -264,6 +264,9 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
   }
 
 
+  // Sheet-shape templates: append tailored insights based on detected columns.
+  applySheetTemplates({ sheetName, allRows, activeRows, columns, insights, questions });
+
   const labelColumn = columns.find((c) => /project|activity|task|name|item|code|vendor|client/i.test(c));
   if (labelColumn) {
     const examples = activeRows.map((r) => cellText(r[labelColumn])).filter(Boolean).slice(0, 4).join(", ");
@@ -271,6 +274,7 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
       questions.push(`Summarize the row for ${examples.split(",")[0]?.trim()}.`);
     }
   }
+
 
   while (questions.length < 4 && columns.length > 0) {
     const column = columns[questions.length % columns.length];
