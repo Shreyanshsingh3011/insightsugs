@@ -448,6 +448,71 @@ export async function deterministicAnswer(params: {
   // answer that has no inline [..] markers, which turned into a bogus
   // "Answer rejected — grounding check failed" for the user.
   if (parts.length === 0 || uniqCites.length === 0) {
+    // EXACT-MATCH GUARDRAIL: when the user asked for something specific
+    // (proper noun, quoted phrase, identifier like IT76/#123, or 2+
+    // content tokens) and we found NO exact match, never fall back to
+    // Auto-Insights or generic refusal — surface closest candidates and
+    // ask a clarifying question. This prevents returning IT77 when the
+    // user asked for IT76, or Ram Devi when they asked for Kunti Devi.
+    const hadSpecificTarget = basePhrases.length > 0;
+    if (hadSpecificTarget) {
+      const suggestions: string[] = [];
+      const suggestCites: string[] = [];
+      const seen = new Set<string>();
+      // Rank rows by how many phrase-tokens they contain (partial hits).
+      const phraseTokens = Array.from(
+        new Set(basePhrases.flatMap((p) => p.split(" ").filter((t) => t.length >= 2))),
+      );
+      for (const { reg, rows } of sheetRows) {
+        const cols = allColumns(rows);
+        const statusCol = statusColumn(cols);
+        const active = rows.filter((r) => !isTerminal(r, statusCol));
+        const scored = active
+          .map((r) => {
+            const hay = normalizeHaystack(Object.values(r.data));
+            let s = 0;
+            for (const t of phraseTokens) if (hay.includes(t)) s++;
+            return { r, s };
+          })
+          .filter((x) => x.s > 0)
+          .sort((a, b) => b.s - a.s)
+          .slice(0, 3);
+        for (const { r } of scored) {
+          // Pick a short label: first non-empty text cell.
+          const label = Object.values(r.data)
+            .map((v) => cellText(v))
+            .find((v) => v && v.length > 0) ?? `row ${r.row_index + 1}`;
+          const key = `${reg.id}#${r.row_index}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const marker = `[sheet:${reg.display_name} row ${r.row_index + 1}]`;
+          suggestions.push(`\`${label.slice(0, 80)}\` ${marker}`);
+          suggestCites.push(marker);
+          params.ledgerSink?.push({
+            kind: "sheet_row",
+            registryId: reg.id,
+            sheetLabel: reg.display_name,
+            rowIndex: r.row_index,
+            data: r.data,
+          });
+        }
+      }
+      const asked = basePhrases[0] ?? tokens.join(" ");
+      if (suggestions.length > 0) {
+        const answer =
+          `**No exact match for "${asked}"** in the selected sources.\n\n` +
+          `I refuse to return a similar-but-different record. Did you mean one of these?\n\n` +
+          suggestions.slice(0, 5).map((s) => `- ${s}`).join("\n") +
+          `\n\nReply with the exact identifier/name from the list, or refine your query.\n\n` +
+          `Sources:\n${suggestCites.slice(0, 5).map((m) => `- ${m}`).join("\n")}`;
+        return { answer, citations: suggestCites.slice(0, 5), matched: false };
+      }
+      const answer =
+        `**No exact match for "${asked}"** in the selected sources, and I found no close candidates either. ` +
+        `Please double-check the spelling / identifier, or pick a different sheet or document from the source picker.`;
+      return { answer, citations: [], matched: false };
+    }
+
     // Before refusing, fall back to the computed Auto-Insights for the
     // scoped sheet(s). If Auto-Insights can say something useful about
     // the selected data, we should too — the user has explicitly picked
@@ -478,6 +543,7 @@ export async function deterministicAnswer(params: {
       `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.`;
     return { answer, citations: [], matched: false };
   }
+
 
 
   const answer =
