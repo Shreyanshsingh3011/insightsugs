@@ -192,16 +192,20 @@ export async function deterministicAnswer(params: {
     const activeRows = rows.filter((r) => !isTerminal(r, statusCol));
     const matched = (tokens.length > 0 || phrases.length > 0)
       ? activeRows
-          .map((row) => ({ row, score: rowMatchesStrict(row, phrases, tokens) }))
+          .map((row) => ({ row, score: rowMatchesStrict(row, phrases, strict ? [] : tokens) }))
           .filter((x) => x.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)
       : activeRows;
-    // When the user targeted a specific phrase/name, do NOT fall back to
-    // "all active rows" if nothing matches — return an empty result for
-    // that sheet so we don't leak unrelated rows (e.g. every "Devi").
+    // In strict mode we NEVER broaden. Otherwise, if the user targeted a
+    // specific phrase/name and nothing matches, we still return empty so
+    // unrelated rows never leak.
     const hasSpecificTarget = phrases.length > 0 || tokens.length >= 2;
-    const universe = matched.length > 0 ? matched : (hasSpecificTarget ? [] : activeRows);
+    const universe = matched.length > 0
+      ? matched
+      : strict
+        ? []
+        : (hasSpecificTarget ? [] : activeRows);
 
     const emitRow = (row: StoredRow, note?: string) => {
       const marker = `[sheet:${reg.display_name} row ${row.row_index + 1}]`;
