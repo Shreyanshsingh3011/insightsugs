@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, ExternalLink, CheckCircle2, AlertTriangle, XCircle, Radio } from "lucide-react";
+import { RefreshCw, ExternalLink, CheckCircle2, AlertTriangle, XCircle, Radio, Eye } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { listSheets, refreshSheet } from "@/lib/sheets.functions";
 import { readRecentSyncAudit, type SyncAuditRow } from "@/lib/sync-audit.functions";
 
