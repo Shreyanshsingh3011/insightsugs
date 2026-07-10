@@ -1,5 +1,7 @@
 // Lovable AI Gateway provider for the AI SDK. Server-only.
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createFallbackFetch } from "./ai-fallback.server";
+
 
 export const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
 
