@@ -119,15 +119,16 @@ function derive(payload: Payload | undefined) {
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
+    const terminal = isTerminalRow(r);
     const rowStatus = statusOf(r);
-    const st = statusBucketForRow(r);
+    const st: StatusBucket = terminal ? "Completed" : statusBucketForRow(r);
     status[st] = (status[st] || 0) + 1;
     const stage = pick(r, "Stages", "Stages of Process") || "—";
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const delay = st === "Completed" ? 0 : num(r["Delay in Days"]);
+    const delay = terminal ? 0 : num(r["Delay in Days"]);
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
 
@@ -142,16 +143,16 @@ function derive(payload: Payload | undefined) {
     personAgg[person].taken += taken;
     if (tat > 0) { sumTat += tat; sumTaken += taken; tatCounted++; }
 
-    const isDelayed = st === "Delayed" || (st !== "Completed" && taken > tat && tat > 0);
-    if (st === "Completed") { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
+    const isDelayed = !terminal && (st === "Delayed" || (taken > tat && tat > 0));
+    if (terminal) { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
     if (isDelayed) {
       delayedCount++; personAgg[person].delayed++; stageAgg[stage].delayed++;
       processAgg[process].delayed++; personAgg[person].delayDays += delay;
       stageAgg[stage].delayDays += delay; processAgg[process].delayDays += delay;
       totalDelay += delay;
     }
-    if (st !== "Completed" && delay > 0) overdueCount++;
-    if (st !== "Completed" && (delay > 0 || (tat > 0 && taken > tat))) {
+    if (!terminal && delay > 0) overdueCount++;
+    if (!terminal && (delay > 0 || (tat > 0 && taken > tat))) {
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
@@ -160,6 +161,7 @@ function derive(payload: Payload | undefined) {
       });
     }
   }
+
 
 
   const persons = Object.entries(personAgg)
