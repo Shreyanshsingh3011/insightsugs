@@ -272,6 +272,7 @@ function derive(payload: Payload | undefined) {
 
   // Anomalies: activities where taken >> tat
   const anomalies = rows
+    .filter((r) => !isTerminalRow(r))
     .map(r => {
       const tat = num(r["TAT"]);
       const taken = num(r["Days Taken"]);
@@ -958,7 +959,7 @@ export default function AgentDashboard() {
     const proj = pick(r, "__project");
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
-    const delay = num(r["Delay in Days"]);
+    const delay = terminal ? 0 : num(r["Delay in Days"]);
     const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
     return { i, activity, person, email, stage, status, statusBucket: rowBucket, terminal, crit, proj, tat, taken, delay, hay };
   }), [rowsAll]);
@@ -999,8 +1000,8 @@ export default function AgentDashboard() {
         if (p.name && hay.includes(p.name.toLowerCase())) s += 5;
         else if (p.email && hay.includes(p.email.toLowerCase())) s += 5;
       }
-      if (/overdue|delay|late|breach/.test(q) && r.delay > 0) s += 0.5;
-      if (/complete|done/.test(q) && /complete|done/i.test(r.status)) s += 0.5;
+      if (/overdue|delay|late|breach/.test(q) && r.delay > 0 && !r.terminal) s += 0.5;
+      if (/complete|done/.test(q) && (r.terminal || r.statusBucket === "Completed")) s += 0.5;
       return { r, s };
     }).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, limit);
     if (scored.length) return scored.map(x => x.r);
