@@ -448,6 +448,24 @@ export async function deterministicAnswer(params: {
   // answer that has no inline [..] markers, which turned into a bogus
   // "Answer rejected — grounding check failed" for the user.
   if (parts.length === 0 || uniqCites.length === 0) {
+    // Before refusing, fall back to the computed Auto-Insights for the
+    // scoped sheet(s). If Auto-Insights can say something useful about
+    // the selected data, we should too — the user has explicitly picked
+    // this sheet as scope.
+    if (!strict) {
+      for (const { reg, rows } of sheetRows) emitInsightBlock(reg, rows);
+      const uniq2 = Array.from(new Set(cites));
+      if (parts.length > 0 && uniq2.length > 0) {
+        return {
+          answer:
+            `No direct row match, but here is what the computed Auto-Insights say about the selected sheet(s):\n\n` +
+            parts.join("\n") +
+            `\n\nSources:\n${uniq2.map((m) => `- ${m}`).join("\n")}`,
+          citations: uniq2,
+          matched: true,
+        };
+      }
+    }
     const scope = [
       regs.length ? `${regs.length} sheet${regs.length === 1 ? "" : "s"}` : "",
       docs.length ? `${docs.length} document${docs.length === 1 ? "" : "s"}` : "",
@@ -460,6 +478,7 @@ export async function deterministicAnswer(params: {
       `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.`;
     return { answer, citations: [], matched: false };
   }
+
 
   const answer =
     `Answered directly from the selected sources (AI provider unavailable — used local search over your sheets and documents):\n\n` +
