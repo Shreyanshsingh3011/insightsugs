@@ -517,7 +517,10 @@ function CopilotPage() {
   }, [askMut.isPending, history.length]);
 
   const singleSheetId = selected.size === 1 ? Array.from(selected)[0] : null;
+  const multiSheetIds = selected.size >= 2 ? Array.from(selected) : null;
   const singleDocId = selectedDocs.size === 1 && selected.size === 0 ? Array.from(selectedDocs)[0] : null;
+
+
 
 
   return (
