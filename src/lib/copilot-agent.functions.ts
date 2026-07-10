@@ -1442,10 +1442,7 @@ export async function runCopilotAgent(
             ms: 0,
             summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
           });
-          result = {
-            text:
-              "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
-          };
+          result = await runDeterministic(`both_providers_failed:${(fallbackError as Error)?.message ?? "unknown"}`);
         }
       }
     }
