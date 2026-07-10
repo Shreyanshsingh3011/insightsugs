@@ -260,7 +260,9 @@ export async function runCopilotAgent(
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
     const directGeminiKey = process.env.GEMINI_API_KEY;
-    if (!key && !directGeminiKey) throw new Error("Missing AI provider configuration");
+    // No throw when both providers are missing: we fall back to the
+    // deterministic no-LLM engine below so the copilot keeps answering
+    // simple sheet/document questions without any AI credits.
 
     // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
     const [{ generateText, stepCountIs, tool }, gatewayModule] = await Promise.all([
