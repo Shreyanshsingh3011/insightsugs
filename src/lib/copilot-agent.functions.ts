@@ -1647,6 +1647,7 @@ export async function runCopilotAgent(
           regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
           docs: docs.map((d) => ({ id: d.id, name: d.name })),
           ledgerSink: ledger as any,
+          strictMatch: data.strictMatch === true,
         });
         finalAnswer = det.matched
           ? det.answer
