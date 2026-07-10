@@ -1190,13 +1190,66 @@ export async function runCopilotAgent(
 
 
     // 4) System prompt — the agent has no rows, only tools.
+    // Pre-compute per-sheet Auto-Insights + detected shape so the model
+    // knows what kind of sheet it's looking at (payments/hr/timeline/…)
+    // and which columns matter. This mirrors the same insights shown in
+    // the sheet header, so Copilot answers align with Auto-Insights.
+    const {
+      buildSheetAutoInsights,
+      detectSheetShape,
+    } = await import("./auto-insights-fallback.server");
+    const sheetInsightSnapshot = await Promise.all(
+      regs.slice(0, 5).map(async (r) => {
+        try {
+          const rows = await getSheetRows(r.id);
+          const cols = Array.from(
+            rows.reduce((set, row) => {
+              Object.keys(row.data).forEach((k) => set.add(k));
+              return set;
+            }, new Set<string>()),
+          );
+          const shape = detectSheetShape(cols);
+          const { insights, questions } = buildSheetAutoInsights(
+            r.display_name,
+            rows.map((row) => ({ row_index: row.row_index, data: row.data })),
+          );
+          return {
+            id: r.id,
+            name: r.display_name,
+            detected_shape: shape,
+            columns: cols.slice(0, 30),
+            rows_scanned: rows.length,
+            auto_insights: insights.slice(0, 6),
+            suggested_questions: questions.slice(0, 4),
+          };
+        } catch {
+          return {
+            id: r.id,
+            name: r.display_name,
+            detected_shape: "unknown",
+            columns: [],
+            rows_scanned: 0,
+            auto_insights: [],
+            suggested_questions: [],
+          };
+        }
+      }),
+    );
+
     const catalog = {
-      sheets: regs.map((r) => ({
-        id: r.id,
-        name: r.display_name,
-        type: r.sheet_type,
-        rows: r.row_count ?? 0,
-      })),
+      sheets: regs.map((r) => {
+        const snap = sheetInsightSnapshot.find((s) => s.id === r.id);
+        return {
+          id: r.id,
+          name: r.display_name,
+          type: r.sheet_type,
+          rows: r.row_count ?? 0,
+          detected_shape: snap?.detected_shape ?? "unknown",
+          columns: snap?.columns ?? [],
+          auto_insights: snap?.auto_insights ?? [],
+          suggested_questions: snap?.suggested_questions ?? [],
+        };
+      }),
       documents: docs.map((d) => ({
         id: d.id,
         name: d.name,
@@ -1204,6 +1257,7 @@ export async function runCopilotAgent(
         summary: d.summary ?? null,
       })),
     };
+
 
     const system = [
       "You are the dashboard Copilot. You are STRICTLY scoped to the sheets and documents the user has selected for this turn (listed in the catalog below).",
