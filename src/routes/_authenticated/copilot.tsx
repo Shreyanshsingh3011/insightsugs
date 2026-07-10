@@ -472,6 +472,10 @@ function CopilotPage() {
     // Reset insights when sheet scope changes
     setInsights(null);
     setInsightsSheet(null);
+    setCombinedInsights(null);
+    setCombinedSheetNames([]);
+    setCombinedInsightQuestions([]);
+
   };
 
   const toggleDoc = (id: string) => {
