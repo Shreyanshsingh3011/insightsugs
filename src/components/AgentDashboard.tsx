@@ -7,6 +7,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { encodeKey as encodeEntityKey, encodeRowKey } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
+import { listSheets } from "@/lib/sheets.functions";
+
 import { recordSyncAudit } from "@/lib/sync-audit.functions";
 import { diffRows, type RowDiff } from "@/lib/row-diff";
 import { generateGeminiFn } from "@/lib/gemini.functions";
@@ -352,26 +354,58 @@ export default function AgentDashboard() {
   );
   const needsOnboarding = scope.mode !== "all" && !scope.loading && projects.length === 0;
 
-  const queries = useQueries({
-    queries: projects.map(p => ({
-      queryKey: ["agent-src", p.id, p.url, p.tab ?? ""],
-      queryFn: async () => {
-        const started = performance.now();
-        const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
-        const clientMs = Math.round(performance.now() - started);
-        return {
-          project: p,
-          payload: (res as { payload?: SourcePayload }).payload,
-          fetchMs: (res as { fetchMs?: number }).fetchMs ?? clientMs,
-          fetchedAt: (res as { fetchedAt?: number }).fetchedAt ?? Date.now(),
-        };
-      },
-      staleTime: AUTO_REFRESH_MS,
-      refetchInterval: AUTO_REFRESH_MS,
-      refetchIntervalInBackground: true,
-      refetchOnWindowFocus: true,
-    })),
+  // Prefer the Google Sheets source_url from the registered sheets (auto-synced
+  // every 5 min) over the legacy sheet2api URL baked into the master registry.
+  // This keeps the dashboard aligned with the live sheet the user updates.
+  const fetchList = useServerFn(listSheets);
+  const registeredSheetsQ = useQuery({
+    queryKey: ["view-source-sheets"],
+    queryFn: () => fetchList(),
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
+  const resolveSourceUrl = (p: AgentProject): string => {
+    const list = (registeredSheetsQ.data?.sheets ?? []) as { display_name: string; source_url?: string | null }[];
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+    const label = norm(p.label);
+    const match = list.find((s) => {
+      if (!s.source_url) return false;
+      const n = norm(s.display_name);
+      return n === label || n.includes(label) || label.includes(n);
+    });
+    // Only override when we find a Google Sheets URL — never regress to another
+    // sheet2api-style proxy.
+    if (match?.source_url && /docs\.google\.com\/spreadsheets/i.test(match.source_url)) {
+      return match.source_url;
+    }
+    return p.url;
+  };
+
+  const queries = useQueries({
+    queries: projects.map(p => {
+      const effectiveUrl = resolveSourceUrl(p);
+      return {
+        queryKey: ["agent-src", p.id, effectiveUrl, p.tab ?? ""],
+        queryFn: async () => {
+          const started = performance.now();
+          const res = await fetchUrl({ data: { url: effectiveUrl, tab: p.tab } });
+          const clientMs = Math.round(performance.now() - started);
+          return {
+            project: p,
+            payload: (res as { payload?: SourcePayload }).payload,
+            fetchMs: (res as { fetchMs?: number }).fetchMs ?? clientMs,
+            fetchedAt: (res as { fetchedAt?: number }).fetchedAt ?? Date.now(),
+          };
+        },
+        staleTime: AUTO_REFRESH_MS,
+        refetchInterval: AUTO_REFRESH_MS,
+        refetchIntervalInBackground: true,
+        refetchOnWindowFocus: true,
+        enabled: registeredSheetsQ.isSuccess || registeredSheetsQ.isError,
+      };
+    }),
+  });
+
 
   const rawSources = queries.map((q, i) => ({
     project: projects[i],
