@@ -413,23 +413,25 @@ export async function runCopilotAgent(
 
           if (matches.length === 0) {
             mode = "keyword";
+            const strict = data.strictMatch === true;
             const { strictPhrases, normalizeHaystack, matchesAllPhrases, contentTokens } =
               await import("./query-match");
-            const phrases = strictPhrases(query);
+            const basePhrases = strictPhrases(query);
             const tokens = contentTokens(query);
+            // In strict mode, if no explicit phrase was extracted, still
+            // require the full content-token phrase as a contiguous match.
+            const phrases = strict && basePhrases.length === 0 && tokens.length >= 1
+              ? [tokens.join(" ")]
+              : basePhrases;
             const hasSpecificTarget = phrases.length > 0;
             const scored = rows.map((r) => {
               const hay = normalizeHaystack(Object.values(r.data));
-              // Strict rule: when the user's query contains a phrase (proper
-              // noun, quoted text, or 2+ content tokens), the row must
-              // contain EVERY such phrase as a contiguous substring. This
-              // prevents "Kunti Devi" from matching "Ram Devi" rows.
               if (phrases.length > 0) {
                 if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
                 return { row_index: r.row_index, similarity: 10 + tokens.length };
               }
-              // No strict target — fall back to per-token AND matching for
-              // single-word or purely generic queries.
+              // Non-strict: fall back to per-token AND matching for single
+              // generic queries. Strict mode never reaches this branch.
               if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) {
                 return { row_index: r.row_index, similarity: 0 };
               }
@@ -439,14 +441,10 @@ export async function runCopilotAgent(
             const anyHit = scored.some((s) => s.similarity > 0);
             if (anyHit) {
               matches = scored.filter((s) => s.similarity > 0).slice(0, k);
-            } else if (hasSpecificTarget || tokens.length >= 1) {
-              // User asked for something specific and nothing matched —
-              // return empty rather than leaking unrelated rows. The model
-              // will then say it can't find that record in the selected sheet.
+            } else if (strict || hasSpecificTarget || tokens.length >= 1) {
+              // Strict mode NEVER broadens; specific queries never leak.
               matches = [];
             } else {
-              // Truly empty/generic query — hand back the first k rows so
-              // the model can still answer positional/temporal questions.
               mode = "recent";
               matches = rows.slice(0, k).map((r) => ({ row_index: r.row_index, similarity: 0 }));
             }
