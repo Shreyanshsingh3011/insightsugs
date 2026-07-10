@@ -1373,7 +1373,8 @@ export async function runCopilotAgent(
       });
       return await generateText({
         model: google("gemini-2.5-flash"),
-        system,
+        system: systemWithPreflight,
+
         messages: messages as any,
         tools: toolset,
         stopWhen: stepCountIs(50),
