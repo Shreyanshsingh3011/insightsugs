@@ -81,6 +81,27 @@ function SheetDetailPage() {
     if (target !== offset) setOffset(target);
   }, [highlight, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Text-match fallback: when caller passed ?match=... (e.g. from a Next Best
+  // Action "View source" link), scan the loaded rows and highlight the first
+  // one where any cell (or the specified matchCol) equals/contains the needle.
+  useEffect(() => {
+    if (highlightParam != null || !normMatch || !detail.data) return;
+    const rows = detail.data.rows as Array<{ row_index: number; canonical?: Record<string, unknown>; extras?: Record<string, unknown> }>;
+    const found = rows.find((r) => {
+      const cells: Array<[string, unknown]> = [
+        ...Object.entries(r.canonical ?? {}),
+        ...Object.entries(r.extras ?? {}),
+      ];
+      return cells.some(([col, val]) => {
+        if (normMatchCol && norm(col) !== normMatchCol) return false;
+        const s = norm(String(val ?? ""));
+        return s.length > 0 && (s === normMatch || s.includes(normMatch!));
+      });
+    });
+    setMatchedIndex(found ? found.row_index : null);
+  }, [highlightParam, normMatch, normMatchCol, detail.data]);
+
+
   useEffect(() => {
     if (highlight == null) return;
     const row = highlightRef.current;
