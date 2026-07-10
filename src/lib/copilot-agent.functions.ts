@@ -1303,6 +1303,8 @@ export async function runCopilotAgent(
                 : null;
 
     const preflightBlocks: string[] = [];
+    const preflightCites: string[] = [];
+    let preflightDateColumn: string | null = null;
     if (temporalOp && regs.length > 0) {
       for (const r of regs) {
         try {
@@ -1319,6 +1321,10 @@ export async function runCopilotAgent(
             limit: 15,
           });
           if (res?._resultForModel?.rows?.length) {
+            preflightDateColumn = res._resultForModel.date_column ?? preflightDateColumn;
+            for (const row of res._resultForModel.rows) {
+              if (typeof row?.cite === "string") preflightCites.push(row.cite);
+            }
             preflightBlocks.push(
               `Sheet "${r.display_name}" — op=${temporalOp}${columnHint ? `, hint=${columnHint}` : ""}, date_column=${res._resultForModel.date_column}:\n` +
                 JSON.stringify(res._resultForModel.rows).slice(0, 3500),
@@ -1528,6 +1534,40 @@ export async function runCopilotAgent(
     // unless a deterministic pre-flight already seeded rows into the ledger,
     // in which case synthesize a grounded answer from those rows so we never
     // refuse when the selected sheet actually contains the data.
+    if (!opts.skipCitationEnforcement && temporalOp && isFallback) {
+      const preflightRows = ledger.filter((l): l is Extract<LedgerEntry, { kind: "sheet_row" }> => l.kind === "sheet_row");
+      if (preflightRows.length > 0) {
+        const lines: string[] = [];
+        const seenReg = new Set<string>();
+        const bySheet = new Map<string, typeof preflightRows>();
+        for (const r of preflightRows) {
+          if (!bySheet.has(r.registryId)) bySheet.set(r.registryId, [] as any);
+          (bySheet.get(r.registryId) as any).push(r);
+        }
+        const cites: string[] = [];
+        for (const [regId, rows] of bySheet) {
+          const reg = sheetById.get(regId);
+          if (!reg) continue;
+          seenReg.add(reg.display_name);
+          lines.push(`**${reg.display_name}** — top ${rows.length} ${temporalOp === "overdue" ? "overdue" : temporalOp === "tat_breached" ? "TAT-breached" : temporalOp} entries${preflightDateColumn ? ` by \`${preflightDateColumn}\`` : ""}:`);
+          for (const r of rows.slice(0, 10)) {
+            const marker = preflightCites.find((cite) => cite.includes(`sheet:${reg.display_name} row ${r.rowIndex + 1} `)) ?? `[sheet:${reg.display_name} row ${r.rowIndex + 1}]`;
+            const preview = Object.entries(r.data)
+              .filter(([, v]) => v != null && String(v).trim() !== "")
+              .slice(0, 5)
+              .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`)
+              .join(" · ");
+            lines.push(`- ${preview} ${marker}`);
+            cites.push(marker);
+          }
+        }
+        finalAnswer =
+          `I found matching ${temporalOp === "overdue" ? "overdue" : temporalOp === "tat_breached" ? "TAT-breached" : temporalOp} entries in the selected sheet, not dashboard data:\n\n` +
+          lines.join("\n") +
+          `\n\nSources:\n${Array.from(new Set(cites)).map((m) => `- ${m}`).join("\n")}`;
+      }
+    }
+
     if (!opts.skipCitationEnforcement && !citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
       const preflightRows = ledger.filter((l): l is Extract<LedgerEntry, { kind: "sheet_row" }> => l.kind === "sheet_row");
       if (temporalOp && preflightRows.length > 0) {
