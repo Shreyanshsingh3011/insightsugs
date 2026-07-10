@@ -18,6 +18,7 @@ import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 
 import AgentChatWidget, { type AgentChatContext } from "@/components/AgentChatWidget";
+import { ViewSourceLink } from "@/components/ViewSourceLink";
 import { useSession } from "@/hooks/useSession";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
