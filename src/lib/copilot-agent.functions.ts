@@ -304,10 +304,27 @@ export async function runCopilotAgent(
       page_count: number | null;
     }[];
 
+
+    // SCOPE GUARD: if none of the requested sheet/doc IDs resolved to real
+    // records the user can access, refuse immediately. Never fall back to
+    // dashboard aggregates, cached rows, or any other data source.
+    if (regs.length === 0 && docs.length === 0) {
+      return {
+        answer:
+          "No sheet or document is selected for this turn. Select a sheet or document and ask again — I only read from what you explicitly select, never from dashboard-level cached data.",
+        sources: [],
+        suggestions: [],
+        toolTrace: [],
+        citationOk: true,
+        scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+      };
+    }
+
     const sheetById = new Map(regs.map((r) => [r.id, r]));
     const sheetByLabel = new Map(regs.map((r) => [normalizeCitationLabel(r.display_name), r]));
     const docById = new Map(docs.map((d) => [d.id, d]));
     const docByLabel = new Map(docs.map((d) => [normalizeCitationLabel(d.name), d]));
+
 
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
@@ -856,7 +873,9 @@ export async function runCopilotAgent(
     const system = [
       "You are the dashboard Copilot. You are STRICTLY scoped to the sheets and documents the user has selected for this turn (listed in the catalog below).",
       "You have NO memory of the underlying data — every fact must come from a tool call made in THIS turn against those selected sources.",
+      "FORBIDDEN SOURCES: dashboard aggregates, KPI cards, cached summaries, prior turns' results, other sheets/documents not in the catalog below, general/world knowledge, and the internet. If a fact isn't obtainable by calling a tool against a source listed in the catalog, you do NOT know it — refuse with the fixed phrase.",
       "You must NEVER answer from prior/general knowledge, the internet, or any source outside the selected sheets/docs. If a question is off-topic (weather, general trivia, coding help, etc.), still attempt to answer it ONLY from the selected sources; if nothing relevant is there, refuse with the fixed phrase below.",
+
       "",
       "ANSWER-EVERYTHING POLICY (strict):",
       "- Try hard to answer ANY question the user asks — factual lookups, summaries, counts, comparisons, contacts (names/phones/emails), statuses, dates, aggregates, ranked lists, cross-sheet joins, document Q&A, etc.",
