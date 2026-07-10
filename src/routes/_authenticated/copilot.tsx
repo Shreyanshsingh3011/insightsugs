@@ -422,6 +422,19 @@ function CopilotPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate insights"),
   });
 
+  const combinedInsightsMut = useMutation({
+    mutationFn: (sheetIds: string[]) => autoCombinedInsights({ data: { sheetIds } }),
+    onSuccess: (res) => {
+      setCombinedInsights(res.insights as any);
+      setCombinedSheetNames(res.sheetNames ?? []);
+      setCombinedInsightQuestions(res.questions ?? []);
+      if (!res.insights.length) toast.info("No notable findings across the selected sheets.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Couldn't generate combined insights"),
+  });
+
+
+
   const docInsightsMut = useMutation({
     mutationFn: (documentId: string) => autoDocInsights({ data: { documentId } }),
     onSuccess: (res) => {
