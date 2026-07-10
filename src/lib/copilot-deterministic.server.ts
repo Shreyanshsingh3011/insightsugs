@@ -82,52 +82,40 @@ function pickNumericColumn(rows: StoredRow[], cols: string[], hint?: string | nu
   return preferred ?? usable[0];
 }
 
+import {
+  strictPhrases as qmStrictPhrases,
+  normalizeHaystack,
+  matchesAllPhrases,
+  contentTokens as qmContentTokens,
+} from "./query-match";
+
 function tokenize(q: string): string[] {
-  return q
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 2 && !STOP.has(t));
+  // Kept for callers that want quick content tokens; delegates to query-match
+  // so we have a single source of truth for stopword handling.
+  return qmContentTokens(q);
 }
 
-const STOP = new Set([
-  "the","a","an","and","or","of","in","on","for","to","with","is","are","was","were","be","by",
-  "how","many","what","which","show","list","give","tell","me","find","get","all","any","from",
-  "please","can","you","do","does","did","will","that","this","these","those","some","most","have",
-  "has","had","not","no","yes","about","into","over","under","between","across","per","each",
-  "count","total","sum","average","avg","mean","min","max","top","bottom","highest","lowest",
-  "current","status","project","projects","row","rows","sheet","sheets","doc","docs","document",
-  "documents","data","information",
-]);
+// Legacy STOP set retained only so any external importer keeps working; the
+// authoritative stop-list now lives in ./query-match.
+const STOP = new Set<string>();
 
-function rowMatchesTokens(row: StoredRow, tokens: string[], phrases: string[] = []): number {
-  if (tokens.length === 0 && phrases.length === 0) return 0;
-  // Only search values, not column headers — headers create false positives
-  // (e.g. a column named "Devi..." would match every row).
-  const hay = Object.values(row.data)
-    .map((v) => cellText(v))
-    .join(" \u0001 ")
-    .toLowerCase();
-  // Require ALL tokens to appear (AND semantics) so "Kunti Devi" does not
-  // match rows that only contain "Devi".
+function rowMatchesStrict(row: StoredRow, phrases: string[], tokens: string[]): number {
+  const hay = normalizeHaystack(Object.values(row.data));
+  // When the user's query contains any strict phrase (proper noun, quoted
+  // text, or 2+ content tokens), require EVERY phrase to appear as a
+  // contiguous substring in the row. This is what stops "Kunti Devi" from
+  // matching every "Devi" row.
+  if (phrases.length > 0) {
+    if (!matchesAllPhrases(hay, phrases)) return 0;
+    return 10 + tokens.length;
+  }
+  if (tokens.length === 0) return 0;
   for (const t of tokens) if (!hay.includes(t)) return 0;
-  let score = tokens.length;
-  // Boost rows that contain the full contiguous phrase.
-  for (const p of phrases) if (p && hay.includes(p)) score += 10;
-  return score;
+  return tokens.length;
 }
 
-// Extract likely proper-noun phrases (2+ consecutive capitalised words) from
-// the ORIGINAL question so we can require them as contiguous substrings.
 function extractPhrases(q: string): string[] {
-  const out: string[] = [];
-  const re = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(q))) out.push(m[1].toLowerCase());
-  // Also quoted phrases.
-  const qre = /["'"']([^"'"']{2,})["'"']/g;
-  while ((m = qre.exec(q))) out.push(m[1].toLowerCase());
-  return out;
+  return qmStrictPhrases(q);
 }
 
 function statusColumn(cols: string[]): string | null {
