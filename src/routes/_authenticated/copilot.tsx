@@ -363,6 +363,7 @@ function CopilotPage() {
           sheetIds: Array.from(selected),
           documentIds: Array.from(selectedDocs),
           history: vars.history,
+          strictMatch,
         },
       });
     },
