@@ -100,15 +100,34 @@ const STOP = new Set([
   "documents","data","information",
 ]);
 
-function rowMatchesTokens(row: StoredRow, tokens: string[]): number {
-  if (tokens.length === 0) return 0;
-  const hay = Object.entries(row.data)
-    .map(([k, v]) => `${k} ${cellText(v)}`)
-    .join(" ")
+function rowMatchesTokens(row: StoredRow, tokens: string[], phrases: string[] = []): number {
+  if (tokens.length === 0 && phrases.length === 0) return 0;
+  // Only search values, not column headers — headers create false positives
+  // (e.g. a column named "Devi..." would match every row).
+  const hay = Object.values(row.data)
+    .map((v) => cellText(v))
+    .join(" \u0001 ")
     .toLowerCase();
-  let hits = 0;
-  for (const t of tokens) if (hay.includes(t)) hits += 1;
-  return hits;
+  // Require ALL tokens to appear (AND semantics) so "Kunti Devi" does not
+  // match rows that only contain "Devi".
+  for (const t of tokens) if (!hay.includes(t)) return 0;
+  let score = tokens.length;
+  // Boost rows that contain the full contiguous phrase.
+  for (const p of phrases) if (p && hay.includes(p)) score += 10;
+  return score;
+}
+
+// Extract likely proper-noun phrases (2+ consecutive capitalised words) from
+// the ORIGINAL question so we can require them as contiguous substrings.
+function extractPhrases(q: string): string[] {
+  const out: string[] = [];
+  const re = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q))) out.push(m[1].toLowerCase());
+  // Also quoted phrases.
+  const qre = /["'"']([^"'"']{2,})["'"']/g;
+  while ((m = qre.exec(q))) out.push(m[1].toLowerCase());
+  return out;
 }
 
 function statusColumn(cols: string[]): string | null {
@@ -173,19 +192,24 @@ export async function deterministicAnswer(params: {
     }),
   );
 
+  const phrases = extractPhrases(question);
   for (const { reg, rows } of sheetRows) {
     if (rows.length === 0) continue;
     const cols = allColumns(rows);
     const statusCol = statusColumn(cols);
     const activeRows = rows.filter((r) => !isTerminal(r, statusCol));
-    const matched = tokens.length > 0
+    const matched = (tokens.length > 0 || phrases.length > 0)
       ? activeRows
-          .map((row) => ({ row, score: rowMatchesTokens(row, tokens) }))
+          .map((row) => ({ row, score: rowMatchesTokens(row, tokens, phrases) }))
           .filter((x) => x.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)
       : activeRows;
-    const universe = matched.length > 0 ? matched : activeRows;
+    // When the user targeted a specific phrase/name, do NOT fall back to
+    // "all active rows" if nothing matches — return an empty result for
+    // that sheet so we don't leak unrelated rows (e.g. every "Devi").
+    const hasSpecificTarget = phrases.length > 0 || tokens.length >= 2;
+    const universe = matched.length > 0 ? matched : (hasSpecificTarget ? [] : activeRows);
 
     const emitRow = (row: StoredRow, note?: string) => {
       const marker = `[sheet:${reg.display_name} row ${row.row_index + 1}]`;
