@@ -260,7 +260,9 @@ export async function runCopilotAgent(
     const { supabase, userId } = context;
     const key = process.env.LOVABLE_API_KEY;
     const directGeminiKey = process.env.GEMINI_API_KEY;
-    if (!key && !directGeminiKey) throw new Error("Missing AI provider configuration");
+    // No throw when both providers are missing: we fall back to the
+    // deterministic no-LLM engine below so the copilot keeps answering
+    // simple sheet/document questions without any AI credits.
 
     // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
     const [{ generateText, stepCountIs, tool }, gatewayModule] = await Promise.all([
@@ -1361,12 +1363,36 @@ export async function runCopilotAgent(
       list_projects: listProjects,
     };
 
-    async function runWithGeminiFallback(): Promise<{ text?: string }> {
-      if (!directGeminiKey) {
+    async function runDeterministic(reason: string): Promise<{ text?: string }> {
+      const { deterministicAnswer } = await import("./copilot-deterministic.server");
+      const det = await deterministicAnswer({
+        supabase,
+        question: data.question,
+        regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+        docs: docs.map((d) => ({ id: d.id, name: d.name })),
+        ledgerSink: ledger as any,
+      });
+      toolTrace.push({
+        name: "ai_model",
+        args: { provider: "deterministic_no_llm", reason },
+        ok: det.matched,
+        ms: 0,
+        summary: det.matched
+          ? `Answered without an LLM using local search over ${regs.length} sheet(s) and ${docs.length} document(s).`
+          : `Deterministic engine could not find matching data (${reason}).`,
+      });
+      if (!det.matched) {
         return {
           text:
-            "I can't generate this right now because the AI provider is unavailable due to payment or quota limits, and no Gemini fallback key is configured. Your sheet data is still available; please retry after credits refresh.",
+            "I couldn't reach the AI provider and my local search didn't find matching rows in the selected sheets or documents. Try a more specific keyword or select a different sheet.",
         };
+      }
+      return { text: det.answer };
+    }
+
+    async function runWithGeminiFallback(): Promise<{ text?: string }> {
+      if (!directGeminiKey) {
+        return await runDeterministic("no_gemini_key");
       }
       const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
       const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
@@ -1377,14 +1403,17 @@ export async function runCopilotAgent(
         ms: 0,
         summary: "Lovable AI unavailable — retrying with direct Gemini API (same tools).",
       });
-      return await generateText({
-        model: google("gemini-2.5-flash"),
-        system: systemWithPreflight,
-
-        messages: messages as any,
-        tools: toolset,
-        stopWhen: stepCountIs(50),
-      });
+      try {
+        return await generateText({
+          model: google("gemini-2.5-flash"),
+          system: systemWithPreflight,
+          messages: messages as any,
+          tools: toolset,
+          stopWhen: stepCountIs(50),
+        });
+      } catch (e) {
+        return await runDeterministic(`gemini_error:${(e as Error)?.message ?? "unknown"}`);
+      }
     }
 
     let result: { text?: string };
@@ -1413,10 +1442,7 @@ export async function runCopilotAgent(
             ms: 0,
             summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
           });
-          result = {
-            text:
-              "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
-          };
+          result = await runDeterministic(`both_providers_failed:${(fallbackError as Error)?.message ?? "unknown"}`);
         }
       }
     }
@@ -1600,7 +1626,19 @@ export async function runCopilotAgent(
           lines.join("\n") +
           `\n\nSources:\n${Array.from(new Set(cites)).map((m) => `- ${m}`).join("\n")}`;
       } else {
-        finalAnswer = "I don't have that in the current dashboard data.";
+        // Last resort: run the deterministic engine directly against the
+        // selected sources so a refusal is never sent when local data exists.
+        const { deterministicAnswer } = await import("./copilot-deterministic.server");
+        const det = await deterministicAnswer({
+          supabase,
+          question: data.question,
+          regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+          docs: docs.map((d) => ({ id: d.id, name: d.name })),
+          ledgerSink: ledger as any,
+        });
+        finalAnswer = det.matched
+          ? det.answer
+          : "I don't have that in the current dashboard data.";
       }
     }
 
