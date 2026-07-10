@@ -73,7 +73,7 @@ export async function embedTexts(
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      if (isQuotaOrBilling(res.status, t) && process.env.GEMINI_API_KEY) {
+      if (isQuotaOrBilling(res.status, t) && process.env.GEMINI_API_KEY && /^google\/gemini-/i.test(model)) {
         const fallback = await embedWithGemini(inputs, dimensions);
         return fallback;
       }
