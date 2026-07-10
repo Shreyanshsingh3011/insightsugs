@@ -1492,6 +1492,37 @@ export default function AgentDashboard() {
                 {anyFetching ? "Syncing" : "Live"} · updated {new Date(lastSyncedAt).toLocaleTimeString()}
               </div>
             )}
+            {/* Always-visible "View source sheet" chip — jumps to the registered
+                Google Sheet backing whichever project is currently in scope. */}
+            {selected !== "all" && (() => {
+              const cur = sources.find((s) => s.project.id === selected)?.project;
+              if (!cur) return null;
+              return (
+                <div className="mt-3">
+                  <ViewSourceLink
+                    projectId={cur.id}
+                    projectLabel={cur.label}
+                    sourceUrl={cur.url}
+                    fallbackUrl={cur.url}
+                  />
+                </div>
+              );
+            })()}
+            {/* When viewing "All projects", expose every registered source sheet
+                as its own chip so the "go to source" link is always reachable. */}
+            {selected === "all" && sources.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {sources.slice(0, 8).map((s) => (
+                  <ViewSourceLink
+                    key={s.project.id}
+                    projectId={s.project.id}
+                    projectLabel={s.project.label}
+                    sourceUrl={s.project.url}
+                    fallbackUrl={s.project.url}
+                  />
+                ))}
+              </div>
+            )}
             {/* Per-project sync perf stats: fetch duration, rows, diff since last poll. */}
             {projects.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">

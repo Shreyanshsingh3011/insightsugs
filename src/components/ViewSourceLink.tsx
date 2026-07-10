@@ -98,14 +98,16 @@ export function ViewSourceLink({
     );
   }
 
-  // Only fall back to an external URL when it's a human-viewable page
-  // (e.g. Google Sheets). Never link to raw JSON API endpoints like
-  // sheet2api / gviz — those render a wall of JSON with no context.
-  const isViewable = /docs\.google\.com\/spreadsheets|\/edit(\?|#|$)/i.test(fallbackUrl ?? "");
-  if (fallbackUrl && isViewable) {
+  // Fallback: open the external source URL in a new tab when it's a
+  // human-viewable page (Google Sheets, or any http(s) URL that isn't a
+  // known raw-JSON API endpoint like sheet2api / gviz).
+  const fb = (fallbackUrl ?? "").trim();
+  const isRawJson = /sheet2api\.com|gviz\/tq|\/values\?|format=json/i.test(fb);
+  const isHttp = /^https?:\/\//i.test(fb);
+  if (fb && isHttp && !isRawJson) {
     return (
       <a
-        href={fallbackUrl}
+        href={fb}
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
