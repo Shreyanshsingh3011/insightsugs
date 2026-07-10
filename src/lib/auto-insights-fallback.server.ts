@@ -378,7 +378,7 @@ function topByGroup(rows: Record<string, unknown>[], groupCol: string, valueCol:
 
 type SheetShape = "payments" | "hr_attendance" | "contacts" | "inventory" | "contracts" | "timeline" | "sales_crm" | "tickets" | "generic";
 
-function detectSheetShape(columns: string[]): SheetShape {
+export function detectSheetShape(columns: string[]): SheetShape {
   const cols = columns.join("|").toLowerCase();
   if (/invoice|payment|paid|due amount|outstanding|receivable|payable|bill|po number|purchase order/.test(cols)) return "payments";
   if (/attendance|check[- ]?in|check[- ]?out|shift|leave|absent|present|hours worked|payroll/.test(cols)) return "hr_attendance";
