@@ -82,11 +82,13 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Started" | "Other" {
-  const x = (s || "").toLowerCase();
-  if (/complete|done/.test(x)) return "Completed";
-  if (/progress|ongoing|wip/.test(x)) return "In Progress";
-  if (/delay|overdue|late|breach/.test(x)) return "Delayed";
-  if (/not start|yet|pending/.test(x)) return "Not Started";
+  const x = (s || "").toLowerCase().trim();
+  // Treat every "finished" flavour as Completed so the filtered report and
+  // "only overdue" toggle don't keep parading closed rows as incomplete.
+  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer/.test(x)) return "Completed";
+  if (/progress|ongoing|wip|active|working/.test(x)) return "In Progress";
+  if (/delay|overdue|late|breach|slipp/.test(x)) return "Delayed";
+  if (/not\s*start|yet\s*to|pending|new|open|awaiting|queued/.test(x)) return "Not Started";
   return "Other";
 }
 
