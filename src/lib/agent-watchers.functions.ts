@@ -12,6 +12,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
+import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 function isCompleted(status: string) {
-  return /complete|done|closed/i.test(status);
+  return /complete|done|closed|finish|resolved|cancel|dropped|withdrawn/i.test(status);
 }
 
 // ── URL safety (same as insights-proxy) ────────────────────────────────
@@ -101,8 +102,8 @@ function ruleSeeds(
   directory?: Map<string, string>,
 ): DraftSeed[] {
   const seeds: DraftSeed[] = [];
-  const status = pick(row, "Status Category", "Status as on Date");
-  if (isCompleted(status)) return seeds;
+  const status = rowStatusText(row) || pick(row, "Status Category", "Status as on Date");
+  if (isTerminalRow(row) || isCompleted(status)) return seeds;
 
   const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
   const stage    = pick(row, "Stages", "Stages of Process") || "—";
@@ -283,8 +284,8 @@ async function runWatchersCore(
     for (const row of rows) {
       // Detect completed rows up-front and collect their source_key so we can
       // auto-dismiss any prior drafts that are still pending/snoozed.
-      const status = pick(row, "Status Category", "Status as on Date");
-      if (isCompleted(status)) {
+      const status = rowStatusText(row) || pick(row, "Status Category", "Status as on Date");
+      if (isTerminalRow(row) || isCompleted(status)) {
         const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
         const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
         completedKeys.push(`${proj.label}::${srNo || activity}`.slice(0, 400));

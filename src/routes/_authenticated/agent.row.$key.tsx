@@ -17,6 +17,7 @@ import {
   decodeRowKey, rowMatchesIdent, personName, personEmail, stageName,
   activityName, statusText, num, encodeKey as encodeEntityKey, toScopedRow,
 } from "@/lib/entity-scope";
+import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
@@ -92,7 +93,9 @@ function RowPage() {
   const status = statusText(row) || "—";
   const tat = num(row["TAT"]);
   const taken = num(row["Days Taken"]);
-  const delay = num(row["Delay in Days"]) || Math.max(0, taken - tat);
+  const terminal = isTerminalRow(row);
+  const rawDelay = num(row["Delay in Days"]) || Math.max(0, taken - tat);
+  const delay = terminal ? 0 : rawDelay;
   const criticality = String(row["Criticality"] ?? "—");
   const startDate = String(row["Start Date"] ?? row["Planned Start"] ?? "—");
   const hc1 = String(row["HC-1"] ?? row["HC1"] ?? "—");
@@ -109,7 +112,7 @@ function RowPage() {
   } else if (delay > 0) {
     rec = `Ping ${person} for a status commit today — currently ${delay}d late (TAT ${tat}d, taken ${taken}d).`;
     recTone = "med";
-  } else if (tat > 0 && taken > 0.8 * tat && !/complete|done/i.test(status)) {
+  } else if (tat > 0 && taken > 0.8 * tat && !terminal) {
     rec = `Approaching TAT (${taken}/${tat}d). Confirm no blockers with ${person}.`;
     recTone = "med";
   }
@@ -163,9 +166,9 @@ function RowPage() {
                   </Badge>
                 </Link>
                 <Badge variant="outline" className={
-                  /complete|done/i.test(status) ? TONE.ok :
-                  /delay|late|overdue/i.test(status) ? TONE.high :
-                  /progress/i.test(status) ? TONE.med : TONE.low
+                  statusBucketForRow(row) === "Completed" ? TONE.ok :
+                  statusBucketForRow(row) === "Delayed" ? TONE.high :
+                  statusBucketForRow(row) === "In Progress" ? TONE.med : TONE.low
                 }>{status}</Badge>
                 {criticality !== "—" && <Badge variant="secondary">{criticality}</Badge>}
                 {ident.srNo && <Badge variant="secondary">Sr. No. {ident.srNo}</Badge>}
@@ -200,10 +203,10 @@ function RowPage() {
       {/* Metrics strip */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Activity metrics">
         <Kpi icon={<Clock className="h-4 w-4" />} label="TAT" value={tat ? `${tat}d` : "—"} tone="low" />
-        <Kpi icon={<Gauge className="h-4 w-4" />} label="Days taken" value={taken ? `${taken}d` : "—"} tone={taken > tat && tat > 0 ? "high" : "ok"} />
+        <Kpi icon={<Gauge className="h-4 w-4" />} label="Days taken" value={taken ? `${taken}d` : "—"} tone={!terminal && taken > tat && tat > 0 ? "high" : "ok"} />
         <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Delay" value={delay ? `${delay}d` : "0d"} tone={tone} />
         <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Status" value={status} tone={
-          /complete|done/i.test(status) ? "ok" : /delay|late|overdue/i.test(status) ? "high" : "med"
+          terminal ? "ok" : statusBucketForRow(row) === "Delayed" ? "high" : "med"
         } />
       </section>
 

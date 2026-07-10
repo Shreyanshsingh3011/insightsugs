@@ -1,6 +1,8 @@
 // Shared row-scoping helpers used by the entity detail pages
 // (person/stage/project). Reuses the same field aliases as AgentDashboard.
 
+import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
+
 export type Row = Record<string, unknown>;
 
 export function pick(r: Row, ...keys: string[]): string {
@@ -33,7 +35,7 @@ export function activityName(r: Row) {
   return pick(r, "Activity List", "Process Descriptions", "Process");
 }
 export function statusText(r: Row) {
-  return pick(r, "Status Category", "Status as on Date");
+  return rowStatusText(r);
 }
 
 export type ScopedRow = {
@@ -62,7 +64,7 @@ export function toScopedRow(row: Row, i: number, projectLabel?: string): ScopedR
     status: statusText(row) || "—",
     tat: num(row["TAT"]),
     taken: num(row["Days Taken"]),
-    delay: num(row["Delay in Days"]),
+    delay: isTerminalRow(row) ? 0 : num(row["Delay in Days"]),
   };
 }
 
@@ -71,8 +73,9 @@ export function summarize(scoped: ScopedRow[]) {
   const n = scoped.length;
   let done = 0, delayed = 0, delayDaysSum = 0, tatSum = 0, takenSum = 0, tatCount = 0;
   for (const r of scoped) {
-    if (/complete|done/i.test(r.status)) done++;
-    if (r.delay > 0 && !/complete|done/i.test(r.status)) { delayed++; delayDaysSum += r.delay; }
+    const terminal = isTerminalRow(r.row);
+    if (terminal) done++;
+    if (r.delay > 0 && !terminal) { delayed++; delayDaysSum += r.delay; }
     if (r.tat > 0) { tatSum += r.tat; takenSum += r.taken; tatCount++; }
   }
   const completionPct = n ? Math.round((done / n) * 100) : 0;

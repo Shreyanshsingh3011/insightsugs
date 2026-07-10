@@ -22,6 +22,7 @@ import { DetailExportMenu } from "@/components/DetailExportMenu";
 import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { summarize, type ScopedRow, encodeRowKey } from "@/lib/entity-scope";
 import { useAgentSources } from "@/hooks/useAgentSources";
+import { statusBucketForRow } from "@/lib/status-utils";
 
 export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
@@ -202,6 +203,7 @@ export function EntityDetailShell({
                     });
                     // Legacy aggregate payload kept for the redirect fallback.
                     void encodeDetailPayload;
+                    const statusBucket = statusBucketForRow(r.row);
                     return (
                       <TableRow key={`${r.project}-${r.i}`} className="cursor-pointer hover:bg-muted/40">
                         <TableCell className="max-w-[260px] truncate font-medium" title={r.activity}>
@@ -214,9 +216,9 @@ export function EntityDetailShell({
                         <TableCell className="text-xs">{r.stage}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={
-                            /complete|done/i.test(r.status) ? TONE.ok :
-                            /delay|late|overdue/i.test(r.status) ? TONE.high :
-                            /progress/i.test(r.status) ? TONE.med : TONE.low
+                            statusBucket === "Completed" ? TONE.ok :
+                            statusBucket === "Delayed" ? TONE.high :
+                            statusBucket === "In Progress" ? TONE.med : TONE.low
                           }>{r.status || "—"}</Badge>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>

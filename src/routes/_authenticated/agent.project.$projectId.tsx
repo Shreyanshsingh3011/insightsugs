@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { toScopedRow } from "@/lib/entity-scope";
+import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/project/$projectId")({
   component: ProjectPage,
@@ -39,7 +40,7 @@ function ProjectPage() {
         scopeRef: projectId,
         defaultDept: dept ?? null,
         summaryLine: scoped.length
-          ? `Project has ${scoped.length} activities; ${scoped.filter((r) => r.delay > 0).length} delayed and ${scoped.filter((r) => /complete|done/i.test(r.status)).length} completed.`
+          ? `Project has ${scoped.length} activities; ${scoped.filter((r) => r.delay > 0 && !isTerminalRow(r.row)).length} delayed and ${scoped.filter((r) => isTerminalRow(r.row)).length} completed.`
           : undefined,
       }}
     />

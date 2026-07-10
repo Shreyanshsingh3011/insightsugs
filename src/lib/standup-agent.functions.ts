@@ -11,6 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
+import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
 
 type Row = Record<string, unknown>;
 type ProjectDelayItem = {
@@ -43,7 +44,7 @@ function num(v: unknown): number {
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
-function isCompleted(status: string) { return /complete|done|closed/i.test(status); }
+function isCompleted(status: string) { return /complete|done|closed|finish|resolved|cancel|dropped|withdrawn/i.test(status); }
 
 async function fetchProjectRows(url: string): Promise<Row[]> {
   const ctl = new AbortController();
@@ -59,8 +60,8 @@ async function fetchProjectRows(url: string): Promise<Row[]> {
 function collectDelays(rows: Row[], directory: Map<string, string>): ProjectDelayItem[] {
   const out: ProjectDelayItem[] = [];
   for (const r of rows) {
-    const status = pick(r, "Status Category", "Status as on Date", "Status");
-    if (isCompleted(status)) continue;
+    const status = rowStatusText(r) || pick(r, "Status Category", "Status as on Date", "Status");
+    if (isTerminalRow(r) || isCompleted(status)) continue;
     const delay = num(r["Delay in Days"]);
     if (delay < 3) continue;
     const resolved = resolvePersonForRow(r, directory);

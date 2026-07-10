@@ -13,6 +13,7 @@ import { generateGeminiFn } from "@/lib/gemini.functions";
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
+import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, type StatusBucket } from "@/lib/status-utils";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 
@@ -80,34 +81,15 @@ function pick(r: Row, ...keys: string[]): string {
   return "";
 }
 function statusOf(r: Row): string {
-  return pick(
-    r,
-    "Status Category",
-    "Status as on Date",
-    "Status",
-    "Current Status",
-    "Activity Status",
-    "Task Status",
-    "Progress Status",
-    "Completion Status",
-    "Work Status",
-    "Stage Status",
-  );
+  return rowStatusText(r);
 }
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
-function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Started" | "Other" {
-  const x = (s || "").toLowerCase().trim();
-  // Treat every "finished" flavour as Completed so the filtered report and
-  // "only overdue" toggle don't keep parading closed rows as incomplete.
-  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer|not required|fulfilled/.test(x)) return "Completed";
-  if (/progress|ongoing|wip|active|working/.test(x)) return "In Progress";
-  if (/delay|overdue|late|breach|slipp/.test(x)) return "Delayed";
-  if (/not\s*start|yet\s*to|pending|new|open|awaiting|queued/.test(x)) return "Not Started";
-  return "Other";
+function bucket(s: string): StatusBucket {
+  return statusBucket(s);
 }
 
 function loadReportFilters(key: string): ReportFilters {
@@ -138,14 +120,14 @@ function derive(payload: Payload | undefined) {
 
   for (const r of rows) {
     const rowStatus = statusOf(r);
-    const st = bucket(rowStatus);
+    const st = statusBucketForRow(r);
     status[st] = (status[st] || 0) + 1;
     const stage = pick(r, "Stages", "Stages of Process") || "—";
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const delay = num(r["Delay in Days"]);
+    const delay = st === "Completed" ? 0 : num(r["Delay in Days"]);
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
 
@@ -290,6 +272,7 @@ function derive(payload: Payload | undefined) {
 
   // Anomalies: activities where taken >> tat
   const anomalies = rows
+    .filter((r) => !isTerminalRow(r))
     .map(r => {
       const tat = num(r["TAT"]);
       const taken = num(r["Days Taken"]);
@@ -812,7 +795,7 @@ export default function AgentDashboard() {
       criticality: pick(r, "Criticality"),
       tat: num(r["TAT"]),
       days_taken: num(r["Days Taken"]),
-      delay: num(r["Delay in Days"]),
+      delay: isTerminalRow(r) ? 0 : num(r["Delay in Days"]),
     }));
     const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
       person: p.person,
@@ -970,13 +953,15 @@ export default function AgentDashboard() {
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const stage = pick(r, "Stages", "Stages of Process");
     const status = statusOf(r);
+    const rowBucket = statusBucketForRow(r);
+    const terminal = isTerminalRow(r);
     const crit = pick(r, "Criticality");
     const proj = pick(r, "__project");
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
-    const delay = num(r["Delay in Days"]);
+    const delay = terminal ? 0 : num(r["Delay in Days"]);
     const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
-    return { i, activity, person, email, stage, status, crit, proj, tat, taken, delay, hay };
+    return { i, activity, person, email, stage, status, statusBucket: rowBucket, terminal, crit, proj, tat, taken, delay, hay };
   }), [rowsAll]);
 
   // Build a directory of every unique person that appears in the data so we
@@ -1015,8 +1000,8 @@ export default function AgentDashboard() {
         if (p.name && hay.includes(p.name.toLowerCase())) s += 5;
         else if (p.email && hay.includes(p.email.toLowerCase())) s += 5;
       }
-      if (/overdue|delay|late|breach/.test(q) && r.delay > 0) s += 0.5;
-      if (/complete|done/.test(q) && /complete|done/i.test(r.status)) s += 0.5;
+      if (/overdue|delay|late|breach/.test(q) && r.delay > 0 && !r.terminal) s += 0.5;
+      if (/complete|done/.test(q) && (r.terminal || r.statusBucket === "Completed")) s += 0.5;
       return { r, s };
     }).filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, limit);
     if (scored.length) return scored.map(x => x.r);
@@ -1057,8 +1042,8 @@ export default function AgentDashboard() {
           const hay = `${String(r.person ?? "")} ${String(r.email ?? "")}`.toLowerCase();
           return (fp.name && hay.includes(fp.name.toLowerCase())) || (fp.email && hay.includes(fp.email.toLowerCase()));
         });
-        const overdue = owned.filter(r => r.delay > 0);
-        const done = owned.filter(r => /complete|done/i.test(String(r.status ?? "")));
+        const overdue = owned.filter(r => r.delay > 0 && !r.terminal);
+        const done = owned.filter(r => r.terminal || r.statusBucket === "Completed");
         const byProj: Record<string, number> = {};
         const byStage: Record<string, number> = {};
         for (const r of owned) {
@@ -1202,7 +1187,7 @@ export default function AgentDashboard() {
   const filterOptions = useMemo(() => {
     const s = new Set<string>(), c = new Set<string>(), st = new Set<string>(), p = new Set<string>();
     for (const r of rowIndex) {
-      if (r.status) s.add(bucket(r.status));
+      if (r.status) s.add(r.statusBucket);
       if (r.crit) c.add(r.crit);
       if (r.stage) st.add(r.stage);
       if (r.person) p.add(r.person);
@@ -1219,14 +1204,14 @@ export default function AgentDashboard() {
     const min = Number(filters.minDelay) || 0;
     const q = filters.q.trim().toLowerCase();
     return rowIndex.filter(r => {
-      const statusBucket = bucket(r.status);
+      const statusBucket = r.statusBucket;
       if (filters.status !== "all" && statusBucket !== filters.status) return false;
-      if (filters.status === "all" && statusBucket === "Completed") return false;
+      if (filters.status === "all" && (statusBucket === "Completed" || r.terminal)) return false;
       if (filters.crit !== "all" && r.crit !== filters.crit) return false;
       if (filters.stage !== "all" && r.stage !== filters.stage) return false;
       if (filters.person !== "all" && r.person !== filters.person) return false;
       if (min > 0 && r.delay < min) return false;
-      if (filters.onlyOverdue && !(r.delay > 0 && statusBucket !== "Completed")) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && statusBucket !== "Completed" && !r.terminal)) return false;
       if (q && !r.hay.includes(q)) return false;
       return true;
     });
@@ -2044,9 +2029,9 @@ export default function AgentDashboard() {
                           <TableCell className="text-xs">{r.stage || "—"}</TableCell>
                           <TableCell>
                             <Badge variant="outline" className={
-                              /complete|done/i.test(r.status) ? TONE.ok :
-                              /delay|late|overdue/i.test(r.status) ? TONE.high :
-                              /progress/i.test(r.status) ? TONE.med : TONE.low
+                              r.statusBucket === "Completed" ? TONE.ok :
+                              r.statusBucket === "Delayed" ? TONE.high :
+                              r.statusBucket === "In Progress" ? TONE.med : TONE.low
                             }>{r.status || "—"}</Badge>
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{r.tat || "—"}</TableCell>

@@ -3,6 +3,7 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { toScopedRow, type ScopedRow } from "@/lib/entity-scope";
+import { isTerminalRow } from "@/lib/status-utils";
 
 type KpiId = "health" | "ontime" | "overdue" | "tat" | "risk";
 const KPI_META: Record<KpiId, {
@@ -21,27 +22,27 @@ const KPI_META: Record<KpiId, {
     title: "On-time completions",
     rule: "Completed activities whose delay ≤ 0.",
     tone: "ok",
-    filter: (r) => /complete|done/i.test(r.status) && r.delay <= 0,
+    filter: (r) => isTerminalRow(r.row) && r.delay <= 0,
   },
   overdue: {
     title: "Overdue activities",
     rule: "Not complete AND delay > 0.",
     tone: "high",
-    filter: (r) => !/complete|done/i.test(r.status) && r.delay > 0,
+    filter: (r) => !isTerminalRow(r.row) && r.delay > 0,
     sort: (a, b) => b.delay - a.delay,
   },
   tat: {
     title: "TAT breaches",
     rule: "Days taken exceeds the TAT budget.",
     tone: "med",
-    filter: (r) => r.tat > 0 && r.taken > r.tat,
+    filter: (r) => !isTerminalRow(r.row) && r.tat > 0 && r.taken > r.tat,
     sort: (a, b) => (b.taken - b.tat) - (a.taken - a.tat),
   },
   risk: {
     title: "High-risk activities",
     rule: "Delay > 30 days, or delayed AND high criticality.",
     tone: "high",
-    filter: (r) => r.delay > 30 || (r.delay > 0 && /critical|high/i.test(String(r.row["Criticality"] ?? ""))),
+    filter: (r) => !isTerminalRow(r.row) && (r.delay > 30 || (r.delay > 0 && /critical|high/i.test(String(r.row["Criticality"] ?? "")))),
     sort: (a, b) => b.delay - a.delay,
   },
 };

@@ -142,9 +142,12 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25_000);
     try {
-      const res = await fetch(url.toString(), {
+      const freshUrl = new URL(url.toString());
+      freshUrl.searchParams.set("_fresh", String(Date.now()));
+      const res = await fetch(freshUrl.toString(), {
         method: "GET",
-        headers: { Accept: "application/json" },
+        cache: "no-store",
+        headers: { Accept: "application/json", "Cache-Control": "no-cache", Pragma: "no-cache" },
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Source returned HTTP ${res.status}`);
