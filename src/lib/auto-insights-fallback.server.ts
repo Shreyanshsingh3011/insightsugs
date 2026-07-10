@@ -1,3 +1,5 @@
+import { isTerminalRow, statusBucketForRow } from "./status-utils";
+
 type Severity = "info" | "warning" | "critical";
 
 export type AutoInsight = {
