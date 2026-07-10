@@ -242,7 +242,7 @@ const InputSchema = z
     // When true, ONLY contiguous full-phrase matches are returned. No
     // per-token AND fallback, no "recent rows" fallback, no surname-only
     // leakage. If nothing matches strictly, the copilot says so.
-    strictMatch: z.boolean().default(false),
+    strictMatch: z.boolean().optional(),
   })
   .refine((v) => v.sheetIds.length + v.documentIds.length > 0, {
     message: "Select at least one sheet or document.",
