@@ -15,6 +15,8 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
   validateSearch: z.object({
     highlight: z.coerce.number().int().nonnegative().optional(),
     col: z.string().optional(),
+    match: z.string().optional(),
+    matchCol: z.string().optional(),
   }),
   component: SheetDetailPage,
 });
@@ -23,17 +25,21 @@ const PAGE_SIZES = [100, 500, 1000, 2000];
 
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
-  const { highlight, col: highlightCol } = Route.useSearch();
+  const { highlight: highlightParam, col: highlightCol, match, matchCol } = Route.useSearch();
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const normHighlightCol = highlightCol ? norm(highlightCol) : null;
+  const normMatch = match ? norm(match) : null;
+  const normMatchCol = matchCol ? norm(matchCol) : null;
   const isHitCell = (c: string) => normHighlightCol != null && norm(c) === normHighlightCol;
   const qc = useQueryClient();
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
 
   const [pageSize, setPageSize] = useState(500);
+  const [matchedIndex, setMatchedIndex] = useState<number | null>(null);
+  const highlight = highlightParam ?? matchedIndex ?? undefined;
   const [offset, setOffset] = useState(() =>
-    typeof highlight === "number" ? Math.floor(highlight / 500) * 500 : 0,
+    typeof highlightParam === "number" ? Math.floor(highlightParam / 500) * 500 : 0,
   );
   const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
 
