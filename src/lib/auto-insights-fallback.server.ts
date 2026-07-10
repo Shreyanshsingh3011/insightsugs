@@ -100,7 +100,7 @@ function parseDateMs(value: unknown): number | null {
 export function buildSheetAutoInsights(sheetName: string, storedRows: StoredSheetRow[]) {
   const allRows = storedRows.map(mergeStoredRow).filter((row) => Object.keys(row).length > 0);
   // Lazy-load to avoid a circular import at module init.
-  const { isTerminalRow, statusBucketForRow } = require("./status-utils") as typeof import("./status-utils");
+  const { isTerminalRow, statusBucketForRow } = await import("./status-utils");
   const activeRows = allRows.filter((r) => !isTerminalRow(r));
   const columns = Array.from(allRows.reduce((set, row) => {
     Object.keys(row).forEach((key) => set.add(key));
