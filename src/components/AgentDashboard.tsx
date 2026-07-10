@@ -60,6 +60,9 @@ const REGISTRY_REFRESH_MS = 5 * 60_000;
 type Row = Record<string, unknown>;
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string; warning?: string };
 type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
+type ReportFilters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
+
+const DEFAULT_REPORT_FILTERS: ReportFilters = { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
 
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
@@ -76,6 +79,21 @@ function pick(r: Row, ...keys: string[]): string {
   }
   return "";
 }
+function statusOf(r: Row): string {
+  return pick(
+    r,
+    "Status Category",
+    "Status as on Date",
+    "Status",
+    "Current Status",
+    "Activity Status",
+    "Task Status",
+    "Progress Status",
+    "Completion Status",
+    "Work Status",
+    "Stage Status",
+  );
+}
 function num(v: unknown): number {
   if (typeof v === "number") return v;
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
@@ -85,11 +103,23 @@ function bucket(s: string): "Completed" | "In Progress" | "Delayed" | "Not Start
   const x = (s || "").toLowerCase().trim();
   // Treat every "finished" flavour as Completed so the filtered report and
   // "only overdue" toggle don't keep parading closed rows as incomplete.
-  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer/.test(x)) return "Completed";
+  if (/complete|done|closed|finish|resolved|cancel|dropped|withdrawn|no longer|not required|fulfilled/.test(x)) return "Completed";
   if (/progress|ongoing|wip|active|working/.test(x)) return "In Progress";
   if (/delay|overdue|late|breach|slipp/.test(x)) return "Delayed";
   if (/not\s*start|yet\s*to|pending|new|open|awaiting|queued/.test(x)) return "Not Started";
   return "Other";
+}
+
+function loadReportFilters(key: string): ReportFilters {
+  if (typeof window === "undefined") return DEFAULT_REPORT_FILTERS;
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return DEFAULT_REPORT_FILTERS;
+    const parsed = JSON.parse(raw) as Partial<ReportFilters>;
+    return { ...DEFAULT_REPORT_FILTERS, ...parsed, onlyOverdue: Boolean(parsed.onlyOverdue) };
+  } catch {
+    return DEFAULT_REPORT_FILTERS;
+  }
 }
 
 
@@ -107,7 +137,8 @@ function derive(payload: Payload | undefined) {
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
-    const st = bucket(pick(r, "Status Category", "Status as on Date"));
+    const rowStatus = statusOf(r);
+    const st = bucket(rowStatus);
     status[st] = (status[st] || 0) + 1;
     const stage = pick(r, "Stages", "Stages of Process") || "—";
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
@@ -142,7 +173,7 @@ function derive(payload: Payload | undefined) {
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
-        status: pick(r, "Status Category", "Status as on Date"), criticality: crit,
+        status: rowStatus, criticality: crit,
         email, row: r,
       });
     }
