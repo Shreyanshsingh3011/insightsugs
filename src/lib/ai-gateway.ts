@@ -1,4 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createFallbackFetch } from "./ai-fallback.server";
 
 export const createLovableAiGatewayProvider = (lovableApiKey: string) =>
   createOpenAICompatible({
@@ -8,4 +9,5 @@ export const createLovableAiGatewayProvider = (lovableApiKey: string) =>
       "Lovable-API-Key": lovableApiKey,
       "X-Lovable-AIG-SDK": "vercel-ai-sdk",
     },
+    fetch: createFallbackFetch(),
   });
