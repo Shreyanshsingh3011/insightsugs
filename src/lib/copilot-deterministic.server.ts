@@ -172,7 +172,32 @@ export async function deterministicAnswer(params: {
   const cap = params.maxRowsPerSheet ?? 8000;
   const strict = params.strictMatch === true;
   const intent = detectIntent(question);
-  const tokens = tokenize(question);
+  const rawTokens = tokenize(question);
+  const rawPhrases = extractPhrases(question);
+
+  // Strip tokens/phrases that only match the selected sheet's OWN name
+  // (or the selected document's name). Example: user picks a sheet called
+  // "Stock Summary" and asks "summarize stock summary" — those tokens are
+  // scope, not row-content filters. Without this we'd search every row for
+  // the literal words "stock" / "summary" and return 0 matches even though
+  // the sheet is full of relevant data.
+  const scopeNames = [
+    ...regs.map((r) => r.display_name),
+    ...docs.map((d) => d.name),
+  ].map((n) => n.toLowerCase());
+  const tokenIsOnlyScope = (t: string) =>
+    scopeNames.some((n) => n.includes(t)) &&
+    // Keep the token if it also looks like a real content word (has 4+ chars
+    // and isn't a generic scope word). We only strip when the token is
+    // clearly part of a sheet/doc label.
+    scopeNames.some((n) => n.split(/\s+/).includes(t));
+  const tokens = rawTokens.filter((t) => !tokenIsOnlyScope(t));
+  const phraseIsOnlyScope = (p: string) => {
+    const lc = p.toLowerCase().trim();
+    return scopeNames.some((n) => n === lc || n.includes(lc));
+  };
+  const basePhrases = rawPhrases.filter((p) => !phraseIsOnlyScope(p));
+
   const cites: string[] = [];
   const parts: string[] = [];
 
@@ -184,7 +209,6 @@ export async function deterministicAnswer(params: {
     }),
   );
 
-  const basePhrases = extractPhrases(question);
   // In strict mode, if the query has no explicit phrase, treat the full
   // content-token phrase as required — so a single-word query still needs
   // a contiguous match of that word.
