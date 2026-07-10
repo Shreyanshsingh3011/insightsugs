@@ -1870,7 +1870,9 @@ export default function AgentDashboard() {
                   (a.row as Row | undefined)?.["Process"] ??
                   a.title ?? "",
                 );
-                const projectUrl = sources.find(s => s.project.label === projectLabel)?.project.url;
+                const projectEntry = sources.find(s => s.project.label === projectLabel)?.project;
+                const projectUrl = projectEntry?.url;
+                const projectId = projectEntry?.id;
                 return (
                   <div
                     key={a.id}
@@ -1894,7 +1896,9 @@ export default function AgentDashboard() {
                     {(projectLabel || projectUrl) && (
                       <div className="mt-2">
                         <ViewSourceLink
+                          projectId={projectId}
                           projectLabel={projectLabel}
+                          sourceUrl={projectUrl}
                           activity={activity}
                           matchCol="Activity List"
                           fallbackUrl={projectUrl}
@@ -1904,6 +1908,7 @@ export default function AgentDashboard() {
                     )}
                   </div>
                 );
+
               })}
             </CardContent>
           </Card>
