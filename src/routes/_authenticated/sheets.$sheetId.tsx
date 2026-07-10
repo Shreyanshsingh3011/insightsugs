@@ -15,6 +15,8 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
   validateSearch: z.object({
     highlight: z.coerce.number().int().nonnegative().optional(),
     col: z.string().optional(),
+    match: z.string().optional(),
+    matchCol: z.string().optional(),
   }),
   component: SheetDetailPage,
 });
@@ -23,17 +25,21 @@ const PAGE_SIZES = [100, 500, 1000, 2000];
 
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
-  const { highlight, col: highlightCol } = Route.useSearch();
+  const { highlight: highlightParam, col: highlightCol, match, matchCol } = Route.useSearch();
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const normHighlightCol = highlightCol ? norm(highlightCol) : null;
+  const normMatch = match ? norm(match) : null;
+  const normMatchCol = matchCol ? norm(matchCol) : null;
   const isHitCell = (c: string) => normHighlightCol != null && norm(c) === normHighlightCol;
   const qc = useQueryClient();
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
 
   const [pageSize, setPageSize] = useState(500);
+  const [matchedIndex, setMatchedIndex] = useState<number | null>(null);
+  const highlight = highlightParam ?? matchedIndex ?? undefined;
   const [offset, setOffset] = useState(() =>
-    typeof highlight === "number" ? Math.floor(highlight / 500) * 500 : 0,
+    typeof highlightParam === "number" ? Math.floor(highlightParam / 500) * 500 : 0,
   );
   const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
 
@@ -74,6 +80,27 @@ function SheetDetailPage() {
     const target = Math.floor(highlight / pageSize) * pageSize;
     if (target !== offset) setOffset(target);
   }, [highlight, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Text-match fallback: when caller passed ?match=... (e.g. from a Next Best
+  // Action "View source" link), scan the loaded rows and highlight the first
+  // one where any cell (or the specified matchCol) equals/contains the needle.
+  useEffect(() => {
+    if (highlightParam != null || !normMatch || !detail.data) return;
+    const rows = detail.data.rows as Array<{ row_index: number; canonical?: Record<string, unknown>; extras?: Record<string, unknown> }>;
+    const found = rows.find((r) => {
+      const cells: Array<[string, unknown]> = [
+        ...Object.entries(r.canonical ?? {}),
+        ...Object.entries(r.extras ?? {}),
+      ];
+      return cells.some(([col, val]) => {
+        if (normMatchCol && norm(col) !== normMatchCol) return false;
+        const s = norm(String(val ?? ""));
+        return s.length > 0 && (s === normMatch || s.includes(normMatch!));
+      });
+    });
+    setMatchedIndex(found ? found.row_index : null);
+  }, [highlightParam, normMatch, normMatchCol, detail.data]);
+
 
   useEffect(() => {
     if (highlight == null) return;
