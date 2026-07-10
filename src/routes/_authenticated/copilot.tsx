@@ -318,6 +318,15 @@ function CopilotPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<Turn[]>([]);
+  const [strictMatch, setStrictMatch] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("copilot:strictMatch") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("copilot:strictMatch", strictMatch ? "1" : "0");
+    }
+  }, [strictMatch]);
   const [insights, setInsights] = useState<Insight[] | null>(null);
   const [insightsSheet, setInsightsSheet] = useState<string | null>(null);
   const [insightQuestions, setInsightQuestions] = useState<string[]>([]);
