@@ -1192,8 +1192,16 @@ export async function runCopilotAgent(
     // 10) Follow-up suggestions (best-effort, non-blocking).
     let suggestions: string[] = [];
     try {
+      let suggestionModel: any;
+      if (directGeminiKey) {
+        const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+        suggestionModel = createGoogleGenerativeAI({ apiKey: directGeminiKey })("gemini-2.5-flash");
+      } else if (key && gatewayModule) {
+        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
+      }
+      if (!suggestionModel) throw new Error("No suggestion model available");
       const sug = await generateText({
-        model,
+        model: suggestionModel,
         system:
           "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
         prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
