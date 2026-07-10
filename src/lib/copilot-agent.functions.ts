@@ -413,23 +413,36 @@ export async function runCopilotAgent(
               .toLowerCase()
               .split(/[^a-z0-9]+/i)
               .filter((t) => t.length >= 3);
+            // Extract proper-noun phrases (e.g. "Kunti Devi") from the
+            // original query so we can require them as contiguous matches.
+            const phraseRe = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b/g;
+            const phrases: string[] = [];
+            let pm: RegExpExecArray | null;
+            while ((pm = phraseRe.exec(query))) phrases.push(pm[1].toLowerCase());
+            const hasSpecificTarget = phrases.length > 0 || tokens.length >= 2;
             const scored = rows.map((r) => {
-              // Include column headers so questions like "Which Start Date…"
-              // still match rows in a "Start Date" column.
-              const hay = [
-                ...Object.keys(r.data),
-                ...Object.values(r.data).map((v) => String(v ?? "")),
-              ]
+              // Search VALUES only (not column headers) to avoid header-based
+              // false positives, and require ALL tokens to appear (AND) so
+              // "Kunti Devi" does not match every row containing "Devi".
+              const hay = Object.values(r.data)
+                .map((v) => String(v ?? ""))
                 .join(" \u0001 ")
                 .toLowerCase();
-              let score = 0;
-              for (const t of tokens) if (hay.includes(t)) score++;
+              if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) {
+                return { row_index: r.row_index, similarity: 0 };
+              }
+              let score = tokens.length;
+              for (const p of phrases) if (hay.includes(p)) score += 10;
               return { row_index: r.row_index, similarity: score };
             });
             scored.sort((a, b) => b.similarity - a.similarity);
             const anyHit = scored.some((s) => s.similarity > 0);
             if (anyHit) {
               matches = scored.filter((s) => s.similarity > 0).slice(0, k);
+            } else if (hasSpecificTarget) {
+              // User targeted a specific name/phrase and nothing matched —
+              // return empty rather than leaking unrelated rows.
+              matches = [];
             } else {
               // Last-resort: hand the model the first k rows so it can still
               // answer generic/temporal questions from the selected sheet
