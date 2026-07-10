@@ -1060,8 +1060,19 @@ function CopilotPage() {
               }
             }}
           />
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</span>
+          <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</span>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <Switch checked={strictMatch} onCheckedChange={setStrictMatch} aria-label="Strict match" />
+                <span>
+                  Strict match
+                  <span className="ml-1 text-[10px] opacity-70">
+                    {strictMatch ? "(exact phrase only — no surname fallback)" : "(broader keyword match)"}
+                  </span>
+                </span>
+              </label>
+            </div>
             <Button onClick={() => sendAsk(question.trim())} disabled={!canSend}>
               {askMut.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Ask
