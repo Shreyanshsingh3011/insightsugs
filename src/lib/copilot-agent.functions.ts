@@ -919,41 +919,74 @@ export async function runCopilotAgent(
     const gateway = createLovableAiGatewayProvider(key);
     const model = gateway("google/gemini-3-flash-preview");
 
+    const toolset = {
+      get_sheet_schema: getSheetSchema,
+      search_sheet_rows: searchSheetRows,
+      filter_sheet_rows: filterSheetRows,
+      aggregate_column: aggregateColumn,
+      get_row: getRow,
+      get_cell: getCell,
+      search_doc_chunks: searchDocChunks,
+      create_alert: createAlert,
+      draft_email: draftEmail,
+      create_activity: createActivity,
+      list_projects: listProjects,
+    };
+
+    async function runWithGeminiFallback(): Promise<{ text?: string }> {
+      const geminiKey = process.env.GEMINI_API_KEY;
+      if (!geminiKey) {
+        return {
+          text:
+            "I can't generate this right now because the AI provider is unavailable due to payment or quota limits, and no Gemini fallback key is configured. Your sheet data is still available; please retry after credits refresh.",
+        };
+      }
+      const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+      const google = createGoogleGenerativeAI({ apiKey: geminiKey });
+      toolTrace.push({
+        name: "ai_model",
+        args: { provider: "gemini_direct_fallback", model: "gemini-2.5-flash" },
+        ok: true,
+        ms: 0,
+        summary: "Lovable AI unavailable — retrying with direct Gemini API (same tools).",
+      });
+      return await generateText({
+        model: google("gemini-2.5-flash"),
+        system,
+        messages: messages as any,
+        tools: toolset,
+        stopWhen: stepCountIs(50),
+      });
+    }
+
     let result: { text?: string };
     try {
       result = await generateText({
         model,
         system,
         messages: messages as any,
-        tools: {
-          get_sheet_schema: getSheetSchema,
-          search_sheet_rows: searchSheetRows,
-          filter_sheet_rows: filterSheetRows,
-          aggregate_column: aggregateColumn,
-          get_row: getRow,
-          get_cell: getCell,
-          search_doc_chunks: searchDocChunks,
-          create_alert: createAlert,
-          draft_email: draftEmail,
-          create_activity: createActivity,
-          list_projects: listProjects,
-        },
+        tools: toolset,
         stopWhen: stepCountIs(50),
       });
     } catch (error) {
       if (!isAiBillingOrQuotaError(error)) throw error;
-      toolTrace.push({
-        name: "ai_model",
-        args: { provider: "lovable_gateway_with_gemini_fallback" },
-        ok: false,
-        ms: 0,
-        summary: "AI provider unavailable due to payment/quota limits.",
-      });
-      result = {
-        text:
-          "I can't generate this right now because the AI provider is unavailable due to payment or quota limits. Your sheet data is still available; please retry after credits/quota refresh or update the configured AI provider billing.",
-      };
+      try {
+        result = await runWithGeminiFallback();
+      } catch (fallbackError) {
+        toolTrace.push({
+          name: "ai_model",
+          args: { provider: "gemini_direct_fallback" },
+          ok: false,
+          ms: 0,
+          summary: `Gemini fallback failed: ${(fallbackError as Error)?.message ?? "unknown"}`,
+        });
+        result = {
+          text:
+            "I can't generate this right now because both the Lovable AI Gateway and the Gemini fallback are unavailable. Please retry shortly.",
+        };
+      }
     }
+
 
     const rawAnswer = (result.text ?? "").trim();
 

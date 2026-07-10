@@ -15,6 +15,7 @@
     "test:citations": "bun run scripts/tests/citation-contract.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.10",
     "@ai-sdk/openai-compatible": "^3.0.5",
     "@ai-sdk/react": "^4.0.16",
     "@cloudflare/vite-plugin": "^1.25.5",
