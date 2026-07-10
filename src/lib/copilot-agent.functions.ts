@@ -1272,6 +1272,74 @@ export async function runCopilotAgent(
       { role: "user" as const, content: data.question },
     ];
 
+    // 5a) TEMPORAL PRE-FLIGHT — deterministically run date_query_rows for
+    // temporal questions on every scoped sheet, seed the ledger, and inject
+    // the results into the system prompt. This guarantees the answer is
+    // grounded in the selected sheet even when the model skips the tool
+    // (e.g. Gemini fallback under 402 pressure).
+    const qLower = data.question.toLowerCase();
+    const temporalOp: "earliest" | "latest" | "overdue" | "tat_breached" | null =
+      /\b(earliest|oldest|first\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
+        ? "earliest"
+        : /\b(latest|most\s+recent|newest|last\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
+          ? "latest"
+          : /\b(overdue|past\s+due|late|slipped|behind\s+schedule)\b/.test(qLower)
+            ? "overdue"
+            : /\btat\b.*\b(breach|missed|exceed|over)|sla\s+(missed|breach)/.test(qLower)
+              ? "tat_breached"
+              : null;
+    const columnHint = /start/.test(qLower)
+      ? "start"
+      : /due|deadline/.test(qLower)
+        ? "due"
+        : /deliver/.test(qLower)
+          ? "delivery"
+          : /\beta\b/.test(qLower)
+            ? "eta"
+            : /receipt/.test(qLower)
+              ? "receipt"
+              : /dispatch/.test(qLower)
+                ? "dispatch"
+                : null;
+
+    const preflightBlocks: string[] = [];
+    if (temporalOp && regs.length > 0) {
+      for (const r of regs) {
+        try {
+          const res: any = await (dateQueryRows as any).execute?.({
+            sheet_id: r.id,
+            op: temporalOp,
+            column: null,
+            column_hint: columnHint,
+            days: null,
+            from: null,
+            to: null,
+            tat_column: null,
+            status_column: null,
+            limit: 15,
+          });
+          if (res?._resultForModel?.rows?.length) {
+            preflightBlocks.push(
+              `Sheet "${r.display_name}" — op=${temporalOp}${columnHint ? `, hint=${columnHint}` : ""}, date_column=${res._resultForModel.date_column}:\n` +
+                JSON.stringify(res._resultForModel.rows).slice(0, 3500),
+            );
+          } else if (res?.error) {
+            preflightBlocks.push(`Sheet "${r.display_name}" — ${res.error}`);
+          } else {
+            preflightBlocks.push(`Sheet "${r.display_name}" — 0 rows matched op=${temporalOp}.`);
+          }
+        } catch (e) {
+          preflightBlocks.push(`Sheet "${r.display_name}" — preflight failed: ${(e as Error)?.message ?? "error"}`);
+        }
+      }
+    }
+    const systemWithPreflight = preflightBlocks.length
+      ? system +
+        "\n\nPRE-FLIGHT RESULTS (already executed against the selected sheet(s) — DO NOT call date_query_rows again for the same question; answer directly from these rows and cite each one using the `cite` marker from the row):\n\n" +
+        preflightBlocks.join("\n\n")
+      : system;
+
+
     const toolset = {
       get_sheet_schema: getSheetSchema,
       search_sheet_rows: searchSheetRows,
@@ -1305,7 +1373,8 @@ export async function runCopilotAgent(
       });
       return await generateText({
         model: google("gemini-2.5-flash"),
-        system,
+        system: systemWithPreflight,
+
         messages: messages as any,
         tools: toolset,
         stopWhen: stepCountIs(50),
@@ -1321,7 +1390,7 @@ export async function runCopilotAgent(
         const model = gateway("google/gemini-3-flash-preview");
         result = await generateText({
           model,
-          system,
+          system: systemWithPreflight,
           messages: messages as any,
           tools: toolset,
           stopWhen: stepCountIs(50),
@@ -1455,10 +1524,46 @@ export async function runCopilotAgent(
       isFallback ||
       (inlineCount > 0 && verified.size > 0 && unverified.length === 0 && finalHasSourcesSection);
 
-    // 7) If nothing verified and not a fallback, replace with refusal.
+    // 7) If nothing verified and not a fallback, replace with refusal —
+    // unless a deterministic pre-flight already seeded rows into the ledger,
+    // in which case synthesize a grounded answer from those rows so we never
+    // refuse when the selected sheet actually contains the data.
     if (!opts.skipCitationEnforcement && !citationOk && !isFallback && (inlineCount === 0 || unverified.length === inlineCount)) {
-      finalAnswer = "I don't have that in the current dashboard data.";
+      const preflightRows = ledger.filter((l): l is Extract<LedgerEntry, { kind: "sheet_row" }> => l.kind === "sheet_row");
+      if (temporalOp && preflightRows.length > 0) {
+        const lines: string[] = [];
+        const seenReg = new Set<string>();
+        const bySheet = new Map<string, typeof preflightRows>();
+        for (const r of preflightRows) {
+          if (!bySheet.has(r.registryId)) bySheet.set(r.registryId, [] as any);
+          (bySheet.get(r.registryId) as any).push(r);
+        }
+        const cites: string[] = [];
+        for (const [regId, rows] of bySheet) {
+          const reg = sheetById.get(regId);
+          if (!reg) continue;
+          seenReg.add(reg.display_name);
+          lines.push(`**${reg.display_name}** — top ${rows.length} by \`${temporalOp}\`:`);
+          for (const r of rows.slice(0, 10)) {
+            const preview = Object.entries(r.data)
+              .filter(([, v]) => v != null && String(v).trim() !== "")
+              .slice(0, 4)
+              .map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`)
+              .join(" · ");
+            const marker = `[sheet:${reg.display_name} row ${r.rowIndex + 1}]`;
+            lines.push(`- ${preview} ${marker}`);
+            cites.push(marker);
+          }
+        }
+        finalAnswer =
+          `Here are the ${temporalOp === "overdue" ? "overdue" : temporalOp === "tat_breached" ? "TAT-breached" : temporalOp} entries from ${Array.from(seenReg).join(", ")}:\n\n` +
+          lines.join("\n") +
+          `\n\nSources:\n${Array.from(new Set(cites)).map((m) => `- ${m}`).join("\n")}`;
+      } else {
+        finalAnswer = "I don't have that in the current dashboard data.";
+      }
     }
+
 
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
