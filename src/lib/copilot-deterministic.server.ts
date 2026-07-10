@@ -157,6 +157,16 @@ function detectIntent(q: string): Intent {
 
 // -------------------- main entry --------------------
 
+// Detects "give me the insights / summary / overview / highlights / what's in
+// this sheet / findings / anything I should know" questions. For these we
+// short-circuit to the same Auto-Insights output the sheet header shows,
+// so the Copilot answers from the *computed insights* — not from row-name
+// token matching.
+function isInsightShapedQuery(q: string): boolean {
+  const s = q.toLowerCase();
+  return /\b(insight|insights|summary|summarise|summarize|overview|highlights?|findings?|what'?s\s+(in|inside|on)|what\s+(should|do)\s+i\s+know|anything\s+(interesting|notable|important)|key\s+(points?|takeaways?)|tell\s+me\s+about|snapshot|health\s+check)\b/.test(s);
+}
+
 export async function deterministicAnswer(params: {
   supabase: any;
   question: string;
@@ -172,6 +182,7 @@ export async function deterministicAnswer(params: {
   const cap = params.maxRowsPerSheet ?? 8000;
   const strict = params.strictMatch === true;
   const intent = detectIntent(question);
+  const insightMode = isInsightShapedQuery(question);
   const rawTokens = tokenize(question);
   const rawPhrases = extractPhrases(question);
 
@@ -209,12 +220,63 @@ export async function deterministicAnswer(params: {
     }),
   );
 
+  // Lazy-import Auto-Insights so we share the same computation the sheet
+  // header uses. This is the bridge that connects Copilot answers to the
+  // active-sheet Auto-Insights outputs.
+  const { buildSheetAutoInsights, detectSheetShape } = await import(
+    "./auto-insights-fallback.server"
+  );
+
+  const emitInsightBlock = (reg: SheetReg, rows: StoredRow[]) => {
+    if (rows.length === 0) return;
+    const cols = allColumns(rows);
+    const shape = detectSheetShape(cols);
+    const { insights, questions } = buildSheetAutoInsights(
+      reg.display_name,
+      rows.map((r) => ({ row_index: r.row_index, data: r.data })),
+    );
+    if (insights.length === 0) return;
+    const marker = `[sheet:${reg.display_name}]`;
+    cites.push(marker);
+    parts.push(
+      `**${reg.display_name}** — Auto-Insights (detected shape: \`${shape}\`, ${fmt(rows.length)} rows scanned):`,
+    );
+    for (const ins of insights.slice(0, 6)) {
+      const sev = ins.severity === "critical" ? "🔴" : ins.severity === "warning" ? "🟡" : "•";
+      parts.push(`- ${sev} **${ins.title}** — ${ins.detail} ${marker}`);
+    }
+    if (questions.length) {
+      parts.push(
+        `_Suggested follow-ups:_ ${questions.slice(0, 3).map((q) => `“${q}”`).join(" · ")}`,
+      );
+    }
+  };
+
+  // Insight-shaped questions → emit the Auto-Insights output directly and
+  // stop. This is what the user asked for: Copilot answers from computed
+  // insights, not row-name token matching.
+  if (insightMode) {
+    for (const { reg, rows } of sheetRows) emitInsightBlock(reg, rows);
+    if (parts.length > 0) {
+      const uniqCites = Array.from(new Set(cites));
+      return {
+        answer:
+          `Answered from the computed Auto-Insights of the selected sheet(s):\n\n` +
+          parts.join("\n") +
+          `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}`,
+        citations: uniqCites,
+        matched: true,
+      };
+    }
+  }
+
   // In strict mode, if the query has no explicit phrase, treat the full
   // content-token phrase as required — so a single-word query still needs
   // a contiguous match of that word.
   const phrases = strict && basePhrases.length === 0 && tokens.length >= 1
     ? [tokens.join(" ")]
     : basePhrases;
+
   for (const { reg, rows } of sheetRows) {
     if (rows.length === 0) continue;
     const cols = allColumns(rows);
@@ -386,6 +448,24 @@ export async function deterministicAnswer(params: {
   // answer that has no inline [..] markers, which turned into a bogus
   // "Answer rejected — grounding check failed" for the user.
   if (parts.length === 0 || uniqCites.length === 0) {
+    // Before refusing, fall back to the computed Auto-Insights for the
+    // scoped sheet(s). If Auto-Insights can say something useful about
+    // the selected data, we should too — the user has explicitly picked
+    // this sheet as scope.
+    if (!strict) {
+      for (const { reg, rows } of sheetRows) emitInsightBlock(reg, rows);
+      const uniq2 = Array.from(new Set(cites));
+      if (parts.length > 0 && uniq2.length > 0) {
+        return {
+          answer:
+            `No direct row match, but here is what the computed Auto-Insights say about the selected sheet(s):\n\n` +
+            parts.join("\n") +
+            `\n\nSources:\n${uniq2.map((m) => `- ${m}`).join("\n")}`,
+          citations: uniq2,
+          matched: true,
+        };
+      }
+    }
     const scope = [
       regs.length ? `${regs.length} sheet${regs.length === 1 ? "" : "s"}` : "",
       docs.length ? `${docs.length} document${docs.length === 1 ? "" : "s"}` : "",
@@ -398,6 +478,7 @@ export async function deterministicAnswer(params: {
       `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.`;
     return { answer, citations: [], matched: false };
   }
+
 
   const answer =
     `Answered directly from the selected sources (AI provider unavailable — used local search over your sheets and documents):\n\n` +
