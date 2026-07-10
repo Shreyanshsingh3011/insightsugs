@@ -34,12 +34,12 @@ export const generateGeminiFn = createServerFn({ method: "POST" })
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       if (res.status === 429) {
-        throw new Error("AI rate-limited (429). Please retry shortly.");
+        return { text: "", error: "RATE_LIMITED", message: "AI is rate-limited. Please retry shortly.", fallback: true } as const;
       }
       if (res.status === 402) {
-        throw new Error("AI credits exhausted (402). Top up in Settings → Plans & credits.");
+        return { text: "", error: "AI_CREDITS_EXHAUSTED", message: "AI credits exhausted. Top up in Settings → Plans & credits.", fallback: true } as const;
       }
-      throw new Error(`AI gateway ${res.status}: ${txt.slice(0, 200)}`);
+      return { text: "", error: "AI_GATEWAY_ERROR", message: `AI gateway ${res.status}: ${txt.slice(0, 200)}`, fallback: true } as const;
     }
 
     const json = (await res.json()) as {
@@ -47,4 +47,5 @@ export const generateGeminiFn = createServerFn({ method: "POST" })
     };
     const text = json.choices?.[0]?.message?.content ?? "";
     return { text };
+
   });
