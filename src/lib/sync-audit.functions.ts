@@ -7,6 +7,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { isAuthTokenError, isRecoverableDataReadError } from "@/lib/transient-errors";
 import type { Database } from "@/integrations/supabase/types";
 
 const RecordSchema = z.object({
@@ -33,36 +34,45 @@ const RecordSchema = z.object({
 export const recordSyncAudit = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => RecordSchema.parse(input))
   .handler(async ({ data }) => {
-    const authHeader = getRequestHeader("authorization");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
-    if (!token) return { ok: false, skipped: true, reason: "missing_auth" };
+    try {
+      const authHeader = getRequestHeader("authorization");
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+      if (!token) return { ok: false, skipped: true, reason: "missing_auth" };
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-    if (!supabaseUrl || !publishableKey) {
-      return { ok: false, skipped: true, reason: "backend_not_configured" };
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !publishableKey) {
+        return { ok: false, skipped: true, reason: "backend_not_configured" };
+      }
+
+      const supabase = createClient<Database>(supabaseUrl, publishableKey, {
+        auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+
+      const { data: userData, error: userError } = await supabase.auth.getUser(token);
+      if (userError || !userData.user?.id) {
+        console.warn(`[sync-audit] skipped audit write: ${userError?.message ?? "missing user"}`);
+        return { ok: false, skipped: true, reason: "invalid_auth" };
+      }
+
+      const { error } = await supabase.from("sheet_sync_audit").insert({
+        ...data,
+        actor_id: userData.user.id,
+      });
+      if (error) {
+        console.warn(`[sync-audit] skipped audit write: ${error.message}`);
+        return { ok: false, skipped: true, reason: "write_unavailable" };
+      }
+      return { ok: true, skipped: false };
+    } catch (error) {
+      console.warn("[sync-audit] skipped audit write after backend/auth failure.", error);
+      return {
+        ok: false,
+        skipped: true,
+        reason: isAuthTokenError(error) ? "invalid_auth" : isRecoverableDataReadError(error) ? "backend_unavailable" : "write_unavailable",
+      };
     }
-
-    const supabase = createClient<Database>(supabaseUrl, publishableKey, {
-      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData.user?.id) {
-      console.warn(`[sync-audit] skipped audit write: ${userError?.message ?? "missing user"}`);
-      return { ok: false, skipped: true, reason: "invalid_auth" };
-    }
-
-    const { error } = await supabase.from("sheet_sync_audit").insert({
-      ...data,
-      actor_id: userData.user.id,
-    });
-    if (error) {
-      console.warn(`[sync-audit] skipped audit write: ${error.message}`);
-      return { ok: false, skipped: true, reason: "write_unavailable" };
-    }
-    return { ok: true, skipped: false };
   });
 
 export type SyncAuditRow = {
@@ -93,29 +103,34 @@ export const readRecentSyncAudit = createServerFn({ method: "POST" })
     z.object({ limit: z.number().int().positive().max(200).default(40) }).parse(input ?? {}),
   )
   .handler(async ({ data }): Promise<{ rows: SyncAuditRow[]; unavailable?: boolean }> => {
-    const authHeader = getRequestHeader("authorization");
-    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
-    if (!token) return { rows: [], unavailable: true };
+    try {
+      const authHeader = getRequestHeader("authorization");
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+      if (!token) return { rows: [], unavailable: true };
 
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-    if (!supabaseUrl || !publishableKey) return { rows: [], unavailable: true };
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !publishableKey) return { rows: [], unavailable: true };
 
-    const supabase = createClient<Database>(supabaseUrl, publishableKey, {
-      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
+      const supabase = createClient<Database>(supabaseUrl, publishableKey, {
+        auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
 
-    const { data: rows, error } = await supabase
-      .from("sheet_sync_audit")
-      .select(
-        "id, project_id, project_label, sheet_url, tab_name, fetched_at, fetch_ms, rows_total, rows_added, rows_removed, rows_changed, changed_row_indexes, changed_columns, embed_ms, embed_embedded, embed_refreshed, embed_remaining, trigger_kind, warning, error",
-      )
-      .order("fetched_at", { ascending: false })
-      .limit(data.limit);
-    if (error) {
-      console.warn(`[sync-audit] skipped audit read: ${error.message}`);
+      const { data: rows, error } = await supabase
+        .from("sheet_sync_audit")
+        .select(
+          "id, project_id, project_label, sheet_url, tab_name, fetched_at, fetch_ms, rows_total, rows_added, rows_removed, rows_changed, changed_row_indexes, changed_columns, embed_ms, embed_embedded, embed_refreshed, embed_remaining, trigger_kind, warning, error",
+        )
+        .order("fetched_at", { ascending: false })
+        .limit(data.limit);
+      if (error) {
+        console.warn(`[sync-audit] skipped audit read: ${error.message}`);
+        return { rows: [], unavailable: true };
+      }
+      return { rows: (rows ?? []) as SyncAuditRow[] };
+    } catch (error) {
+      console.warn("[sync-audit] skipped audit read after backend/auth failure.", error);
       return { rows: [], unavailable: true };
     }
-    return { rows: (rows ?? []) as SyncAuditRow[] };
   });
