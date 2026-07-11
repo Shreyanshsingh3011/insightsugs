@@ -120,9 +120,18 @@ export function isTerminalRow(row: StatusRow): boolean {
   for (const [key, value] of Object.entries(row)) {
     if (normalizedStatusKeys.has(normKey(key)) && isTerminalStatusText(value)) return true;
   }
+  // % Complete / Progress = 100 counts as done.
+  for (const [key, value] of Object.entries(row)) {
+    const nk = normKey(key);
+    if (nk === "complete" || nk === "percentcomplete" || nk === "complete" || nk === "progress" || nk === "progresspercent" || nk === "percentageofcompletion" || nk === "percentagecomplete" || nk.endsWith("complete") && nk.startsWith("percent")) {
+      const num = Number(String(value ?? "").replace(/[%\s,]/g, ""));
+      if (Number.isFinite(num) && num >= 100) return true;
+    }
+  }
   const completion = valueForAliases(row, COMPLETION_ALIASES);
   return isMeaningfulCompletionValue(completion);
 }
+
 
 export function rowStatusText(row: StatusRow): string {
   for (const key of STATUS_ALIASES) {
