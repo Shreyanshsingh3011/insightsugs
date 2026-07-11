@@ -2164,6 +2164,21 @@ export async function runCopilotAgent(
       "- Cite analytics claims as [sheet:<display_name>] for aggregate numbers and [sheet:<display_name> row N] for the sample rows the tool returned.",
       "",
 
+      "COMPARISONS / BENCHMARKS (use whenever the user asks 'compare', 'vs', 'benchmark', 'which is better/faster', 'difference between', 'who's ahead'):",
+      "- Compare specific groups in one sheet ('owner A vs owner B', 'stage X vs stage Y') → call compare_groups(sheet_id, group_by, values=[A,B,...]).",
+      "- Compare the SAME metric across sheets (e.g. Bihar vs Himachal vs PSPCL) → call compare_groups(sheet_ids=[...]) with sheet_id=null. Report per-sheet totals, open, overdue, avg age, completion rate %.",
+      "- Report the winner AND the delta (e.g. 'A completed 78% vs B 54% — 24pp gap'). Cite each group's sample rows.",
+      "- When the user asks 'who's the outlier / best / worst', pick top+bottom from compare_groups results.",
+      "",
+
+      "EXPLAIN-WHY MODE (use whenever the user asks 'why', 'what's blocking', 'reason', 'root cause', 'what's holding X up'):",
+      "- Locate the row: prefer row_index from prior tool output; else pass query = the identifier/name.",
+      "- Call explain_why(sheet_id, row_index?, query?). It returns current_status, age_days, explicit_reason (if any), stage peer count, stage_median_age_days, sibling rows stuck at same stage, and a `likely_causes` list.",
+      "- Answer with: current stage + owner, age vs peer median, the explicit reason field (if present), and whether the blocker is per-row or systemic (many siblings stuck at same stage). Cite the target row + at least one sibling.",
+      "- Never invent a cause. Only report what likely_causes and the cited rows/cells support.",
+      "",
+
+
       "CROSS-SOURCE REASONING (use when a question spans multiple sources or names a specific entity):",
       "- Any question that names an identifier (PO#, GSTIN, invoice#, project code) or a proper-noun person without naming a source → call cross_reference(key) ONCE. It searches every selected sheet AND document in parallel and returns per-source hits. Then join facts across the returned rows/chunks (e.g. 'PO in sheet Purchases → clause on p.3 of contract doc').",
       "- 'History of X', 'timeline of X', 'what happened with X', 'sequence of events for X' → call build_timeline(query=X). Returns chronologically sorted dated events across all selected sheets. Present as a compact date-ordered list; cite each event.",
