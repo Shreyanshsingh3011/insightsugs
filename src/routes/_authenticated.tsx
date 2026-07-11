@@ -285,7 +285,7 @@ function AuthLayout() {
             <LogOut className="mr-1.5 h-4 w-4" /> Sign out
           </Button>
         </header>
-        {rolesLoading ? null : <Outlet />}
+        <Outlet />
       </div>
 
       {/* Mobile drawer */}
