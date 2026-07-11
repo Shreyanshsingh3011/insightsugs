@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isRecoverableDataReadError } from "@/lib/transient-errors";
 
 export type RoleCheckResult = {
   email: string;
@@ -10,6 +11,46 @@ export type RoleCheckResult = {
   isSuperAdmin: boolean;
   checkedAt: string;
 };
+
+export type MyRolesResult = {
+  roles: string[];
+  degraded?: boolean;
+};
+
+export const getMyRoles = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<MyRolesResult> => {
+    const { supabase, userId } = context as { supabase: any; userId: string };
+    let lastError: unknown = null;
+
+    for (const waitMs of [0, 350, 900]) {
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+      try {
+        const { data, error } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId);
+        if (error) throw error;
+        return { roles: (data ?? []).map((r: { role: string }) => r.role) };
+      } catch (error) {
+        lastError = error;
+        if (!isRecoverableDataReadError(error)) throw error;
+      }
+    }
+
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data, error } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId);
+      if (error) throw error;
+      return { roles: (data ?? []).map((r: { role: string }) => r.role), degraded: true };
+    } catch (error) {
+      console.warn("Role lookup failed after retries; rendering user-level workspace.", error || lastError);
+      return { roles: ["user"], degraded: true };
+    }
+  });
 
 export const checkUserRoles = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

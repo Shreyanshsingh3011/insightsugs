@@ -401,7 +401,11 @@ export default function AgentDashboard() {
         refetchInterval: AUTO_REFRESH_MS,
         refetchIntervalInBackground: true,
         refetchOnWindowFocus: true,
-        enabled: registeredSheetsQ.isSuccess || registeredSheetsQ.isError,
+        // Do not block live project reads on the optional registered-sheet
+        // lookup. When the backend schema cache/auth API is degraded that
+        // lookup can hang, but the registry/fallback project URLs are enough
+        // for the dashboard to load source rows.
+        enabled: !!effectiveUrl,
       };
     }),
   });
