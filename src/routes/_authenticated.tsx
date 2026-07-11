@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, Link, useRouter } from "@tanstack/react-router";
 import { useSession, useRoles } from "@/hooks/useSession";
 import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
@@ -136,6 +136,10 @@ function AuthLayout() {
     // Navigate as a side effect; throwing redirect() from a component
     // is caught by the error boundary instead of navigating.
     if (typeof window !== "undefined") {
+      const nextPath = `${window.location.pathname}${window.location.search}`;
+      if (nextPath.startsWith("/") && !nextPath.startsWith("/login")) {
+        window.sessionStorage.setItem("postLoginPath", nextPath);
+      }
       router.navigate({ to: "/login", replace: true });
     }
     return (
@@ -152,8 +156,9 @@ function AuthLayout() {
   }
 
   const signOut = async () => {
+    if (typeof window !== "undefined") window.sessionStorage.removeItem("postLoginPath");
     await supabase.auth.signOut();
-    router.navigate({ to: "/login" });
+    router.navigate({ to: "/login", replace: true });
   };
 
   const isDark = mode === "dark" || (typeof document !== "undefined" && document.documentElement.classList.contains("dark"));

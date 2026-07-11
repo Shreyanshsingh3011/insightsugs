@@ -2,7 +2,7 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
 const TOKEN_EXPIRY_SKEW_SECONDS = 60;
-type SessionOptions = { validate?: boolean };
+type SessionOptions = { validate?: boolean; strictValidation?: boolean; clearOnInvalid?: boolean };
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
   if (typeof window === "undefined") return promise.catch(() => fallback);
@@ -59,6 +59,15 @@ export function readStoredSession(): Session | null {
   return null;
 }
 
+export function clearStoredSupabaseAuth() {
+  if (typeof window === "undefined") return;
+  for (const key of Object.keys(window.localStorage)) {
+    if (key.startsWith("sb-") && key.endsWith("-auth-token")) {
+      window.localStorage.removeItem(key);
+    }
+  }
+}
+
 async function refreshSession(timeoutMs: number): Promise<Session | null> {
   const refreshed = await withTimeout(
     supabase.auth.refreshSession().then(({ data }) => data.session),
@@ -68,7 +77,7 @@ async function refreshSession(timeoutMs: number): Promise<Session | null> {
   return isUsableSession(refreshed) ? refreshed : null;
 }
 
-async function validateSession(session: Session, timeoutMs: number): Promise<Session | null> {
+async function validateSession(session: Session, timeoutMs: number, strictValidation = false): Promise<Session | null> {
   const user = await withTimeout(
     supabase.auth.getUser(session.access_token).then(({ data, error }) => (error ? null : data.user)),
     timeoutMs,
@@ -76,7 +85,7 @@ async function validateSession(session: Session, timeoutMs: number): Promise<Ses
   );
 
   if (user?.id) return session;
-  if (user === undefined) return session;
+  if (user === undefined && !strictValidation) return session;
   return isRefreshableSession(session) ? refreshSession(timeoutMs) : null;
 }
 
@@ -98,5 +107,11 @@ export async function getUsableSupabaseSession(timeoutMs = 2500, options: Sessio
       : null;
 
   if (!usableSession) return null;
-  return options.validate ? validateSession(usableSession, timeoutMs) : usableSession;
+  if (!options.validate) return usableSession;
+
+  const validatedSession = await validateSession(usableSession, timeoutMs, options.strictValidation);
+  if (!validatedSession && options.clearOnInvalid !== false) {
+    clearStoredSupabaseAuth();
+  }
+  return validatedSession;
 }
