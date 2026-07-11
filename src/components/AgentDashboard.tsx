@@ -96,6 +96,14 @@ function registeredSourceUrl(sheet?: RegisteredSourceSheet): string | undefined 
   return sheet?.source_url || sheet?.apps_script_url || undefined;
 }
 
+function displayProjectLabel(project: AgentProject): string {
+  const raw = project.label?.trim() || "Source";
+  if (!isGenericSheetTitle(raw)) return raw;
+  const fromUrl = labelFromSheetUrl(project.url);
+  const fromTab = project.tab?.trim();
+  return fromUrl || (fromTab && !isGenericSheetTitle(fromTab) ? fromTab : raw);
+}
+
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
   med: "text-amber-700 bg-amber-500/10 border-amber-500/30",
@@ -382,7 +390,10 @@ export default function AgentDashboard() {
 
   const allProjects: AgentProject[] = useMemo(() => {
     const live = registryQ.data?.projects;
-    const base = live && live.length ? live : FALLBACK_PROJECTS;
+    const base = (live && live.length ? live : FALLBACK_PROJECTS).map((project) => ({
+      ...project,
+      label: displayProjectLabel(project),
+    }));
     const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
     const urlKey = (s?: string | null) => (s ?? "").trim().toLowerCase();
     const seenIds = new Set(base.map((p) => p.id));
