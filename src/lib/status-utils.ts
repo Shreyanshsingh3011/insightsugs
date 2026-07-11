@@ -195,3 +195,21 @@ export function statusBucketForRow(row: StatusRow): StatusBucket {
   if (isTerminalRow(row)) return "Completed";
   return statusBucket(rowStatusText(row));
 }
+
+// Mirrors AgentDashboard's `effectivelyDone` heuristic so other surfaces
+// (Agent Inbox, watchers, etc.) can filter to the same live-actionable rows.
+export function isRowEffectivelyDone(row: StatusRow): boolean {
+  if (isTerminalRow(row)) return true;
+  const toNum = (v: unknown) => {
+    if (typeof v === "number") return v;
+    const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const rawTaken = toNum(row["Days Taken"]);
+  // Excel date serial leaked into a duration column = completion date recorded.
+  if (rawTaken >= 30000 && rawTaken <= 70000) return true;
+  const tat = toNum(row["TAT"]);
+  const taken = rawTaken > 3650 || rawTaken < 0 ? 0 : rawTaken;
+  if (taken > 0 && tat > 0 && taken <= tat) return true;
+  return false;
+}
