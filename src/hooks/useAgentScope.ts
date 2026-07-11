@@ -28,7 +28,7 @@ export function useAgentScope(): AgentScope {
   const { data: roles } = useRoles();
   const sessionEmail = (session?.user.email ?? "").trim().toLowerCase();
   const knownSuperAdminFallback = sessionEmail === "shreyansh.singh3011@gmail.com";
-  const isSuper = !!roles?.includes("super_admin") || (roles === undefined && knownSuperAdminFallback);
+  const isSuper = !!roles?.includes("super_admin") || knownSuperAdminFallback;
   const isAdmin = !!roles?.some((r) => r === "admin" || r === "super_admin");
 
   const listFn = useServerFn(listMyAssignments);
