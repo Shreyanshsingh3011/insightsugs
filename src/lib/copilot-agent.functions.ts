@@ -1802,6 +1802,9 @@ export async function runCopilotAgent(
       distinct_values: distinctValues,
       count_where: countWhere,
       find_across_sheets: findAcrossSheets,
+      trend_analyze: trendAnalyze,
+      bottleneck_scan: bottleneckScan,
+      forecast_completion: forecastCompletion,
     };
 
 
