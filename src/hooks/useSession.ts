@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { getUsableSupabaseSession, isUsableSession } from "@/lib/auth-session";
+import { getUsableSupabaseSession, isUsableSession, readStoredSession } from "@/lib/auth-session";
 import { getMyRoles } from "@/lib/role-check.functions";
 
 export type AppRole = "super_admin" | "admin" | "user";
@@ -22,10 +22,15 @@ export function useSession() {
         setLoading(false);
       }
     });
-    getUsableSupabaseSession(2500, { validate: true })
+    const storedSession = readStoredSession();
+    if (storedSession) {
+      setSession(storedSession);
+      setLoading(false);
+    }
+    getUsableSupabaseSession(2500, { validate: !storedSession, strictValidation: false, clearOnInvalid: false })
       .then((restoredSession) => {
         if (!mounted) return;
-        setSession(restoredSession);
+        setSession(restoredSession ?? storedSession ?? null);
       })
       .catch((error) => {
         if (!mounted) return;
