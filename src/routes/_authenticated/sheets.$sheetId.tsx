@@ -17,7 +17,9 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
     col: z.string().optional(),
     match: z.string().optional(),
     matchCol: z.string().optional(),
+    from: z.enum(["copilot", "dashboard"]).optional(),
   }),
+
   component: SheetDetailPage,
 });
 
