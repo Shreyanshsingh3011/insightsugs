@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { getUsableSupabaseSession, isUsableSession } from "@/lib/auth-session";
-import { isRecoverableDataReadError } from "@/lib/transient-errors";
+import { getMyRoles } from "@/lib/role-check.functions";
 
 export type AppRole = "super_admin" | "admin" | "user";
 
@@ -46,24 +47,18 @@ export function useSession() {
 
 export function useRoles() {
   const { userId, loading } = useSession();
+  const getRoles = useServerFn(getMyRoles);
   const query = useQuery({
     queryKey: ["roles", userId],
     enabled: !!userId && !loading,
     queryFn: async (): Promise<AppRole[]> => {
-      const { data, error } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId!);
-      if (error) {
-        if (isRecoverableDataReadError(error)) {
-          console.warn("[auth] Role lookup is temporarily unavailable; rendering workspace with user-level navigation.", error);
-          return ["user"];
-        }
-        throw error;
+      const result = await getRoles();
+      if (result.degraded) {
+        console.warn("[auth] Role lookup recovered through the protected fallback path.");
       }
-      return (data ?? []).map((r) => r.role as AppRole);
+      return (result.roles ?? []).map((role) => role as AppRole);
     },
-    retry: (failureCount, error) => !isRecoverableDataReadError(error) && failureCount < 2,
+    retry: 2,
   });
   return { ...query, isLoading: loading || query.isLoading, isPending: loading || query.isPending };
 }
