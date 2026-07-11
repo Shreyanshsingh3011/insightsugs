@@ -36,8 +36,9 @@ function LoginPage() {
     setBusy(true);
     try {
       if (mode === "signin") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        if (data.session) router.navigate({ to: "/insights", replace: true });
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -59,18 +60,25 @@ function LoginPage() {
   };
 
   const google = async () => {
+    setBusy(true);
     try {
       const { lovable } = await import("@/integrations/lovable");
+      window.sessionStorage.setItem("postLoginPath", "/insights");
       const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin + "/insights",
+        redirect_uri: window.location.origin,
+        extraParams: { prompt: "select_account", login_hint: email || "shreyansh.singh3011@gmail.com" },
       });
-      if (result.error) toast.error("Google sign-in failed");
-    } catch {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: `${window.location.origin}/insights` },
-      });
-      if (error) toast.error(error.message);
+      if (result.redirected) return;
+      if (result.error) {
+        toast.error(result.error instanceof Error ? result.error.message : "Google sign-in failed");
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
+      if (data.session) router.navigate({ to: "/insights", replace: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Google sign-in failed");
+    } finally {
+      setBusy(false);
     }
   };
 
