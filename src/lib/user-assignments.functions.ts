@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isTransientDataApiError } from "@/lib/transient-errors";
 
 export type Assignment = {
   id: string;
@@ -12,13 +13,21 @@ export const listMyAssignments = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
-    const { data, error } = await supabase
-      .from("user_project_assignments")
-      .select("id, project_key, project_label, is_leader")
-      .eq("user_id", userId)
-      .order("project_label");
-    if (error) throw new Error(error.message);
-    return { assignments: (data ?? []) as Assignment[] };
+    try {
+      const { data, error } = await supabase
+        .from("user_project_assignments")
+        .select("id, project_key, project_label, is_leader")
+        .eq("user_id", userId)
+        .order("project_label");
+      if (error) throw error;
+      return { assignments: (data ?? []) as Assignment[] };
+    } catch (error) {
+      if (isTransientDataApiError(error)) {
+        console.warn("Project assignment lookup failed temporarily; continuing with an empty assignment list.", error);
+        return { assignments: [] as Assignment[], degraded: true };
+      }
+      throw new Error(error instanceof Error ? error.message : "Unable to load project assignments");
+    }
   });
 
 export const saveMyAssignments = createServerFn({ method: "POST" })
