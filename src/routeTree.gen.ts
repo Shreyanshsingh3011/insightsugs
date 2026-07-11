@@ -48,6 +48,7 @@ import { Route as AuthenticatedAgentCustomRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAgentAuditLogRouteImport } from './routes/_authenticated/agent.audit-log'
 import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authenticated/agent.approvals'
 import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
+import { Route as AuthenticatedAdminVerifyRoleRouteImport } from './routes/_authenticated/admin.verify-role'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
 import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_authenticated/admin.smart-alerts'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
@@ -283,6 +284,12 @@ const AuthenticatedAgentActivityRoute =
     path: '/activity',
     getParentRoute: () => AuthenticatedAgentRoute,
   } as any)
+const AuthenticatedAdminVerifyRoleRoute =
+  AuthenticatedAdminVerifyRoleRouteImport.update({
+    id: '/admin/verify-role',
+    path: '/admin/verify-role',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -474,6 +481,7 @@ export interface FileRoutesByFullPath {
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
   '/agent/audit-log': typeof AuthenticatedAgentAuditLogRoute
@@ -539,6 +547,7 @@ export interface FileRoutesByTo {
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
   '/agent/audit-log': typeof AuthenticatedAgentAuditLogRoute
@@ -609,6 +618,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
+  '/_authenticated/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
   '/_authenticated/agent/approvals': typeof AuthenticatedAgentApprovalsRoute
   '/_authenticated/agent/audit-log': typeof AuthenticatedAgentAuditLogRoute
@@ -679,6 +689,7 @@ export interface FileRouteTypes {
     | '/admin/email-groups'
     | '/admin/smart-alerts'
     | '/admin/users'
+    | '/admin/verify-role'
     | '/agent/activity'
     | '/agent/approvals'
     | '/agent/audit-log'
@@ -744,6 +755,7 @@ export interface FileRouteTypes {
     | '/admin/email-groups'
     | '/admin/smart-alerts'
     | '/admin/users'
+    | '/admin/verify-role'
     | '/agent/activity'
     | '/agent/approvals'
     | '/agent/audit-log'
@@ -813,6 +825,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/smart-alerts'
     | '/_authenticated/admin/users'
+    | '/_authenticated/admin/verify-role'
     | '/_authenticated/agent/activity'
     | '/_authenticated/agent/approvals'
     | '/_authenticated/agent/audit-log'
@@ -1160,6 +1173,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAgentActivityRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
+    '/_authenticated/admin/verify-role': {
+      id: '/_authenticated/admin/verify-role'
+      path: '/admin/verify-role'
+      fullPath: '/admin/verify-role'
+      preLoaderRoute: typeof AuthenticatedAdminVerifyRoleRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/users': {
       id: '/_authenticated/admin/users'
       path: '/admin/users'
@@ -1447,6 +1467,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
   AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
+  AuthenticatedAdminVerifyRoleRoute: typeof AuthenticatedAdminVerifyRoleRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1471,6 +1492,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
   AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
+  AuthenticatedAdminVerifyRoleRoute: AuthenticatedAdminVerifyRoleRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
