@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { isTransientDataApiError } from "@/lib/transient-errors";
+import { getRequestHeader } from "@tanstack/react-start/server";
+import { createClient } from "@supabase/supabase-js";
+import { isRecoverableDataReadError, isTransientDataApiError } from "@/lib/transient-errors";
+import type { Database } from "@/integrations/supabase/types";
 
 export type Assignment = {
   id: string;
@@ -10,19 +12,37 @@ export type Assignment = {
 };
 
 export const listMyAssignments = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context as { supabase: any; userId: string };
+  .handler(async () => {
+    const authHeader = getRequestHeader("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+    if (!token) return { assignments: [] as Assignment[], degraded: true, reason: "missing_auth" };
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !publishableKey) {
+      return { assignments: [] as Assignment[], degraded: true, reason: "backend_not_configured" };
+    }
+
+    const supabase = createClient<Database>(supabaseUrl, publishableKey, {
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser(token);
+      if (userError || !userData.user?.id) {
+        console.warn("Project assignment lookup skipped: invalid or unavailable auth token.", userError?.message);
+        return { assignments: [] as Assignment[], degraded: true, reason: "invalid_auth" };
+      }
       const { data, error } = await supabase
         .from("user_project_assignments")
         .select("id, project_key, project_label, is_leader")
-        .eq("user_id", userId)
+        .eq("user_id", userData.user.id)
         .order("project_label");
       if (error) throw error;
       return { assignments: (data ?? []) as Assignment[] };
     } catch (error) {
-      if (isTransientDataApiError(error)) {
+      if (isRecoverableDataReadError(error)) {
         console.warn("Project assignment lookup failed temporarily; continuing with an empty assignment list.", error);
         return { assignments: [] as Assignment[], degraded: true };
       }
@@ -31,11 +51,27 @@ export const listMyAssignments = createServerFn({ method: "POST" })
   });
 
 export const saveMyAssignments = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: { projects: { key: string; label: string }[] }) => d)
-  .handler(async ({ data, context }) => {
-    const { supabase } = context as { supabase: any };
+  .handler(async ({ data }) => {
+    const authHeader = getRequestHeader("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+    if (!token) return { ok: false, degraded: true, reason: "missing_auth" };
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !publishableKey) return { ok: false, degraded: true, reason: "backend_not_configured" };
+
+    const supabase = createClient<Database>(supabaseUrl, publishableKey, {
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser(token);
+      if (userError || !userData.user?.id) {
+        console.warn("Project assignment save skipped: invalid or unavailable auth token.", userError?.message);
+        return { ok: false, degraded: true, reason: "invalid_auth" };
+      }
       const keys = data.projects.map((p) => p.key);
       const labels = data.projects.map((p) => p.label);
       const { error } = await supabase.rpc("set_my_project_assignments", {
@@ -45,7 +81,7 @@ export const saveMyAssignments = createServerFn({ method: "POST" })
       if (error) throw error;
       return { ok: true };
     } catch (error) {
-      if (isTransientDataApiError(error)) {
+      if (isTransientDataApiError(error) || isRecoverableDataReadError(error)) {
         console.warn("Project assignment save failed temporarily; keeping the existing assignment list.", error);
         return { ok: false, degraded: true };
       }
