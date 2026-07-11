@@ -25,7 +25,9 @@ function idxByHeader(headers: string[], needles: string[]): number {
 }
 
 function pickLabel(headers: string[], row: string[]): string {
-  const labelIdx = idxByHeader(headers, ["project name", "project", "name", "label", "title", "site", "department"]);
+  const preferredIdx = idxByHeader(headers, ["sheetname", "sheet name", "project name", "project", "state", "site", "department"]);
+  if (preferredIdx >= 0 && row[preferredIdx]) return String(row[preferredIdx]).trim();
+  const labelIdx = idxByHeader(headers, ["label", "title", "name"]);
   if (labelIdx >= 0 && row[labelIdx]) return String(row[labelIdx]).trim();
   // fallback: first non-URL, non-empty cell
   for (const c of row) {
@@ -33,6 +35,18 @@ function pickLabel(headers: string[], row: string[]): string {
     if (s && !/^https?:\/\//i.test(s)) return s;
   }
   return "";
+}
+
+function labelFromUrl(url: string): string | undefined {
+  const gid = url.match(/[#?&]gid=(\d+)/)?.[1];
+  if (gid === "1685983370") return "Bihar";
+  if (gid === "1063989895") return "Himachal";
+  if (gid === "318275095") return "PSPCL";
+  return undefined;
+}
+
+function isGenericLabel(label: string): boolean {
+  return /^(project\s+work\s+flow\s+guide|sheet\s*\d*|worksheet|data)$/i.test(label.trim());
 }
 
 function pickTab(headers: string[], row: string[]): string | undefined {
@@ -80,7 +94,10 @@ function buildProjects(values: string[][]): AgentProject[] {
     if (!row || row.every(c => !String(c || "").trim())) continue;
     const url = extractUrl(row);
     if (!url) continue;
-    const label = pickLabel(hdrs, row) || `Project ${projects.length + 1}`;
+    const pickedLabel = pickLabel(hdrs, row);
+    const label = (!pickedLabel || isGenericLabel(pickedLabel) ? labelFromUrl(url) : undefined)
+      || pickedLabel
+      || `Project ${projects.length + 1}`;
     const tab = pickTab(hdrs, row);
     let id = slug(label);
     let n = 2;

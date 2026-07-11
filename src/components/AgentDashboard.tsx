@@ -63,10 +63,46 @@ const REGISTRY_REFRESH_MS = 5 * 60_000;
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string; warning?: string };
+type RegisteredSourceSheet = {
+  id: string;
+  display_name: string;
+  source_url?: string | null;
+  apps_script_url?: string | null;
+};
 type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
 type ReportFilters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
 
 const DEFAULT_REPORT_FILTERS: ReportFilters = { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
+
+function labelFromSheetUrl(url?: string | null): string | undefined {
+  const gid = (url ?? "").match(/[#?&]gid=(\d+)/)?.[1];
+  if (gid === "1685983370") return "Bihar";
+  if (gid === "1063989895") return "Himachal";
+  if (gid === "318275095") return "PSPCL";
+  return undefined;
+}
+
+function isGenericSheetTitle(label: string): boolean {
+  return /^(project\s+work\s+flow\s+guide|google\s+sheet\s+—\s+public\s+csv|google\s+sheet|sheet\s*\d*|worksheet|data)$/i.test(label.trim());
+}
+
+function registeredSourceLabel(sheet: RegisteredSourceSheet): string {
+  const raw = sheet.display_name?.trim() || "Registered sheet";
+  const urlLabel = labelFromSheetUrl(sheet.source_url) ?? labelFromSheetUrl(sheet.apps_script_url);
+  return (!raw || isGenericSheetTitle(raw) ? urlLabel : undefined) ?? raw;
+}
+
+function registeredSourceUrl(sheet?: RegisteredSourceSheet): string | undefined {
+  return sheet?.source_url || sheet?.apps_script_url || undefined;
+}
+
+function displayProjectLabel(project: AgentProject): string {
+  const raw = project.label?.trim() || "Source";
+  if (!isGenericSheetTitle(raw)) return raw;
+  const fromUrl = labelFromSheetUrl(project.url);
+  const fromTab = project.tab?.trim();
+  return fromUrl || (fromTab && !isGenericSheetTitle(fromTab) ? fromTab : raw);
+}
 
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
@@ -335,17 +371,61 @@ export default function AgentDashboard() {
     refetchOnWindowFocus: true,
   });
 
+  // Registered sheets are first-class dashboard sources too. The master
+  // registry supplies curated defaults, while /sheets adds user/admin-managed
+  // live sources. Previously these only overrode matching defaults, so a new
+  // registered sheet with a new name never appeared on the Agent Dashboard.
+  const fetchList = useServerFn(listSheets);
+  const registeredSheetsQ = useQuery({
+    queryKey: ["view-source-sheets"],
+    queryFn: () => fetchList(),
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const registeredSheets = useMemo(
+    () => (registeredSheetsQ.data?.sheets ?? []) as RegisteredSourceSheet[],
+    [registeredSheetsQ.data],
+  );
+
   const allProjects: AgentProject[] = useMemo(() => {
     const live = registryQ.data?.projects;
-    return live && live.length ? live : FALLBACK_PROJECTS;
-  }, [registryQ.data]);
+    const base = (live && live.length ? live : FALLBACK_PROJECTS).map((project) => ({
+      ...project,
+      label: displayProjectLabel(project),
+    }));
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+    const urlKey = (s?: string | null) => (s ?? "").trim().toLowerCase();
+    const seenIds = new Set(base.map((p) => p.id));
+    const seenLabels = new Set(base.map((p) => norm(p.label)));
+    const seenUrls = new Set(base.flatMap((p) => [urlKey(p.url)]).filter(Boolean));
+    const extras: AgentProject[] = [];
+
+    for (const sheet of registeredSheets) {
+      const url = registeredSourceUrl(sheet);
+      if (!url) continue;
+      const label = registeredSourceLabel(sheet);
+      const labelKey = norm(label);
+      const canonicalUrl = urlKey(url);
+      if (seenLabels.has(labelKey) || seenUrls.has(canonicalUrl)) continue;
+      let id = `sheet-${sheet.id}`;
+      let n = 2;
+      while (seenIds.has(id)) id = `sheet-${sheet.id}-${n++}`;
+      seenIds.add(id);
+      seenLabels.add(labelKey);
+      seenUrls.add(canonicalUrl);
+      extras.push({ id, label, url, note: "registered-sheet" });
+    }
+
+    return [...base, ...extras];
+  }, [registryQ.data, registeredSheets]);
   const registryLive = !!registryQ.data?.projects?.length;
 
   // Super admins (MD, VH) see every project. Everyone else sees only assigned.
   const projects: AgentProject[] = useMemo(() => {
     if (scope.mode === "all") return allProjects;
     if (!scope.allowedProjectKeys) return allProjects;
-    return allProjects.filter((p) => scope.allowedProjectKeys!.has(p.id));
+    return allProjects.filter((p) => p.note === "registered-sheet" || scope.allowedProjectKeys!.has(p.id));
   }, [allProjects, scope.mode, scope.allowedProjectKeys]);
 
   const assignedKeys = useMemo(
@@ -354,29 +434,20 @@ export default function AgentDashboard() {
   );
   const needsOnboarding = scope.mode !== "all" && !scope.loading && projects.length === 0;
 
-  // Prefer the Google Sheets source_url from the registered sheets (auto-synced
-  // every 5 min) over the legacy sheet2api URL baked into the master registry.
-  // This keeps the dashboard aligned with the live sheet the user updates.
-  const fetchList = useServerFn(listSheets);
-  const registeredSheetsQ = useQuery({
-    queryKey: ["view-source-sheets"],
-    queryFn: () => fetchList(),
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-  });
   const resolveSourceUrl = (p: AgentProject): string => {
-    const list = (registeredSheetsQ.data?.sheets ?? []) as { display_name: string; source_url?: string | null }[];
+    const list = registeredSheets;
     const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
     const label = norm(p.label);
     const match = list.find((s) => {
-      if (!s.source_url) return false;
-      const n = norm(s.display_name);
+      if (!registeredSourceUrl(s)) return false;
+      const n = norm(registeredSourceLabel(s));
       return n === label || n.includes(label) || label.includes(n);
     });
     // Only override when we find a Google Sheets URL — never regress to another
     // sheet2api-style proxy.
-    if (match?.source_url && /docs\.google\.com\/spreadsheets/i.test(match.source_url)) {
-      return match.source_url;
+    const matchUrl = registeredSourceUrl(match);
+    if (matchUrl && /docs\.google\.com\/spreadsheets/i.test(matchUrl)) {
+      return matchUrl;
     }
     return p.url;
   };
@@ -525,7 +596,7 @@ export default function AgentDashboard() {
     const tagged = scoped.map((r) => ({ ...r, __project: s.project.label, __department: s.payload?.department }));
     const data = focusFilter(tagged);
     return {
-      project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
+      project: (scope.mode === "name-scoped" ? "My work · " : "") + s.project.label,
       department: s.payload.department,
       data,
       generated_at: s.payload.generated_at,
@@ -1668,7 +1739,7 @@ export default function AgentDashboard() {
         {sources.map(s => (
           <ProjectChip
             key={s.project.id}
-            label={s.payload?.connector?.replace(" — view", "") || s.project.label}
+            label={s.project.label}
             active={selected === s.project.id}
             count={s.payload?.data?.length ?? 0}
             loading={s.isFetching}
