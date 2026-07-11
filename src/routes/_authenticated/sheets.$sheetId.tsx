@@ -25,6 +25,26 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
 
 const PAGE_SIZES = [100, 500, 1000, 2000];
 
+type PersistedSheetState = {
+  offset: number;
+  pageSize: number;
+  viewMode: "source" | "mapped" | "both";
+  scrollTop: number;
+  scrollLeft: number;
+};
+
+const stateKey = (sheetId: string) => `sheet-detail-state:${sheetId}`;
+
+function readPersisted(sheetId: string): Partial<PersistedSheetState> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem(stateKey(sheetId));
+    return raw ? (JSON.parse(raw) as Partial<PersistedSheetState>) : {};
+  } catch {
+    return {};
+  }
+}
+
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
   const { highlight: highlightParam, col: highlightCol, match, matchCol, from } = Route.useSearch();
@@ -37,13 +57,20 @@ function SheetDetailPage() {
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
 
-  const [pageSize, setPageSize] = useState(500);
+  const persisted = useRef<Partial<PersistedSheetState>>(readPersisted(sheetId)).current;
+  const [pageSize, setPageSize] = useState<number>(persisted.pageSize ?? 500);
   const [matchedIndex, setMatchedIndex] = useState<number | null>(null);
   const highlight = highlightParam ?? matchedIndex ?? undefined;
-  const [offset, setOffset] = useState(() =>
-    typeof highlightParam === "number" ? Math.floor(highlightParam / 500) * 500 : 0,
-  );
-  const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
+  const [offset, setOffset] = useState(() => {
+    if (typeof highlightParam === "number") {
+      return Math.floor(highlightParam / (persisted.pageSize ?? 500)) * (persisted.pageSize ?? 500);
+    }
+    return persisted.offset ?? 0;
+  });
+  const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">(persisted.viewMode ?? "both");
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const didRestoreScroll = useRef(false);
+
 
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
   const highlightCellRef = useRef<HTMLTableCellElement | null>(null);
@@ -133,6 +160,80 @@ function SheetDetailPage() {
     // Also nudge the page so the scroller itself is on-screen on mobile.
     scroller.scrollIntoView({ behavior: "auto", block: "nearest" });
   }, [highlight, highlightCol, detail.data]);
+
+  // Persist filter/pagination state whenever it changes so a return trip
+  // (e.g. after bouncing to Copilot) lands on the same page/view mode.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const prev = readPersisted(sheetId);
+      sessionStorage.setItem(
+        stateKey(sheetId),
+        JSON.stringify({
+          ...prev,
+          offset,
+          pageSize,
+          viewMode,
+        }),
+      );
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [sheetId, offset, pageSize, viewMode]);
+
+  // Restore the last scroll position of the table scroller once rows are
+  // rendered for the persisted offset. Skip when we're jumping to a highlight
+  // (that effect owns the scroll target).
+  useEffect(() => {
+    if (didRestoreScroll.current) return;
+    if (!detail.data || highlight != null) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const { scrollTop = 0, scrollLeft = 0 } = persisted;
+    if (scrollTop || scrollLeft) {
+      scroller.scrollTo({ top: scrollTop, left: scrollLeft, behavior: "auto" });
+    }
+    didRestoreScroll.current = true;
+  }, [detail.data, highlight, persisted]);
+
+  // Save scroll position on scroll (throttled via rAF) and on unload.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let raf = 0;
+    const save = () => {
+      try {
+        const prev = readPersisted(sheetId);
+        sessionStorage.setItem(
+          stateKey(sheetId),
+          JSON.stringify({
+            ...prev,
+            scrollTop: scroller.scrollTop,
+            scrollLeft: scroller.scrollLeft,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    };
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        save();
+      });
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("beforeunload", save);
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      window.removeEventListener("beforeunload", save);
+      if (raf) cancelAnimationFrame(raf);
+      save();
+    };
+  }, [sheetId, detail.data]);
+
+
 
 
   const refreshMut = useMutation({
@@ -274,7 +375,7 @@ function SheetDetailPage() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="max-h-[70vh] overflow-auto">
+        <div ref={scrollerRef} className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted text-left text-xs text-muted-foreground">
               <tr>
