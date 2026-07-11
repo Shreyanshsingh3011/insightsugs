@@ -29,9 +29,12 @@ const COMPLETION_ALIASES = [
   "Completed Date",
   "Date of Completion",
   "Actual Completion Date",
+  "Actual Date",
+  "Actual",
   "Actual End",
   "Actual End Date",
   "Actual Finish",
+  "Actual Finish Date",
   "Finish Date",
   "Finished Date",
   "Closed Date",
@@ -39,10 +42,21 @@ const COMPLETION_ALIASES = [
   "Completed On",
   "Done On",
   "Received Date",
+  "Received On",
   "Paid Date",
+  "Paid On",
+  "Delivered Date",
+  "Dispatch Date",
+  "Dispatched Date",
+  "Approval Date",
+  "Approved Date",
+  "Approved On",
+  "Signed On",
+  "Sign Off Date",
   "completion_date",
   "completed_date",
   "actual_completion_date",
+  "actual_date",
   "actual_end",
   "actual_end_date",
   "actual_finish",
@@ -54,7 +68,12 @@ const COMPLETION_ALIASES = [
   "done_on",
   "received_date",
   "paid_date",
+  "delivered_date",
+  "dispatch_date",
+  "approval_date",
+  "approved_date",
 ];
+
 
 function normKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -77,7 +96,7 @@ export function isTerminalStatusText(raw: unknown): boolean {
   const value = String(raw ?? "").trim().toLowerCase();
   if (!value) return false;
   if (/\b(not\s+complete|not\s+completed|not\s+done|incomplete|pending\s+completion|under\s+progress|in\s+progress)\b/.test(value)) return false;
-  return /\b(completed?|done|closed?|finished?|resolved|fulfilled|cancelled|canceled|dropped|withdrawn|received|paid)\b/.test(value);
+  return /\b(completed?|complet|done|closed?|finished?|resolved|fulfilled|cancelled|canceled|dropped|withdrawn|received|paid|approved|signed|delivered|dispatched|executed|issued|released|handover|handed\s*over|ok|yes)\b/.test(value);
 }
 
 function isMeaningfulCompletionValue(raw: unknown): boolean {
@@ -101,9 +120,18 @@ export function isTerminalRow(row: StatusRow): boolean {
   for (const [key, value] of Object.entries(row)) {
     if (normalizedStatusKeys.has(normKey(key)) && isTerminalStatusText(value)) return true;
   }
+  // % Complete / Progress = 100 counts as done.
+  for (const [key, value] of Object.entries(row)) {
+    const nk = normKey(key);
+    if (nk === "complete" || nk === "percentcomplete" || nk === "complete" || nk === "progress" || nk === "progresspercent" || nk === "percentageofcompletion" || nk === "percentagecomplete" || nk.endsWith("complete") && nk.startsWith("percent")) {
+      const num = Number(String(value ?? "").replace(/[%\s,]/g, ""));
+      if (Number.isFinite(num) && num >= 100) return true;
+    }
+  }
   const completion = valueForAliases(row, COMPLETION_ALIASES);
   return isMeaningfulCompletionValue(completion);
 }
+
 
 export function rowStatusText(row: StatusRow): string {
   for (const key of STATUS_ALIASES) {
