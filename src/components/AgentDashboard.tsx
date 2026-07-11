@@ -388,38 +388,19 @@ export default function AgentDashboard() {
     [registeredSheetsQ.data],
   );
 
+  // Only the 5 curated project sources are shown on the dashboard. The master
+  // registry and user-registered sheets add noise/duplicates (Nit 76, stock
+  // summary, ULA PROTOTYPE, sheet 2 …) that the user did not authorize as
+  // dashboard projects. Registered sheets remain available in /sheets and
+  // via `resolveSourceUrl` below for URL overrides.
   const allProjects: AgentProject[] = useMemo(() => {
-    const live = registryQ.data?.projects;
-    const base = (live && live.length ? live : FALLBACK_PROJECTS).map((project) => ({
+    return FALLBACK_PROJECTS.map((project) => ({
       ...project,
       label: displayProjectLabel(project),
     }));
-    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-    const urlKey = (s?: string | null) => (s ?? "").trim().toLowerCase();
-    const seenIds = new Set(base.map((p) => p.id));
-    const seenLabels = new Set(base.map((p) => norm(p.label)));
-    const seenUrls = new Set(base.flatMap((p) => [urlKey(p.url)]).filter(Boolean));
-    const extras: AgentProject[] = [];
-
-    for (const sheet of registeredSheets) {
-      const url = registeredSourceUrl(sheet);
-      if (!url) continue;
-      const label = registeredSourceLabel(sheet);
-      const labelKey = norm(label);
-      const canonicalUrl = urlKey(url);
-      if (seenLabels.has(labelKey) || seenUrls.has(canonicalUrl)) continue;
-      let id = `sheet-${sheet.id}`;
-      let n = 2;
-      while (seenIds.has(id)) id = `sheet-${sheet.id}-${n++}`;
-      seenIds.add(id);
-      seenLabels.add(labelKey);
-      seenUrls.add(canonicalUrl);
-      extras.push({ id, label, url, note: "registered-sheet" });
-    }
-
-    return [...base, ...extras];
-  }, [registryQ.data, registeredSheets]);
+  }, []);
   const registryLive = !!registryQ.data?.projects?.length;
+
 
   // Super admins (MD, VH) see every project. Everyone else sees only assigned.
   const projects: AgentProject[] = useMemo(() => {
