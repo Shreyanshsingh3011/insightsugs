@@ -66,7 +66,7 @@ function RowPage() {
   const anyError = sources.some((s) => s.isError);
   const knownProject = ident.project && sources.some(s => s.project.label === ident.project);
 
-  if (!row && (anyLoading || projectMissing || (!knownProject && !ident.activity))) {
+  if (!liveRow && (anyLoading || projectMissing || (!knownProject && !ident.activity))) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-4">
         <Link to="/agent" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -100,14 +100,14 @@ function RowPage() {
   }
 
   // Row missing from cache but we know enough from the URL to render a
-  // minimal shell (project + activity/srNo). Uses an empty Row so downstream
-  // helpers all no-op gracefully.
-  const displayRow: Row = row ?? ({
+  // minimal shell (project + activity/srNo). Uses a synthetic Row so
+  // downstream helpers all no-op gracefully.
+  const row: Row = liveRow ?? ({
     "__project": ident.project,
     "Sr. No.": ident.srNo,
     "Activity List": ident.activity,
-  } as Row);
-  const usingFallback = !row;
+  } as unknown as Row);
+
 
 
   const project = String(row["__project"] ?? ident.project ?? "—");
