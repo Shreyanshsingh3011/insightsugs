@@ -163,20 +163,23 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   let chosen: { sheetId: number; title: string } | undefined;
   let tabFallbackReason: string | undefined;
   const available = sheets.map(s => s.properties.title);
-  if (tabHint) {
-    const needle = tabHint.trim().toLowerCase();
-    chosen = sheets.find(s => s.properties.title.trim().toLowerCase() === needle)?.properties
-      ?? sheets.find(s => s.properties.title.toLowerCase().includes(needle))?.properties;
+  // Prefer an explicit gid in the URL — it uniquely identifies a worksheet.
+  // A generic tab hint (e.g. "Sheet1" from the master registry) would
+  // otherwise collapse Bihar/Himachal/PSPCL onto the same first tab.
+  if (parsed.gid) {
+    const gid = Number(parsed.gid);
+    chosen = sheets.find(s => s.properties.sheetId === gid)?.properties;
     if (!chosen) {
-      tabFallbackReason = `Tab "${tabHint}" not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to ${parsed.gid ? "#gid match" : "first tab"}.`;
+      tabFallbackReason = `gid=${gid} not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}.`;
       console.warn(`[insights-proxy] ${tabFallbackReason}`);
     }
   }
-  if (!chosen && parsed.gid) {
-    const gid = Number(parsed.gid);
-    chosen = sheets.find(s => s.properties.sheetId === gid)?.properties;
+  if (!chosen && tabHint) {
+    const needle = tabHint.trim().toLowerCase();
+    chosen = sheets.find(s => s.properties.title.trim().toLowerCase() === needle)?.properties
+      ?? sheets.find(s => s.properties.title.toLowerCase().includes(needle))?.properties;
     if (!chosen && !tabFallbackReason) {
-      tabFallbackReason = `gid=${gid} not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to first tab.`;
+      tabFallbackReason = `Tab "${tabHint}" not found in "${meta.properties?.title ?? parsed.id}". Available tabs: ${available.map(t => `"${t}"`).join(", ")}. Falling back to first tab.`;
       console.warn(`[insights-proxy] ${tabFallbackReason}`);
     }
   }
