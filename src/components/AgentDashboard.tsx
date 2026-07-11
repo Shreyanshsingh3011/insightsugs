@@ -74,6 +74,28 @@ type ReportFilters = { status: string; crit: string; stage: string; person: stri
 
 const DEFAULT_REPORT_FILTERS: ReportFilters = { status: "all", crit: "all", stage: "all", person: "all", minDelay: "", q: "", onlyOverdue: false };
 
+function labelFromSheetUrl(url?: string | null): string | undefined {
+  const gid = (url ?? "").match(/[#?&]gid=(\d+)/)?.[1];
+  if (gid === "1685983370") return "Bihar";
+  if (gid === "1063989895") return "Himachal";
+  if (gid === "318275095") return "PSPCL";
+  return undefined;
+}
+
+function isGenericSheetTitle(label: string): boolean {
+  return /^(project\s+work\s+flow\s+guide|sheet\s*\d*|worksheet|data)$/i.test(label.trim());
+}
+
+function registeredSourceLabel(sheet: RegisteredSourceSheet): string {
+  const raw = sheet.display_name?.trim() || "Registered sheet";
+  const urlLabel = labelFromSheetUrl(sheet.source_url) ?? labelFromSheetUrl(sheet.apps_script_url);
+  return (!raw || isGenericSheetTitle(raw) ? urlLabel : undefined) ?? raw;
+}
+
+function registeredSourceUrl(sheet: RegisteredSourceSheet): string | undefined {
+  return sheet.source_url || sheet.apps_script_url || undefined;
+}
+
 const TONE = {
   high: "text-rose-600 bg-rose-500/10 border-rose-500/30",
   med: "text-amber-700 bg-amber-500/10 border-amber-500/30",
@@ -369,9 +391,9 @@ export default function AgentDashboard() {
     const extras: AgentProject[] = [];
 
     for (const sheet of registeredSheets) {
-      const url = sheet.source_url || sheet.apps_script_url;
+      const url = registeredSourceUrl(sheet);
       if (!url) continue;
-      const label = sheet.display_name?.trim() || "Registered sheet";
+      const label = registeredSourceLabel(sheet);
       const labelKey = norm(label);
       const canonicalUrl = urlKey(url);
       if (seenLabels.has(labelKey) || seenUrls.has(canonicalUrl)) continue;
@@ -406,14 +428,15 @@ export default function AgentDashboard() {
     const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
     const label = norm(p.label);
     const match = list.find((s) => {
-      if (!s.source_url) return false;
-      const n = norm(s.display_name);
+      if (!registeredSourceUrl(s)) return false;
+      const n = norm(registeredSourceLabel(s));
       return n === label || n.includes(label) || label.includes(n);
     });
     // Only override when we find a Google Sheets URL — never regress to another
     // sheet2api-style proxy.
-    if (match?.source_url && /docs\.google\.com\/spreadsheets/i.test(match.source_url)) {
-      return match.source_url;
+    const matchUrl = registeredSourceUrl(match as RegisteredSourceSheet | undefined);
+    if (matchUrl && /docs\.google\.com\/spreadsheets/i.test(matchUrl)) {
+      return matchUrl;
     }
     return p.url;
   };
