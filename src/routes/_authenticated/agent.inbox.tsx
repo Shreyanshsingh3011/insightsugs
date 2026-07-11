@@ -204,6 +204,8 @@ function AgentInboxPage() {
   const hiddenCount = rawDrafts.length - drafts.length;
   const activeDraft = drafts.find((d) => d.id === openId) ?? null;
 
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["agent-drafts"] });
+
   const approve = useMutation({
     mutationFn: (id: string) => approveFn({ data: { id } }),
     onSuccess: (r) => {
