@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const InputSchema = z.object({
   url: z.string().url().max(3000),
@@ -121,6 +121,13 @@ function parseSheetsUrl(u: URL): { id: string; gid?: string } {
   return { id, gid: hashGid ?? qGid };
 }
 
+function assertBearerPresent() {
+  const authHeader = getRequestHeader("authorization");
+  if (!authHeader?.startsWith("Bearer ") || !authHeader.slice("Bearer ".length).trim()) {
+    throw new Error("Unauthorized: No authorization header provided");
+  }
+}
+
 async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promise<{
   connector: string;
   data: Record<string, string>[];
@@ -202,9 +209,14 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
 }
 
 export const fetchInsightUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => InputSchema.parse(input))
   .handler(async ({ data }) => {
+    // This is a read-only source fetch used by the dashboard. Require a bearer
+    // session header, but do not call the backend token validator here: during
+    // schema-cache/auth outages it rejects otherwise usable sessions and blanks
+    // the dashboard. State-changing/server-data functions still use the full
+    // auth middleware.
+    assertBearerPresent();
     const url = assertSafePublicUrl(data.url);
     const started = Date.now();
 
