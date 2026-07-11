@@ -13,6 +13,8 @@ import {
   type AgentDraft,
 } from "@/lib/agent-inbox.functions";
 import { runAgentWatchers } from "@/lib/agent-watchers.functions";
+import { useAgentSources } from "@/hooks/useAgentSources";
+import { isRowEffectivelyDone } from "@/lib/status-utils";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
