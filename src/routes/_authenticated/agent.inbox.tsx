@@ -267,6 +267,14 @@ function AgentInboxPage() {
         <Badge variant="secondary" className="ml-1">
           {drafts.length}
         </Badge>
+        {hiddenCount > 0 && (
+          <span
+            className="text-[11px] text-muted-foreground"
+            title="Drafts whose underlying row is now completed or outside your live dashboard sources are hidden."
+          >
+            · {hiddenCount} hidden (done / out of scope)
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <RunWatchersButton
             onDone={(r) => {
