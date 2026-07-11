@@ -26,6 +26,9 @@ const STATUS_ALIASES = [
 
 const COMPLETION_ALIASES = [
   "Completion Date",
+  "Completion Date Updated by Project Team",
+  "Completion Date Verified by VHs",
+  "Completion Date Verified by VH",
   "Completed Date",
   "Date of Completion",
   "Actual Completion Date",
@@ -54,6 +57,8 @@ const COMPLETION_ALIASES = [
   "Signed On",
   "Sign Off Date",
   "completion_date",
+  "completion_date_updated_by_project_team",
+  "completion_date_verified_by_vhs",
   "completed_date",
   "actual_completion_date",
   "actual_date",
@@ -104,6 +109,7 @@ function isMeaningfulCompletionValue(raw: unknown): boolean {
   if (!value) return false;
   const lower = value.toLowerCase();
   if (/^(no|false|0|n|na|n\/a|null|none|-|—|pending|open|not\s+done|not\s+complete|not\s+completed|in\s+progress|under\s+progress)$/i.test(lower)) return false;
+  if (/\b1900\b/.test(lower) || /\b1899\b/.test(lower)) return false;
   if (isTerminalStatusText(value)) return true;
   if (/^date\(/i.test(value)) return true;
   if (/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(value)) return true;
