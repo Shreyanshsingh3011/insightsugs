@@ -25,6 +25,26 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
 
 const PAGE_SIZES = [100, 500, 1000, 2000];
 
+type PersistedSheetState = {
+  offset: number;
+  pageSize: number;
+  viewMode: "source" | "mapped" | "both";
+  scrollTop: number;
+  scrollLeft: number;
+};
+
+const stateKey = (sheetId: string) => `sheet-detail-state:${sheetId}`;
+
+function readPersisted(sheetId: string): Partial<PersistedSheetState> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = sessionStorage.getItem(stateKey(sheetId));
+    return raw ? (JSON.parse(raw) as Partial<PersistedSheetState>) : {};
+  } catch {
+    return {};
+  }
+}
+
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
   const { highlight: highlightParam, col: highlightCol, match, matchCol, from } = Route.useSearch();
@@ -37,13 +57,20 @@ function SheetDetailPage() {
   const fetchDetail = useServerFn(getSheetDetail);
   const refresh = useServerFn(refreshSheet);
 
-  const [pageSize, setPageSize] = useState(500);
+  const persisted = useRef<Partial<PersistedSheetState>>(readPersisted(sheetId)).current;
+  const [pageSize, setPageSize] = useState<number>(persisted.pageSize ?? 500);
   const [matchedIndex, setMatchedIndex] = useState<number | null>(null);
   const highlight = highlightParam ?? matchedIndex ?? undefined;
-  const [offset, setOffset] = useState(() =>
-    typeof highlightParam === "number" ? Math.floor(highlightParam / 500) * 500 : 0,
-  );
-  const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">("both");
+  const [offset, setOffset] = useState(() => {
+    if (typeof highlightParam === "number") {
+      return Math.floor(highlightParam / (persisted.pageSize ?? 500)) * (persisted.pageSize ?? 500);
+    }
+    return persisted.offset ?? 0;
+  });
+  const [viewMode, setViewMode] = useState<"source" | "mapped" | "both">(persisted.viewMode ?? "both");
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const didRestoreScroll = useRef(false);
+
 
   const highlightRef = useRef<HTMLTableRowElement | null>(null);
   const highlightCellRef = useRef<HTMLTableCellElement | null>(null);
