@@ -5,7 +5,7 @@ export const attachUsableSupabaseAuth = createMiddleware({ type: "function" }).c
   async ({ next }) => {
     const session = await getUsableSupabaseSession(4000, {
       validate: true,
-      strictValidation: true,
+      strictValidation: false,
       clearOnInvalid: false,
     });
     const token = session?.access_token;
