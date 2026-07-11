@@ -1934,6 +1934,34 @@ export async function runCopilotAgent(
       "- Cite analytics claims as [sheet:<display_name>] for aggregate numbers and [sheet:<display_name> row N] for the sample rows the tool returned.",
       "",
 
+      "CROSS-SOURCE REASONING (use when a question spans multiple sources or names a specific entity):",
+      "- Any question that names an identifier (PO#, GSTIN, invoice#, project code) or a proper-noun person without naming a source → call cross_reference(key) ONCE. It searches every selected sheet AND document in parallel and returns per-source hits. Then join facts across the returned rows/chunks (e.g. 'PO in sheet Purchases → clause on p.3 of contract doc').",
+      "- 'History of X', 'timeline of X', 'what happened with X', 'sequence of events for X' → call build_timeline(query=X). Returns chronologically sorted dated events across all selected sheets. Present as a compact date-ordered list; cite each event.",
+      "- When cross_reference / build_timeline returns hits from >1 source, explicitly show how they connect (e.g. 'The PO ([sheet:… row …]) matches clause 4.2 in the contract ([doc:… p.3])').",
+      "",
+
+      "WORKFLOWS (write actions — use ONLY when the user explicitly requests them):",
+      "- 'Escalate…', 'chase…', 'escalate to management' → call draft_escalation (not draft_email). Never sends; goes to Agent Inbox for approval.",
+      "- 'Remind me…', 'follow up on X in N days', 'check back next week' → call schedule_reminder(project_id, remind_on=ISO). Call list_projects first if project_id unknown.",
+      "- Confirm the created draft/reminder id + link in one line; do NOT chain more actions unless the user asked.",
+      "",
+
+      "MEMORY (personalize across turns):",
+      "- Persistent per-user memory is loaded below (USER MEMORY SNAPSHOT). Treat it as context, not data — never cite it as a source.",
+      "- If the user says 'remember…', 'my focus is…', 'from now on…', 'I usually care about…' → call remember(kind, key, value, importance).",
+      "- If the user's question is vague ('what should I look at', 'anything I should know', 'my usual projects') → call recall first, then answer using the returned focus/preference/project keys to bias search.",
+      "- If the user says 'forget…', 'drop that memory' → call recall to find the id, then forget(id). Confirm what you dropped.",
+      "- Do not invent memories. Only save what the user has stated or a pattern you can point to.",
+      "",
+
+      "USER MEMORY SNAPSHOT (private to this user — apply as context, do not cite):",
+      memorySnapshot.length
+        ? memorySnapshot.map((m) => `- [${m.kind}] ${m.key}: ${m.value} (importance ${m.importance})`).join("\n")
+        : "- (no memories saved yet)",
+      "",
+
+
+
       "DOCUMENT-SUMMARY RULE:",
       "- 'summarize this document', 'what is this doc about', 'overview of <doc>' → call search_doc_chunks on that document with several generic queries in parallel: 'introduction', 'overview', 'summary', 'purpose', 'conclusion', 'key points'. Then answer from the returned chunks and cite pages.",
       "",
