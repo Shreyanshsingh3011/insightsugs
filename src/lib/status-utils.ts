@@ -128,6 +128,21 @@ function hasCompletionDateSerialInDurationColumn(row: StatusRow): boolean {
   return Number.isFinite(value) && value >= 30000 && value <= 70000;
 }
 
+// Generic detection: any column whose name looks like a completion/actual/closed
+// date column and holds a meaningful date value implies the row is done.
+// This catches sheet-specific columns not in COMPLETION_ALIASES.
+function hasAnyCompletionDateColumn(row: StatusRow): boolean {
+  const pattern = /(completion|completed|complete\s*date|actual(\s|_)*(date|end|finish|completion)?|finish(ed)?\s*date|closed?\s*(date|on)|closure|delivered|dispatch(ed)?|received|paid|approv(al|ed)|signed?\s*(off|on)|handover|handed\s*over|done\s*on)/i;
+  for (const [key, value] of Object.entries(row)) {
+    if (!pattern.test(key)) continue;
+    if (isMeaningfulCompletionValue(value)) return true;
+    // Numeric date serials (Excel) counted as completion too
+    const num = Number(String(value ?? "").replace(/[,\s]/g, ""));
+    if (Number.isFinite(num) && num >= 30000 && num <= 70000) return true;
+  }
+  return false;
+}
+
 export function isTerminalRow(row: StatusRow): boolean {
   for (const key of STATUS_ALIASES) {
     if (isTerminalStatusText(row[key])) return true;
@@ -145,8 +160,11 @@ export function isTerminalRow(row: StatusRow): boolean {
     }
   }
   const completion = valueForAliases(row, COMPLETION_ALIASES);
-  return isMeaningfulCompletionValue(completion) || hasCompletionDateSerialInDurationColumn(row);
+  return isMeaningfulCompletionValue(completion)
+    || hasCompletionDateSerialInDurationColumn(row)
+    || hasAnyCompletionDateColumn(row);
 }
+
 
 
 export function rowStatusText(row: StatusRow): string {
