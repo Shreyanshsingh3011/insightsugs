@@ -547,9 +547,9 @@ export async function deterministicAnswer(params: {
 
 
   const answer =
-    `Answered directly from the selected sources (AI provider unavailable — used local search over your sheets and documents):\n\n` +
     parts.join("\n") +
-    `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}`;
+    `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}` +
+    `\n\n_Answered directly from the selected sources (AI provider unavailable — used local search over your sheets and documents)._`;
   return { answer, citations: uniqCites, matched: true };
 }
 
