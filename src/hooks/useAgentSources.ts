@@ -4,7 +4,7 @@
 // the entity detail pages stay in sync automatically.
 
 import { useMemo } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
@@ -61,6 +61,10 @@ export function useAgentSources() {
       refetchInterval: AUTO_REFRESH_MS,
       refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
+      // Keep the last successful payload if a refetch errors, so entity
+      // detail pages don't lose rows the dashboard is still referencing.
+      placeholderData: keepPreviousData,
+      retry: 2,
     })),
   });
 
