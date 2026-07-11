@@ -56,7 +56,16 @@ function RowPage() {
     [rows, ident],
   );
 
-  if (!row) {
+  // When the live row isn't in cache (source query still loading, or a
+  // transient refetch error dropped its payload), only bail out with the
+  // "not found" screen if we can't even reconstruct minimal identity from
+  // the URL. Otherwise render what we have from the URL and let the user
+  // retry — the dashboard is still referencing this activity, so it's real.
+  const projectMissing = !ident.project && !ident.activity && !ident.srNo;
+  const anyError = sources.some((s) => s.isError);
+  const knownProject = ident.project && sources.some(s => s.project.label === ident.project);
+
+  if (!row && (anyLoading || projectMissing || (!knownProject && !ident.activity))) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-4">
         <Link to="/agent" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -65,7 +74,11 @@ function RowPage() {
         <Card>
           <CardContent className="p-8 text-center space-y-3">
             <div className="text-sm text-muted-foreground">
-              {anyLoading ? "Loading activity from live sources…" : "This activity could not be located in the current data."}
+              {anyLoading
+                ? "Loading activity from live sources…"
+                : anyError
+                  ? "One or more sources failed to refresh. Try again in a moment."
+                  : "This activity could not be located in the current data."}
             </div>
             {!anyLoading && (
               <div className="text-xs text-muted-foreground">
@@ -84,6 +97,17 @@ function RowPage() {
       </main>
     );
   }
+
+  // Row missing from cache but we know enough from the URL to render a
+  // minimal shell (project + activity/srNo). Uses an empty Row so downstream
+  // helpers all no-op gracefully.
+  const displayRow: Row = row ?? ({
+    "__project": ident.project,
+    "Sr. No.": ident.srNo,
+    "Activity List": ident.activity,
+  } as Row);
+  const usingFallback = !row;
+
 
   const project = String(row["__project"] ?? ident.project ?? "—");
   const activity = activityName(row) || ident.activity || "(unnamed)";
