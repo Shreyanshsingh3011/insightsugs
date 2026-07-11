@@ -19,6 +19,21 @@ function isTransientDataApiError(error: unknown) {
   );
 }
 
+function readStoredSession(): Session | null {
+  if (typeof window === "undefined") return null;
+  for (const key of Object.keys(window.localStorage)) {
+    if (!key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(key) ?? "null");
+      const session = parsed?.currentSession ?? parsed;
+      if (session?.access_token && session?.user?.id) return session as Session;
+    } catch {
+      // Ignore malformed storage entries and continue with Supabase auth.
+    }
+  }
+  return null;
+}
+
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,8 +45,12 @@ export function useSession() {
       setSession(s);
       setLoading(false);
     });
-    supabase.auth
-      .getSession()
+    Promise.race([
+      supabase.auth.getSession(),
+      new Promise<{ data: { session: Session | null } }>((resolve) => {
+        window.setTimeout(() => resolve({ data: { session: readStoredSession() } }), 2500);
+      }),
+    ])
       .then(({ data }) => {
         if (!mounted) return;
         setSession(data.session);
