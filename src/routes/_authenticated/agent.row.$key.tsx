@@ -16,6 +16,7 @@ import { useAgentSources } from "@/hooks/useAgentSources";
 import {
   decodeRowKey, rowMatchesIdent, personName, personEmail, stageName,
   activityName, statusText, num, encodeKey as encodeEntityKey, toScopedRow,
+  type Row,
 } from "@/lib/entity-scope";
 import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 import { EntityActionsBar } from "@/components/EntityActionsBar";
