@@ -13,6 +13,8 @@ import {
   type AgentDraft,
 } from "@/lib/agent-inbox.functions";
 import { runAgentWatchers } from "@/lib/agent-watchers.functions";
+import { useAgentSources } from "@/hooks/useAgentSources";
+import { isRowEffectivelyDone } from "@/lib/status-utils";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -156,8 +158,50 @@ function AgentInboxPage() {
     staleTime: 15_000,
   });
 
-  const drafts = q.data?.drafts ?? [];
+  const rawDrafts = q.data?.drafts ?? [];
   const isAdmin = !!q.data?.isAdmin;
+
+  // Scope inbox to the same live sources as the Agent Dashboard: drop drafts
+  // whose underlying row is now effectively done, and (when we can identify
+  // the project) drafts whose project isn't in the user's live source set.
+  const { rows: liveRows, projects: liveProjects, anyLoading: sourcesLoading } = useAgentSources();
+  const { doneKeys, projectLabels } = useMemo(() => {
+    const done = new Set<string>();
+    const labels = new Set<string>();
+    for (const p of liveProjects) labels.add(p.label);
+    const pick = (r: Record<string, unknown>, ...ks: string[]) => {
+      for (const k of ks) {
+        const v = r[k];
+        if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+      }
+      return "";
+    };
+    for (const r of liveRows) {
+      const project = String((r as any).__project ?? "");
+      if (project) labels.add(project);
+      const srNo = pick(r, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
+      const activity = pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
+      const key = `${project}::${srNo || activity}`.slice(0, 400);
+      if (isRowEffectivelyDone(r)) done.add(key);
+    }
+    return { doneKeys: done, projectLabels: labels };
+  }, [liveRows, liveProjects]);
+
+  const drafts = useMemo(() => {
+    // Wait for the first live snapshot before filtering, otherwise we'd hide
+    // everything on cold start.
+    if (sourcesLoading && liveRows.length === 0) return rawDrafts;
+    return rawDrafts.filter((d) => {
+      const isRowScoped = typeof d.source_kind === "string" && d.source_kind.startsWith("row.");
+      if (!isRowScoped) return true;
+      const [project] = String(d.source_key ?? "").split("::");
+      if (project && projectLabels.size > 0 && !projectLabels.has(project)) return false;
+      if (doneKeys.has(d.source_key)) return false;
+      return true;
+    });
+  }, [rawDrafts, doneKeys, projectLabels, sourcesLoading, liveRows.length]);
+
+  const hiddenCount = rawDrafts.length - drafts.length;
   const activeDraft = drafts.find((d) => d.id === openId) ?? null;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["agent-drafts"] });
@@ -223,6 +267,14 @@ function AgentInboxPage() {
         <Badge variant="secondary" className="ml-1">
           {drafts.length}
         </Badge>
+        {hiddenCount > 0 && (
+          <span
+            className="text-[11px] text-muted-foreground"
+            title="Drafts whose underlying row is now completed or outside your live dashboard sources are hidden."
+          >
+            · {hiddenCount} hidden (done / out of scope)
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <RunWatchersButton
             onDone={(r) => {
