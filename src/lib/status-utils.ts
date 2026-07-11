@@ -96,7 +96,7 @@ export function isTerminalStatusText(raw: unknown): boolean {
   const value = String(raw ?? "").trim().toLowerCase();
   if (!value) return false;
   if (/\b(not\s+complete|not\s+completed|not\s+done|incomplete|pending\s+completion|under\s+progress|in\s+progress)\b/.test(value)) return false;
-  return /\b(completed?|done|closed?|finished?|resolved|fulfilled|cancelled|canceled|dropped|withdrawn|received|paid)\b/.test(value);
+  return /\b(completed?|complet|done|closed?|finished?|resolved|fulfilled|cancelled|canceled|dropped|withdrawn|received|paid|approved|signed|delivered|dispatched|executed|issued|released|handover|handed\s*over|ok|yes)\b/.test(value);
 }
 
 function isMeaningfulCompletionValue(raw: unknown): boolean {
