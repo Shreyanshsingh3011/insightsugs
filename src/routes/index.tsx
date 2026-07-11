@@ -1,15 +1,22 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
+import { getUsableSupabaseSession } from "@/lib/auth-session";
+
+function consumePostLoginPath() {
+  if (typeof window === "undefined") return "/agent";
+  const savedPath = window.sessionStorage.getItem("postLoginPath");
+  window.sessionStorage.removeItem("postLoginPath");
+  if (!savedPath || !savedPath.startsWith("/") || savedPath.startsWith("//") || savedPath.startsWith("/login")) {
+    return "/agent";
+  }
+  return savedPath;
+}
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
     if (typeof window === "undefined") {
       throw redirect({ to: "/login" });
     }
-    const { data } = await supabase.auth.getSession();
-    const savedPath = window.sessionStorage.getItem("postLoginPath");
-    window.sessionStorage.removeItem("postLoginPath");
-    const nextPath = savedPath === "/agent" ? "/agent" : "/insights";
-    throw redirect({ to: data.session ? nextPath : "/login" });
+    const session = await getUsableSupabaseSession(2500, { validate: true });
+    throw redirect({ to: session ? consumePostLoginPath() : "/login" });
   },
 });

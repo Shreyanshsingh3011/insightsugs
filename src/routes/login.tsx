@@ -10,6 +10,23 @@ import { useSession } from "@/hooks/useSession";
 
 type RequestedRole = "super_admin" | "admin" | "user";
 
+function consumePostLoginPath(fallback = "/agent") {
+  if (typeof window === "undefined") return fallback;
+  const saved = window.sessionStorage.getItem("postLoginPath");
+  if (saved) window.sessionStorage.removeItem("postLoginPath");
+  if (!saved || !saved.startsWith("/") || saved.startsWith("//") || saved.startsWith("/login")) {
+    return fallback;
+  }
+  return saved;
+}
+
+function ensurePostLoginPath(fallback = "/agent") {
+  if (typeof window === "undefined") return;
+  const saved = window.sessionStorage.getItem("postLoginPath");
+  if (!saved || !saved.startsWith("/") || saved.startsWith("//") || saved.startsWith("/login")) {
+    window.sessionStorage.setItem("postLoginPath", fallback);
+  }
+}
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign in — DelayLens" }] }),
@@ -28,7 +45,7 @@ function LoginPage() {
 
 
   useEffect(() => {
-    if (session) router.navigate({ to: "/insights", replace: true });
+    if (session) router.navigate({ to: consumePostLoginPath() as never, replace: true });
   }, [session, router]);
 
   const submit = async (e: React.FormEvent) => {
@@ -38,7 +55,7 @@ function LoginPage() {
       if (mode === "signin") {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        if (data.session) router.navigate({ to: "/insights", replace: true });
+        if (data.session) router.navigate({ to: consumePostLoginPath() as never, replace: true });
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -63,7 +80,7 @@ function LoginPage() {
     setBusy(true);
     try {
       const { lovable } = await import("@/integrations/lovable");
-      window.sessionStorage.setItem("postLoginPath", "/insights");
+      ensurePostLoginPath();
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin,
         extraParams: { prompt: "select_account", login_hint: email || "shreyansh.singh3011@gmail.com" },
@@ -74,7 +91,7 @@ function LoginPage() {
         return;
       }
       const { data } = await supabase.auth.getSession();
-      if (data.session) router.navigate({ to: "/insights", replace: true });
+      if (data.session) router.navigate({ to: consumePostLoginPath() as never, replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Google sign-in failed");
     } finally {
