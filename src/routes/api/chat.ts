@@ -172,7 +172,36 @@ function buildTools(
           rows_available: ctx.rows?.length ?? 0,
           people_tracked: ctx.personRanking?.length ?? 0,
           open_flags: ctx.flags?.length ?? 0,
+          next_best_actions: ctx.actions?.length ?? ctx.totals?.next_best_actions ?? 0,
         })),
+    }),
+
+    getNextBestActions: tool({
+      description:
+        "Returns the exact Next best actions cards currently shown on the dashboard, in dashboard order. Use whenever the user asks what actions are shown, why an action is shown, or whether a completed row is still appearing.",
+      inputSchema: z.object({
+        limit: z.number().nullable().describe("Max results, e.g. 5 or 8"),
+      }),
+      execute: async ({ limit }) =>
+        timed("getNextBestActions", { limit }, () => {
+          const n = Math.max(1, Math.min(limit ?? 8, 20));
+          const items = (ctx.actions ?? []).slice(0, n).map((a) => ({
+            source: a.source,
+            title: a.title,
+            detail: a.detail,
+            severity: a.severity,
+            person: a.person,
+            stage: a.stage,
+            sheet: a.sheet,
+            row_index: a.row_index,
+            citation: a.citation,
+          }));
+          return {
+            current_view: ctx.rowScope ?? null,
+            count: ctx.actions?.length ?? 0,
+            items,
+          };
+        }),
     }),
 
     getPersonWorkload: tool({
