@@ -117,6 +117,18 @@ function clampRealDays(value: number): number {
   return value > 3650 || value < 0 ? 0 : value;
 }
 
+function isLikelySheetDateSerial(value: number): boolean {
+  return Number.isFinite(value) && value >= 30000 && value <= 70000;
+}
+
+function rawDaysTakenForRow(r: Row): number {
+  return num(r["Days Taken"]);
+}
+
+function hasCompletionDateSerialInDaysTaken(r: Row): boolean {
+  return isLikelySheetDateSerial(rawDaysTakenForRow(r));
+}
+
 function statusDelayDays(status: string): number {
   const direct = status.match(/(?:delay(?:ed)?|late|overdue)\s*(?:by)?\s*(\d+(?:\.\d+)?)/i);
   const reversed = status.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\s*(?:delay(?:ed)?|late|overdue)/i);
@@ -131,7 +143,8 @@ function delayForRow(r: Row, terminal: boolean, status: string): number {
 }
 
 function daysTakenForRow(r: Row): number {
-  return clampRealDays(num(r["Days Taken"]));
+  const raw = rawDaysTakenForRow(r);
+  return isLikelySheetDateSerial(raw) ? 0 : clampRealDays(raw);
 }
 
 function bucket(s: string): StatusBucket {
@@ -181,7 +194,7 @@ function derive(payload: Payload | undefined) {
     // even when the status column hasn't been flipped yet — otherwise done work
     // keeps surfacing in "Next best actions".
     const finishedWithinTat = !terminal && taken > 0 && tat > 0 && taken <= tat;
-    const effectivelyDone = terminal || finishedWithinTat;
+    const effectivelyDone = terminal || finishedWithinTat || hasCompletionDateSerialInDaysTaken(r);
 
     critAgg[crit] = (critAgg[crit] || 0) + 1;
     stageAgg[stage] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0 };
@@ -203,8 +216,9 @@ function derive(payload: Payload | undefined) {
       totalDelay += delay;
     }
     if (!effectivelyDone && delay > 0) overdueCount++;
-    if (!effectivelyDone && (delay > 0 || (tat > 0 && taken > tat) || st === "Delayed")) {
+    if (!effectivelyDone && (delay > 0 || (tat > 0 && taken > tat))) {
       const actionDelay = delay || (tat > 0 && taken > tat ? taken - tat : 1);
+      if (actionDelay <= 0) continue;
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay: actionDelay, tat, taken,
