@@ -1188,8 +1188,136 @@ export async function runCopilotAgent(
         }),
     });
 
+    const distinctValues = tool({
+      description:
+        "List the distinct values of a column with counts (top 50). Use to explore what values exist — statuses, people, stages, categories — before filtering.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        column: z.string().min(1).max(120),
+      }),
+      execute: async ({ sheet_id, column }) =>
+        withTrace("distinct_values", { sheet_id, column }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          const counts = new Map<string, number>();
+          for (const r of rows) {
+            const v = r.data[column];
+            if (v == null || v === "") continue;
+            const key = String(v).slice(0, 200);
+            counts.set(key, (counts.get(key) ?? 0) + 1);
+          }
+          const out = Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 50)
+            .map(([value, count]) => ({ value, count }));
+          return {
+            _summary: `${out.length} distinct values in ${column}`,
+            _resultForModel: { sheet: reg.display_name, column, distinct_count: counts.size, top: out },
+          };
+        }),
+    });
 
-    // 4) System prompt — the agent has no rows, only tools.
+    const countWhere = tool({
+      description:
+        "Count rows in a sheet matching one or more (column op value) conditions ANDed together. Faster than filter_sheet_rows when you only need a count.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        conditions: z
+          .array(
+            z.object({
+              column: z.string().min(1).max(120),
+              op: z.enum(["eq", "neq", "contains", "gt", "gte", "lt", "lte", "blank", "not_blank"]),
+              value: z.union([z.string(), z.number(), z.boolean()]).optional(),
+            }),
+          )
+          .min(1)
+          .max(6),
+      }),
+      execute: async ({ sheet_id, conditions }) =>
+        withTrace("count_where", { sheet_id, conditions }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          let n = 0;
+          for (const r of rows) {
+            let ok = true;
+            for (const c of conditions) {
+              const v = r.data[c.column];
+              const isBlank = v == null || v === "";
+              if (c.op === "blank") { if (!isBlank) { ok = false; break; } continue; }
+              if (c.op === "not_blank") { if (isBlank) { ok = false; break; } continue; }
+              if (isBlank) { ok = false; break; }
+              const numeric = ["gt", "gte", "lt", "lte"].includes(c.op);
+              if (numeric) {
+                const nv = Number(v);
+                const nq = Number(c.value);
+                if (!Number.isFinite(nv) || !Number.isFinite(nq)) { ok = false; break; }
+                if (c.op === "gt" && !(nv > nq)) { ok = false; break; }
+                if (c.op === "gte" && !(nv >= nq)) { ok = false; break; }
+                if (c.op === "lt" && !(nv < nq)) { ok = false; break; }
+                if (c.op === "lte" && !(nv <= nq)) { ok = false; break; }
+              } else {
+                const sv = String(v).toLowerCase();
+                const sq = String(c.value ?? "").toLowerCase();
+                if (c.op === "eq" && sv !== sq) { ok = false; break; }
+                if (c.op === "neq" && sv === sq) { ok = false; break; }
+                if (c.op === "contains" && !sv.includes(sq)) { ok = false; break; }
+              }
+            }
+            if (ok) n++;
+          }
+          return {
+            _summary: `${n} of ${rows.length} rows match`,
+            _resultForModel: { sheet: reg.display_name, matched: n, total: rows.length, conditions },
+          };
+        }),
+    });
+
+    const findAcrossSheets = tool({
+      description:
+        "Search a phrase across ALL selected sheets in parallel. Use for cross-sheet lookups like a name/ID/keyword that could live in any source. Returns up to k top rows per sheet.",
+      inputSchema: z.object({
+        query: z.string().min(1).max(500),
+        k_per_sheet: z.number().int().min(1).max(10).default(5),
+      }),
+      execute: async ({ query, k_per_sheet }) =>
+        withTrace("find_across_sheets", { query, k_per_sheet }, async () => {
+          const { strictPhrases, normalizeHaystack, matchesAllPhrases, contentTokens } =
+            await import("./query-match");
+          const phrases = strictPhrases(query);
+          const tokens = contentTokens(query);
+          const per: Array<{ sheet: string; hits: Array<{ row_index: number; data: Record<string, unknown>; cite: string }> }> = [];
+          for (const r of regs) {
+            const rows = await getSheetRows(r.id);
+            const scored: Array<{ row_index: number; score: number; data: Record<string, unknown> }> = [];
+            for (const row of rows) {
+              const hay = normalizeHaystack(Object.values(row.data));
+              let score = 0;
+              if (phrases.length > 0) {
+                if (matchesAllPhrases(hay, phrases)) score = 10 + tokens.length;
+              } else if (tokens.length > 0 && tokens.every((t) => hay.includes(t))) {
+                score = tokens.length;
+              }
+              if (score > 0) scored.push({ row_index: row.row_index, score, data: row.data });
+            }
+            scored.sort((a, b) => b.score - a.score);
+            const hits = scored.slice(0, k_per_sheet).map((s) => {
+              ledger.push({ kind: "sheet_row", registryId: r.id, sheetLabel: r.display_name, rowIndex: s.row_index, data: s.data });
+              return { row_index: s.row_index, data: s.data, cite: `[sheet:${r.display_name} row ${s.row_index + 1}]` };
+            });
+            if (hits.length) per.push({ sheet: r.display_name, hits });
+          }
+          const total = per.reduce((a, b) => a + b.hits.length, 0);
+          return {
+            _summary: `${total} rows across ${per.length} sheet(s)`,
+            _resultForModel: { query, matches_by_sheet: per },
+          };
+        }),
+    });
+
+
+
     // Pre-compute per-sheet Auto-Insights + detected shape so the model
     // knows what kind of sheet it's looking at (payments/hr/timeline/…)
     // and which columns matter. This mirrors the same insights shown in
