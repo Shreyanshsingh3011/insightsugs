@@ -1535,6 +1535,297 @@ export async function runCopilotAgent(
         }),
     });
 
+    // ============ CROSS-SOURCE: join sheets↔sheets and sheets↔docs ============
+
+    const crossReference = tool({
+      description:
+        "Look up a single identifier or proper-noun (PO#, GSTIN, invoice#, project code, person's full name) across EVERY selected sheet AND document in parallel. Returns per-source matches so you can join facts spanning multiple sources (e.g. 'PO in sheet X → clause in contract doc Y'). Use whenever the user asks about a specific entity without naming a source, or when a question requires stitching facts from >1 source.",
+      inputSchema: z.object({
+        key: z.string().min(1).max(200).describe("The exact identifier or name to look for."),
+        k_per_source: z.number().int().min(1).max(10).default(5),
+      }),
+      execute: async ({ key, k_per_source }) =>
+        withTrace("cross_reference", { key, k_per_source }, async () => {
+          const needle = key.toLowerCase().trim();
+          const sheetHits = await Promise.all(
+            regs.map(async (r) => {
+              try {
+                const rows = await getSheetRows(r.id);
+                const matched = rows
+                  .filter((row) =>
+                    Object.values(row.data).some((v) => String(v ?? "").toLowerCase().includes(needle)),
+                  )
+                  .slice(0, k_per_source);
+                for (const row of matched) {
+                  ledger.push({
+                    kind: "sheet_row",
+                    registryId: r.id,
+                    sheetLabel: r.display_name,
+                    rowIndex: row.row_index,
+                    data: row.data,
+                  });
+                }
+                return {
+                  sheet: r.display_name,
+                  hits: matched.map((row) => ({
+                    row_index: row.row_index,
+                    preview: stringifyRow(row.data).slice(0, 300),
+                    cite: `[sheet:${r.display_name} row ${row.row_index + 1}]`,
+                  })),
+                };
+              } catch {
+                return { sheet: r.display_name, hits: [] };
+              }
+            }),
+          );
+          const docHits = await Promise.all(
+            docs.map(async (d) => {
+              try {
+                const { data: chunks } = await supabase
+                  .from("document_chunks")
+                  .select("document_id, content, page_no")
+                  .eq("document_id", d.id)
+                  .limit(300);
+                const matched = ((chunks ?? []) as any[])
+                  .filter((c) => String(c.content ?? "").toLowerCase().includes(needle))
+                  .slice(0, k_per_source);
+                for (const c of matched) {
+                  ledger.push({
+                    kind: "doc_chunk",
+                    documentId: d.id,
+                    documentName: d.name,
+                    pageNo: c.page_no ?? 0,
+                    snippet: c.content ?? "",
+                  });
+                }
+                return {
+                  document: d.name,
+                  hits: matched.map((c) => ({
+                    page: c.page_no ?? 0,
+                    snippet: String(c.content ?? "").slice(0, 300),
+                    cite: `[doc:${d.name} p.${c.page_no ?? 0}]`,
+                  })),
+                };
+              } catch {
+                return { document: d.name, hits: [] };
+              }
+            }),
+          );
+          const totalHits =
+            sheetHits.reduce((n, s) => n + s.hits.length, 0) + docHits.reduce((n, d) => n + d.hits.length, 0);
+          return {
+            _summary: `"${key}" → ${totalHits} matches across ${sheetHits.length} sheet(s) + ${docHits.length} doc(s)`,
+            _resultForModel: { key, sheets: sheetHits, documents: docHits },
+          };
+        }),
+    });
+
+    const buildTimeline = tool({
+      description:
+        "Reconstruct a chronological timeline of events matching a keyword/entity across selected sheets. Each event = (date, sheet, row, one-line summary, cite). Use for 'what happened with X', 'timeline of PO#123', 'sequence of events', 'history of this project'.",
+      inputSchema: z.object({
+        query: z.string().min(1).max(200),
+        max_events: z.number().int().min(3).max(60).default(30),
+      }),
+      execute: async ({ query, max_events }) =>
+        withTrace("build_timeline", { query, max_events }, async () => {
+          const needle = query.toLowerCase().trim();
+          const events: Array<{ date: string; sheet: string; row_index: number; summary: string; cite: string }> = [];
+          for (const r of regs) {
+            try {
+              const rows = await getSheetRows(r.id);
+              if (!rows.length) continue;
+              const dateCols = pickDateColumns(rows, null);
+              const matched = rows.filter((row) =>
+                Object.values(row.data).some((v) => String(v ?? "").toLowerCase().includes(needle)),
+              );
+              for (const row of matched) {
+                for (const dc of dateCols.slice(0, 3)) {
+                  const d = parseAnyDate(row.data[dc]);
+                  if (!d) continue;
+                  ledger.push({
+                    kind: "sheet_row",
+                    registryId: r.id,
+                    sheetLabel: r.display_name,
+                    rowIndex: row.row_index,
+                    data: row.data,
+                  });
+                  events.push({
+                    date: d.toISOString().slice(0, 10),
+                    sheet: r.display_name,
+                    row_index: row.row_index,
+                    summary: `${dc}: ${stringifyRow(row.data).slice(0, 180)}`,
+                    cite: `[sheet:${r.display_name} row ${row.row_index + 1} col ${dc}]`,
+                  });
+                }
+              }
+            } catch { /* skip */ }
+          }
+          events.sort((a, b) => a.date.localeCompare(b.date));
+          const trimmed = events.slice(0, max_events);
+          return {
+            _summary: `${trimmed.length} timeline event(s) for "${query}"`,
+            _resultForModel: { query, events: trimmed },
+          };
+        }),
+    });
+
+    // ============ WORKFLOWS: escalation email + scheduled reminder ============
+
+    const draftEscalation = tool({
+      description:
+        "Draft an ESCALATION email (higher urgency than draft_email) into the Agent Inbox for review. Use when the user asks to escalate, chase, or escalate to management. Never sends directly — user approves in inbox.",
+      inputSchema: z.object({
+        subject: z.string().min(2).max(200),
+        body: z.string().min(2).max(6000),
+        recipient_email: z.string().email().optional(),
+        severity: z.enum(["low", "med", "high", "critical"]).default("high"),
+        why: z.string().max(500).optional().describe("One-line rationale with citations."),
+      }),
+      execute: async ({ subject, body, recipient_email, severity, why }) =>
+        withTrace("draft_escalation", { subject, recipient_email, severity }, async () => {
+          const banner = `⚠️ ESCALATION (severity: ${severity.toUpperCase()})\n\n`;
+          const { data: row, error } = await supabase
+            .from("agent_drafts")
+            .insert({
+              draft_type: "escalation",
+              source_kind: "copilot",
+              source_key: `copilot-esc:${Date.now()}`,
+              title: `[Escalation] ${subject}`.slice(0, 200),
+              subject: `[Escalation] ${subject}`.slice(0, 200),
+              body: banner + body,
+              channel: "email",
+              recipient_email: recipient_email ?? null,
+              why: why ?? null,
+              confidence: 0.8,
+              state: "pending",
+            })
+            .select("id")
+            .single();
+          if (error) return { error: error.message };
+          return {
+            _summary: `Drafted ${severity} escalation "${subject.slice(0, 60)}"`,
+            _resultForModel: {
+              draft_id: row.id,
+              url: `/agent/inbox`,
+              message: "Escalation drafted. Review & approve from the Agent Inbox.",
+            },
+          };
+        }),
+    });
+
+    const scheduleReminder = tool({
+      description:
+        "Schedule a follow-up REMINDER as a pending activity on a project (due on a future date). Use when the user says 'remind me', 'follow up on X next week', 'check back in N days'. Requires a project_id — call list_projects first if unknown.",
+      inputSchema: z.object({
+        project_id: z.string().uuid(),
+        title: z.string().min(2).max(300),
+        remind_on: z.string().describe("ISO date YYYY-MM-DD when the reminder is due."),
+        notes: z.string().max(2000).optional(),
+      }),
+      execute: async ({ project_id, title, remind_on, notes }) =>
+        withTrace("schedule_reminder", { project_id, title, remind_on }, async () => {
+          const { data: row, error } = await supabase
+            .from("activities")
+            .insert({
+              project_id,
+              title: `⏰ Reminder: ${title}`.slice(0, 300),
+              description: notes ?? null,
+              due_date: remind_on,
+              status: "pending",
+            })
+            .select("id")
+            .single();
+          if (error) return { error: error.message };
+          return {
+            _summary: `Reminder set for ${remind_on}: "${title.slice(0, 60)}"`,
+            _resultForModel: {
+              activity_id: row.id,
+              remind_on,
+              message: `Reminder scheduled. Will appear on the project's activity list.`,
+            },
+          };
+        }),
+    });
+
+    // ============ MEMORY: personalize across turns ============
+
+    const rememberFact = tool({
+      description:
+        "Persist a small personal fact / preference / focus area for THIS user across future copilot sessions. Use when the user says 'remember that…', 'my focus is…', 'I care about…', 'from now on…', or when you notice they consistently ask about the same project/person/sheet. Values are private to this user.",
+      inputSchema: z.object({
+        kind: z.enum(["focus", "preference", "person", "project", "note"]).default("note"),
+        key: z.string().min(1).max(120).describe("Short stable key, e.g. 'primary_project' or 'reporting_style'."),
+        value: z.string().min(1).max(1000),
+        importance: z.number().int().min(1).max(5).default(2),
+      }),
+      execute: async ({ kind, key, value, importance }) =>
+        withTrace("remember", { kind, key }, async () => {
+          const { error } = await supabase.from("agent_memory").upsert(
+            { user_id: userId, kind, key, value, importance, source: "copilot" },
+            { onConflict: "user_id,kind,key" },
+          );
+          if (error) return { error: error.message };
+          return { _summary: `Remembered ${kind}:${key}`, _resultForModel: { ok: true, kind, key } };
+        }),
+    });
+
+    const recallMemory = tool({
+      description:
+        "Recall previously saved memory for THIS user (focus areas, preferences, favorite projects/people, past notes). Call whenever the user's question is vague ('what should I look at', 'anything I should know') or references 'my usual…'.",
+      inputSchema: z.object({
+        kind: z.enum(["focus", "preference", "person", "project", "note", "any"]).default("any"),
+        search: z.string().max(120).nullable().default(null),
+      }),
+      execute: async ({ kind, search }) =>
+        withTrace("recall", { kind, search }, async () => {
+          let q = supabase
+            .from("agent_memory")
+            .select("id, kind, key, value, importance, updated_at")
+            .eq("user_id", userId)
+            .order("importance", { ascending: false })
+            .order("updated_at", { ascending: false })
+            .limit(50);
+          if (kind !== "any") q = q.eq("kind", kind);
+          if (search) q = q.or(`key.ilike.%${search}%,value.ilike.%${search}%`);
+          const { data, error } = await q;
+          if (error) return { error: error.message };
+          return {
+            _summary: `${data?.length ?? 0} memory item(s)`,
+            _resultForModel: { memories: data ?? [] },
+          };
+        }),
+    });
+
+    const forgetMemory = tool({
+      description: "Delete a memory item by id (from recall). Use when the user says 'forget…' or 'drop that memory'.",
+      inputSchema: z.object({ id: z.string().uuid() }),
+      execute: async ({ id }) =>
+        withTrace("forget", { id }, async () => {
+          const { error } = await supabase
+            .from("agent_memory")
+            .delete()
+            .eq("id", id)
+            .eq("user_id", userId);
+          if (error) return { error: error.message };
+          return { _summary: `Forgot memory ${id}`, _resultForModel: { ok: true } };
+        }),
+    });
+
+    // Preload top memories into the system prompt so the model personalizes
+    // without needing to call recall on every turn.
+    const { data: memRows } = await supabase
+      .from("agent_memory")
+      .select("kind, key, value, importance")
+      .eq("user_id", userId)
+      .order("importance", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(20);
+    const memorySnapshot = (memRows ?? []) as Array<{ kind: string; key: string; value: string; importance: number }>;
+
+
+
+
 
 
 
