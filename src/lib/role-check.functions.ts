@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
+import { createClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isRecoverableDataReadError } from "@/lib/transient-errors";
+import type { Database } from "@/integrations/supabase/types";
 
 export type RoleCheckResult = {
   email: string;
@@ -18,10 +21,34 @@ export type MyRolesResult = {
 };
 
 export const getMyRoles = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<MyRolesResult> => {
-    const { supabase, userId } = context as { supabase: any; userId: string };
+  .handler(async (): Promise<MyRolesResult> => {
+    const authHeader = getRequestHeader("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+    if (!token) return { roles: [], degraded: true };
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl || !publishableKey) return { roles: ["user"], degraded: true };
+
+    const supabase = createClient<Database>(supabaseUrl, publishableKey, {
+      auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
     let lastError: unknown = null;
+    let userId = "";
+
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser(token);
+      if (userError || !userData.user?.id) {
+        console.warn("Role lookup skipped: invalid or unavailable auth token.", userError?.message);
+        return { roles: ["user"], degraded: true };
+      }
+      userId = userData.user.id;
+    } catch (error) {
+      console.warn("Role lookup skipped: auth validation unavailable.", error);
+      return { roles: ["user"], degraded: true };
+    }
 
     for (const waitMs of [0, 350, 900]) {
       if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
