@@ -167,9 +167,17 @@ function derive(payload: Payload | undefined) {
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const delay = terminal ? 0 : num(r["Delay in Days"]);
+    const rawDelay = terminal ? 0 : num(r["Delay in Days"]);
+    // Guard against stale/date-serial values (e.g. 46029 from a formula cell)
+    // — anything above ~10 years is not a real "days overdue" figure.
+    const delay = rawDelay > 3650 || rawDelay < 0 ? 0 : rawDelay;
     const tat = num(r["TAT"]);
     const taken = num(r["Days Taken"]);
+    // If the activity has recorded Days Taken within TAT, treat it as completed
+    // even when the status column hasn't been flipped yet — otherwise done work
+    // keeps surfacing in "Next best actions".
+    const finishedWithinTat = !terminal && taken > 0 && tat > 0 && taken <= tat;
+    const effectivelyDone = terminal || finishedWithinTat;
 
     critAgg[crit] = (critAgg[crit] || 0) + 1;
     stageAgg[stage] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0 };
@@ -182,16 +190,16 @@ function derive(payload: Payload | undefined) {
     personAgg[person].taken += taken;
     if (tat > 0) { sumTat += tat; sumTaken += taken; tatCounted++; }
 
-    const isDelayed = !terminal && (st === "Delayed" || (taken > tat && tat > 0));
-    if (terminal) { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
+    const isDelayed = !effectivelyDone && (st === "Delayed" || (taken > tat && tat > 0) || delay > 0);
+    if (effectivelyDone) { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
     if (isDelayed) {
       delayedCount++; personAgg[person].delayed++; stageAgg[stage].delayed++;
       processAgg[process].delayed++; personAgg[person].delayDays += delay;
       stageAgg[stage].delayDays += delay; processAgg[process].delayDays += delay;
       totalDelay += delay;
     }
-    if (!terminal && delay > 0) overdueCount++;
-    if (!terminal && (delay > 0 || (tat > 0 && taken > tat))) {
+    if (!effectivelyDone && delay > 0) overdueCount++;
+    if (!effectivelyDone && (delay > 0 || (tat > 0 && taken > tat))) {
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay, tat, taken,
