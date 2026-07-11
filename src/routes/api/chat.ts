@@ -699,7 +699,7 @@ CITATIONS (REQUIRED on every factual claim):
     • Documents:  [doc:<document name> p.<page_no>]
     • Dashboard aggregates from context (totals, risk score, filtered-row counts, action counts): [dashboard:<field>]
 - Use the EXACT sheet display name and row_index returned by the tool — do not shorten, translate, or normalize them.
-- Prefer the `citation` field returned by tools for row-level facts.
+- Prefer the citation field returned by tools for row-level facts.
 - If a claim would need a citation but no tool result supports it, delete the claim.
 - End every answer with a "Sources:" line listing each unique citation you used once.
 
