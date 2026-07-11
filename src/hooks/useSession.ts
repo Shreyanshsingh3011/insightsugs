@@ -6,7 +6,11 @@ import { supabase } from "@/integrations/supabase/client";
 export type AppRole = "super_admin" | "admin" | "user";
 
 function isTransientDataApiError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const fields =
+    error && typeof error === "object"
+      ? Object.values(error as Record<string, unknown>).join(" ")
+      : String(error ?? "");
+  const message = `${error instanceof Error ? error.message : ""} ${fields}`;
   return (
     message.toLowerCase().includes("schema cache") ||
     message.includes("503") ||
