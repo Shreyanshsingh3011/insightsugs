@@ -52,12 +52,13 @@ export function useAgentScope(): AgentScope {
   useEffect(() => {
     let alive = true;
     if (!userId) { setProfile(null); return; }
-    supabase
-      .from("profiles")
-      .select("full_name, email")
-      .eq("id", userId)
-      .maybeSingle()
-      .then(({ data, error }) => {
+    void (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", userId)
+          .maybeSingle();
         if (!alive) return;
         if (error) {
           console.warn("[profiles] Current profile lookup unavailable; using session email only.", error);
@@ -66,12 +67,12 @@ export function useAgentScope(): AgentScope {
           full_name: (data?.full_name ?? "").trim(),
           email: (data?.email ?? session?.user.email ?? "").trim().toLowerCase(),
         });
-      })
-      .catch((error) => {
+      } catch (error) {
         if (!alive) return;
         console.warn("[profiles] Current profile lookup failed; using session email only.", error);
         setProfile({ full_name: "", email: (session?.user.email ?? "").trim().toLowerCase() });
-      });
+      }
+    })();
     return () => { alive = false; };
   }, [userId, session?.user.email]);
 
