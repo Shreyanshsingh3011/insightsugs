@@ -5,6 +5,16 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type AppRole = "super_admin" | "admin" | "user";
 
+function isTransientDataApiError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    message.toLowerCase().includes("schema cache") ||
+    message.includes("503") ||
+    message.toLowerCase().includes("failed to fetch") ||
+    message.toLowerCase().includes("networkerror")
+  );
+}
+
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,9 +59,16 @@ export function useRoles() {
         .from("user_roles")
         .select("role")
         .eq("user_id", userId!);
-      if (error) throw error;
+      if (error) {
+        if (isTransientDataApiError(error)) {
+          console.warn("[auth] Role lookup is temporarily unavailable; rendering workspace with user-level navigation.", error);
+          return ["user"];
+        }
+        throw error;
+      }
       return (data ?? []).map((r) => r.role as AppRole);
     },
+    retry: (failureCount, error) => !isTransientDataApiError(error) && failureCount < 2,
   });
   return { ...query, isLoading: loading || query.isLoading, isPending: loading || query.isPending };
 }
