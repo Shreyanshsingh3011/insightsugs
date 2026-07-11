@@ -45,9 +45,10 @@ export function PrimarySourceLink({
     const rowN = rowSpec ? Number(rowSpec.match(/\d+/)?.[0] ?? NaN) : NaN;
     const col = sheetRowCol?.[3]?.trim();
 
-    const search: Record<string, unknown> = {};
+    const search: Record<string, unknown> = { from: "copilot" };
     if (Number.isFinite(rowN)) search.highlight = rowN - 1;
     if (col) search.col = col;
+
 
     const detail = col
       ? `row ${rowN} · col ${col}`

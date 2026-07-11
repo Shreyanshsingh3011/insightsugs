@@ -17,7 +17,9 @@ export const Route = createFileRoute("/_authenticated/sheets/$sheetId")({
     col: z.string().optional(),
     match: z.string().optional(),
     matchCol: z.string().optional(),
+    from: z.enum(["copilot", "dashboard"]).optional(),
   }),
+
   component: SheetDetailPage,
 });
 
@@ -25,7 +27,7 @@ const PAGE_SIZES = [100, 500, 1000, 2000];
 
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
-  const { highlight: highlightParam, col: highlightCol, match, matchCol } = Route.useSearch();
+  const { highlight: highlightParam, col: highlightCol, match, matchCol, from } = Route.useSearch();
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const normHighlightCol = highlightCol ? norm(highlightCol) : null;
   const normMatch = match ? norm(match) : null;
@@ -180,12 +182,22 @@ function SheetDetailPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 md:p-6">
-      <div className="mb-4 flex items-center gap-2 text-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+        {from === "copilot" ? (
+          <Link
+            to="/copilot"
+            className="inline-flex items-center rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 font-medium text-primary hover:bg-primary/20"
+          >
+            <ArrowLeft className="mr-1 inline h-4 w-4" />
+            Back to Copilot
+          </Link>
+        ) : null}
         <Link to="/sheets" className="text-muted-foreground hover:underline">
           <ArrowLeft className="mr-1 inline h-4 w-4" />
           My Sheets
         </Link>
       </div>
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{reg.display_name}</h1>

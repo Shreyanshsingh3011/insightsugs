@@ -317,9 +317,40 @@ function CopilotPage() {
   });
 
   const [question, setQuestion] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
-  const [history, setHistory] = useState<Turn[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.sessionStorage.getItem("copilot:selected");
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  const [selectedDocs, setSelectedDocs] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.sessionStorage.getItem("copilot:selectedDocs");
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+  const [history, setHistory] = useState<Turn[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.sessionStorage.getItem("copilot:history");
+      return raw ? (JSON.parse(raw) as Turn[]) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.sessionStorage.setItem("copilot:history", JSON.stringify(history.slice(-50))); } catch { /* ignore */ }
+  }, [history]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.sessionStorage.setItem("copilot:selected", JSON.stringify([...selected])); } catch { /* ignore */ }
+  }, [selected]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.sessionStorage.setItem("copilot:selectedDocs", JSON.stringify([...selectedDocs])); } catch { /* ignore */ }
+  }, [selectedDocs]);
+
   const [strictMatch, setStrictMatch] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("copilot:strictMatch") === "1";
