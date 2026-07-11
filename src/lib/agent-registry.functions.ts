@@ -25,7 +25,9 @@ function idxByHeader(headers: string[], needles: string[]): number {
 }
 
 function pickLabel(headers: string[], row: string[]): string {
-  const labelIdx = idxByHeader(headers, ["project name", "project", "state", "site", "department", "label", "title", "name"]);
+  const preferredIdx = idxByHeader(headers, ["sheetname", "sheet name", "project name", "project", "state", "site", "department"]);
+  if (preferredIdx >= 0 && row[preferredIdx]) return String(row[preferredIdx]).trim();
+  const labelIdx = idxByHeader(headers, ["label", "title", "name"]);
   if (labelIdx >= 0 && row[labelIdx]) return String(row[labelIdx]).trim();
   // fallback: first non-URL, non-empty cell
   for (const c of row) {
