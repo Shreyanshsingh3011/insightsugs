@@ -63,6 +63,12 @@ const REGISTRY_REFRESH_MS = 5 * 60_000;
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string; warning?: string };
+type RegisteredSourceSheet = {
+  id: string;
+  display_name: string;
+  source_url?: string | null;
+  apps_script_url?: string | null;
+};
 type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
 type ReportFilters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
 
@@ -335,17 +341,58 @@ export default function AgentDashboard() {
     refetchOnWindowFocus: true,
   });
 
+  // Registered sheets are first-class dashboard sources too. The master
+  // registry supplies curated defaults, while /sheets adds user/admin-managed
+  // live sources. Previously these only overrode matching defaults, so a new
+  // registered sheet with a new name never appeared on the Agent Dashboard.
+  const fetchList = useServerFn(listSheets);
+  const registeredSheetsQ = useQuery({
+    queryKey: ["view-source-sheets"],
+    queryFn: () => fetchList(),
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const registeredSheets = useMemo(
+    () => (registeredSheetsQ.data?.sheets ?? []) as RegisteredSourceSheet[],
+    [registeredSheetsQ.data],
+  );
+
   const allProjects: AgentProject[] = useMemo(() => {
     const live = registryQ.data?.projects;
-    return live && live.length ? live : FALLBACK_PROJECTS;
-  }, [registryQ.data]);
+    const base = live && live.length ? live : FALLBACK_PROJECTS;
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+    const urlKey = (s?: string | null) => (s ?? "").trim().toLowerCase();
+    const seenIds = new Set(base.map((p) => p.id));
+    const seenLabels = new Set(base.map((p) => norm(p.label)));
+    const seenUrls = new Set(base.flatMap((p) => [urlKey(p.url)]).filter(Boolean));
+    const extras: AgentProject[] = [];
+
+    for (const sheet of registeredSheets) {
+      const url = sheet.source_url || sheet.apps_script_url;
+      if (!url) continue;
+      const label = sheet.display_name?.trim() || "Registered sheet";
+      const labelKey = norm(label);
+      const canonicalUrl = urlKey(url);
+      if (seenLabels.has(labelKey) || seenUrls.has(canonicalUrl)) continue;
+      let id = `sheet-${sheet.id}`;
+      let n = 2;
+      while (seenIds.has(id)) id = `sheet-${sheet.id}-${n++}`;
+      seenIds.add(id);
+      seenLabels.add(labelKey);
+      seenUrls.add(canonicalUrl);
+      extras.push({ id, label, url, note: "registered-sheet" });
+    }
+
+    return [...base, ...extras];
+  }, [registryQ.data, registeredSheets]);
   const registryLive = !!registryQ.data?.projects?.length;
 
   // Super admins (MD, VH) see every project. Everyone else sees only assigned.
   const projects: AgentProject[] = useMemo(() => {
     if (scope.mode === "all") return allProjects;
     if (!scope.allowedProjectKeys) return allProjects;
-    return allProjects.filter((p) => scope.allowedProjectKeys!.has(p.id));
+    return allProjects.filter((p) => p.note === "registered-sheet" || scope.allowedProjectKeys!.has(p.id));
   }, [allProjects, scope.mode, scope.allowedProjectKeys]);
 
   const assignedKeys = useMemo(
@@ -354,18 +401,8 @@ export default function AgentDashboard() {
   );
   const needsOnboarding = scope.mode !== "all" && !scope.loading && projects.length === 0;
 
-  // Prefer the Google Sheets source_url from the registered sheets (auto-synced
-  // every 5 min) over the legacy sheet2api URL baked into the master registry.
-  // This keeps the dashboard aligned with the live sheet the user updates.
-  const fetchList = useServerFn(listSheets);
-  const registeredSheetsQ = useQuery({
-    queryKey: ["view-source-sheets"],
-    queryFn: () => fetchList(),
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-  });
   const resolveSourceUrl = (p: AgentProject): string => {
-    const list = (registeredSheetsQ.data?.sheets ?? []) as { display_name: string; source_url?: string | null }[];
+    const list = registeredSheets;
     const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
     const label = norm(p.label);
     const match = list.find((s) => {
