@@ -27,7 +27,7 @@ const PAGE_SIZES = [100, 500, 1000, 2000];
 
 function SheetDetailPage() {
   const { sheetId } = Route.useParams();
-  const { highlight: highlightParam, col: highlightCol, match, matchCol } = Route.useSearch();
+  const { highlight: highlightParam, col: highlightCol, match, matchCol, from } = Route.useSearch();
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const normHighlightCol = highlightCol ? norm(highlightCol) : null;
   const normMatch = match ? norm(match) : null;
