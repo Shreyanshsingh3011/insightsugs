@@ -2362,6 +2362,8 @@ export async function runCopilotAgent(
       trend_analyze: trendAnalyze,
       bottleneck_scan: bottleneckScan,
       forecast_completion: forecastCompletion,
+      compare_groups: compareGroups,
+      explain_why: explainWhy,
       cross_reference: crossReference,
       build_timeline: buildTimeline,
       draft_escalation: draftEscalation,
