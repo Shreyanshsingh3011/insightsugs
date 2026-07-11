@@ -216,8 +216,12 @@ function derive(payload: Payload | undefined) {
       totalDelay += delay;
     }
     if (!effectivelyDone && delay > 0) overdueCount++;
-    if (!effectivelyDone && (delay > 0 || (tat > 0 && taken > tat))) {
-      const actionDelay = delay || (tat > 0 && taken > tat ? taken - tat : 1);
+    // Strict rule: only real, positive TAT breach or explicit numeric delay
+    // qualifies for Next Best Actions. Status text like "Delayed" alone must
+    // NOT surface an action item — completed rows sometimes retain that label.
+    if (!effectivelyDone && tat > 0 && (delay > 0 || taken > tat)) {
+      const breach = taken > tat ? taken - tat : 0;
+      const actionDelay = Math.max(delay, breach);
       if (actionDelay <= 0) continue;
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
@@ -226,6 +230,7 @@ function derive(payload: Payload | undefined) {
         email, row: r,
       });
     }
+
   }
 
 
