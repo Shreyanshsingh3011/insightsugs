@@ -223,17 +223,19 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
     const url = assertSafePublicUrl(data.url);
     const started = Date.now();
 
-    // Google Sheets URL → route through the Google Sheets connector so the
-    // registry can point at live sheets instead of sheet2api proxies.
+    // Google Sheets URL → read the public CSV export first. The provided
+    // dashboard links are public and gid-specific; this path is the freshest
+    // view and avoids connector/cache/tab mismatches.
     if (isGoogleSheetsUrl(url)) {
-      let payload: Awaited<ReturnType<typeof fetchGoogleSheetRows>>;
+      const parsed = parseSheetsUrl(url);
+      let payload: Awaited<ReturnType<typeof fetchPublicGoogleSheetRows>>;
       try {
-        payload = await fetchGoogleSheetRows(url, data.tab);
+        payload = await fetchPublicGoogleSheetRows(parsed);
       } catch (error) {
-        const parsed = parseSheetsUrl(url);
         const msg = error instanceof Error ? error.message : String(error);
-        console.warn(`[insights-proxy] Google Sheets connector failed; trying public CSV fallback. ${msg}`);
-        payload = await fetchPublicGoogleSheetRows(parsed, `Connector fallback used: ${msg}`);
+        console.warn(`[insights-proxy] Google Sheets public CSV failed; trying connector fallback. ${msg}`);
+        payload = await fetchGoogleSheetRows(url, data.tab);
+        payload.warning = payload.warning ?? `Connector fallback used: ${msg}`;
       }
       return { payload, fetchedAt: Date.now(), fetchMs: Date.now() - started, url: url.toString() };
     }

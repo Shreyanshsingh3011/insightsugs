@@ -26,6 +26,9 @@ const STATUS_ALIASES = [
 
 const COMPLETION_ALIASES = [
   "Completion Date",
+  "Completion Date Updated by Project Team",
+  "Completion Date Verified by VHs",
+  "Completion Date Verified by VH",
   "Completed Date",
   "Date of Completion",
   "Actual Completion Date",
@@ -54,6 +57,8 @@ const COMPLETION_ALIASES = [
   "Signed On",
   "Sign Off Date",
   "completion_date",
+  "completion_date_updated_by_project_team",
+  "completion_date_verified_by_vhs",
   "completed_date",
   "actual_completion_date",
   "actual_date",
@@ -104,12 +109,23 @@ function isMeaningfulCompletionValue(raw: unknown): boolean {
   if (!value) return false;
   const lower = value.toLowerCase();
   if (/^(no|false|0|n|na|n\/a|null|none|-|—|pending|open|not\s+done|not\s+complete|not\s+completed|in\s+progress|under\s+progress)$/i.test(lower)) return false;
+  if (/\b1900\b/.test(lower) || /\b1899\b/.test(lower)) return false;
   if (isTerminalStatusText(value)) return true;
   if (/^date\(/i.test(value)) return true;
   if (/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(value)) return true;
   if (/\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b/.test(value)) return true;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && parsed > 0;
+}
+
+function hasCompletionDateSerialInDurationColumn(row: StatusRow): boolean {
+  const raw = valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]);
+  if (!raw) return false;
+  const value = Number(String(raw).replace(/[,\s]/g, ""));
+  // Excel/Sheets date serials around current years are ~45k. If that appears
+  // in a duration column, the row has effectively recorded an actual date and
+  // should not stay in overdue/next-action lists.
+  return Number.isFinite(value) && value >= 30000 && value <= 70000;
 }
 
 export function isTerminalRow(row: StatusRow): boolean {
@@ -129,7 +145,7 @@ export function isTerminalRow(row: StatusRow): boolean {
     }
   }
   const completion = valueForAliases(row, COMPLETION_ALIASES);
-  return isMeaningfulCompletionValue(completion);
+  return isMeaningfulCompletionValue(completion) || hasCompletionDateSerialInDurationColumn(row);
 }
 
 

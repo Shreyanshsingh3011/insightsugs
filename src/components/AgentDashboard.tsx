@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -7,7 +7,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { encodeKey as encodeEntityKey, encodeRowKey } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
-import { listSheets } from "@/lib/sheets.functions";
 
 import { recordSyncAudit } from "@/lib/sync-audit.functions";
 import { diffRows, type RowDiff } from "@/lib/row-diff";
@@ -63,12 +62,6 @@ const REGISTRY_REFRESH_MS = 5 * 60_000;
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string; warning?: string };
-type RegisteredSourceSheet = {
-  id: string;
-  display_name: string;
-  source_url?: string | null;
-  apps_script_url?: string | null;
-};
 type Payload = { project?: string; department?: string; data?: Row[]; generated_at?: string };
 type ReportFilters = { status: string; crit: string; stage: string; person: string; minDelay: string; q: string; onlyOverdue: boolean };
 
@@ -84,16 +77,6 @@ function labelFromSheetUrl(url?: string | null): string | undefined {
 
 function isGenericSheetTitle(label: string): boolean {
   return /^(project\s+work\s+flow\s+guide|google\s+sheet\s+—\s+public\s+csv|google\s+sheet|sheet\s*\d*|worksheet|data)$/i.test(label.trim());
-}
-
-function registeredSourceLabel(sheet: RegisteredSourceSheet): string {
-  const raw = sheet.display_name?.trim() || "Registered sheet";
-  const urlLabel = labelFromSheetUrl(sheet.source_url) ?? labelFromSheetUrl(sheet.apps_script_url);
-  return (!raw || isGenericSheetTitle(raw) ? urlLabel : undefined) ?? raw;
-}
-
-function registeredSourceUrl(sheet?: RegisteredSourceSheet): string | undefined {
-  return sheet?.source_url || sheet?.apps_script_url || undefined;
 }
 
 function displayProjectLabel(project: AgentProject): string {
@@ -127,6 +110,30 @@ function num(v: unknown): number {
   const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
+
+function clampRealDays(value: number): number {
+  // Sheet formulas sometimes leak Excel date serials (45k+) into duration
+  // columns. Treat those as unusable durations instead of active delays.
+  return value > 3650 || value < 0 ? 0 : value;
+}
+
+function statusDelayDays(status: string): number {
+  const direct = status.match(/(?:delay(?:ed)?|late|overdue)\s*(?:by)?\s*(\d+(?:\.\d+)?)/i);
+  const reversed = status.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\s*(?:delay(?:ed)?|late|overdue)/i);
+  const value = Number(direct?.[1] ?? reversed?.[1] ?? 0);
+  return Number.isFinite(value) ? Math.round(value) : 0;
+}
+
+function delayForRow(r: Row, terminal: boolean, status: string): number {
+  if (terminal) return 0;
+  const explicit = clampRealDays(num(r["Delay in Days"]));
+  return explicit || statusDelayDays(status);
+}
+
+function daysTakenForRow(r: Row): number {
+  return clampRealDays(num(r["Days Taken"]));
+}
+
 function bucket(s: string): StatusBucket {
   return statusBucket(s);
 }
@@ -167,12 +174,9 @@ function derive(payload: Payload | undefined) {
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const rawDelay = terminal ? 0 : num(r["Delay in Days"]);
-    // Guard against stale/date-serial values (e.g. 46029 from a formula cell)
-    // — anything above ~10 years is not a real "days overdue" figure.
-    const delay = rawDelay > 3650 || rawDelay < 0 ? 0 : rawDelay;
+    const delay = delayForRow(r, terminal, rowStatus);
     const tat = num(r["TAT"]);
-    const taken = num(r["Days Taken"]);
+    const taken = daysTakenForRow(r);
     // If the activity has recorded Days Taken within TAT, treat it as completed
     // even when the status column hasn't been flipped yet — otherwise done work
     // keeps surfacing in "Next best actions".
@@ -199,10 +203,11 @@ function derive(payload: Payload | undefined) {
       totalDelay += delay;
     }
     if (!effectivelyDone && delay > 0) overdueCount++;
-    if (!effectivelyDone && (delay > 0 || (tat > 0 && taken > tat))) {
+    if (!effectivelyDone && (delay > 0 || (tat > 0 && taken > tat) || st === "Delayed")) {
+      const actionDelay = delay || (tat > 0 && taken > tat ? taken - tat : 1);
       overdue.push({
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
-        person, stage, delay, tat, taken,
+        person, stage, delay: actionDelay, tat, taken,
         status: rowStatus, criticality: crit,
         email, row: r,
       });
@@ -324,7 +329,7 @@ function derive(payload: Payload | undefined) {
     .filter((r) => !isTerminalRow(r))
     .map(r => {
       const tat = num(r["TAT"]);
-      const taken = num(r["Days Taken"]);
+      const taken = daysTakenForRow(r);
       return {
         activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person: pick(r, "Responsible Person", "Responsibility", "approvers name") || "—",
@@ -379,28 +384,9 @@ export default function AgentDashboard() {
     refetchOnWindowFocus: true,
   });
 
-  // Registered sheets are first-class dashboard sources too. The master
-  // registry supplies curated defaults, while /sheets adds user/admin-managed
-  // live sources. Previously these only overrode matching defaults, so a new
-  // registered sheet with a new name never appeared on the Agent Dashboard.
-  const fetchList = useServerFn(listSheets);
-  const registeredSheetsQ = useQuery({
-    queryKey: ["view-source-sheets"],
-    queryFn: () => fetchList(),
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-  });
-
-  const registeredSheets = useMemo(
-    () => (registeredSheetsQ.data?.sheets ?? []) as RegisteredSourceSheet[],
-    [registeredSheetsQ.data],
-  );
-
-  // Only the 5 curated project sources are shown on the dashboard. The master
-  // registry and user-registered sheets add noise/duplicates (Nit 76, stock
-  // summary, ULA PROTOTYPE, sheet 2 …) that the user did not authorize as
-  // dashboard projects. Registered sheets remain available in /sheets and
-  // via `resolveSourceUrl` below for URL overrides.
+  // Only the 5 user-provided source links are used on the dashboard. Do not
+  // override them with uploaded/registered sheets: that can show stale rows or
+  // merged data under the Bihar/Himachal/PSPCL selectors.
   const allProjects: AgentProject[] = useMemo(() => {
     return FALLBACK_PROJECTS.map((project) => ({
       ...project,
@@ -423,27 +409,9 @@ export default function AgentDashboard() {
   );
   const needsOnboarding = scope.mode !== "all" && !scope.loading && projects.length === 0;
 
-  const resolveSourceUrl = (p: AgentProject): string => {
-    const list = registeredSheets;
-    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
-    const label = norm(p.label);
-    const match = list.find((s) => {
-      if (!registeredSourceUrl(s)) return false;
-      const n = norm(registeredSourceLabel(s));
-      return n === label || n.includes(label) || label.includes(n);
-    });
-    // Only override when we find a Google Sheets URL — never regress to another
-    // sheet2api-style proxy.
-    const matchUrl = registeredSourceUrl(match);
-    if (matchUrl && /docs\.google\.com\/spreadsheets/i.test(matchUrl)) {
-      return matchUrl;
-    }
-    return p.url;
-  };
-
   const queries = useQueries({
     queries: projects.map(p => {
-      const effectiveUrl = resolveSourceUrl(p);
+      const effectiveUrl = p.url;
       return {
         queryKey: ["agent-src", p.id, effectiveUrl, p.tab ?? ""],
         queryFn: async () => {
@@ -457,10 +425,12 @@ export default function AgentDashboard() {
             fetchedAt: (res as { fetchedAt?: number }).fetchedAt ?? Date.now(),
           };
         },
-        staleTime: AUTO_REFRESH_MS,
+        staleTime: 0,
         refetchInterval: AUTO_REFRESH_MS,
         refetchIntervalInBackground: true,
-        refetchOnWindowFocus: true,
+        refetchOnMount: "always" as const,
+        refetchOnWindowFocus: "always" as const,
+        placeholderData: keepPreviousData,
         // Do not block live project reads on the optional registered-sheet
         // lookup. When the backend schema cache/auth API is degraded that
         // lookup can hang, but the registry/fallback project URLs are enough
@@ -895,8 +865,8 @@ export default function AgentDashboard() {
       status: statusOf(r),
       criticality: pick(r, "Criticality"),
       tat: num(r["TAT"]),
-      days_taken: num(r["Days Taken"]),
-      delay: isTerminalRow(r) ? 0 : num(r["Delay in Days"]),
+      days_taken: daysTakenForRow(r),
+      delay: delayForRow(r, isTerminalRow(r), statusOf(r)),
     }));
     const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
       person: p.person,
@@ -1059,8 +1029,8 @@ export default function AgentDashboard() {
     const crit = pick(r, "Criticality");
     const proj = pick(r, "__project");
     const tat = num(r["TAT"]);
-    const taken = num(r["Days Taken"]);
-    const delay = terminal ? 0 : num(r["Delay in Days"]);
+    const taken = daysTakenForRow(r);
+    const delay = delayForRow(r, terminal, status);
     const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
     return { i, activity, person, email, stage, status, statusBucket: rowBucket, terminal, crit, proj, tat, taken, delay, hay };
   }), [rowsAll]);
