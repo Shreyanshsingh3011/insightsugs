@@ -1535,6 +1535,236 @@ export async function runCopilotAgent(
         }),
     });
 
+    // ============ COMPARISONS / BENCHMARKS ============
+
+    const compareGroups = tool({
+      description:
+        "Benchmark two or more entities against each other. Two modes: (a) intra-sheet — compare specific values of a grouping column in ONE sheet (e.g. compare owners 'A' vs 'B', or stages 'Design' vs 'Procurement'); (b) cross-sheet — compare the same metric across MULTIPLE sheets (pass sheet_ids, leave group_by/values empty). Returns per-group counts, open/overdue counts, avg age (days), completion rate %, and sample row citations. Use for 'compare X vs Y', 'benchmark', 'who's doing better', 'which sheet/team/vendor is faster', 'difference between'.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid().nullable().default(null).describe("Sheet for intra-sheet comparison. Leave null for cross-sheet mode."),
+        group_by: z.string().min(1).max(120).nullable().default(null).describe("Column to group by (intra-sheet mode)."),
+        values: z.array(z.string().min(1).max(200)).max(8).default([]).describe("Specific values of group_by to compare (intra-sheet mode). Empty = top 5 groups by row count."),
+        sheet_ids: z.array(z.string().uuid()).max(6).default([]).describe("Sheets to compare against each other (cross-sheet mode)."),
+        date_column: z.string().max(120).nullable().default(null).describe("Aging date column; auto-detected if omitted."),
+        status_column: z.string().max(120).nullable().default(null),
+      }),
+      execute: async ({ sheet_id, group_by, values, sheet_ids, date_column, status_column }) =>
+        withTrace("compare_groups", { sheet_id, group_by, values, sheet_ids, date_column, status_column }, async () => {
+          const now = Date.now();
+          type Stat = { label: string; total: number; open: number; overdue: number; completed: number; avg_age_days: number; completion_rate_pct: number; sample_row_citations: string[] };
+
+          const statForRows = (
+            label: string,
+            rowsIn: Array<{ row_index: number; data: Record<string, unknown> }>,
+            registryId: string,
+            sheetLabel: string,
+            dateCol: string | null,
+            statusKey: string | undefined | null,
+          ): Stat => {
+            let open = 0, overdue = 0, completed = 0, ageSum = 0, ageCount = 0;
+            const samples: number[] = [];
+            for (const r of rowsIn) {
+              const status = statusKey ? String(r.data[statusKey] ?? "").trim() : "";
+              const isTerminal = status && terminalRx.test(status);
+              const d = dateCol ? parseAnyDate(r.data[dateCol]) : null;
+              if (isTerminal) completed += 1;
+              else {
+                open += 1;
+                if (d) {
+                  const age = Math.max(0, Math.floor((now - +d) / 86400000));
+                  ageSum += age; ageCount += 1;
+                  if (+d < now) overdue += 1;
+                }
+                if (samples.length < 3) samples.push(r.row_index);
+              }
+            }
+            for (const idx of samples) {
+              const row = rowsIn.find((rr) => rr.row_index === idx);
+              if (row) ledger.push({ kind: "sheet_row", registryId, sheetLabel, rowIndex: idx, data: row.data });
+            }
+            return {
+              label,
+              total: rowsIn.length,
+              open,
+              overdue,
+              completed,
+              avg_age_days: ageCount > 0 ? Math.round(ageSum / ageCount) : 0,
+              completion_rate_pct: rowsIn.length > 0 ? Math.round((completed / rowsIn.length) * 100) : 0,
+              sample_row_citations: samples.map((idx) => `[sheet:${sheetLabel} row ${idx + 1}]`),
+            };
+          };
+
+          // Cross-sheet mode
+          if (!sheet_id && sheet_ids.length >= 2) {
+            const results: Stat[] = [];
+            for (const sid of sheet_ids) {
+              const reg = sheetById.get(sid);
+              if (!reg) continue;
+              const rows = await getSheetRows(sid);
+              if (rows.length === 0) { results.push({ label: reg.display_name, total: 0, open: 0, overdue: 0, completed: 0, avg_age_days: 0, completion_rate_pct: 0, sample_row_citations: [] }); continue; }
+              const dateCol = date_column
+                ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === date_column.toLowerCase().trim()) ?? null
+                : pickDateColumns(rows, null)[0] ?? null;
+              const statusKey = status_column
+                ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === status_column.toLowerCase().trim())
+                : Object.keys(rows[0]?.data ?? {}).find((k) => /status|stage|state/i.test(k));
+              results.push(statForRows(reg.display_name, rows, sid, reg.display_name, dateCol, statusKey));
+            }
+            return {
+              _summary: `cross-sheet compare of ${results.length} sheets`,
+              _resultForModel: { mode: "cross_sheet", groups: results },
+            };
+          }
+
+          // Intra-sheet mode
+          if (!sheet_id || !group_by) return { error: "Provide sheet_id + group_by for intra-sheet compare, or sheet_ids (>=2) for cross-sheet compare." };
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          if (rows.length === 0) return { _summary: "empty sheet", _resultForModel: { mode: "intra_sheet", sheet: reg.display_name, groups: [] } };
+          const groupKey = Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === group_by.toLowerCase().trim());
+          if (!groupKey) return { error: `Column "${group_by}" not found. Call get_sheet_schema.` };
+          const dateCol = date_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === date_column.toLowerCase().trim()) ?? null
+            : pickDateColumns(rows, null)[0] ?? null;
+          const statusKey = status_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === status_column.toLowerCase().trim())
+            : Object.keys(rows[0]?.data ?? {}).find((k) => /status|stage|state/i.test(k));
+
+          const byVal = new Map<string, Array<{ row_index: number; data: Record<string, unknown> }>>();
+          for (const r of rows) {
+            const v = String(r.data[groupKey] ?? "").trim();
+            if (!v) continue;
+            const arr = byVal.get(v) ?? [];
+            arr.push(r);
+            byVal.set(v, arr);
+          }
+          let targets: string[];
+          if (values.length > 0) {
+            const norm = (s: string) => s.toLowerCase().trim();
+            const availByNorm = new Map(Array.from(byVal.keys()).map((k) => [norm(k), k]));
+            targets = values.map((v) => availByNorm.get(norm(v))).filter((x): x is string => !!x);
+            const missing = values.filter((v) => !availByNorm.has(norm(v)));
+            if (targets.length === 0) {
+              return { error: `None of the requested values found in column "${groupKey}". Available: ${Array.from(byVal.keys()).slice(0, 15).join(", ")}` };
+            }
+            const results = targets.map((t) => statForRows(t, byVal.get(t) ?? [], sheet_id, reg.display_name, dateCol, statusKey));
+            return {
+              _summary: `intra-sheet compare of ${results.length} groups on ${groupKey}`,
+              _resultForModel: { mode: "intra_sheet", sheet: reg.display_name, group_by: groupKey, date_column: dateCol, status_column: statusKey ?? null, groups: results, missing_values: missing },
+            };
+          }
+          targets = Array.from(byVal.entries()).sort((a, b) => b[1].length - a[1].length).slice(0, 5).map(([k]) => k);
+          const results = targets.map((t) => statForRows(t, byVal.get(t) ?? [], sheet_id, reg.display_name, dateCol, statusKey));
+          return {
+            _summary: `intra-sheet compare of top ${results.length} groups on ${groupKey}`,
+            _resultForModel: { mode: "intra_sheet", sheet: reg.display_name, group_by: groupKey, date_column: dateCol, status_column: statusKey ?? null, groups: results },
+          };
+        }),
+    });
+
+    // ============ EXPLAIN-WHY: root-cause a specific row/entity ============
+
+    const explainWhy = tool({
+      description:
+        "Root-cause analysis for ONE specific row / entity. Answers 'why is X delayed/stuck/slow'. Given a row_index (or a search query that resolves to one row), returns: current stage/status, aging days, any explicit delay-reason field, siblings stuck at the same stage, and how this row compares to the group's median age. Use whenever the user asks 'why', 'what's blocking', 'reason for delay', 'what's holding X up'.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        row_index: z.number().int().min(0).nullable().default(null).describe("Zero-based row index (from get_row or previous search). Preferred."),
+        query: z.string().min(1).max(300).nullable().default(null).describe("Fallback: identifier / name to locate the row if row_index is unknown."),
+      }),
+      execute: async ({ sheet_id, row_index, query }) =>
+        withTrace("explain_why", { sheet_id, row_index, query }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          if (rows.length === 0) return { _summary: "empty sheet", _resultForModel: { sheet: reg.display_name } };
+
+          let target = row_index !== null ? rows.find((r) => r.row_index === row_index) : null;
+          if (!target && query) {
+            const q = query.toLowerCase().trim();
+            target = rows.find((r) => Object.values(r.data).some((v) => String(v ?? "").toLowerCase().includes(q))) ?? null;
+          }
+          if (!target) return { error: "Row not found. Pass row_index or a query that uniquely identifies the row." };
+
+          const cols = Object.keys(target.data);
+          const statusKey = cols.find((k) => /status|stage|state/i.test(k));
+          const reasonKey = cols.find((k) => /(reason|remark|note|comment|blocker|blocked|hold|delay(_| )?cause|root(_| )?cause|pending(_| )?for)/i.test(k));
+          const ownerKey = cols.find((k) => /(owner|responsible|assignee|assigned(_| )?to|dept|department|vendor)/i.test(k));
+          const dateCol = pickDateColumns(rows, null)[0] ?? null;
+
+          const now = Date.now();
+          const targetDate = dateCol ? parseAnyDate(target.data[dateCol]) : null;
+          const targetAge = targetDate ? Math.max(0, Math.floor((now - +targetDate) / 86400000)) : null;
+          const targetStatus = statusKey ? String(target.data[statusKey] ?? "").trim() : "";
+          const targetOwner = ownerKey ? String(target.data[ownerKey] ?? "").trim() : "";
+          const explicitReason = reasonKey ? String(target.data[reasonKey] ?? "").trim() : "";
+          const isTerminal = targetStatus && terminalRx.test(targetStatus);
+
+          // Siblings stuck at the same stage (open only)
+          const siblings: Array<{ row_index: number; age_days: number }> = [];
+          const stageAges: number[] = [];
+          if (statusKey && targetStatus) {
+            for (const r of rows) {
+              if (r.row_index === target.row_index) continue;
+              const s = String(r.data[statusKey] ?? "").trim();
+              if (s.toLowerCase() !== targetStatus.toLowerCase()) continue;
+              const isDone = terminalRx.test(s);
+              if (isDone) continue;
+              const d = dateCol ? parseAnyDate(r.data[dateCol]) : null;
+              const age = d ? Math.max(0, Math.floor((now - +d) / 86400000)) : 0;
+              stageAges.push(age);
+              if (siblings.length < 5) siblings.push({ row_index: r.row_index, age_days: age });
+            }
+          }
+          const stageMedianAge = stageAges.length
+            ? [...stageAges].sort((a, b) => a - b)[Math.floor(stageAges.length / 2)]
+            : null;
+
+          // Cite target + siblings
+          ledger.push({ kind: "sheet_row", registryId: sheet_id, sheetLabel: reg.display_name, rowIndex: target.row_index, data: target.data });
+          const siblingCites: string[] = [];
+          for (const sib of siblings) {
+            const row = rows.find((rr) => rr.row_index === sib.row_index);
+            if (row) ledger.push({ kind: "sheet_row", registryId: sheet_id, sheetLabel: reg.display_name, rowIndex: sib.row_index, data: row.data });
+            siblingCites.push(`[sheet:${reg.display_name} row ${sib.row_index + 1}]`);
+          }
+
+          // Compose likely causes
+          const causes: string[] = [];
+          if (explicitReason) causes.push(`Explicit reason in "${reasonKey}": "${explicitReason}"`);
+          if (isTerminal) causes.push(`Row is already terminal (status="${targetStatus}") — no active blocker.`);
+          if (!explicitReason && targetStatus && !isTerminal) causes.push(`Stuck at stage "${targetStatus}"${targetOwner ? ` under owner "${targetOwner}"` : ""}.`);
+          if (stageMedianAge !== null && targetAge !== null) {
+            if (targetAge > stageMedianAge * 1.5 && targetAge - stageMedianAge >= 3) causes.push(`Aged ${targetAge}d vs stage median ${stageMedianAge}d — running ${targetAge - stageMedianAge}d longer than peers.`);
+            else if (targetAge < stageMedianAge * 0.5) causes.push(`Aged ${targetAge}d vs stage median ${stageMedianAge}d — younger than peers; likely just entered this stage.`);
+          }
+          if (siblings.length >= 3) causes.push(`Systemic — ${siblings.length + 1} rows stuck at same stage "${targetStatus}", suggesting a stage-level bottleneck rather than a per-row issue.`);
+          if (causes.length === 0) causes.push("No explicit blocker field or stage anomaly detected. Consider asking the owner directly.");
+
+          return {
+            _summary: `explain row ${target.row_index + 1}: ${causes[0].slice(0, 80)}`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              row_citation: `[sheet:${reg.display_name} row ${target.row_index + 1}]`,
+              status_column: statusKey ?? null,
+              current_status: targetStatus || null,
+              owner_column: ownerKey ?? null,
+              owner: targetOwner || null,
+              date_column: dateCol,
+              age_days: targetAge,
+              is_terminal: !!isTerminal,
+              explicit_reason_column: reasonKey ?? null,
+              explicit_reason: explicitReason || null,
+              stage_peer_count: stageAges.length,
+              stage_median_age_days: stageMedianAge,
+              sibling_row_citations: siblingCites,
+              likely_causes: causes,
+            },
+          };
+        }),
+    });
+
     // ============ CROSS-SOURCE: join sheets↔sheets and sheets↔docs ============
 
     const crossReference = tool({
@@ -1934,6 +2164,21 @@ export async function runCopilotAgent(
       "- Cite analytics claims as [sheet:<display_name>] for aggregate numbers and [sheet:<display_name> row N] for the sample rows the tool returned.",
       "",
 
+      "COMPARISONS / BENCHMARKS (use whenever the user asks 'compare', 'vs', 'benchmark', 'which is better/faster', 'difference between', 'who's ahead'):",
+      "- Compare specific groups in one sheet ('owner A vs owner B', 'stage X vs stage Y') → call compare_groups(sheet_id, group_by, values=[A,B,...]).",
+      "- Compare the SAME metric across sheets (e.g. Bihar vs Himachal vs PSPCL) → call compare_groups(sheet_ids=[...]) with sheet_id=null. Report per-sheet totals, open, overdue, avg age, completion rate %.",
+      "- Report the winner AND the delta (e.g. 'A completed 78% vs B 54% — 24pp gap'). Cite each group's sample rows.",
+      "- When the user asks 'who's the outlier / best / worst', pick top+bottom from compare_groups results.",
+      "",
+
+      "EXPLAIN-WHY MODE (use whenever the user asks 'why', 'what's blocking', 'reason', 'root cause', 'what's holding X up'):",
+      "- Locate the row: prefer row_index from prior tool output; else pass query = the identifier/name.",
+      "- Call explain_why(sheet_id, row_index?, query?). It returns current_status, age_days, explicit_reason (if any), stage peer count, stage_median_age_days, sibling rows stuck at same stage, and a `likely_causes` list.",
+      "- Answer with: current stage + owner, age vs peer median, the explicit reason field (if present), and whether the blocker is per-row or systemic (many siblings stuck at same stage). Cite the target row + at least one sibling.",
+      "- Never invent a cause. Only report what likely_causes and the cited rows/cells support.",
+      "",
+
+
       "CROSS-SOURCE REASONING (use when a question spans multiple sources or names a specific entity):",
       "- Any question that names an identifier (PO#, GSTIN, invoice#, project code) or a proper-noun person without naming a source → call cross_reference(key) ONCE. It searches every selected sheet AND document in parallel and returns per-source hits. Then join facts across the returned rows/chunks (e.g. 'PO in sheet Purchases → clause on p.3 of contract doc').",
       "- 'History of X', 'timeline of X', 'what happened with X', 'sequence of events for X' → call build_timeline(query=X). Returns chronologically sorted dated events across all selected sheets. Present as a compact date-ordered list; cite each event.",
@@ -2132,6 +2377,8 @@ export async function runCopilotAgent(
       trend_analyze: trendAnalyze,
       bottleneck_scan: bottleneckScan,
       forecast_completion: forecastCompletion,
+      compare_groups: compareGroups,
+      explain_why: explainWhy,
       cross_reference: crossReference,
       build_timeline: buildTimeline,
       draft_escalation: draftEscalation,
