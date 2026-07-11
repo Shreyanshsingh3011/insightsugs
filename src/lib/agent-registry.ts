@@ -13,6 +13,7 @@ const READ_TOOLS = [
   "topDelays",
   "filterActivities",
   "getOpenAlerts",
+  "getNextBestActions",
   "queryProjects",
   "investigateDelay",
   "summarizeThread",

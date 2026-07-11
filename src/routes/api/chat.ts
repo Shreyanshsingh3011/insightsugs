@@ -23,6 +23,9 @@ import { AGENT_REGISTRY, routeToAgent } from "@/lib/agent-registry";
 type Ctx = {
   projectId?: string;
   projectLabel?: string;
+  rowScope?: string;
+  filters?: Record<string, unknown>;
+  lastSyncedAt?: string;
   rows?: Array<Record<string, unknown>>;
   personRanking?: Array<{
     person: string;
@@ -37,6 +40,11 @@ type Ctx = {
     delta?: number | null;
     status?: string;
     person?: string;
+    stage?: string;
+    criticality?: string;
+    sheet?: string;
+    row_index?: number | null;
+    citation?: string;
   }>;
   flags?: Array<{
     id?: string;
@@ -46,7 +54,21 @@ type Ctx = {
     stage?: string;
     reason?: string;
     reason_text?: string;
+    sheet?: string;
+    row_index?: number | null;
+    citation?: string;
     flagged_to?: { person?: string };
+  }>;
+  actions?: Array<{
+    source?: string;
+    title?: string;
+    detail?: string;
+    severity?: string;
+    person?: string;
+    stage?: string;
+    sheet?: string;
+    row_index?: number | null;
+    citation?: string;
   }>;
   totals?: Record<string, number>;
   riskScore?: number;
@@ -58,6 +80,39 @@ function pick(r: Record<string, unknown>, ...keys: string[]): string {
     if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
   }
   return "";
+}
+
+function numValue(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/[,\s]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function citationForRow(row: Record<string, unknown>): string | undefined {
+  const existing = pick(row, "citation");
+  if (existing) return existing;
+  const sheet = pick(row, "sheet", "project", "Project");
+  const rowIndex = numValue(row.row_index ?? row.rowIndex ?? row.row_number ?? row.rowNumber);
+  return sheet && rowIndex > 0 ? `[sheet:${sheet} row ${rowIndex}]` : undefined;
+}
+
+function cleanRow(row: Record<string, unknown>) {
+  return {
+    sheet: pick(row, "sheet", "project", "Project"),
+    row_index: numValue(row.row_index ?? row.rowIndex ?? row.row_number ?? row.rowNumber) || null,
+    citation: citationForRow(row),
+    activity: pick(row, "activity", "Activity", "task", "Task"),
+    person: pick(row, "person", "Person", "assignee", "Assignee", "owner", "Owner"),
+    stage: pick(row, "stage", "Stage", "phase", "Phase"),
+    status: pick(row, "status", "Status"),
+    status_bucket: pick(row, "status_bucket", "statusBucket"),
+    criticality: pick(row, "criticality", "Criticality"),
+    tat: numValue(row.tat ?? row.TAT),
+    days_taken: numValue(row.days_taken ?? row.daysTaken ?? row.taken),
+    delay: numValue(row.delay ?? row.delta ?? row.days_over),
+    terminal: Boolean(row.terminal),
+    source_url: typeof row.source_url === "string" ? row.source_url : undefined,
+    row_key: typeof row.row_key === "string" ? row.row_key : undefined,
+  };
 }
 
 function buildTools(
@@ -104,17 +159,49 @@ function buildTools(
   return {
     getDashboardSummary: tool({
       description:
-        "Returns headline totals for the currently selected project: row count, delayed/at-risk/completed counts, and overall risk score. Use this first for any high-level question.",
+        "Returns headline totals, visible filtered-row count, next-best-action count, and overall risk score for the exact dashboard snapshot currently on screen. Use this first for any high-level question.",
       inputSchema: z.object({}),
       execute: async () =>
         timed("getDashboardSummary", {}, () => ({
           project: ctx.projectLabel ?? ctx.projectId ?? "unknown",
+          current_view: ctx.rowScope ?? null,
+          last_synced_at: ctx.lastSyncedAt ?? null,
+          filters: ctx.filters ?? {},
           totals: ctx.totals ?? {},
           risk_score: ctx.riskScore ?? null,
           rows_available: ctx.rows?.length ?? 0,
           people_tracked: ctx.personRanking?.length ?? 0,
           open_flags: ctx.flags?.length ?? 0,
+          next_best_actions: ctx.actions?.length ?? ctx.totals?.next_best_actions ?? 0,
         })),
+    }),
+
+    getNextBestActions: tool({
+      description:
+        "Returns the exact Next best actions cards currently shown on the dashboard, in dashboard order. Use whenever the user asks what actions are shown, why an action is shown, or whether a completed row is still appearing.",
+      inputSchema: z.object({
+        limit: z.number().nullable().describe("Max results, e.g. 5 or 8"),
+      }),
+      execute: async ({ limit }) =>
+        timed("getNextBestActions", { limit }, () => {
+          const n = Math.max(1, Math.min(limit ?? 8, 20));
+          const items = (ctx.actions ?? []).slice(0, n).map((a) => ({
+            source: a.source,
+            title: a.title,
+            detail: a.detail,
+            severity: a.severity,
+            person: a.person,
+            stage: a.stage,
+            sheet: a.sheet,
+            row_index: a.row_index,
+            citation: a.citation,
+          }));
+          return {
+            current_view: ctx.rowScope ?? null,
+            count: ctx.actions?.length ?? 0,
+            items,
+          };
+        }),
     }),
 
     getPersonWorkload: tool({
@@ -130,6 +217,11 @@ function buildTools(
             p.person.toLowerCase().includes(q),
           );
           if (!hit) return { found: false, person };
+          const matchingRows = (ctx.rows ?? [])
+            .map(cleanRow)
+            .filter((r) => r.person.toLowerCase().includes(q))
+            .sort((a, b) => b.delay - a.delay)
+            .slice(0, 8);
           const openItems = (ctx.flags ?? []).filter(
             (f) => (f.flagged_to?.person ?? "").toLowerCase().includes(q),
           );
@@ -138,13 +230,25 @@ function buildTools(
             person: hit.person,
             delay_count: hit.delay_count,
             total_overdue_days: hit.total_overdue_days,
-            top_activities: (hit.activities ?? []).slice(0, 5),
+            top_activities: matchingRows.map((r) => ({
+              activity: r.activity,
+              sheet: r.sheet,
+              row_index: r.row_index,
+              citation: r.citation,
+              stage: r.stage,
+              status: r.status,
+              delay: r.delay,
+            })).slice(0, 5),
+            visible_rows_for_person: matchingRows.length,
             open_flags: openItems.slice(0, 5).map((f) => ({
               id: f.id,
               activity: f.activity,
               severity: f.severity,
               reason: f.reason_text ?? f.reason,
               stage: f.stage,
+              sheet: f.sheet,
+              row_index: f.row_index,
+              citation: f.citation,
             })),
           };
         }),
@@ -166,12 +270,17 @@ function buildTools(
           return {
             count: sorted.length,
             items: sorted.map((r) => ({
+              sheet: r.sheet,
+              row_index: r.row_index,
+              citation: r.citation,
               activity: r.activity,
               person: r.person,
+              stage: r.stage,
               days_over: r.delta,
               tat: r.tat,
               actual: r.days_taken,
               status: r.status,
+              criticality: r.criticality,
             })),
           };
         }),
@@ -195,20 +304,21 @@ function buildTools(
             const p = (person ?? "").trim().toLowerCase();
             const s = (stage ?? "").trim().toLowerCase();
             const st = (status ?? "").trim().toLowerCase();
-            const matches: Array<Record<string, string>> = [];
+            const matches: Array<Record<string, unknown>> = [];
             for (const row of ctx.rows ?? []) {
-              const activity = pick(row, "activity", "Activity", "task", "Task");
-              const who = pick(row, "person", "Person", "assignee", "Assignee", "owner", "Owner");
-              const stg = pick(row, "stage", "Stage", "phase", "Phase");
-              const stt = pick(row, "status", "Status");
+              const cleaned = cleanRow(row);
+              const activity = cleaned.activity;
+              const who = cleaned.person;
+              const stg = cleaned.stage;
+              const stt = cleaned.status;
               if (p && !who.toLowerCase().includes(p)) continue;
               if (s && !stg.toLowerCase().includes(s)) continue;
               if (st && !stt.toLowerCase().includes(st)) continue;
               if (q && !activity.toLowerCase().includes(q)) continue;
-              matches.push({ activity, person: who, stage: stg, status: stt });
+              matches.push(cleaned);
               if (matches.length >= 20) break;
             }
-            return { count: matches.length, items: matches };
+            return { current_view: ctx.rowScope ?? null, count: matches.length, items: matches };
           },
         ),
     }),
@@ -232,6 +342,9 @@ function buildTools(
               stage: f.stage,
               status: f.status,
               reason: f.reason_text ?? f.reason,
+              sheet: f.sheet,
+              row_index: f.row_index,
+              citation: f.citation,
               flagged_to: f.flagged_to?.person,
             }));
           return { count: items.length, items };
@@ -399,8 +512,12 @@ function buildTools(
           const severity = daysOver > 10 ? "critical" : daysOver > 3 ? "warning" : "info";
           return {
             found: true,
+            sheet: tat.sheet,
+            row_index: tat.row_index,
+            citation: tat.citation,
             activity: tat.activity,
             owner: owner || null,
+            stage: tat.stage,
             tat_days: tat.tat,
             actual_days: tat.days_taken,
             days_over: daysOver,
@@ -609,8 +726,9 @@ CITATIONS (REQUIRED on every factual claim):
 - Every specific fact (a person, a number, a date, a status, a reason) MUST be followed inline by a citation tag drawn from the tool output that produced it:
     • Sheet rows: [sheet:<sheet display name> row <row_index>]
     • Documents:  [doc:<document name> p.<page_no>]
-    • Dashboard aggregates from context (totals, risk score, top flag): [dashboard:<field>]
+    • Dashboard aggregates from context (totals, risk score, filtered-row counts, action counts): [dashboard:<field>]
 - Use the EXACT sheet display name and row_index returned by the tool — do not shorten, translate, or normalize them.
+- Prefer the citation field returned by tools for row-level facts.
 - If a claim would need a citation but no tool result supports it, delete the claim.
 - End every answer with a "Sources:" line listing each unique citation you used once.
 
@@ -746,7 +864,7 @@ export const Route = createFileRoute("/api/chat")({
         } catch { /* best-effort */ }
 
         try {
-          const contextPreamble = `Active agent: ${agentSpec.name} — ${agentSpec.purpose}\nCurrent project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Rows: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}.${memoryBlock}${matchModeBlock}`;
+          const contextPreamble = `Active agent: ${agentSpec.name} — ${agentSpec.purpose}\nCurrent project: ${ctx.projectLabel ?? ctx.projectId ?? "unknown"}. Current visible dashboard scope: ${ctx.rowScope ?? "not provided"}. Filtered rows passed to tools: ${ctx.rows?.length ?? 0}. People tracked: ${ctx.personRanking?.length ?? 0}. Open flags: ${ctx.flags?.length ?? 0}. Next best actions shown: ${ctx.actions?.length ?? ctx.totals?.next_best_actions ?? 0}. Risk score: ${ctx.riskScore ?? "n/a"}. Last synced: ${ctx.lastSyncedAt ?? "unknown"}.${memoryBlock}${matchModeBlock}`;
 
           const modelMessages = await convertToModelMessages(messages);
 
