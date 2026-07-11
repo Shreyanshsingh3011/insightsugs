@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 // Master sheet that lists every project source. Each row should contain a
 // human label and any URL — either a sheet2api endpoint or a Google Sheets
@@ -168,6 +167,5 @@ export async function loadAgentProjects(): Promise<{ projects: AgentProject[]; s
 
 
 export const fetchAgentProjects = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
   .handler(async () => loadAgentProjects());
 

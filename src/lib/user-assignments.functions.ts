@@ -35,12 +35,20 @@ export const saveMyAssignments = createServerFn({ method: "POST" })
   .inputValidator((d: { projects: { key: string; label: string }[] }) => d)
   .handler(async ({ data, context }) => {
     const { supabase } = context as { supabase: any };
-    const keys = data.projects.map((p) => p.key);
-    const labels = data.projects.map((p) => p.label);
-    const { error } = await supabase.rpc("set_my_project_assignments", {
-      _keys: keys,
-      _labels: labels,
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true };
+    try {
+      const keys = data.projects.map((p) => p.key);
+      const labels = data.projects.map((p) => p.label);
+      const { error } = await supabase.rpc("set_my_project_assignments", {
+        _keys: keys,
+        _labels: labels,
+      });
+      if (error) throw error;
+      return { ok: true };
+    } catch (error) {
+      if (isTransientDataApiError(error)) {
+        console.warn("Project assignment save failed temporarily; keeping the existing assignment list.", error);
+        return { ok: false, degraded: true };
+      }
+      throw new Error(error instanceof Error ? error.message : "Unable to save project assignments");
+    }
   });

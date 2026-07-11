@@ -445,7 +445,7 @@ export default function AgentDashboard() {
 
   const anyLoading = queries.some(q => q.isLoading);
   const anyFetching = queries.some(q => q.isFetching);
-  const allError = queries.every(q => q.isError);
+  const allError = queries.length > 0 && queries.every(q => q.isError);
   const lastSyncedAt = sources
     .map(s => s.payload?.generated_at)
     .filter((x): x is string => !!x)
