@@ -686,22 +686,46 @@ export const listSheets = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    // RLS returns: owner + admin + public + shared-with-me
-    const { data, error } = await supabase
-      .from("sheet_registry")
-      .select(
-        "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
-      )
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    let data: any[] | null = null;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      // RLS returns: owner + admin + public + shared-with-me
+      const result = await supabase
+        .from("sheet_registry")
+        .select(
+          "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
+        )
+        .order("created_at", { ascending: false });
+
+      if (!result.error) {
+        data = result.data ?? [];
+        lastError = null;
+        break;
+      }
+
+      lastError = result.error;
+      const message = String(result.error.message ?? "");
+      const transientSchemaCacheError = message.toLowerCase().includes("schema cache");
+      if (!transientSchemaCacheError || attempt === 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+
+    if (lastError) {
+      console.warn("Sheet list lookup failed; continuing with an empty sheet list.", lastError);
+      return { sheets: [], degraded: true };
+    }
 
     const ids = (data ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
     const shareCounts = new Map<string, number>();
     if (ids.length > 0) {
-      const { data: shares } = await supabase
+      const { data: shares, error: sharesError } = await supabase
         .from("sheet_registry_shares")
         .select("sheet_registry_id")
         .in("sheet_registry_id", ids);
+      if (sharesError) {
+        console.warn("Sheet share-count lookup failed; continuing without share counts.", sharesError);
+      }
       for (const s of shares ?? []) {
         shareCounts.set(
           s.sheet_registry_id,
