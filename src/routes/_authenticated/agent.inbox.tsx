@@ -205,15 +205,15 @@ function AgentInboxPage() {
       const payloadDelay = (d.payload as any)?.delay;
       if (isSerial(payloadDelay)) return false;
       const [project] = String(d.source_key ?? "").split("::");
+      // Strict scope: the draft's source row MUST be present in the current
+      // live dashboard snapshot (5-min sync). Anything not currently fetched
+      // is treated as out-of-scope and hidden.
       if (project && projectLabels.size > 0 && !projectLabels.has(project)) return false;
       if (doneKeys.has(d.source_key)) return false;
-      // If we have a live snapshot for this project but the row is not in the
-      // active set, the underlying task is either completed or gone — hide it.
-      if (project && projectLabels.has(project) && activeKeys.size > 0 && !activeKeys.has(d.source_key)) {
-        return false;
-      }
+      if (!activeKeys.has(d.source_key)) return false;
       return true;
     });
+
   }, [rawDrafts, doneKeys, activeKeys, projectLabels, sourcesLoading, liveRows.length]);
 
   const hiddenCount = rawDrafts.length - drafts.length;
