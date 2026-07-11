@@ -9,7 +9,7 @@ export const Route = createFileRoute("/")({
     const { data } = await supabase.auth.getSession();
     const savedPath = window.sessionStorage.getItem("postLoginPath");
     window.sessionStorage.removeItem("postLoginPath");
-    const nextPath = savedPath?.startsWith("/") && !savedPath.startsWith("//") ? savedPath : "/insights";
+    const nextPath = savedPath === "/agent" ? "/agent" : "/insights";
     throw redirect({ to: data.session ? nextPath : "/login" });
   },
 });
