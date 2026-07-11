@@ -52,7 +52,7 @@ function RowPage() {
     () => sources.map((s) => s.payload?.generated_at).filter(Boolean) as string[],
     [sources],
   );
-  const row = useMemo(
+  const liveRow = useMemo(
     () => rows.find(r => rowMatchesIdent(r, ident, String(r["__project"] ?? ""))) ?? null,
     [rows, ident],
   );
