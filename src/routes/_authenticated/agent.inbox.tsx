@@ -165,8 +165,9 @@ function AgentInboxPage() {
   // whose underlying row is now effectively done, and (when we can identify
   // the project) drafts whose project isn't in the user's live source set.
   const { rows: liveRows, projects: liveProjects, anyLoading: sourcesLoading } = useAgentSources();
-  const { doneKeys, projectLabels } = useMemo(() => {
+  const { doneKeys, activeKeys, projectLabels } = useMemo(() => {
     const done = new Set<string>();
+    const active = new Set<string>();
     const labels = new Set<string>();
     for (const p of liveProjects) labels.add(p.label);
     const pick = (r: Record<string, unknown>, ...ks: string[]) => {
@@ -183,23 +184,37 @@ function AgentInboxPage() {
       const activity = pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
       const key = `${project}::${srNo || activity}`.slice(0, 400);
       if (isRowEffectivelyDone(r)) done.add(key);
+      else active.add(key);
     }
-    return { doneKeys: done, projectLabels: labels };
+    return { doneKeys: done, activeKeys: active, projectLabels: labels };
   }, [liveRows, liveProjects]);
 
   const drafts = useMemo(() => {
     // Wait for the first live snapshot before filtering, otherwise we'd hide
     // everything on cold start.
     if (sourcesLoading && liveRows.length === 0) return rawDrafts;
+    const isSerial = (n: unknown) => {
+      const v = typeof n === "number" ? n : Number(String(n ?? "").replace(/[,\s]/g, ""));
+      return Number.isFinite(v) && v >= 30000 && v <= 70000;
+    };
     return rawDrafts.filter((d) => {
       const isRowScoped = typeof d.source_kind === "string" && d.source_kind.startsWith("row.");
       if (!isRowScoped) return true;
+      // Payload-side belt-and-suspenders: watcher payloads that captured an
+      // Excel date serial as "delay" are stale completion markers, not delays.
+      const payloadDelay = (d.payload as any)?.delay;
+      if (isSerial(payloadDelay)) return false;
       const [project] = String(d.source_key ?? "").split("::");
       if (project && projectLabels.size > 0 && !projectLabels.has(project)) return false;
       if (doneKeys.has(d.source_key)) return false;
+      // If we have a live snapshot for this project but the row is not in the
+      // active set, the underlying task is either completed or gone — hide it.
+      if (project && projectLabels.has(project) && activeKeys.size > 0 && !activeKeys.has(d.source_key)) {
+        return false;
+      }
       return true;
     });
-  }, [rawDrafts, doneKeys, projectLabels, sourcesLoading, liveRows.length]);
+  }, [rawDrafts, doneKeys, activeKeys, projectLabels, sourcesLoading, liveRows.length]);
 
   const hiddenCount = rawDrafts.length - drafts.length;
   const activeDraft = drafts.find((d) => d.id === openId) ?? null;

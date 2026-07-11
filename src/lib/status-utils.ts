@@ -205,10 +205,12 @@ export function isRowEffectivelyDone(row: StatusRow): boolean {
     const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
     return Number.isFinite(n) ? n : 0;
   };
-  const rawTaken = toNum(row["Days Taken"]);
-  // Excel date serial leaked into a duration column = completion date recorded.
-  if (rawTaken >= 30000 && rawTaken <= 70000) return true;
+  const isSerial = (n: number) => n >= 30000 && n <= 70000;
+  // Excel date serials leaked into duration/delay columns = completion date recorded.
+  if (isSerial(toNum(row["Days Taken"]))) return true;
+  if (isSerial(toNum(row["Delay in Days"]))) return true;
   const tat = toNum(row["TAT"]);
+  const rawTaken = toNum(row["Days Taken"]);
   const taken = rawTaken > 3650 || rawTaken < 0 ? 0 : rawTaken;
   if (taken > 0 && tat > 0 && taken <= tat) return true;
   return false;
