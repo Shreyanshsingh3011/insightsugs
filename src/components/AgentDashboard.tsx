@@ -92,8 +92,8 @@ function registeredSourceLabel(sheet: RegisteredSourceSheet): string {
   return (!raw || isGenericSheetTitle(raw) ? urlLabel : undefined) ?? raw;
 }
 
-function registeredSourceUrl(sheet: RegisteredSourceSheet): string | undefined {
-  return sheet.source_url || sheet.apps_script_url || undefined;
+function registeredSourceUrl(sheet?: RegisteredSourceSheet): string | undefined {
+  return sheet?.source_url || sheet?.apps_script_url || undefined;
 }
 
 const TONE = {
@@ -434,7 +434,7 @@ export default function AgentDashboard() {
     });
     // Only override when we find a Google Sheets URL — never regress to another
     // sheet2api-style proxy.
-    const matchUrl = registeredSourceUrl(match as RegisteredSourceSheet | undefined);
+    const matchUrl = registeredSourceUrl(match);
     if (matchUrl && /docs\.google\.com\/spreadsheets/i.test(matchUrl)) {
       return matchUrl;
     }
