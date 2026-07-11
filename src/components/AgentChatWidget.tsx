@@ -41,10 +41,14 @@ import { REFUSAL_PHRASE, extractCitations, parseRefusal } from "@/lib/citation-p
 export type AgentChatContext = {
   projectId?: string;
   projectLabel?: string;
+  rowScope?: string;
+  filters?: Record<string, unknown>;
+  lastSyncedAt?: string;
   rows?: Array<Record<string, unknown>>;
   personRanking?: unknown[];
   tatRows?: unknown[];
   flags?: unknown[];
+  actions?: unknown[];
   totals?: Record<string, number>;
   riskScore?: number;
 };
@@ -152,7 +156,7 @@ export default function AgentChatWidget({
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold leading-tight">DelayLens Copilot</div>
               <div className="text-[11px] text-muted-foreground truncate">
-                {context.projectLabel ?? context.projectId ?? "No project selected"} · grounded in dashboard data
+                {context.rowScope ?? `${context.projectLabel ?? context.projectId ?? "No project selected"} · grounded in dashboard data`}
               </div>
             </div>
             <Link
@@ -181,7 +185,7 @@ export default function AgentChatWidget({
                   </div>
                   <div className="text-sm font-medium">Ask about this project</div>
                   <p className="text-xs text-muted-foreground max-w-[280px]">
-                    I answer only from the current dashboard data. Try one:
+                    I answer only from the rows and actions currently shown on this dashboard. Try one:
                   </p>
                   <div className="mt-2 flex flex-wrap justify-center gap-1.5">
                     {SUGGESTIONS.map((s) => (

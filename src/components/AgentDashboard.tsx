@@ -871,62 +871,6 @@ export default function AgentDashboard() {
   type ChatMsg = { role: "user" | "assistant"; text: string; citations?: Citation[] };
   const { userId } = useSession();
 
-  // Compact snapshot of the current project state, sent to /api/chat so the
-  // agent's tools can filter/aggregate the same data the user sees.
-  const agentChatContext = useMemo<AgentChatContext>(() => {
-    const label = selected === "all"
-      ? "All projects"
-      : projects.find(p => p.id === selected)?.label ?? selected;
-    const rows = (payload?.data ?? []).slice(0, 500).map(r => ({
-      activity: pick(r, "Activity List", "Process Descriptions", "Process"),
-      person: pick(r, "Responsible Person", "Responsibility", "approvers name"),
-      stage: pick(r, "Stages", "Stages of Process"),
-      status: statusOf(r),
-      criticality: pick(r, "Criticality"),
-      tat: num(r["TAT"]),
-      days_taken: daysTakenForRow(r),
-      delay: delayForRow(r, isTerminalRow(r), statusOf(r)),
-    }));
-    const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
-      person: p.person,
-      delay_count: p.delayed,
-      total_overdue_days: p.delayDays,
-      activities: [],
-    }));
-    const tatRows = (d.overdue ?? []).slice(0, 60).map(o => ({
-      activity: o.activity,
-      tat: o.tat,
-      days_taken: o.taken,
-      delta: o.delay,
-      status: o.status,
-      person: o.person,
-    }));
-    const flags = (d.overdue ?? []).slice(0, 40).map((o, i) => ({
-      id: `f-${i}`,
-      activity: o.activity,
-      severity: o.delay > 60 ? "critical" : o.delay > 20 ? "warning" : "info",
-      status: o.status,
-      stage: o.stage,
-      reason: `${o.delay}d overdue · TAT ${o.tat}d vs taken ${o.taken}d`,
-      flagged_to: { person: o.person },
-    }));
-    return {
-      projectId: selected,
-      projectLabel: label,
-      rows,
-      personRanking,
-      tatRows,
-      flags,
-      totals: {
-        rows: d.n,
-        delayed: d.totals.delayed,
-        completed: d.totals.completed,
-        health_score: d.healthScore,
-      },
-      riskScore: d.n ? Math.round((d.totals.delayed / d.n) * 100) : 0,
-    };
-  }, [selected, projects, payload, d]);
-
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1306,6 +1250,133 @@ export default function AgentDashboard() {
       return true;
     });
   }, [rowIndex, filters]);
+
+  // Compact snapshot sent to /api/chat. It intentionally uses the filtered
+  // report rows plus the same `d.actions`/`d.overdue` objects that render the
+  // dashboard cards, so Copilot speaks from the screen, not from stale/raw data.
+  const agentChatContext = useMemo<AgentChatContext>(() => {
+    const label = selected === "all"
+      ? "All projects"
+      : projects.find(p => p.id === selected)?.label ?? selected;
+    const filtersActive =
+      filters.status !== DEFAULT_REPORT_FILTERS.status ||
+      filters.crit !== DEFAULT_REPORT_FILTERS.crit ||
+      filters.stage !== DEFAULT_REPORT_FILTERS.stage ||
+      filters.person !== DEFAULT_REPORT_FILTERS.person ||
+      filters.minDelay !== DEFAULT_REPORT_FILTERS.minDelay ||
+      filters.q !== DEFAULT_REPORT_FILTERS.q ||
+      filters.onlyOverdue !== DEFAULT_REPORT_FILTERS.onlyOverdue;
+    const sourceForProject = (projectLabel: string) => sources.find(s => s.project.label === projectLabel)?.project;
+    const citationFor = (projectLabel: string, rowNumber: number) => `[sheet:${projectLabel || label} row ${rowNumber}]`;
+    const rows = filteredRows.slice(0, 500).map(r => {
+      const raw = rowsAll[r.i] ?? {};
+      const projectLabel = r.proj || label;
+      const rowNumber = r.i + 1;
+      const source = sourceForProject(projectLabel);
+      return {
+        sheet: projectLabel,
+        row_index: rowNumber,
+        citation: citationFor(projectLabel, rowNumber),
+        row_key: encodeRowKey({
+          project: projectLabel,
+          srNo: String(raw["Sr. No."] ?? raw["Sr No"] ?? raw["ID"] ?? ""),
+          activity: r.activity || "",
+        }),
+        source_url: source?.url,
+        activity: r.activity,
+        person: r.person,
+        email: r.email,
+        stage: r.stage,
+        status: r.status,
+        status_bucket: r.statusBucket,
+        terminal: r.terminal,
+        criticality: r.crit,
+        tat: r.tat,
+        days_taken: r.taken,
+        delay: r.delay,
+      };
+    });
+    const personRanking = (d.persons ?? []).slice(0, 40).map(p => ({
+      person: p.person,
+      delay_count: p.delayed,
+      total_overdue_days: p.delayDays,
+      activities: d.overdue
+        .filter(o => o.person === p.person)
+        .slice(0, 5)
+        .map(o => o.activity),
+    }));
+    const tatRows = (d.overdue ?? []).slice(0, 60).map(o => {
+      const rowNumber = Math.max(0, rowsAll.indexOf(o.row)) + 1;
+      const projectLabel = String(o.row["__project"] ?? label);
+      return {
+        sheet: projectLabel,
+        row_index: rowNumber,
+        citation: citationFor(projectLabel, rowNumber),
+        activity: o.activity,
+        tat: o.tat,
+        days_taken: o.taken,
+        delta: o.delay,
+        status: o.status,
+        person: o.person,
+        stage: o.stage,
+        criticality: o.criticality,
+      };
+    });
+    const flags = (d.overdue ?? []).slice(0, 40).map((o, i) => {
+      const rowNumber = Math.max(0, rowsAll.indexOf(o.row)) + 1;
+      const projectLabel = String(o.row["__project"] ?? label);
+      return {
+        id: `f-${i}`,
+        sheet: projectLabel,
+        row_index: rowNumber,
+        citation: citationFor(projectLabel, rowNumber),
+        activity: o.activity,
+        severity: o.delay > 60 ? "critical" : o.delay > 20 ? "warning" : "info",
+        status: o.status,
+        stage: o.stage,
+        reason: `${o.delay}d overdue · TAT ${o.tat}d vs taken ${o.taken}d`,
+        flagged_to: { person: o.person },
+      };
+    });
+    const actions = (d.actions ?? []).slice(0, 20).map(a => {
+      const row = a.row;
+      const rowNumber = row ? Math.max(0, rowsAll.indexOf(row)) + 1 : null;
+      const projectLabel = String(row?.["__project"] ?? label);
+      return {
+        source: a.source,
+        title: a.title,
+        detail: a.detail,
+        severity: a.severity,
+        person: a.person,
+        stage: a.stage,
+        sheet: projectLabel,
+        row_index: rowNumber,
+        citation: rowNumber ? citationFor(projectLabel, rowNumber) : undefined,
+      };
+    });
+    return {
+      projectId: selected,
+      projectLabel: label,
+      rowScope: `${payload?.project ?? label} · filtered report ${filteredRows.length}/${rowIndex.length} rows${filtersActive ? " · report filters active" : " · default report view"}`,
+      filters,
+      lastSyncedAt,
+      rows,
+      personRanking,
+      tatRows,
+      flags,
+      actions,
+      totals: {
+        rows: d.n,
+        filtered_rows: filteredRows.length,
+        displayed_rows: filteredRows.length,
+        delayed: d.totals.delayed,
+        completed: d.totals.completed,
+        health_score: d.healthScore,
+        next_best_actions: d.actions.length,
+      },
+      riskScore: d.n ? Math.round((d.totals.delayed / d.n) * 100) : 0,
+    };
+  }, [selected, projects, payload?.project, filteredRows, rowIndex.length, filters, sources, rowsAll, d, lastSyncedAt]);
 
   function downloadCSV() {
     const cols = ["project", "activity", "person", "email", "stage", "status", "criticality", "tat", "taken", "delay"];
