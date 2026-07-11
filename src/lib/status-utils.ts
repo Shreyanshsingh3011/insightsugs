@@ -118,6 +118,16 @@ function isMeaningfulCompletionValue(raw: unknown): boolean {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
+function hasCompletionDateSerialInDurationColumn(row: StatusRow): boolean {
+  const raw = valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]);
+  if (!raw) return false;
+  const value = Number(String(raw).replace(/[,\s]/g, ""));
+  // Excel/Sheets date serials around current years are ~45k. If that appears
+  // in a duration column, the row has effectively recorded an actual date and
+  // should not stay in overdue/next-action lists.
+  return Number.isFinite(value) && value >= 30000 && value <= 70000;
+}
+
 export function isTerminalRow(row: StatusRow): boolean {
   for (const key of STATUS_ALIASES) {
     if (isTerminalStatusText(row[key])) return true;
@@ -135,7 +145,7 @@ export function isTerminalRow(row: StatusRow): boolean {
     }
   }
   const completion = valueForAliases(row, COMPLETION_ALIASES);
-  return isMeaningfulCompletionValue(completion);
+  return isMeaningfulCompletionValue(completion) || hasCompletionDateSerialInDurationColumn(row);
 }
 
 
