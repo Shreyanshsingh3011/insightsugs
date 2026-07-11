@@ -83,7 +83,7 @@ function labelFromSheetUrl(url?: string | null): string | undefined {
 }
 
 function isGenericSheetTitle(label: string): boolean {
-  return /^(project\s+work\s+flow\s+guide|sheet\s*\d*|worksheet|data)$/i.test(label.trim());
+  return /^(project\s+work\s+flow\s+guide|google\s+sheet\s+—\s+public\s+csv|google\s+sheet|sheet\s*\d*|worksheet|data)$/i.test(label.trim());
 }
 
 function registeredSourceLabel(sheet: RegisteredSourceSheet): string {
