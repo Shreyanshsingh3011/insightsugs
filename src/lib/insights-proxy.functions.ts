@@ -12,6 +12,80 @@ const InputSchema = z.object({
 
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 1; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i += 1;
+      row.push(field); field = "";
+      if (row.some((c) => c.length)) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    if (row.some((c) => c.length)) rows.push(row);
+  }
+  return rows;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchPublicGoogleSheetRows(parsed: { id: string; gid?: string }, warning?: string): Promise<{
+  connector: string;
+  data: Record<string, string>[];
+  generated_at: string;
+  warning?: string;
+}> {
+  const candidates = [
+    `https://docs.google.com/spreadsheets/d/${parsed.id}/export?format=csv${parsed.gid ? `&gid=${parsed.gid}` : ""}`,
+    `https://docs.google.com/spreadsheets/d/${parsed.id}/gviz/tq?tqx=out:csv${parsed.gid ? `&gid=${parsed.gid}` : ""}`,
+  ];
+  let lastErr = "";
+  for (const url of candidates) {
+    try {
+      const res = await fetchWithTimeout(url, { headers: { Accept: "text/csv,*/*" }, redirect: "follow", cache: "no-store" }, 12_000);
+      if (!res.ok) { lastErr = `HTTP ${res.status}`; continue; }
+      const values = parseCSV(await res.text());
+      if (!values.length) { lastErr = "empty CSV"; continue; }
+      const cols = values[0].map((h, i) => String(h || `Col${i + 1}`).trim());
+      const rows = values.slice(1).map((r) => {
+        const obj: Record<string, string> = {};
+        cols.forEach((h, i) => (obj[h] = String(r[i] ?? "")));
+        return obj;
+      });
+      return {
+        connector: "Google Sheet — public CSV",
+        data: rows,
+        generated_at: new Date().toISOString(),
+        warning,
+      };
+    } catch (error) {
+      lastErr = error instanceof Error ? error.message : String(error);
+    }
+  }
+  throw new Error(`Google Sheets public CSV fallback failed: ${lastErr || "no data"}`);
+}
+
 function assertSafePublicUrl(raw: string): URL {
   const url = new URL(raw);
   const host = url.hostname.toLowerCase();
@@ -67,9 +141,10 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   };
 
   // Pick a worksheet: explicit tab hint > gid match > first sheet.
-  const metaRes = await fetch(
+  const metaRes = await fetchWithTimeout(
     `${GATEWAY}/spreadsheets/${parsed.id}?fields=properties.title,sheets.properties(sheetId,title,index)`,
     { headers },
+    12_000,
   );
   if (!metaRes.ok) throw new Error(`Google Sheets metadata HTTP ${metaRes.status}: ${await metaRes.text()}`);
   const meta = (await metaRes.json()) as {
@@ -101,9 +176,10 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   if (!chosen) chosen = sheets[0].properties;
 
   const range = `${chosen.title}!A1:ZZ10000`;
-  const valRes = await fetch(
+  const valRes = await fetchWithTimeout(
     `${GATEWAY}/spreadsheets/${parsed.id}/values/${range}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
     { headers },
+    15_000,
   );
   if (!valRes.ok) throw new Error(`Google Sheets values HTTP ${valRes.status}: ${await valRes.text()}`);
   const vjson = (await valRes.json()) as { values?: string[][] };
@@ -135,7 +211,15 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
     // Google Sheets URL → route through the Google Sheets connector so the
     // registry can point at live sheets instead of sheet2api proxies.
     if (isGoogleSheetsUrl(url)) {
-      const payload = await fetchGoogleSheetRows(url, data.tab);
+      let payload: Awaited<ReturnType<typeof fetchGoogleSheetRows>>;
+      try {
+        payload = await fetchGoogleSheetRows(url, data.tab);
+      } catch (error) {
+        const parsed = parseSheetsUrl(url);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`[insights-proxy] Google Sheets connector failed; trying public CSV fallback. ${msg}`);
+        payload = await fetchPublicGoogleSheetRows(parsed, `Connector fallback used: ${msg}`);
+      }
       return { payload, fetchedAt: Date.now(), fetchMs: Date.now() - started, url: url.toString() };
     }
 
