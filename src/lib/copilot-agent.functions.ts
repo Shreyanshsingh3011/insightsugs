@@ -1316,6 +1316,226 @@ export async function runCopilotAgent(
         }),
     });
 
+    // ============ ANALYTICS: trends, bottlenecks, forecasts ============
+
+    const terminalRx = /^(done|closed|complete|completed|finished|delivered|cancelled|canceled|dispatched|received|handover|handed over)$/i;
+
+    const trendAnalyze = tool({
+      description:
+        "Analyze a sheet over time: week-over-week / month-over-month volume, mean & median duration, and simple anomaly flags (weeks whose count is >2x or <0.5x the rolling median). Use for 'trend', 'is it improving', 'how has X changed', 'anomalies/spikes', 'week over week', 'month over month' questions.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        date_column: z.string().min(1).max(120).nullable().default(null).describe("Date column to bucket on. Auto-detected if omitted."),
+        bucket: z.enum(["week", "month"]).default("week"),
+        lookback_buckets: z.number().int().min(2).max(52).default(8),
+      }),
+      execute: async ({ sheet_id, date_column, bucket, lookback_buckets }) =>
+        withTrace("trend_analyze", { sheet_id, date_column, bucket, lookback_buckets }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          if (rows.length === 0) return { _summary: "empty sheet", _resultForModel: { sheet: reg.display_name, buckets: [] } };
+          let dateCol = date_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === date_column.toLowerCase().trim()) ?? null
+            : null;
+          if (!dateCol) dateCol = pickDateColumns(rows, null)[0] ?? null;
+          if (!dateCol) return { error: "No date-like column detected; pass date_column." };
+          const bucketMs = bucket === "week" ? 7 * 86400000 : 30 * 86400000;
+          const now = Date.now();
+          const oldest = now - lookback_buckets * bucketMs;
+          const buckets = new Map<number, number>();
+          for (const r of rows) {
+            const d = parseAnyDate(r.data[dateCol]);
+            if (!d) continue;
+            const t = +d;
+            if (t < oldest || t > now) continue;
+            const key = Math.floor((now - t) / bucketMs);
+            buckets.set(key, (buckets.get(key) ?? 0) + 1);
+          }
+          const series: Array<{ bucket: string; count: number; anomaly: string | null }> = [];
+          const counts: number[] = [];
+          for (let i = lookback_buckets - 1; i >= 0; i--) counts.push(buckets.get(i) ?? 0);
+          const sorted = [...counts].sort((a, b) => a - b);
+          const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+          for (let i = 0; i < counts.length; i++) {
+            const idx = lookback_buckets - 1 - i;
+            const startMs = now - (idx + 1) * bucketMs;
+            const label = new Date(startMs).toISOString().slice(0, 10);
+            let anomaly: string | null = null;
+            if (median > 0) {
+              if (counts[i] > 2 * median) anomaly = `spike (${counts[i]} vs median ${median})`;
+              else if (counts[i] < 0.5 * median) anomaly = `dip (${counts[i]} vs median ${median})`;
+            }
+            series.push({ bucket: `${bucket} starting ${label}`, count: counts[i], anomaly });
+          }
+          const first = counts[0] ?? 0;
+          const last = counts[counts.length - 1] ?? 0;
+          const delta = last - first;
+          const pct = first > 0 ? Math.round(((last - first) / first) * 100) : null;
+          const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+          return {
+            _summary: `${lookback_buckets} ${bucket}s, trend ${direction}${pct !== null ? ` (${pct}%)` : ""}`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              date_column: dateCol,
+              bucket,
+              median_per_bucket: median,
+              first_bucket_count: first,
+              last_bucket_count: last,
+              direction,
+              percent_change: pct,
+              series,
+            },
+          };
+        }),
+    });
+
+    const bottleneckScan = tool({
+      description:
+        "Find the top bottlenecks in a sheet: which values of a grouping column (stage / status / owner / vendor / department) contain the largest share of open/overdue/long-aging rows. Use for 'where are we stuck', 'who is the bottleneck', 'which stage delays most', 'top blockers'.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        group_by: z.string().min(1).max(120).describe("Column to group by (e.g. 'Stage', 'Owner', 'Vendor', 'Department')."),
+        date_column: z.string().min(1).max(120).nullable().default(null).describe("Aging date column; auto-detected if omitted."),
+        status_column: z.string().max(120).nullable().default(null),
+        top_n: z.number().int().min(1).max(10).default(5),
+      }),
+      execute: async ({ sheet_id, group_by, date_column, status_column, top_n }) =>
+        withTrace("bottleneck_scan", { sheet_id, group_by, date_column, status_column, top_n }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          if (rows.length === 0) return { _summary: "empty sheet", _resultForModel: { sheet: reg.display_name, groups: [] } };
+          const groupKey = Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === group_by.toLowerCase().trim());
+          if (!groupKey) return { error: `Column "${group_by}" not found. Call get_sheet_schema.` };
+          const dateCol = date_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === date_column.toLowerCase().trim()) ?? null
+            : pickDateColumns(rows, null)[0] ?? null;
+          const statusKey = status_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === status_column.toLowerCase().trim())
+            : Object.keys(rows[0]?.data ?? {}).find((k) => /status|stage|state/i.test(k));
+          const now = Date.now();
+          const groups = new Map<string, { open: number; overdue: number; total_age_days: number; sample_rows: number[] }>();
+          for (const r of rows) {
+            const g = String(r.data[groupKey] ?? "").trim();
+            if (!g) continue;
+            const status = statusKey ? String(r.data[statusKey] ?? "").trim() : "";
+            const isTerminal = status && terminalRx.test(status);
+            const d = dateCol ? parseAnyDate(r.data[dateCol]) : null;
+            const ageDays = d ? Math.max(0, Math.floor((now - +d) / 86400000)) : 0;
+            const cur = groups.get(g) ?? { open: 0, overdue: 0, total_age_days: 0, sample_rows: [] };
+            if (!isTerminal) {
+              cur.open += 1;
+              cur.total_age_days += ageDays;
+              if (d && +d < now) cur.overdue += 1;
+              if (cur.sample_rows.length < 3) cur.sample_rows.push(r.row_index);
+            }
+            groups.set(g, cur);
+          }
+          const ranked = Array.from(groups.entries())
+            .map(([value, s]) => ({
+              value,
+              open: s.open,
+              overdue: s.overdue,
+              avg_age_days: s.open > 0 ? Math.round(s.total_age_days / s.open) : 0,
+              sample_row_citations: s.sample_rows.map((idx) => {
+                const row = rows.find((rr) => rr.row_index === idx);
+                if (row) ledger.push({ kind: "sheet_row", registryId: sheet_id, sheetLabel: reg.display_name, rowIndex: idx, data: row.data });
+                return `[sheet:${reg.display_name} row ${idx + 1}]`;
+              }),
+            }))
+            .filter((g) => g.open > 0)
+            .sort((a, b) => b.overdue - a.overdue || b.open - a.open || b.avg_age_days - a.avg_age_days)
+            .slice(0, top_n);
+          return {
+            _summary: `top ${ranked.length} ${group_by} bottlenecks`,
+            _resultForModel: { sheet: reg.display_name, group_by: groupKey, date_column: dateCol, status_column: statusKey ?? null, bottlenecks: ranked },
+          };
+        }),
+    });
+
+    const forecastCompletion = tool({
+      description:
+        "Forecast when a sheet's remaining open items will complete, based on recent throughput. Computes: open count, completions in the last N days, per-day rate, projected days-to-clear, projected clear date, and simple slip probability vs a target date. Use for 'when will we finish', 'ETA', 'are we on track', 'will we hit <date>', 'projected completion'.",
+      inputSchema: z.object({
+        sheet_id: z.string().uuid(),
+        status_column: z.string().max(120).nullable().default(null),
+        completion_date_column: z.string().max(120).nullable().default(null).describe("Column holding the completion date (e.g. 'Dispatch Date', 'Delivered On'). Auto-detected if omitted."),
+        target_date: z.string().nullable().default(null).describe("Optional ISO target/deadline to compute slip probability."),
+        lookback_days: z.number().int().min(3).max(180).default(30),
+      }),
+      execute: async ({ sheet_id, status_column, completion_date_column, target_date, lookback_days }) =>
+        withTrace("forecast_completion", { sheet_id, status_column, completion_date_column, target_date, lookback_days }, async () => {
+          const reg = sheetById.get(sheet_id);
+          if (!reg) return { error: "Unknown sheet_id" };
+          const rows = await getSheetRows(sheet_id);
+          if (rows.length === 0) return { _summary: "empty sheet", _resultForModel: { sheet: reg.display_name } };
+          const statusKey = status_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === status_column.toLowerCase().trim())
+            : Object.keys(rows[0]?.data ?? {}).find((k) => /status|stage|state/i.test(k));
+          if (!statusKey) return { error: "No status column found; pass status_column." };
+          const doneCol = completion_date_column
+            ? Object.keys(rows[0]?.data ?? {}).find((k) => k.toLowerCase().trim() === completion_date_column.toLowerCase().trim()) ?? null
+            : Object.keys(rows[0]?.data ?? {}).find((k) => /(dispatch|deliver|complete|closed|done|handover|received)/i.test(k)) ?? null;
+          const now = Date.now();
+          const windowStart = now - lookback_days * 86400000;
+          let openCount = 0;
+          let completedInWindow = 0;
+          let totalCompleted = 0;
+          for (const r of rows) {
+            const status = String(r.data[statusKey] ?? "").trim();
+            const isTerminal = status && terminalRx.test(status);
+            if (isTerminal) {
+              totalCompleted += 1;
+              if (doneCol) {
+                const d = parseAnyDate(r.data[doneCol]);
+                if (d && +d >= windowStart && +d <= now) completedInWindow += 1;
+              }
+            } else {
+              openCount += 1;
+            }
+          }
+          const perDay = completedInWindow / lookback_days;
+          const daysToClear = perDay > 0 ? Math.ceil(openCount / perDay) : null;
+          const projectedClearISO = daysToClear !== null ? new Date(now + daysToClear * 86400000).toISOString().slice(0, 10) : null;
+          let slip: null | { target: string; days_available: number; days_needed: number | null; slip_probability: string; verdict: string } = null;
+          if (target_date) {
+            const tgt = parseAnyDate(target_date);
+            if (tgt) {
+              const daysAvail = Math.max(0, Math.ceil((+tgt - now) / 86400000));
+              let prob = "unknown";
+              let verdict = "insufficient throughput data";
+              if (daysToClear !== null) {
+                const ratio = daysAvail > 0 ? daysToClear / daysAvail : 99;
+                if (ratio <= 0.75) { prob = "low"; verdict = "on track"; }
+                else if (ratio <= 1.0) { prob = "medium"; verdict = "tight — likely to just meet target"; }
+                else if (ratio <= 1.5) { prob = "high"; verdict = "likely to slip"; }
+                else { prob = "very high"; verdict = "very likely to miss target"; }
+              }
+              slip = { target: tgt.toISOString().slice(0, 10), days_available: daysAvail, days_needed: daysToClear, slip_probability: prob, verdict };
+            }
+          }
+          return {
+            _summary: `${openCount} open, ${perDay.toFixed(2)}/day pace, ETA ${projectedClearISO ?? "n/a"}`,
+            _resultForModel: {
+              sheet: reg.display_name,
+              status_column: statusKey,
+              completion_date_column: doneCol,
+              open_count: openCount,
+              total_completed: totalCompleted,
+              completed_last_n_days: completedInWindow,
+              lookback_days,
+              per_day_completion_rate: Number(perDay.toFixed(3)),
+              projected_days_to_clear: daysToClear,
+              projected_clear_date: projectedClearISO,
+              vs_target: slip,
+              note: perDay === 0 ? "No completions in lookback window — cannot forecast; expand lookback_days or check completion_date_column." : null,
+            },
+          };
+        }),
+    });
+
+
 
 
     // Pre-compute per-sheet Auto-Insights + detected shape so the model
