@@ -30,6 +30,8 @@ export function isAuthTokenError(error: unknown) {
     message.includes("jwt expired") ||
     message.includes("invalid jwt") ||
     message.includes("malformed jwt") ||
+    message.includes("session expired") ||
+    message.includes("auth session missing") ||
     message.includes("expected 3 parts in jwt") ||
     message.includes("no authorization header") ||
     message.includes("401")

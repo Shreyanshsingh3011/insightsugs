@@ -21,7 +21,7 @@ export function useSession() {
         setLoading(false);
       }
     });
-    getUsableSupabaseSession()
+    getUsableSupabaseSession(2500, { validate: true })
       .then((restoredSession) => {
         if (!mounted) return;
         setSession(restoredSession);

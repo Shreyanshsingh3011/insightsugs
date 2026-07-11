@@ -2,14 +2,25 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
 const TOKEN_EXPIRY_SKEW_SECONDS = 60;
+type SessionOptions = { validate?: boolean };
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  if (typeof window === "undefined") return promise.catch(() => fallback);
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>((resolve) => window.setTimeout(() => resolve(fallback), timeoutMs)),
+  ]);
+}
 
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   try {
+    const decoder = typeof window !== "undefined" ? window.atob : globalThis.atob;
+    if (!decoder) return null;
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-    return JSON.parse(window.atob(padded));
+    return JSON.parse(decoder(padded));
   } catch {
     return null;
   }
@@ -29,6 +40,10 @@ export function isUsableSession(session: Session | null | undefined): session is
   return expiresAt > Math.floor(Date.now() / 1000) + TOKEN_EXPIRY_SKEW_SECONDS;
 }
 
+function isRefreshableSession(session: Session | null | undefined): session is Session {
+  return !!session?.refresh_token && !!session.user?.id;
+}
+
 export function readStoredSession(): Session | null {
   if (typeof window === "undefined") return null;
   for (const key of Object.keys(window.localStorage)) {
@@ -44,7 +59,29 @@ export function readStoredSession(): Session | null {
   return null;
 }
 
-export async function getUsableSupabaseSession(timeoutMs = 2500): Promise<Session | null> {
+async function refreshSession(timeoutMs: number): Promise<Session | null> {
+  const refreshed = await withTimeout(
+    supabase.auth.refreshSession().then(({ data }) => data.session),
+    timeoutMs,
+    null,
+  );
+  return isUsableSession(refreshed) ? refreshed : null;
+}
+
+async function validateSession(session: Session, timeoutMs: number): Promise<Session | null> {
+  const user = await withTimeout(
+    supabase.auth.getUser(session.access_token).then(({ data, error }) => (error ? null : data.user)),
+    timeoutMs,
+    undefined,
+  );
+
+  if (user?.id) return session;
+  if (user === undefined) return session;
+  return isRefreshableSession(session) ? refreshSession(timeoutMs) : null;
+}
+
+export async function getUsableSupabaseSession(timeoutMs = 2500, options: SessionOptions = {}): Promise<Session | null> {
+  if (typeof window === "undefined") return null;
   const sessionResult = supabase.auth
     .getSession()
     .then(({ data }) => data.session)
@@ -53,5 +90,13 @@ export async function getUsableSupabaseSession(timeoutMs = 2500): Promise<Sessio
     window.setTimeout(() => resolve(readStoredSession()), timeoutMs);
   });
   const session = await Promise.race([sessionResult, fallback]);
-  return isUsableSession(session) ? session : null;
+
+  const usableSession = isUsableSession(session)
+    ? session
+    : isRefreshableSession(session)
+      ? await refreshSession(timeoutMs)
+      : null;
+
+  if (!usableSession) return null;
+  return options.validate ? validateSession(usableSession, timeoutMs) : usableSession;
 }
