@@ -11,7 +11,7 @@ function AgentIndex() {
   );
 }
 
-export const Route = createFileRoute("/_authenticated/agent/")({
+export const Route = createFileRoute("/_authenticated/agent")({
   head: () => ({ meta: [{ title: "Agent Dashboard — DelayLens" }] }),
   component: AgentIndex,
 });
