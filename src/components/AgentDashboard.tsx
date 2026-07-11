@@ -596,7 +596,7 @@ export default function AgentDashboard() {
     const tagged = scoped.map((r) => ({ ...r, __project: s.project.label, __department: s.payload?.department }));
     const data = focusFilter(tagged);
     return {
-      project: (scope.mode === "name-scoped" ? "My work · " : "") + (s.payload.connector || s.project.label),
+      project: (scope.mode === "name-scoped" ? "My work · " : "") + s.project.label,
       department: s.payload.department,
       data,
       generated_at: s.payload.generated_at,
@@ -1739,7 +1739,7 @@ export default function AgentDashboard() {
         {sources.map(s => (
           <ProjectChip
             key={s.project.id}
-            label={s.payload?.connector?.replace(" — view", "") || s.project.label}
+            label={s.project.label}
             active={selected === s.project.id}
             count={s.payload?.data?.length ?? 0}
             loading={s.isFetching}
