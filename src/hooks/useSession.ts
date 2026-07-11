@@ -2,37 +2,10 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { getUsableSupabaseSession, isUsableSession } from "@/lib/auth-session";
+import { isRecoverableDataReadError } from "@/lib/transient-errors";
 
 export type AppRole = "super_admin" | "admin" | "user";
-
-function isTransientDataApiError(error: unknown) {
-  const fields =
-    error && typeof error === "object"
-      ? Object.values(error as Record<string, unknown>).join(" ")
-      : String(error ?? "");
-  const message = `${error instanceof Error ? error.message : ""} ${fields}`;
-  return (
-    message.toLowerCase().includes("schema cache") ||
-    message.includes("503") ||
-    message.toLowerCase().includes("failed to fetch") ||
-    message.toLowerCase().includes("networkerror")
-  );
-}
-
-function readStoredSession(): Session | null {
-  if (typeof window === "undefined") return null;
-  for (const key of Object.keys(window.localStorage)) {
-    if (!key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
-    try {
-      const parsed = JSON.parse(window.localStorage.getItem(key) ?? "null");
-      const session = parsed?.currentSession ?? parsed;
-      if (session?.access_token && session?.user?.id) return session as Session;
-    } catch {
-      // Ignore malformed storage entries and continue with Supabase auth.
-    }
-  }
-  return null;
-}
 
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null);
@@ -40,20 +13,18 @@ export function useSession() {
 
   useEffect(() => {
     let mounted = true;
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    let bootstrapped = false;
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (!mounted) return;
-      setSession(s);
-      setLoading(false);
+      setSession(isUsableSession(s) ? s : null);
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED" || bootstrapped) {
+        setLoading(false);
+      }
     });
-    Promise.race([
-      supabase.auth.getSession(),
-      new Promise<{ data: { session: Session | null } }>((resolve) => {
-        window.setTimeout(() => resolve({ data: { session: readStoredSession() } }), 2500);
-      }),
-    ])
-      .then(({ data }) => {
+    getUsableSupabaseSession()
+      .then((restoredSession) => {
         if (!mounted) return;
-        setSession(data.session);
+        setSession(restoredSession);
       })
       .catch((error) => {
         if (!mounted) return;
@@ -61,6 +32,7 @@ export function useSession() {
         setSession(null);
       })
       .finally(() => {
+        bootstrapped = true;
         if (mounted) setLoading(false);
       });
     return () => {
@@ -83,7 +55,7 @@ export function useRoles() {
         .select("role")
         .eq("user_id", userId!);
       if (error) {
-        if (isTransientDataApiError(error)) {
+        if (isRecoverableDataReadError(error)) {
           console.warn("[auth] Role lookup is temporarily unavailable; rendering workspace with user-level navigation.", error);
           return ["user"];
         }
@@ -91,7 +63,7 @@ export function useRoles() {
       }
       return (data ?? []).map((r) => r.role as AppRole);
     },
-    retry: (failureCount, error) => !isTransientDataApiError(error) && failureCount < 2,
+    retry: (failureCount, error) => !isRecoverableDataReadError(error) && failureCount < 2,
   });
   return { ...query, isLoading: loading || query.isLoading, isPending: loading || query.isPending };
 }

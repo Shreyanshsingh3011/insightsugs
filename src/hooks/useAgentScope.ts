@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useRoles, useSession } from "./useSession";
 import { listMyAssignments, type Assignment } from "@/lib/user-assignments.functions";
+import { isRecoverableDataReadError } from "@/lib/transient-errors";
 
 export type ScopeMode = "all" | "assigned" | "name-scoped";
 
@@ -23,7 +24,7 @@ export type AgentScope = {
 // users see their assigned projects AND only rows that mention them by
 // name/email in the Responsible Person / email columns.
 export function useAgentScope(): AgentScope {
-  const { session, userId } = useSession();
+  const { session, userId, loading: sessionLoading } = useSession();
   const { data: roles } = useRoles();
   const isSuper = !!roles?.includes("super_admin");
   const isAdmin = !!roles?.some((r) => r === "admin" || r === "super_admin");
@@ -31,9 +32,20 @@ export function useAgentScope(): AgentScope {
   const listFn = useServerFn(listMyAssignments);
   const assignQ = useQuery({
     queryKey: ["my-assignments", userId],
-    enabled: !!userId,
-    queryFn: () => listFn({ data: undefined as any }),
+    enabled: !!userId && !sessionLoading,
+    queryFn: async () => {
+      try {
+        return await listFn({ data: undefined as any });
+      } catch (error) {
+        if (isRecoverableDataReadError(error)) {
+          console.warn("[assignments] Project assignments unavailable; continuing with an empty scope.", error);
+          return { assignments: [] as Assignment[] };
+        }
+        throw error;
+      }
+    },
     staleTime: 30_000,
+    retry: (failureCount, error) => !isRecoverableDataReadError(error) && failureCount < 2,
   });
 
   const [profile, setProfile] = useState<{ full_name: string; email: string } | null>(null);
@@ -45,12 +57,20 @@ export function useAgentScope(): AgentScope {
       .select("full_name, email")
       .eq("id", userId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (!alive) return;
+        if (error) {
+          console.warn("[profiles] Current profile lookup unavailable; using session email only.", error);
+        }
         setProfile({
           full_name: (data?.full_name ?? "").trim(),
           email: (data?.email ?? session?.user.email ?? "").trim().toLowerCase(),
         });
+      })
+      .catch((error) => {
+        if (!alive) return;
+        console.warn("[profiles] Current profile lookup failed; using session email only.", error);
+        setProfile({ full_name: "", email: (session?.user.email ?? "").trim().toLowerCase() });
       });
     return () => { alive = false; };
   }, [userId, session?.user.email]);
