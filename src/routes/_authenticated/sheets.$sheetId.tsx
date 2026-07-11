@@ -375,7 +375,7 @@ function SheetDetailPage() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="max-h-[70vh] overflow-auto">
+        <div ref={scrollerRef} className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted text-left text-xs text-muted-foreground">
               <tr>
