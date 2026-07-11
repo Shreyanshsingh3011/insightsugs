@@ -8,15 +8,20 @@ export type ProfileDirectoryEntry = { email: string; full_name: string };
 export const getProfileDirectory = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ entries: ProfileDirectoryEntry[] }> => {
-    const { data, error } = await context.supabase
-      .from("profiles")
-      .select("email, full_name");
-    if (error) throw error;
-    const entries = (data ?? [])
-      .map((r) => ({
-        email: String(r.email ?? "").trim().toLowerCase(),
-        full_name: String(r.full_name ?? "").trim(),
-      }))
-      .filter((r) => r.email && r.full_name);
-    return { entries };
+    try {
+      const { data, error } = await context.supabase
+        .from("profiles")
+        .select("email, full_name");
+      if (error) throw error;
+      const entries = (data ?? [])
+        .map((r) => ({
+          email: String(r.email ?? "").trim().toLowerCase(),
+          full_name: String(r.full_name ?? "").trim(),
+        }))
+        .filter((r) => r.email && r.full_name);
+      return { entries };
+    } catch (error) {
+      console.warn("Profile directory lookup failed; continuing without name mapping.", error);
+      return { entries: [] };
+    }
   });
