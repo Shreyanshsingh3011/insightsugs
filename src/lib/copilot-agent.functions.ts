@@ -1565,7 +1565,11 @@ export async function runCopilotAgent(
       draft_email: draftEmail,
       create_activity: createActivity,
       list_projects: listProjects,
+      distinct_values: distinctValues,
+      count_where: countWhere,
+      find_across_sheets: findAcrossSheets,
     };
+
 
     async function runDeterministic(reason: string): Promise<{ text?: string }> {
       const { deterministicAnswer } = await import("./copilot-deterministic.server");
