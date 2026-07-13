@@ -1,5 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useSession, useRoles } from "@/hooks/useSession";
+import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,7 +14,7 @@ import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
-  Menu, X, Command, Keyboard, ShieldCheck,
+  Menu, X, Command, Keyboard, ShieldCheck, UserPlus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -54,7 +56,7 @@ function AuthErrorFallback({ error }: { error: unknown }) {
   );
 }
 
-type NavItem = { to: string; label: string; icon: React.ReactNode };
+type NavItem = { to: string; label: string; icon: React.ReactNode; badge?: number };
 type NavSection = { label: string; items: NavItem[] };
 
 function AuthLayout() {
@@ -193,14 +195,29 @@ function AuthLayout() {
     },
   ];
 
+  const pendingSignupsQ = useQuery({
+    queryKey: ["pending-signups-count"],
+    enabled: !!isSuper,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { count } = await supabaseClient
+        .from("signup_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+  });
+  const pendingSignups = pendingSignupsQ.data ?? 0;
+
   const adminSection: NavSection | null = isAdmin || isSuper ? {
     label: "Admin",
     items: [
+      ...(isSuper ? [{ to: "/admin/users", label: "Pending signups", icon: <UserPlus className="h-4 w-4" />, badge: pendingSignups }] : []),
       ...(isAdmin ? [{ to: "/projects", label: "Projects", icon: <FolderKanban className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/email-groups", label: "Email groups", icon: <Mail className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/email", label: "Email queue", icon: <Mail className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/smart-alerts", label: "Smart alerts", icon: <Radar className="h-4 w-4" /> }] : []),
-      ...(isSuper ? [{ to: "/admin/users", label: "Users", icon: <Users className="h-4 w-4" /> }] : []),
+      ...(isSuper ? [{ to: "/admin/users", label: "Users & roles", icon: <Users className="h-4 w-4" /> }] : []),
       ...(isSuper ? [{ to: "/admin/allowlist", label: "Signup allowlist", icon: <ShieldCheck className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/audit", label: "Audit", icon: <ScrollText className="h-4 w-4" /> }] : []),
     ],
@@ -363,7 +380,9 @@ function NavGroup({ section }: { section: NavSection }) {
       </div>
       <div className="space-y-0.5">
         {section.items.map((item) => (
-          <SideLink key={item.to} to={item.to} icon={item.icon}>{item.label}</SideLink>
+          <SideLink key={`${item.to}-${item.label}`} to={item.to} icon={item.icon} badge={item.badge}>
+            {item.label}
+          </SideLink>
         ))}
       </div>
     </div>
@@ -391,7 +410,7 @@ function UserFooter({ email, initial, onSignOut }: { email: string; initial: str
   );
 }
 
-function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; children: React.ReactNode }) {
+function SideLink({ to, icon, children, badge }: { to: string; icon: React.ReactNode; children: React.ReactNode; badge?: number }) {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const active = currentPath === to || (to !== "/" && currentPath.startsWith(to + "/"));
   return (
@@ -406,7 +425,12 @@ function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; c
       <span className={`transition-transform duration-150 ${active ? "" : "group-hover:scale-110"}`}>
         {icon}
       </span>
-      <span className="truncate">{children}</span>
+      <span className="truncate flex-1">{children}</span>
+      {badge && badge > 0 ? (
+        <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          {badge}
+        </span>
+      ) : null}
     </Link>
   );
 }
