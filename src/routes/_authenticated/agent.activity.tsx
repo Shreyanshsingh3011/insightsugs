@@ -30,7 +30,7 @@ function ActivityPage() {
   const statsQ = useQuery({ queryKey: ["agent-stats"], queryFn: () => stats({}) });
 
   const runList = (runsQ.data ?? []) as AgentRunRow[];
-  const actList = (actsQ.data ?? []) as PendingAction[];
+  const actList = (actsQ.data?.rows ?? []) as PendingAction[];
 
   return (
     <div className="space-y-4">
