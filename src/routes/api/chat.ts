@@ -115,22 +115,34 @@ function cleanRow(row: Record<string, unknown>) {
   };
 }
 
-function buildTools(
+import {
+  CACHEABLE_TOOLS,
+  getCachedToolResultSync,
+  setCachedToolResultSync,
+} from "@/lib/agent-cache.server";
+
+export function buildTools(
   ctx: Ctx,
   run: { id?: string; toolCalls: Array<{ name: string; input: unknown; output?: unknown; ms?: number }> } | null,
   actorId: string | null,
   tool: typeof ToolFn,
+  ctxFp: string = "no-fp",
 ) {
-
-
-
-
   const timed = <T,>(name: string, input: unknown, fn: () => T): T => {
+    if (CACHEABLE_TOOLS.has(name)) {
+      const hit = getCachedToolResultSync(name, input, ctxFp) as T | undefined;
+      if (hit !== undefined) {
+        recordToolCall(run, { name, input, output: hit, ms: 0 });
+        return hit;
+      }
+    }
     const t0 = Date.now();
     const out = fn();
     recordToolCall(run, { name, input, output: out, ms: Date.now() - t0 });
+    if (CACHEABLE_TOOLS.has(name)) setCachedToolResultSync(name, input, ctxFp, out);
     return out;
   };
+
 
   const queueAction = async (kind: string, title: string, summary: string, rationale: string, payload: unknown) => {
     try {
@@ -801,7 +813,42 @@ export const Route = createFileRoute("/api/chat")({
           } catch { /* best-effort */ }
         }
 
-        const allTools = buildTools(ctx, run, body.actorId ?? null, tool);
+        const { ctxFingerprintSync, getCachedAnswer, setCachedAnswer } = await import(
+          "@/lib/agent-cache.server"
+        );
+        const ctxFp = ctxFingerprintSync(ctx);
+
+        // Final-answer cache: same question, same routed agent, same dashboard
+        // snapshot → replay the previous answer as a UI message stream. Only
+        // fires when the last message is a fresh user turn (no follow-up tool
+        // approvals mid-thread).
+        const isSingleUserTurn =
+          messages.length === 1 && messages[0]?.role === "user";
+        if (isSingleUserTurn && lastText.trim()) {
+          const cachedAnswer = await getCachedAnswer(lastText, routedTo, ctxFp);
+          if (cachedAnswer) {
+            const { createUIMessageStream, createUIMessageStreamResponse } = await import("ai");
+            const stream = createUIMessageStream({
+              execute: async ({ writer }) => {
+                const id = "cached-" + Date.now().toString(36);
+                writer.write({ type: "text-start", id });
+                writer.write({ type: "text-delta", id, delta: cachedAnswer });
+                writer.write({ type: "text-end", id });
+              },
+            });
+            await finishAgentRun(run, {
+              status: "succeeded",
+              output: { text_length: cachedAnswer.length, routed_to: routedTo, cache: "hit" },
+            });
+            const resp = createUIMessageStreamResponse({ stream });
+            if (run?.id) resp.headers.set("x-agent-run-id", run.id);
+            resp.headers.set("x-agent-routed-to", routedTo);
+            resp.headers.set("x-agent-cache", "hit");
+            return resp;
+          }
+        }
+
+        const allTools = buildTools(ctx, run, body.actorId ?? null, tool, ctxFp);
         const tools = Object.fromEntries(
           Object.entries(allTools).filter(([name]) => agentSpec.toolAllowList.includes(name)),
         );
@@ -881,6 +928,11 @@ export const Route = createFileRoute("/api/chat")({
                 tokensIn: usage?.inputTokens,
                 tokensOut: usage?.outputTokens,
               });
+              // Cache the final grounded answer so a repeat question against
+              // the same snapshot doesn't re-hit OpenRouter/Gemini.
+              if (isSingleUserTurn && text && lastText.trim()) {
+                try { await setCachedAnswer(lastText, routedTo, ctxFp, text); } catch { /* best-effort */ }
+              }
             },
             onError: async ({ error }) => {
               await finishAgentRun(run, {
@@ -895,6 +947,7 @@ export const Route = createFileRoute("/api/chat")({
           });
           if (run?.id) resp.headers.set("x-agent-run-id", run.id);
           resp.headers.set("x-agent-routed-to", routedTo);
+          resp.headers.set("x-agent-cache", "miss");
           return resp;
         } catch (e) {
           await finishAgentRun(run, {
