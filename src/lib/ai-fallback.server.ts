@@ -1,12 +1,21 @@
-// Server-only: routes chat completion requests to Lovable Gateway, Gemini,
-// then Groq with a per-provider circuit breaker so a persistently failing
-// tier is skipped for 60s instead of being retried on every request.
+// Server-only: routes chat completion requests through Lovable Gateway →
+// Gemini → OpenRouter (free models) → Groq with a per-provider circuit
+// breaker so a persistently failing tier is skipped for 60s.
 
 const LOVABLE_BASE = "https://ai.gateway.lovable.dev/v1";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const GROQ_BASE = "https://api.groq.com/openai/v1";
 
-type Provider = "gateway" | "gemini" | "groq";
+// Free OpenRouter models, in preferred order. Tried in order until one accepts.
+const OPENROUTER_FREE_MODELS = [
+  "deepseek/deepseek-chat-v3.1:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "google/gemini-2.0-flash-exp:free",
+  "qwen/qwen-2.5-72b-instruct:free",
+];
+
+type Provider = "gateway" | "gemini" | "openrouter" | "groq";
 type BreakerState = { openedAt: number; status: number; error?: string };
 const BREAKER_MS = 60_000;
 const breakers: Partial<Record<Provider, BreakerState>> = {};
@@ -30,7 +39,7 @@ function reset(p: Provider) {
 export function getBreakerSnapshot() {
   const now = Date.now();
   const out: Record<string, { open: boolean; ms_remaining: number; status?: number; error?: string }> = {};
-  for (const p of ["gateway", "gemini", "groq"] as Provider[]) {
+  for (const p of ["gateway", "gemini", "openrouter", "groq"] as Provider[]) {
     const b = breakers[p];
     out[p] = b
       ? { open: true, ms_remaining: Math.max(0, BREAKER_MS - (now - b.openedAt)), status: b.status, error: b.error }
@@ -86,6 +95,29 @@ async function callGemini(url: string, init: RequestInit | undefined, key: strin
   return fetch(geminiUrl, { ...init, headers, body });
 }
 
+async function callOpenRouter(
+  url: string,
+  init: RequestInit | undefined,
+  key: string,
+  modelOverride: string,
+): Promise<Response> {
+  const orUrl = url.replace(LOVABLE_BASE, OPENROUTER_BASE);
+  let body = init?.body;
+  if (typeof body === "string") {
+    try {
+      const parsed = JSON.parse(body);
+      parsed.model = modelOverride;
+      delete parsed.service_tier;
+      body = JSON.stringify(parsed);
+    } catch { /* leave body */ }
+  }
+  const headers = stripHeaders(init);
+  headers.set("Authorization", `Bearer ${key}`);
+  headers.set("HTTP-Referer", "https://insightsugs.lovable.app");
+  headers.set("X-Title", "DelayLens");
+  return fetch(orUrl, { ...init, headers, body });
+}
+
 async function callGroq(url: string, init: RequestInit | undefined, key: string): Promise<Response> {
   const groqUrl = url.replace(LOVABLE_BASE, GROQ_BASE);
   let body = init?.body;
@@ -108,17 +140,19 @@ function shouldRetry(status: number) {
 
 /**
  * Circuit-breaker-aware fetch that transparently retries chat completions
- * against Gemini then Groq when the primary tier fails or is tripped.
+ * against Gemini → OpenRouter (free) → Groq when the primary tier fails.
  */
 export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const chat = isChatCompletions(url);
     const geminiKey = process.env.GEMINI_API_KEY;
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
     const groqKey = process.env.GROQ_API_KEY;
+    const hasFallback = !!(geminiKey || openRouterKey || groqKey);
 
-    // Skip gateway if breaker is open
-    if (chat && isOpen("gateway") && (geminiKey || groqKey)) {
+    // Skip gateway if breaker is open and a fallback is available
+    if (chat && isOpen("gateway") && hasFallback) {
       // fall through to fallbacks directly
     } else {
       const response = await baseFetch(input, init);
@@ -136,13 +170,43 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
         const retry = await callGemini(url, init, geminiKey);
         if (retry.ok) { reset("gemini"); return retry; }
         if (shouldRetry(retry.status)) trip("gemini", retry.status);
-        else if (!groqKey) return retry;
+        else if (!openRouterKey && !groqKey) return retry;
       } catch (e) {
         trip("gemini", 0, (e as Error).message);
       }
     }
 
-    // Tier 3: Groq
+    // Tier 3: OpenRouter free models (walk the list until one accepts)
+    if (chat && openRouterKey && !isOpen("openrouter")) {
+      let lastResponse: Response | null = null;
+      for (const model of OPENROUTER_FREE_MODELS) {
+        try {
+          const retry = await callOpenRouter(url, init, openRouterKey, model);
+          if (retry.ok) { reset("openrouter"); return retry; }
+          lastResponse = retry;
+          // 429 on one free model → try the next free model, don't trip the whole tier
+          if (retry.status === 401 || retry.status === 403) {
+            trip("openrouter", retry.status);
+            break; // key-level failure, all models will fail
+          }
+          if (retry.status >= 500) continue;
+          if (retry.status === 429) continue;
+          // Other 4xx → request-shaped issue, don't loop
+          break;
+        } catch (e) {
+          trip("openrouter", 0, (e as Error).message);
+          break;
+        }
+      }
+      if (lastResponse && !groqKey) return lastResponse;
+      if (lastResponse && shouldRetry(lastResponse.status)) {
+        // fall through to groq
+      } else if (lastResponse) {
+        return lastResponse;
+      }
+    }
+
+    // Tier 4: Groq
     if (chat && groqKey && !isOpen("groq")) {
       try {
         const retry = await callGroq(url, init, groqKey);

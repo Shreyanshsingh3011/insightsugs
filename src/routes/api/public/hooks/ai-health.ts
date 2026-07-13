@@ -95,15 +95,19 @@ async function handle(request: Request): Promise<Response> {
 
   const lovableKey = process.env.LOVABLE_API_KEY ?? "";
   const geminiKey = process.env.GEMINI_API_KEY ?? "";
+  const openRouterKey = process.env.OPENROUTER_API_KEY ?? "";
   const groqKey = process.env.GROQ_API_KEY ?? "";
 
-  const [gateway, gemini, groq, embed] = await Promise.all([
+  const [gateway, gemini, openrouter, groq, embed] = await Promise.all([
     lovableKey
       ? pingChat("https://ai.gateway.lovable.dev/v1/chat/completions", { "Lovable-API-Key": lovableKey }, "google/gemini-2.5-flash")
       : Promise.resolve({ ok: false, status: 0, ms: 0, error: "LOVABLE_API_KEY not set" } as Ping),
     geminiKey
       ? pingChat("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", { Authorization: `Bearer ${geminiKey}` }, "gemini-2.5-flash")
       : Promise.resolve({ ok: false, status: 0, ms: 0, error: "GEMINI_API_KEY not set" } as Ping),
+    openRouterKey
+      ? pingChat("https://openrouter.ai/api/v1/chat/completions", { Authorization: `Bearer ${openRouterKey}`, "HTTP-Referer": "https://insightsugs.lovable.app", "X-Title": "DelayLens" }, "deepseek/deepseek-chat-v3.1:free")
+      : Promise.resolve({ ok: false, status: 0, ms: 0, error: "OPENROUTER_API_KEY not set" } as Ping),
     groqKey
       ? pingChat("https://api.groq.com/openai/v1/chat/completions", { Authorization: `Bearer ${groqKey}` }, "llama-3.3-70b-versatile")
       : Promise.resolve({ ok: false, status: 0, ms: 0, error: "GROQ_API_KEY not set" } as Ping),
@@ -113,18 +117,24 @@ async function handle(request: Request): Promise<Response> {
   await recordHealth([
     { name: "ai.gateway", status: statusFromPing(gateway), latency_ms: gateway.ms, error: gateway.error, meta: { http: gateway.status } },
     { name: "ai.gemini",  status: statusFromPing(gemini),  latency_ms: gemini.ms,  error: gemini.error,  meta: { http: gemini.status } },
+    { name: "ai.openrouter", status: statusFromPing(openrouter), latency_ms: openrouter.ms, error: openrouter.error, meta: { http: openrouter.status } },
     { name: "ai.groq",    status: statusFromPing(groq),    latency_ms: groq.ms,    error: groq.error,    meta: { http: groq.status } },
     { name: "ai.embeddings", status: embed.ok ? "ok" : "down", latency_ms: embed.ms, error: embed.error ?? null, meta: { dims: embed.dims, provider: embed.provider } },
   ]);
 
-  const chatAvailable = gateway.ok || gemini.ok || groq.ok;
+  const chatAvailable = gateway.ok || gemini.ok || openrouter.ok || groq.ok;
   return json({
     ok: chatAvailable && embed.ok,
     chat: {
       available: chatAvailable,
-      active_provider: gateway.ok ? "lovable-gateway" : gemini.ok ? "gemini-direct" : groq.ok ? "groq-direct" : "none",
+      active_provider: gateway.ok
+        ? "lovable-gateway"
+        : gemini.ok ? "gemini-direct"
+        : openrouter.ok ? "openrouter-free"
+        : groq.ok ? "groq-direct" : "none",
       lovable_gateway: gateway,
       gemini_direct: gemini,
+      openrouter_free: openrouter,
       groq_direct: groq,
     },
     embeddings: embed,
