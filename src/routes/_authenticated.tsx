@@ -211,19 +211,7 @@ function AuthLayout() {
     },
   ];
 
-  const pendingSignupsQ = useQuery({
-    queryKey: ["pending-signups-count"],
-    enabled: !!isSuper,
-    refetchInterval: 30_000,
-    queryFn: async () => {
-      const { count } = await supabaseClient
-        .from("signup_requests")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "pending");
-      return count ?? 0;
-    },
-  });
-  const pendingSignups = pendingSignupsQ.data ?? 0;
+
 
   const adminSection: NavSection | null = isAdmin || isSuper ? {
     label: "Admin",
