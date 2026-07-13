@@ -655,7 +655,9 @@ function CopilotPage() {
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Sparkles className="h-5 w-5 text-primary" /> Copilot
+              <LiveStatusBadge status={live} className="ml-1" />
             </h1>
+
             <p className="mt-1 text-sm text-muted-foreground">
               Conversational AI over your sheets and documents. Follow-ups remember context.
             </p>
