@@ -216,7 +216,7 @@ function AuthLayout() {
   const adminSection: NavSection | null = isAdmin || isSuper ? {
     label: "Admin",
     items: [
-      ...(isSuper ? [{ to: "/admin/users", label: "Pending signups", icon: <UserPlus className="h-4 w-4" />, badge: pendingSignups }] : []),
+      ...(isSuper ? [{ to: "/admin/approvals", label: "Pending signups", icon: <UserPlus className="h-4 w-4" />, badge: pendingSignups }] : []),
       ...(isAdmin ? [{ to: "/projects", label: "Projects", icon: <FolderKanban className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/email-groups", label: "Email groups", icon: <Mail className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/email", label: "Email queue", icon: <Mail className="h-4 w-4" /> }] : []),
