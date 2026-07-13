@@ -71,6 +71,7 @@ import { Route as ApiPublicHooksEmailInboundRouteImport } from './routes/api/pub
 import { Route as ApiPublicHooksDelayRootCauseRouteImport } from './routes/api/public/hooks/delay-root-cause'
 import { Route as ApiPublicHooksDailyStandupRouteImport } from './routes/api/public/hooks/daily-standup'
 import { Route as ApiPublicHooksConcernNudgesRouteImport } from './routes/api/public/hooks/concern-nudges'
+import { Route as ApiPublicHooksAiHealthRouteImport } from './routes/api/public/hooks/ai-health'
 import { Route as ApiPublicHooksAgentWatchersRouteImport } from './routes/api/public/hooks/agent-watchers'
 import { Route as ApiPublicHooksAgentEscalateRouteImport } from './routes/api/public/hooks/agent-escalate'
 import { Route as AuthenticatedAgentStageKeyRouteImport } from './routes/_authenticated/agent.stage.$key'
@@ -419,6 +420,11 @@ const ApiPublicHooksConcernNudgesRoute =
     path: '/api/public/hooks/concern-nudges',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksAiHealthRoute = ApiPublicHooksAiHealthRouteImport.update({
+  id: '/api/public/hooks/ai-health',
+  path: '/api/public/hooks/ai-health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicHooksAgentWatchersRoute =
   ApiPublicHooksAgentWatchersRouteImport.update({
     id: '/api/public/hooks/agent-watchers',
@@ -522,6 +528,7 @@ export interface FileRoutesByFullPath {
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/agent-escalate': typeof ApiPublicHooksAgentEscalateRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
+  '/api/public/hooks/ai-health': typeof ApiPublicHooksAiHealthRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
@@ -590,6 +597,7 @@ export interface FileRoutesByTo {
   '/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/agent-escalate': typeof ApiPublicHooksAgentEscalateRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
+  '/api/public/hooks/ai-health': typeof ApiPublicHooksAiHealthRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
@@ -663,6 +671,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/stage/$key': typeof AuthenticatedAgentStageKeyRoute
   '/api/public/hooks/agent-escalate': typeof ApiPublicHooksAgentEscalateRoute
   '/api/public/hooks/agent-watchers': typeof ApiPublicHooksAgentWatchersRoute
+  '/api/public/hooks/ai-health': typeof ApiPublicHooksAiHealthRoute
   '/api/public/hooks/concern-nudges': typeof ApiPublicHooksConcernNudgesRoute
   '/api/public/hooks/daily-standup': typeof ApiPublicHooksDailyStandupRoute
   '/api/public/hooks/delay-root-cause': typeof ApiPublicHooksDelayRootCauseRoute
@@ -736,6 +745,7 @@ export interface FileRouteTypes {
     | '/agent/stage/$key'
     | '/api/public/hooks/agent-escalate'
     | '/api/public/hooks/agent-watchers'
+    | '/api/public/hooks/ai-health'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
     | '/api/public/hooks/delay-root-cause'
@@ -804,6 +814,7 @@ export interface FileRouteTypes {
     | '/agent/stage/$key'
     | '/api/public/hooks/agent-escalate'
     | '/api/public/hooks/agent-watchers'
+    | '/api/public/hooks/ai-health'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
     | '/api/public/hooks/delay-root-cause'
@@ -876,6 +887,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/stage/$key'
     | '/api/public/hooks/agent-escalate'
     | '/api/public/hooks/agent-watchers'
+    | '/api/public/hooks/ai-health'
     | '/api/public/hooks/concern-nudges'
     | '/api/public/hooks/daily-standup'
     | '/api/public/hooks/delay-root-cause'
@@ -906,6 +918,7 @@ export interface RootRouteChildren {
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   ApiPublicHooksAgentEscalateRoute: typeof ApiPublicHooksAgentEscalateRoute
   ApiPublicHooksAgentWatchersRoute: typeof ApiPublicHooksAgentWatchersRoute
+  ApiPublicHooksAiHealthRoute: typeof ApiPublicHooksAiHealthRoute
   ApiPublicHooksConcernNudgesRoute: typeof ApiPublicHooksConcernNudgesRoute
   ApiPublicHooksDailyStandupRoute: typeof ApiPublicHooksDailyStandupRoute
   ApiPublicHooksDelayRootCauseRoute: typeof ApiPublicHooksDelayRootCauseRoute
@@ -1359,6 +1372,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksConcernNudgesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/ai-health': {
+      id: '/api/public/hooks/ai-health'
+      path: '/api/public/hooks/ai-health'
+      fullPath: '/api/public/hooks/ai-health'
+      preLoaderRoute: typeof ApiPublicHooksAiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/agent-watchers': {
       id: '/api/public/hooks/agent-watchers'
       path: '/api/public/hooks/agent-watchers'
@@ -1555,6 +1575,7 @@ const rootRouteChildren: RootRouteChildren = {
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   ApiPublicHooksAgentEscalateRoute: ApiPublicHooksAgentEscalateRoute,
   ApiPublicHooksAgentWatchersRoute: ApiPublicHooksAgentWatchersRoute,
+  ApiPublicHooksAiHealthRoute: ApiPublicHooksAiHealthRoute,
   ApiPublicHooksConcernNudgesRoute: ApiPublicHooksConcernNudgesRoute,
   ApiPublicHooksDailyStandupRoute: ApiPublicHooksDailyStandupRoute,
   ApiPublicHooksDelayRootCauseRoute: ApiPublicHooksDelayRootCauseRoute,
