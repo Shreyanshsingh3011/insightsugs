@@ -56,10 +56,14 @@ async function fetchPublicGoogleSheetRows(parsed: { id: string; gid?: string }, 
   generated_at: string;
   warning?: string;
 }> {
+  // Append a per-request cache-buster so Google's CDN / any intermediate
+  // proxy never serves a stale CSV snapshot to a user.
+  const bust = `&_ts=${Date.now()}`;
   const candidates = [
-    `https://docs.google.com/spreadsheets/d/${parsed.id}/export?format=csv${parsed.gid ? `&gid=${parsed.gid}` : ""}`,
-    `https://docs.google.com/spreadsheets/d/${parsed.id}/gviz/tq?tqx=out:csv${parsed.gid ? `&gid=${parsed.gid}` : ""}`,
+    `https://docs.google.com/spreadsheets/d/${parsed.id}/export?format=csv${parsed.gid ? `&gid=${parsed.gid}` : ""}${bust}`,
+    `https://docs.google.com/spreadsheets/d/${parsed.id}/gviz/tq?tqx=out:csv${parsed.gid ? `&gid=${parsed.gid}` : ""}${bust}`,
   ];
+
   let lastErr = "";
   for (const url of candidates) {
     try {
