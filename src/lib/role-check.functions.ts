@@ -84,6 +84,12 @@ export const getMyRoles = createServerFn({ method: "GET" })
 
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+      const adminEmail = authUser.user?.email?.trim().toLowerCase();
+      if (adminEmail) userEmail = adminEmail;
+      if (bootstrapSuperAdminEmails.has(userEmail)) {
+        return { roles: ["super_admin"], degraded: true };
+      }
       const { data, error } = await supabaseAdmin
         .from("user_roles")
         .select("role")
