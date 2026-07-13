@@ -14,7 +14,9 @@ import {
 } from "@/lib/agent-inbox.functions";
 import { runAgentWatchers } from "@/lib/agent-watchers.functions";
 import { useAgentSources } from "@/hooks/useAgentSources";
+import { useLiveInvalidate } from "@/hooks/useLiveInvalidate";
 import { isRowEffectivelyDone } from "@/lib/status-utils";
+
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +159,8 @@ function AgentInboxPage() {
     queryFn: () => listFn({ data: { states: [...statesArg], scope, limit: 200 } }),
     staleTime: 15_000,
   });
+  useLiveInvalidate(["agent_drafts", "sheet_rows"], [["agent-drafts", statesArg, scope]]);
+
 
   const rawDrafts = q.data?.drafts ?? [];
   const isAdmin = !!q.data?.isAdmin;
