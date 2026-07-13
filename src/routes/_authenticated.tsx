@@ -56,7 +56,7 @@ function AuthErrorFallback({ error }: { error: unknown }) {
   );
 }
 
-type NavItem = { to: string; label: string; icon: React.ReactNode };
+type NavItem = { to: string; label: string; icon: React.ReactNode; badge?: number };
 type NavSection = { label: string; items: NavItem[] };
 
 function AuthLayout() {
