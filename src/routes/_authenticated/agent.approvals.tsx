@@ -161,7 +161,8 @@ function AgentActionsTab() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  const items = (data ?? []) as PendingAction[];
+  const items = (data?.rows ?? []) as PendingAction[];
+  const degraded = !!data?.degraded;
   const pendingItems = items.filter((i) => i.status === "pending");
 
   const [confirmState, setConfirmState] = useState<
