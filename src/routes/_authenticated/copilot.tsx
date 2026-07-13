@@ -317,6 +317,11 @@ function CopilotPage() {
     queryKey: ["copilot-documents"],
     queryFn: () => fetchDocs({ data: {} }),
   });
+  useLiveInvalidate(
+    ["sheet_rows", "sheet_registry"],
+    [["sheets-list"], ["copilot-documents"]],
+  );
+
 
   const [question, setQuestion] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => {
