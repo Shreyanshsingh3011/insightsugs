@@ -241,7 +241,7 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25_000);
+    const timer = setTimeout(() => controller.abort(), 55_000);
     try {
       const freshUrl = new URL(url.toString());
       freshUrl.searchParams.set("_fresh", String(Date.now()));
@@ -259,10 +259,19 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
       const payload = await res.json();
       return { payload, fetchedAt: Date.now(), fetchMs: Date.now() - started, url: url.toString() };
     } catch (error) {
-      if ((error as { name?: string })?.name === "AbortError") {
-        throw new Error("Source timed out while loading analytics data.");
-      }
-      throw error;
+      const isAbort = (error as { name?: string })?.name === "AbortError";
+      const msg = isAbort
+        ? "Source timed out while loading analytics data."
+        : (error instanceof Error ? error.message : String(error));
+      console.warn(`[insights-proxy] upstream fetch failed: ${msg}`);
+      // Return degraded payload instead of throwing so UI doesn't blank-screen.
+      return {
+        payload: { rows: [], columns: [], warning: msg, degraded: true },
+        fetchedAt: Date.now(),
+        fetchMs: Date.now() - started,
+        url: url.toString(),
+        degraded: true,
+      };
     } finally {
       clearTimeout(timer);
     }
