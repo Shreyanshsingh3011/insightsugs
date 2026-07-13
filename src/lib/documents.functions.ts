@@ -8,6 +8,7 @@ import {
   summarize,
   toPgVector,
 } from "./documents.server";
+import { isRecoverableDataReadError } from "./transient-errors";
 
 async function assertAdmin(supabase: any, userId: string) {
   const { data, error } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
@@ -31,14 +32,21 @@ export const listFolders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
-    // ensure defaults exist
-    await supabase.rpc("seed_default_doc_folders", { _user_id: userId });
-    const { data, error } = await supabase
-      .from("doc_folders")
-      .select("id,name,parent_id,created_at")
-      .order("name");
-    if (error) throw new Error(error.message);
-    return { folders: data ?? [] };
+    try {
+      // ensure defaults exist; if the backend is warming up, the list can still render empty.
+      const seedResult = await supabase.rpc("seed_default_doc_folders", { _user_id: userId });
+      if (seedResult?.error && !isRecoverableDataReadError(seedResult.error)) {
+        throw new Error(seedResult.error.message);
+      }
+      const { data, error } = await supabase
+        .from("doc_folders")
+        .select("id,name,parent_id,created_at")
+        .order("name");
+      if (error) return { folders: [], degraded: true, reason: error.message };
+      return { folders: data ?? [] };
+    } catch (e: any) {
+      return { folders: [], degraded: true, reason: String(e?.message || e || "Document folders unavailable") };
+    }
   });
 
 export const createFolder = createServerFn({ method: "POST" })
@@ -72,11 +80,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       if (data.folder_id) q = q.eq("folder_id", data.folder_id);
       const { data: rows, error } = await q;
       if (error) {
-        const msg = String(error.message || "");
-        if (/timeout|upstream|fetch failed|network|ECONNRESET|502|503|504/i.test(msg)) {
-          return { documents: [], degraded: true, reason: msg };
-        }
-        throw new Error(msg);
+        return { documents: [], degraded: true, reason: String(error.message || "Documents unavailable") };
       }
       const ids = (rows ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
       const shareCounts = new Map<string, number>();
@@ -99,11 +103,7 @@ export const listDocuments = createServerFn({ method: "POST" })
         })),
       };
     } catch (e: any) {
-      const msg = String(e?.message || e || "");
-      if (/timeout|upstream|fetch failed|network|ECONNRESET|502|503|504|PGRST002|schema cache/i.test(msg)) {
-        return { documents: [], degraded: true, reason: msg };
-      }
-      throw e;
+      return { documents: [], degraded: true, reason: String(e?.message || e || "Documents unavailable") };
     }
   });
 
