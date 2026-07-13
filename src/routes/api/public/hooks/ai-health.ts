@@ -72,6 +72,26 @@ async function pingGeminiChat(): Promise<{ ok: boolean; status: number; ms: numb
   }
 }
 
+async function pingGroqChat(): Promise<{ ok: boolean; status: number; ms: number; error?: string }> {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) return { ok: false, status: 0, ms: 0, error: "GROQ_API_KEY not set" };
+  const t0 = Date.now();
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 5,
+      }),
+    });
+    return { ok: res.ok, status: res.status, ms: Date.now() - t0 };
+  } catch (e) {
+    return { ok: false, status: 0, ms: Date.now() - t0, error: (e as Error).message };
+  }
+}
+
 async function pingEmbeddings(): Promise<{ ok: boolean; provider: string; dims: number; ms: number; error?: string }> {
   const t0 = Date.now();
   try {
@@ -90,24 +110,33 @@ async function pingEmbeddings(): Promise<{ ok: boolean; provider: string; dims: 
 
 async function handle(request: Request): Promise<Response> {
   if (!isAuthorized(request)) return json({ error: "unauthorized" }, 401);
-  const [gateway, gemini, embed] = await Promise.all([
+  const [gateway, gemini, groq, embed] = await Promise.all([
     pingGatewayChat(),
     pingGeminiChat(),
+    pingGroqChat(),
     pingEmbeddings(),
   ]);
-  const chatAvailable = gateway.ok || gemini.ok;
+  const chatAvailable = gateway.ok || gemini.ok || groq.ok;
   return json({
     ok: chatAvailable && embed.ok,
     chat: {
       available: chatAvailable,
-      active_provider: gateway.ok ? "lovable-gateway" : gemini.ok ? "gemini-direct" : "none",
+      active_provider: gateway.ok
+        ? "lovable-gateway"
+        : gemini.ok
+          ? "gemini-direct"
+          : groq.ok
+            ? "groq-direct"
+            : "none",
       lovable_gateway: gateway,
       gemini_direct: gemini,
+      groq_direct: groq,
     },
     embeddings: embed,
     checked_at: new Date().toISOString(),
   });
 }
+
 
 export const Route = createFileRoute("/api/public/hooks/ai-health")({
   server: {
