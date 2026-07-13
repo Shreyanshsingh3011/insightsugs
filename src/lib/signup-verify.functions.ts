@@ -123,57 +123,10 @@ export const verifySignupAgainstSheet = createServerFn({ method: "POST" })
 export const notifySuperAdminsOfPendingSignup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ ok: true; emailed: number } | { ok: false; reason: string }> => {
-    const { supabase, userId } = context;
-
-    const { data: req } = await supabase
-      .from("signup_requests")
-      .select("id, email, full_name, requested_role, status")
-      .eq("user_id", userId)
-      .eq("status", "pending")
-      .maybeSingle();
-    if (!req) return { ok: true, emailed: 0 };
-
-    // Dedupe: skip if we've already emailed super admins for this request.
-    const { data: prior } = await supabase
-      .from("signup_notifications")
-      .select("id")
-      .eq("request_id", req.id)
-      .eq("channel", "email")
-      .limit(1);
-    if (prior && prior.length > 0) return { ok: true, emailed: 0 };
-
-    const { data: recipients } = await supabase.rpc("list_super_admin_emails");
-    const list = (recipients ?? []) as { user_id: string; email: string; full_name: string | null }[];
-    if (list.length === 0) return { ok: true, emailed: 0 };
-
-    const { enqueueAppEmail } = await import("@/lib/email/enqueue-app-email.server");
-
-    let sent = 0;
-    for (const admin of list) {
-      const r = await enqueueAppEmail({
-        templateName: "signup-pending-review",
-        recipientEmail: admin.email,
-        idempotencyKey: `signup-pending-${req.id}-${admin.user_id}`,
-        templateData: {
-          reviewerName: admin.full_name ?? "",
-          candidateName: req.full_name ?? "",
-          candidateEmail: req.email,
-          requestedRole: req.requested_role,
-          reviewUrl: "https://insightsugs.lovable.app/agent/approvals",
-        },
-      });
-      if (r.ok) sent += 1;
-    }
-
-    await supabase.from("signup_notifications").insert({
-      request_id: req.id,
-      sent_by: userId,
-      channel: "email",
-      note: `Emailed ${sent} super admin(s)`,
-    });
-
-    return { ok: true, emailed: sent };
+    const { notifySuperAdminsOfPendingSignupImpl } = await import("@/lib/signup-notify.server");
+    return notifySuperAdminsOfPendingSignupImpl(context.supabase, context.userId);
   });
+
 
 
 export type PendingRequest = {
