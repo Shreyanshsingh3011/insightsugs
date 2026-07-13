@@ -1,5 +1,7 @@
 import { createFileRoute, Outlet, Link, useRouter, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useSession, useRoles } from "@/hooks/useSession";
+import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { PendingApprovalScreen } from "@/components/PendingApprovalScreen";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
