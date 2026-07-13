@@ -64,39 +64,47 @@ export const listDocuments = createServerFn({ method: "POST" })
   .inputValidator((d: { folder_id?: string | null } = {}) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
-    let q = supabase
-      .from("documents")
-      .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
-      .order("created_at", { ascending: false });
-    if (data.folder_id) q = q.eq("folder_id", data.folder_id);
-    const { data: rows, error } = await q;
-    if (error) {
-      const msg = String(error.message || "");
-      // Transient upstream timeouts / network hiccups: return empty rather than crash the page.
-      if (/timeout|upstream|fetch failed|network|ECONNRESET|502|503|504/i.test(msg)) {
+    try {
+      let q = supabase
+        .from("documents")
+        .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
+        .order("created_at", { ascending: false });
+      if (data.folder_id) q = q.eq("folder_id", data.folder_id);
+      const { data: rows, error } = await q;
+      if (error) {
+        const msg = String(error.message || "");
+        if (/timeout|upstream|fetch failed|network|ECONNRESET|502|503|504/i.test(msg)) {
+          return { documents: [], degraded: true, reason: msg };
+        }
+        throw new Error(msg);
+      }
+      const ids = (rows ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
+      const shareCounts = new Map<string, number>();
+      if (ids.length > 0) {
+        try {
+          const { data: shares } = await supabase
+            .from("document_shares")
+            .select("document_id")
+            .in("document_id", ids);
+          for (const s of shares ?? []) {
+            shareCounts.set(s.document_id, (shareCounts.get(s.document_id) ?? 0) + 1);
+          }
+        } catch { /* non-fatal */ }
+      }
+      return {
+        documents: (rows ?? []).map((r: any) => ({
+          ...r,
+          share_count: shareCounts.get(r.id) ?? 0,
+          is_owner: r.owner_id === userId,
+        })),
+      };
+    } catch (e: any) {
+      const msg = String(e?.message || e || "");
+      if (/timeout|upstream|fetch failed|network|ECONNRESET|502|503|504|PGRST002|schema cache/i.test(msg)) {
         return { documents: [], degraded: true, reason: msg };
       }
-      throw new Error(msg);
+      throw e;
     }
-    // Attach share counts for admins so the UI can show "Shared · N".
-    const ids = (rows ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
-    let shareCounts = new Map<string, number>();
-    if (ids.length > 0) {
-      const { data: shares } = await supabase
-        .from("document_shares")
-        .select("document_id")
-        .in("document_id", ids);
-      for (const s of shares ?? []) {
-        shareCounts.set(s.document_id, (shareCounts.get(s.document_id) ?? 0) + 1);
-      }
-    }
-    return {
-      documents: (rows ?? []).map((r: any) => ({
-        ...r,
-        share_count: shareCounts.get(r.id) ?? 0,
-        is_owner: r.owner_id === userId,
-      })),
-    };
   });
 
 
