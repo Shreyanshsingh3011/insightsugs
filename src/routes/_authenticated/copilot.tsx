@@ -28,6 +28,8 @@ import {
 
 import { listSheets, askCopilot, generateAutoInsights, generateCombinedAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
+import { useLiveInvalidate } from "@/hooks/useLiveInvalidate";
+
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
 import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
