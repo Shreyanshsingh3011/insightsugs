@@ -928,6 +928,11 @@ export const Route = createFileRoute("/api/chat")({
                 tokensIn: usage?.inputTokens,
                 tokensOut: usage?.outputTokens,
               });
+              // Cache the final grounded answer so a repeat question against
+              // the same snapshot doesn't re-hit OpenRouter/Gemini.
+              if (isSingleUserTurn && text && lastText.trim()) {
+                try { await setCachedAnswer(lastText, routedTo, ctxFp, text); } catch { /* best-effort */ }
+              }
             },
             onError: async ({ error }) => {
               await finishAgentRun(run, {
