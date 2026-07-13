@@ -70,7 +70,14 @@ export const listDocuments = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false });
     if (data.folder_id) q = q.eq("folder_id", data.folder_id);
     const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
+    if (error) {
+      const msg = String(error.message || "");
+      // Transient upstream timeouts / network hiccups: return empty rather than crash the page.
+      if (/timeout|upstream|fetch failed|network|ECONNRESET|502|503|504/i.test(msg)) {
+        return { documents: [], degraded: true, reason: msg };
+      }
+      throw new Error(msg);
+    }
     // Attach share counts for admins so the UI can show "Shared · N".
     const ids = (rows ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
     let shareCounts = new Map<string, number>();
