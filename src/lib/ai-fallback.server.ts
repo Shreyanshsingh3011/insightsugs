@@ -184,16 +184,18 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
         try {
           const retry = await callOpenRouter(url, init, openRouterKey, model);
           if (retry.ok) { reset("openrouter"); return retry; }
-          lastResponse = retry;
-          // 429 on one free model → try the next free model, don't trip the whole tier
+          // Peek at body to detect "unavailable for free" errors and skip to next model
+          const bodyText = await retry.clone().text().catch(() => "");
+          const unavailableForFree = /unavailable for free|paid version is available/i.test(bodyText);
+          lastResponse = new Response(bodyText, { status: retry.status, headers: retry.headers });
           if (retry.status === 401 || retry.status === 403) {
             trip("openrouter", retry.status);
             break; // key-level failure, all models will fail
           }
+          if (unavailableForFree) continue;
           if (retry.status >= 500) continue;
           if (retry.status === 429) continue;
           if (retry.status === 404 || retry.status === 400 || retry.status === 402) continue;
-          // Other 4xx → request-shaped issue, don't loop
           break;
         } catch (e) {
           trip("openrouter", 0, (e as Error).message);
