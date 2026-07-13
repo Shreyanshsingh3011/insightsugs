@@ -83,7 +83,10 @@ function LoginPage() {
       ensurePostLoginPath();
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin,
-        extraParams: { prompt: "select_account", login_hint: email || "shreyansh.singh3011@gmail.com" },
+        extraParams: {
+          prompt: "select_account",
+          ...(email ? { login_hint: email } : {}),
+        },
       });
       if (result.redirected) return;
       if (result.error) {
