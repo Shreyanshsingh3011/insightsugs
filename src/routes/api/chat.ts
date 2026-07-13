@@ -117,8 +117,8 @@ function cleanRow(row: Record<string, unknown>) {
 
 import {
   CACHEABLE_TOOLS,
-  getCachedToolResult,
-  setCachedToolResult,
+  getCachedToolResultSync,
+  setCachedToolResultSync,
 } from "@/lib/agent-cache.server";
 
 export function buildTools(
@@ -129,16 +129,8 @@ export function buildTools(
   ctxFp: string = "no-fp",
 ) {
   const timed = <T,>(name: string, input: unknown, fn: () => T): T => {
-    const t0 = Date.now();
-    const out = fn();
-    recordToolCall(run, { name, input, output: out, ms: Date.now() - t0 });
-    return out;
-  };
-
-  // Cached wrapper for sync tool executions over the current snapshot.
-  const cached = async <T,>(name: string, input: unknown, fn: () => T): Promise<T> => {
     if (CACHEABLE_TOOLS.has(name)) {
-      const hit = (await getCachedToolResult(name, input, ctxFp)) as T | undefined;
+      const hit = getCachedToolResultSync(name, input, ctxFp) as T | undefined;
       if (hit !== undefined) {
         recordToolCall(run, { name, input, output: hit, ms: 0 });
         return hit;
@@ -147,12 +139,10 @@ export function buildTools(
     const t0 = Date.now();
     const out = fn();
     recordToolCall(run, { name, input, output: out, ms: Date.now() - t0 });
-    if (CACHEABLE_TOOLS.has(name)) {
-      await setCachedToolResult(name, input, ctxFp, out);
-    }
+    if (CACHEABLE_TOOLS.has(name)) setCachedToolResultSync(name, input, ctxFp, out);
     return out;
   };
-  void cached;
+
 
   const queueAction = async (kind: string, title: string, summary: string, rationale: string, payload: unknown) => {
     try {
