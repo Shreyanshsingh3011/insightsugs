@@ -410,7 +410,7 @@ function UserFooter({ email, initial, onSignOut }: { email: string; initial: str
   );
 }
 
-function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; children: React.ReactNode }) {
+function SideLink({ to, icon, children, badge }: { to: string; icon: React.ReactNode; children: React.ReactNode; badge?: number }) {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const active = currentPath === to || (to !== "/" && currentPath.startsWith(to + "/"));
   return (
@@ -425,7 +425,12 @@ function SideLink({ to, icon, children }: { to: string; icon: React.ReactNode; c
       <span className={`transition-transform duration-150 ${active ? "" : "group-hover:scale-110"}`}>
         {icon}
       </span>
-      <span className="truncate">{children}</span>
+      <span className="truncate flex-1">{children}</span>
+      {badge && badge > 0 ? (
+        <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          {badge}
+        </span>
+      ) : null}
     </Link>
   );
 }
