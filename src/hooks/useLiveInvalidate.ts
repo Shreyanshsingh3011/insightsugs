@@ -29,12 +29,12 @@ export function useLiveInvalidate(
 
     const channel = supabase.channel(name);
     for (const table of tables) {
-      channel.on(
-        // @ts-expect-error postgres_changes typing
+      (channel as unknown as { on: (t: string, f: Record<string, string>, cb: () => void) => void }).on(
         "postgres_changes",
         { event: "*", schema: "public", table },
         schedule,
       );
+
     }
     channel.subscribe();
 
