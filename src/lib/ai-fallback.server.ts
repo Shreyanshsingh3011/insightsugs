@@ -56,26 +56,67 @@ async function callGemini(url: string, init: RequestInit | undefined, geminiKey:
   return fetch(geminiUrl, { ...init, headers, body });
 }
 
+async function callGroq(url: string, init: RequestInit | undefined, groqKey: string): Promise<Response> {
+  const groqUrl = url.replace(LOVABLE_BASE, GROQ_BASE);
+  let body = init?.body;
+  if (typeof body === "string") {
+    try {
+      const parsed = JSON.parse(body);
+      // Groq's flagship fast model; OpenAI-compatible chat completions.
+      parsed.model = "llama-3.3-70b-versatile";
+      // Groq rejects some OpenAI-only fields; strip the ones we know about.
+      delete parsed.service_tier;
+      body = JSON.stringify(parsed);
+    } catch {
+      // leave body as-is
+    }
+  }
+  const headers = new Headers(init?.headers);
+  headers.delete("Lovable-API-Key");
+  headers.delete("lovable-api-key");
+  headers.delete("X-Lovable-AIG-SDK");
+  headers.set("Authorization", `Bearer ${groqKey}`);
+  headers.set("Content-Type", "application/json");
+  return fetch(groqUrl, { ...init, headers, body });
+}
+
+function shouldRetry(status: number) {
+  return status === 402 || status === 429 || status >= 500;
+}
+
 export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const response = await baseFetch(input, init);
     if (response.ok) return response;
+    if (!isChatCompletions(url) || !shouldRetry(response.status)) return response;
+
     const geminiKey = process.env.GEMINI_API_KEY;
-    const shouldFallback =
-      geminiKey &&
-      isChatCompletions(url) &&
-      (response.status === 402 || response.status === 429 || response.status >= 500);
-    if (!shouldFallback) return response;
-    try {
-      const retry = await callGemini(url, init, geminiKey!);
-      // If Gemini also fails, return the original gateway response so upstream
-      // error handling stays consistent.
-      if (!retry.ok) return response;
-      return retry;
-    } catch {
-      return response;
+    const groqKey = process.env.GROQ_API_KEY;
+
+    // Tier 2: Gemini direct
+    if (geminiKey) {
+      try {
+        const retry = await callGemini(url, init, geminiKey);
+        if (retry.ok) return retry;
+        // Only fall through to Groq on retryable Gemini failures (e.g. 429).
+        if (!shouldRetry(retry.status) && !groqKey) return retry;
+      } catch {
+        // fall through
+      }
     }
+
+    // Tier 3: Groq direct
+    if (groqKey) {
+      try {
+        const retry = await callGroq(url, init, groqKey);
+        if (retry.ok) return retry;
+      } catch {
+        // fall through
+      }
+    }
+
+    return response;
   }) as typeof fetch;
 }
 
@@ -83,3 +124,4 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
 export async function lovableAiFetchWithFallback(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return createFallbackFetch()(input, init);
 }
+
