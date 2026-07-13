@@ -126,8 +126,14 @@ function rawDaysTakenForRow(r: Row): number {
 }
 
 function hasCompletionDateSerialInDaysTaken(r: Row): boolean {
-  return isLikelySheetDateSerial(rawDaysTakenForRow(r));
+  if (isLikelySheetDateSerial(rawDaysTakenForRow(r))) return true;
+  // Sheet formulas sometimes leak an Excel date serial (e.g. 46029) into the
+  // "Delay in Days" column when the task is actually completed. Treat that as
+  // a completion signal so the row drops out of overdue / KPI averages.
+  if (isLikelySheetDateSerial(num(r["Delay in Days"]))) return true;
+  return false;
 }
+
 
 function statusDelayDays(status: string): number {
   const direct = status.match(/(?:delay(?:ed)?|late|overdue)\s*(?:by)?\s*(\d+(?:\.\d+)?)/i);
