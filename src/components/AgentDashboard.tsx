@@ -859,14 +859,21 @@ export default function AgentDashboard() {
           ? "This week, focus escalation on the oldest overdue owner and clear the blocker before adding new follow-ups."
           : "This week, keep the current cadence and watch for any status changes in the live sheet refresh.",
       ].join(" ");
+      // Never leave the card in a loading state while provider fallbacks retry.
+      // The dashboard facts are already enough for a grounded executive brief;
+      // AI can only enhance it if it returns quickly.
+      setBrief(fallbackBrief);
       try {
-        const res = await genFn({
-          data: {
-            system: "You are an operations chief-of-staff. Use ONLY the FACTS. Reply with 3 crisp sentences: (1) current state in one line, (2) the single biggest risk, (3) the one move worth making this week. No hedging, no invented numbers, no bullet points.",
-            prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}`,
-            temperature: 0.2,
-          },
-        });
+        const res = await Promise.race([
+          genFn({
+            data: {
+              system: "You are an operations chief-of-staff. Use ONLY the FACTS. Reply with 3 crisp sentences: (1) current state in one line, (2) the single biggest risk, (3) the one move worth making this week. No hedging, no invented numbers, no bullet points.",
+              prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}`,
+              temperature: 0.2,
+            },
+          }),
+          new Promise<{ text?: string }>((resolve) => setTimeout(() => resolve({ text: "" }), 8_000)),
+        ]);
         return res.text?.trim() || fallbackBrief;
       } catch {
         return fallbackBrief;
