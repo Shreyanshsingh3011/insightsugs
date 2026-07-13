@@ -15,6 +15,8 @@ import {
 import { runAgentWatchers } from "@/lib/agent-watchers.functions";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { useLiveInvalidate } from "@/hooks/useLiveInvalidate";
+import { LiveStatusBadge } from "@/components/LiveStatusBadge";
+
 import { isRowEffectivelyDone } from "@/lib/status-utils";
 
 
@@ -159,7 +161,7 @@ function AgentInboxPage() {
     queryFn: () => listFn({ data: { states: [...statesArg], scope, limit: 200 } }),
     staleTime: 15_000,
   });
-  useLiveInvalidate(["agent_drafts", "sheet_rows"], [["agent-drafts", statesArg, scope]]);
+  const live = useLiveInvalidate(["agent_drafts", "sheet_rows"], [["agent-drafts", statesArg, scope]]);
 
 
   const rawDrafts = q.data?.drafts ?? [];
@@ -286,6 +288,8 @@ function AgentInboxPage() {
         <Badge variant="secondary" className="ml-1">
           {drafts.length}
         </Badge>
+        <LiveStatusBadge status={live} className="ml-1" />
+
         {hiddenCount > 0 && (
           <span
             className="text-[11px] text-muted-foreground"
