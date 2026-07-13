@@ -33,6 +33,7 @@ import { Route as AuthenticatedAgentRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedSheetsIndexRouteImport } from './routes/_authenticated/sheets.index'
 import { Route as AuthenticatedAlertsIndexRouteImport } from './routes/_authenticated/alerts.index'
 import { Route as AuthenticatedAgentIndexRouteImport } from './routes/_authenticated/agent.index'
+import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin.index'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as ApiPublicAgentTickRouteImport } from './routes/api/public/agent-tick'
 import { Route as ApiPublicAgentDigestRouteImport } from './routes/api/public/agent-digest'
@@ -202,6 +203,11 @@ const AuthenticatedAgentIndexRoute = AuthenticatedAgentIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAgentRoute,
+} as any)
+const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
+  id: '/admin/',
+  path: '/admin/',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const LovableEmailSuppressionRoute = LovableEmailSuppressionRouteImport.update({
   id: '/lovable/email/suppression',
@@ -505,6 +511,7 @@ export interface FileRoutesByFullPath {
   '/api/public/agent-digest': typeof ApiPublicAgentDigestRoute
   '/api/public/agent-tick': typeof ApiPublicAgentTickRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
+  '/admin/': typeof AuthenticatedAdminIndexRoute
   '/agent/': typeof AuthenticatedAgentIndexRoute
   '/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/sheets/': typeof AuthenticatedSheetsIndexRoute
@@ -572,6 +579,7 @@ export interface FileRoutesByTo {
   '/api/public/agent-digest': typeof ApiPublicAgentDigestRoute
   '/api/public/agent-tick': typeof ApiPublicAgentTickRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
+  '/admin': typeof AuthenticatedAdminIndexRoute
   '/agent': typeof AuthenticatedAgentIndexRoute
   '/alerts': typeof AuthenticatedAlertsIndexRoute
   '/sheets': typeof AuthenticatedSheetsIndexRoute
@@ -644,6 +652,7 @@ export interface FileRoutesById {
   '/api/public/agent-digest': typeof ApiPublicAgentDigestRoute
   '/api/public/agent-tick': typeof ApiPublicAgentTickRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
+  '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/agent/': typeof AuthenticatedAgentIndexRoute
   '/_authenticated/alerts/': typeof AuthenticatedAlertsIndexRoute
   '/_authenticated/sheets/': typeof AuthenticatedSheetsIndexRoute
@@ -716,6 +725,7 @@ export interface FileRouteTypes {
     | '/api/public/agent-digest'
     | '/api/public/agent-tick'
     | '/lovable/email/suppression'
+    | '/admin/'
     | '/agent/'
     | '/alerts/'
     | '/sheets/'
@@ -783,6 +793,7 @@ export interface FileRouteTypes {
     | '/api/public/agent-digest'
     | '/api/public/agent-tick'
     | '/lovable/email/suppression'
+    | '/admin'
     | '/agent'
     | '/alerts'
     | '/sheets'
@@ -854,6 +865,7 @@ export interface FileRouteTypes {
     | '/api/public/agent-digest'
     | '/api/public/agent-tick'
     | '/lovable/email/suppression'
+    | '/_authenticated/admin/'
     | '/_authenticated/agent/'
     | '/_authenticated/alerts/'
     | '/_authenticated/sheets/'
@@ -1080,6 +1092,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/agent/'
       preLoaderRoute: typeof AuthenticatedAgentIndexRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/admin/': {
+      id: '/_authenticated/admin/'
+      path: '/admin'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/lovable/email/suppression': {
       id: '/lovable/email/suppression'
@@ -1489,6 +1508,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminVerifyRoleRoute: typeof AuthenticatedAdminVerifyRoleRoute
+  AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1515,6 +1535,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminVerifyRoleRoute: AuthenticatedAdminVerifyRoleRoute,
+  AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
