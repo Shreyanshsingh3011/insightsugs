@@ -161,7 +161,8 @@ function AgentActionsTab() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  const items = (data ?? []) as PendingAction[];
+  const items = (data?.rows ?? []) as PendingAction[];
+  const degraded = !!data?.degraded;
   const pendingItems = items.filter((i) => i.status === "pending");
 
   const [confirmState, setConfirmState] = useState<
@@ -210,6 +211,10 @@ function AgentActionsTab() {
       ) : error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
           {error instanceof Error ? error.message : "Failed to load"}
+        </div>
+      ) : degraded ? (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+          Backend is slow right now — showing no items. Refresh in a moment.
         </div>
       ) : items.length === 0 ? (
         <Card>
