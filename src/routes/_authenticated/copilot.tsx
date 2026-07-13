@@ -29,6 +29,8 @@ import {
 import { listSheets, askCopilot, generateAutoInsights, generateCombinedAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
 import { useLiveInvalidate } from "@/hooks/useLiveInvalidate";
+import { LiveStatusBadge } from "@/components/LiveStatusBadge";
+
 
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
@@ -317,10 +319,11 @@ function CopilotPage() {
     queryKey: ["copilot-documents"],
     queryFn: () => fetchDocs({ data: {} }),
   });
-  useLiveInvalidate(
+  const live = useLiveInvalidate(
     ["sheet_rows", "sheet_registry"],
     [["sheets-list"], ["copilot-documents"]],
   );
+
 
 
   const [question, setQuestion] = useState("");
@@ -652,7 +655,9 @@ function CopilotPage() {
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Sparkles className="h-5 w-5 text-primary" /> Copilot
+              <LiveStatusBadge status={live} className="ml-1" />
             </h1>
+
             <p className="mt-1 text-sm text-muted-foreground">
               Conversational AI over your sheets and documents. Follow-ups remember context.
             </p>
