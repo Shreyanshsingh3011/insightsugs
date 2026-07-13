@@ -159,6 +159,8 @@ function AgentInboxPage() {
     queryFn: () => listFn({ data: { states: [...statesArg], scope, limit: 200 } }),
     staleTime: 15_000,
   });
+  useLiveInvalidate(["agent_drafts", "sheet_rows"], [["agent-drafts", statesArg, scope]]);
+
 
   const rawDrafts = q.data?.drafts ?? [];
   const isAdmin = !!q.data?.isAdmin;
