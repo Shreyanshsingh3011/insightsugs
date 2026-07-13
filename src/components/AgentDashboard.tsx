@@ -56,8 +56,9 @@ const FALLBACK_PROJECTS: AgentProject[] = [
   { id: "pspcl", label: "PSPCL",    url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=318275095#gid=318275095" },
   { id: "nit76", label: "NIT-76",   url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
 ];
-const AUTO_REFRESH_MS = 5 * 60_000;
+const AUTO_REFRESH_MS = 2 * 60_000;
 const REGISTRY_REFRESH_MS = 5 * 60_000;
+
 
 // ────────────────── TYPES ──────────────────
 type Row = Record<string, unknown>;
