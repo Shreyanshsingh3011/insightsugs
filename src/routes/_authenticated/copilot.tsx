@@ -30,6 +30,7 @@ import { listSheets, askCopilot, generateAutoInsights, generateCombinedAutoInsig
 import { listDocuments } from "@/lib/documents.functions";
 import { useLiveInvalidate } from "@/hooks/useLiveInvalidate";
 import { LiveStatusBadge } from "@/components/LiveStatusBadge";
+import { AIStatusBadge } from "@/components/AIStatusBadge";
 
 
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
@@ -656,6 +657,7 @@ function CopilotPage() {
             <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
               <Sparkles className="h-5 w-5 text-primary" /> Copilot
               <LiveStatusBadge status={live} className="ml-1" />
+              <AIStatusBadge className="ml-1" />
             </h1>
 
             <p className="mt-1 text-sm text-muted-foreground">

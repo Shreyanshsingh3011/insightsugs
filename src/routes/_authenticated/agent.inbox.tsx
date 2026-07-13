@@ -16,6 +16,7 @@ import { runAgentWatchers } from "@/lib/agent-watchers.functions";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { useLiveInvalidate } from "@/hooks/useLiveInvalidate";
 import { LiveStatusBadge } from "@/components/LiveStatusBadge";
+import { AIStatusBadge } from "@/components/AIStatusBadge";
 
 import { isRowEffectivelyDone } from "@/lib/status-utils";
 
@@ -289,6 +290,7 @@ function AgentInboxPage() {
           {drafts.length}
         </Badge>
         <LiveStatusBadge status={live} className="ml-1" />
+        <AIStatusBadge className="ml-1" />
 
         {hiddenCount > 0 && (
           <span
