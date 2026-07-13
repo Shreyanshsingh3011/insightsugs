@@ -190,6 +190,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
           }
           if (retry.status >= 500) continue;
           if (retry.status === 429) continue;
+          if (retry.status === 404 || retry.status === 400 || retry.status === 402) continue;
           // Other 4xx → request-shaped issue, don't loop
           break;
         } catch (e) {
