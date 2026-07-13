@@ -75,14 +75,12 @@ async function sha256(text: string): Promise<string> {
  * changes as soon as the visible data changes, but a fresh 2-min sync of the
  * *same* rows keeps the same fingerprint.
  */
-export async function ctxFingerprint(ctx: unknown): Promise<string> {
+export function ctxFingerprintSync(ctx: unknown): string {
   const c = (ctx ?? {}) as Record<string, unknown>;
   const summarizeArr = (arr: unknown): unknown => {
     if (!Array.isArray(arr)) return null;
     if (arr.length === 0) return { n: 0 };
-    const first = arr[0];
-    const last = arr[arr.length - 1];
-    return { n: arr.length, first, last };
+    return { n: arr.length, first: arr[0], last: arr[arr.length - 1] };
   };
   const shape = {
     projectId: c.projectId,
@@ -97,47 +95,51 @@ export async function ctxFingerprint(ctx: unknown): Promise<string> {
     actions: summarizeArr(c.actions),
     personRanking: summarizeArr(c.personRanking),
   };
-  return (await sha256(stableStringify(shape))).slice(0, 16);
+  return fnv1a(stableStringify(shape));
+}
+
+export async function ctxFingerprint(ctx: unknown): Promise<string> {
+  return ctxFingerprintSync(ctx);
 }
 
 const TOOL_TTL_MS = 60_000; // 1 min — matches the 2-min sheet-sync cadence
 const ANSWER_TTL_MS = 5 * 60_000; // 5 min — repeat "what's late today?" style
 
+// Sync fast-path used inside tool `execute()` blocks — avoids awaiting SHA.
+export function getCachedToolResultSync(toolName: string, input: unknown, ctxFp: string): unknown | undefined {
+  const key = "tool:" + fnv1a(`${toolName}|${ctxFp}|${stableStringify(input)}`);
+  return get(key);
+}
+export function setCachedToolResultSync(toolName: string, input: unknown, ctxFp: string, output: unknown): void {
+  const key = "tool:" + fnv1a(`${toolName}|${ctxFp}|${stableStringify(input)}`);
+  set(key, output, TOOL_TTL_MS);
+}
+
+// Async SHA-256 variants — used by the answer cache where a stronger hash
+// is preferred and the extra ~1ms is invisible next to a model round-trip.
 export async function getCachedToolResult(
-  toolName: string,
-  input: unknown,
-  ctxFp: string,
+  toolName: string, input: unknown, ctxFp: string,
 ): Promise<unknown | undefined> {
   const key = "tool:" + (await sha256(`${toolName}|${ctxFp}|${stableStringify(input)}`));
   return get(key);
 }
-
 export async function setCachedToolResult(
-  toolName: string,
-  input: unknown,
-  ctxFp: string,
-  output: unknown,
+  toolName: string, input: unknown, ctxFp: string, output: unknown,
 ): Promise<void> {
   const key = "tool:" + (await sha256(`${toolName}|${ctxFp}|${stableStringify(input)}`));
   set(key, output, TOOL_TTL_MS);
 }
 
 export async function getCachedAnswer(
-  question: string,
-  routedTo: string,
-  ctxFp: string,
+  question: string, routedTo: string, ctxFp: string,
 ): Promise<string | undefined> {
   const q = question.trim().toLowerCase();
   if (!q) return undefined;
   const key = "ans:" + (await sha256(`${routedTo}|${ctxFp}|${q}`));
   return get<string>(key);
 }
-
 export async function setCachedAnswer(
-  question: string,
-  routedTo: string,
-  ctxFp: string,
-  text: string,
+  question: string, routedTo: string, ctxFp: string, text: string,
 ): Promise<void> {
   const q = question.trim().toLowerCase();
   if (!q || !text) return;
