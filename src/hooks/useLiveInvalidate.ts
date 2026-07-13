@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type LiveStatus = {
   connected: boolean;
+  reconnecting: boolean;
   lastEventAt: number | null;
 };
 
@@ -18,14 +19,14 @@ export function useLiveInvalidate(
   channelName?: string,
 ): LiveStatus {
   const qc = useQueryClient();
-  const [status, setStatus] = useState<LiveStatus>({ connected: false, lastEventAt: null });
+  const [status, setStatus] = useState<LiveStatus>({ connected: false, reconnecting: false, lastEventAt: null });
 
   useEffect(() => {
     if (!tables.length || !queryKeys.length) return;
     const name = channelName ?? `live:${tables.join(",")}`;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const schedule = () => {
-      setStatus((s) => ({ connected: s.connected, lastEventAt: Date.now() }));
+      setStatus((s) => ({ ...s, lastEventAt: Date.now() }));
       if (timer) return;
       timer = setTimeout(() => {
         timer = null;
@@ -47,13 +48,17 @@ export function useLiveInvalidate(
       );
     }
     channel.subscribe((state: string) => {
-      setStatus((s) => ({ ...s, connected: state === "SUBSCRIBED" }));
+      setStatus((s) => ({
+        ...s,
+        connected: state === "SUBSCRIBED",
+        reconnecting: state === "CHANNEL_ERROR" || state === "TIMED_OUT" || state === "CLOSED",
+      }));
     });
 
     return () => {
       if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);
-      setStatus({ connected: false, lastEventAt: null });
+      setStatus({ connected: false, reconnecting: false, lastEventAt: null });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qc, tables.join("|"), channelName]);

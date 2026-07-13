@@ -1325,6 +1325,36 @@ export type Database = {
         }
         Relationships: []
       }
+      integration_health: {
+        Row: {
+          checked_at: string
+          error: string | null
+          id: string
+          latency_ms: number | null
+          meta: Json | null
+          name: string
+          status: string
+        }
+        Insert: {
+          checked_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          meta?: Json | null
+          name: string
+          status: string
+        }
+        Update: {
+          checked_at?: string
+          error?: string | null
+          id?: string
+          latency_ms?: number | null
+          meta?: Json | null
+          name?: string
+          status?: string
+        }
+        Relationships: []
+      }
       integrations: {
         Row: {
           active_env: string | null
@@ -1685,9 +1715,12 @@ export type Database = {
         Row: {
           apps_script_url: string
           created_at: string
+          degraded_until: string | null
           display_name: string
           id: string
+          last_error: string | null
           last_refreshed_at: string | null
+          last_row_hash_sample: string | null
           row_count: number
           sheet_type: Database["public"]["Enums"]["sheet_type"]
           source_url: string | null
@@ -1698,9 +1731,12 @@ export type Database = {
         Insert: {
           apps_script_url: string
           created_at?: string
+          degraded_until?: string | null
           display_name: string
           id?: string
+          last_error?: string | null
           last_refreshed_at?: string | null
+          last_row_hash_sample?: string | null
           row_count?: number
           sheet_type: Database["public"]["Enums"]["sheet_type"]
           source_url?: string | null
@@ -1711,9 +1747,12 @@ export type Database = {
         Update: {
           apps_script_url?: string
           created_at?: string
+          degraded_until?: string | null
           display_name?: string
           id?: string
+          last_error?: string | null
           last_refreshed_at?: string | null
+          last_row_hash_sample?: string | null
           row_count?: number
           sheet_type?: Database["public"]["Enums"]["sheet_type"]
           source_url?: string | null

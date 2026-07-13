@@ -28,21 +28,26 @@ export function LiveStatusBadge({
   }, []);
 
   const connected = status.connected;
+  const reconnecting = status.reconnecting && !connected;
   const ago = status.lastEventAt ? formatAgo(Date.now() - status.lastEventAt) : null;
   const title = connected
     ? ago
       ? `Realtime connected · last update ${ago}`
       : "Realtime connected · waiting for updates"
-    : "Realtime disconnected — will reconnect automatically";
+    : reconnecting
+      ? "Realtime reconnecting…"
+      : "Realtime disconnected — will reconnect automatically";
+
+  const tone = connected
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+    : reconnecting
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+      : "border-muted-foreground/30 bg-muted text-muted-foreground";
 
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${
-        connected
-          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-          : "border-muted-foreground/30 bg-muted text-muted-foreground"
-      } ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs ${tone} ${className}`}
     >
       {connected ? (
         <>
@@ -53,6 +58,11 @@ export function LiveStatusBadge({
           <Radio className="h-3 w-3" aria-hidden />
           <span>{label}</span>
           {ago && <span className="text-muted-foreground">· {ago}</span>}
+        </>
+      ) : reconnecting ? (
+        <>
+          <Radio className="h-3 w-3 animate-pulse" aria-hidden />
+          <span>Reconnecting…</span>
         </>
       ) : (
         <>
