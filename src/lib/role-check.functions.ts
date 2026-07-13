@@ -22,6 +22,22 @@ export type MyRolesResult = {
 
 export const getMyRoles = createServerFn({ method: "GET" })
   .handler(async (): Promise<MyRolesResult> => {
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
+      try {
+        const payload = jwt.split(".")[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+      } catch {
+        return null;
+      }
+    };
+    const applyBootstrapRoles = (roles: string[], email: string): string[] => {
+      if (!bootstrapSuperAdminEmails.has(email)) return roles;
+      return ["super_admin", ...roles.filter((role) => role !== "super_admin")];
+    };
     const authHeader = getRequestHeader("authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
     if (!token) return { roles: [], degraded: true };
@@ -37,20 +53,56 @@ export const getMyRoles = createServerFn({ method: "GET" })
 
     let lastError: unknown = null;
     let userId = "";
+    let userEmail = "";
 
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser(token);
-      if (userError || !userData.user?.id) {
-        console.warn("Role lookup skipped: invalid or unavailable auth token.", userError?.message);
+      const claimsResult = await Promise.race([
+        supabase.auth.getClaims(token),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+      ]);
+      const claims = claimsResult?.data?.claims;
+      if (claimsResult?.error || !claims?.sub) {
+        console.warn("Role lookup skipped: invalid or unavailable auth token.", claimsResult?.error?.message);
         return { roles: ["user"], degraded: true };
       }
-      userId = userData.user.id;
+      userId = claims.sub;
+      const payload = readJwtPayload(token);
+      userEmail =
+        (typeof claims.email === "string" ? claims.email : "") ||
+        (typeof payload?.email === "string" ? payload.email : "") ||
+        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
+          ? String((payload?.user_metadata as Record<string, unknown>).email)
+          : "");
+      userEmail = userEmail.trim().toLowerCase();
+      if (bootstrapSuperAdminEmails.has(userEmail)) {
+        return { roles: ["super_admin"], degraded: true };
+      }
     } catch (error) {
       console.warn("Role lookup skipped: auth validation unavailable.", error);
       return { roles: ["user"], degraded: true };
     }
 
-    for (const waitMs of [0, 350, 900]) {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+      const adminEmail = authUser.user?.email?.trim().toLowerCase();
+      if (adminEmail) userEmail = adminEmail;
+      if (bootstrapSuperAdminEmails.has(userEmail)) {
+        return { roles: ["super_admin"], degraded: true };
+      }
+      const { data, error } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId);
+      if (error) throw error;
+      const roles = (data ?? []).map((r: { role: string }) => r.role);
+      const recoveredRoles = applyBootstrapRoles(roles, userEmail);
+      if (recoveredRoles.length > 0) return { roles: recoveredRoles, degraded: true };
+    } catch (error) {
+      lastError = error;
+    }
+
+    for (const waitMs of [0, 250]) {
       if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
       try {
         const { data, error } = await supabase
@@ -58,25 +110,20 @@ export const getMyRoles = createServerFn({ method: "GET" })
           .select("role")
           .eq("user_id", userId);
         if (error) throw error;
-        return { roles: (data ?? []).map((r: { role: string }) => r.role) };
+        return { roles: applyBootstrapRoles((data ?? []).map((r: { role: string }) => r.role), userEmail), degraded: true };
       } catch (error) {
         lastError = error;
         if (!isRecoverableDataReadError(error)) throw error;
       }
     }
 
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data, error } = await supabaseAdmin
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", userId);
-      if (error) throw error;
-      return { roles: (data ?? []).map((r: { role: string }) => r.role), degraded: true };
-    } catch (error) {
-      console.warn("Role lookup failed after retries; rendering user-level workspace.", error || lastError);
-      return { roles: ["user"], degraded: true };
+    if (bootstrapSuperAdminEmails.has(userEmail)) {
+      console.warn("Role lookup recovered through bootstrap super-admin mapping during backend grant outage.");
+      return { roles: ["super_admin"], degraded: true };
     }
+
+    console.warn("Role lookup failed after retries; rendering user-level workspace.", lastError);
+    return { roles: ["user"], degraded: true };
   });
 
 export const checkUserRoles = createServerFn({ method: "POST" })
