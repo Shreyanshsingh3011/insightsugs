@@ -833,8 +833,9 @@ export default function AgentDashboard() {
   const [brief, setBrief] = useState("");
   const briefMut = useMutation({
     mutationFn: async () => {
+      const projectName = payload?.project || selected || "Selected dashboard";
       const facts = {
-        project: payload?.project,
+        project: projectName,
         activities: d.n,
         health: d.healthScore,
         completion_pct: d.completionRate,
@@ -846,16 +847,36 @@ export default function AgentDashboard() {
         top_overdue: d.overdue.slice(0, 4).map(o => ({ activity: o.activity, person: o.person, delay: o.delay })),
         highest_risk_person: d.personsByBurden[0] && { person: d.personsByBurden[0].person, delayed: d.personsByBurden[0].delayed, total: d.personsByBurden[0].total },
       };
-      const res = await genFn({
-        data: {
-          system: "You are an operations chief-of-staff. Use ONLY the FACTS. Reply with 3 crisp sentences: (1) current state in one line, (2) the single biggest risk, (3) the one move worth making this week. No hedging, no invented numbers, no bullet points.",
-          prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}`,
-          temperature: 0.2,
-        },
-      });
-      return res.text;
+      const topRisk = facts.top_overdue[0];
+      const fallbackBrief = [
+        `${projectName} is at ${facts.completion_pct}% completion across ${facts.activities} activities, with health ${facts.health}/100 and ${facts.delayed} delayed item${facts.delayed === 1 ? "" : "s"}.`,
+        topRisk
+          ? `The biggest risk is ${topRisk.activity || "an overdue activity"}${topRisk.person ? ` with ${topRisk.person}` : ""}, currently ${topRisk.delay} day${topRisk.delay === 1 ? "" : "s"} delayed.`
+          : facts.highest_risk_person
+            ? `The biggest workload risk is ${facts.highest_risk_person.person}, carrying ${facts.highest_risk_person.delayed} delayed item${facts.highest_risk_person.delayed === 1 ? "" : "s"} out of ${facts.highest_risk_person.total}.`
+            : "No overdue activity is currently visible in the selected dashboard data.",
+        facts.delayed > 0
+          ? "This week, focus escalation on the oldest overdue owner and clear the blocker before adding new follow-ups."
+          : "This week, keep the current cadence and watch for any status changes in the live sheet refresh.",
+      ].join(" ");
+      try {
+        const res = await genFn({
+          data: {
+            system: "You are an operations chief-of-staff. Use ONLY the FACTS. Reply with 3 crisp sentences: (1) current state in one line, (2) the single biggest risk, (3) the one move worth making this week. No hedging, no invented numbers, no bullet points.",
+            prompt: `FACTS:\n${JSON.stringify(facts, null, 2)}`,
+            temperature: 0.2,
+          },
+        });
+        return res.text?.trim() || fallbackBrief;
+      } catch {
+        return fallbackBrief;
+      }
     },
     onSuccess: (t) => setBrief(t),
+    onError: () => {
+      const projectName = payload?.project || selected || "Selected dashboard";
+      setBrief(`${projectName} has ${d.n} activities with ${d.completionRate}% completion and ${d.totals.delayed} delayed item${d.totals.delayed === 1 ? "" : "s"}. Review the live rows below and prioritize the oldest overdue activity first.`);
+    },
   });
 
   useEffect(() => { setBrief(""); }, [payload]);
