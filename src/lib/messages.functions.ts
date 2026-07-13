@@ -51,7 +51,7 @@ export const listInbox = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
     try {
-      const { data, error } = await withTimeout(
+      const { data, error } = await withTimeout<{ data: any; error: any }>(
         supabase
           .from("direct_messages")
           .select("*")
@@ -75,7 +75,7 @@ export const listSent = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
     try {
-      const { data, error } = await withTimeout(
+      const { data, error } = await withTimeout<{ data: any; error: any }>(
         supabase
           .from("direct_messages")
           .select("*")
