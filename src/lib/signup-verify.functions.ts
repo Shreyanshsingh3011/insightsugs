@@ -42,10 +42,23 @@ export const verifySignupAgainstSheet = createServerFn({ method: "POST" })
     verified: boolean; reason: string; role?: "user" | "admin";
   }> => {
     const { supabase, userId } = context;
+    const { notifySuperAdminsOfPendingSignupImpl, isOfficialEmail } =
+      await import("@/lib/signup-notify.server");
+
+    // Fire-and-forget notify — only when the current outcome is "not verified"
+    // AND the user is not from the official domain. Deduped server-side.
+    const maybeNotify = async (reason: string) => {
+      const { data: prof } = await supabase
+        .from("profiles").select("email").eq("id", userId).maybeSingle();
+      if (isOfficialEmail(prof?.email)) return;
+      try { await notifySuperAdminsOfPendingSignupImpl(supabase, userId); } catch { /* ignore */ }
+      void reason;
+    };
 
     // Already approved?
     const { data: existing } = await supabase.from("user_roles").select("role").eq("user_id", userId).limit(1);
     if (existing && existing.length) return { verified: true, reason: "already approved" };
+
 
     // 1) In-app allowlist first (managed by super admins under /admin/allowlist).
     const { data: rpc, error: rpcErr } = await supabase.rpc("verify_signup_from_allowlist");
