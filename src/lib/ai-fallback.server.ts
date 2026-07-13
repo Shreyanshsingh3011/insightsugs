@@ -9,7 +9,6 @@ const GROQ_BASE = "https://api.groq.com/openai/v1";
 
 // Free OpenRouter models, in preferred order. Tried in order until one accepts.
 const OPENROUTER_FREE_MODELS = [
-  "deepseek/deepseek-chat-v3.1:free",
   "meta-llama/llama-3.3-70b-instruct:free",
   "google/gemini-2.0-flash-exp:free",
   "qwen/qwen-2.5-72b-instruct:free",
