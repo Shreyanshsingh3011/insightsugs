@@ -11,7 +11,7 @@ const GROQ_BASE = "https://api.groq.com/openai/v1";
 const OPENROUTER_FREE_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
   "google/gemini-2.0-flash-exp:free",
-  "qwen/qwen-2.5-72b-instruct:free",
+  "mistralai/mistral-small-3.2-24b-instruct:free",
 ];
 
 type Provider = "gateway" | "gemini" | "openrouter" | "groq";
