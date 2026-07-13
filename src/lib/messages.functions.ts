@@ -40,8 +40,8 @@ async function attachProfiles(
 }
 
 async function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
-  return await Promise.race([
-    Promise.resolve(p),
+  return await Promise.race<T>([
+    Promise.resolve(p) as Promise<T>,
     new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timeout`)), ms)),
   ]);
 }
