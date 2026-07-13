@@ -71,6 +71,22 @@ function AuthLayout() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const gPrefixAt = useRef<number>(0);
 
+  const pendingSignupsQ = useQuery({
+    queryKey: ["pending-signups-count"],
+    enabled: !!isSuper,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { count } = await supabaseClient
+        .from("signup_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+  });
+  const pendingSignups = pendingSignupsQ.data ?? 0;
+
+
+
   // Global shortcuts: ⌘K / Ctrl+K palette, ? cheatsheet, g+<key> quick nav.
   useEffect(() => {
     const isTypingTarget = (el: EventTarget | null) => {
