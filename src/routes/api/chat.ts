@@ -947,6 +947,7 @@ export const Route = createFileRoute("/api/chat")({
           });
           if (run?.id) resp.headers.set("x-agent-run-id", run.id);
           resp.headers.set("x-agent-routed-to", routedTo);
+          resp.headers.set("x-agent-cache", "miss");
           return resp;
         } catch (e) {
           await finishAgentRun(run, {
