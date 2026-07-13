@@ -40,10 +40,21 @@ export const listPendingActions = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false })
       .limit(data.limit);
     if (data.status !== "all") q = q.eq("status", data.status);
-    const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
-    return (rows ?? []) as unknown as PendingAction[];
+    try {
+      const res = await Promise.race([
+        q,
+        new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error("timeout")), 8000),
+        ),
+      ]);
+      const { data: rows, error } = res as { data: unknown; error: { message: string } | null };
+      if (error) throw new Error(error.message);
+      return { rows: (rows ?? []) as unknown as PendingAction[], degraded: false as const };
+    } catch {
+      return { rows: [] as PendingAction[], degraded: true as const };
+    }
   });
+
 
 export const decidePendingAction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
