@@ -4,7 +4,7 @@ import { useRoles } from "@/hooks/useSession";
 import { supabase } from "@/integrations/supabase/client";
 import {
   UserPlus, FolderKanban, Mail, Radar, Users, ShieldCheck, ScrollText,
-  Lock, CheckCircle2, ShieldAlert,
+  Lock, CheckCircle2, ShieldAlert, Activity,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/")({
@@ -107,6 +107,13 @@ function AdminIndex() {
       label: "Audit log",
       description: "Review privileged actions across the workspace.",
       icon: <ScrollText className="h-5 w-5" />,
+      requires: "admin",
+    },
+    {
+      to: "/admin/health",
+      label: "Integration health",
+      description: "Live status of AI providers, sheet sync, email, and realtime.",
+      icon: <Activity className="h-5 w-5" />,
       requires: "admin",
     },
   ];
