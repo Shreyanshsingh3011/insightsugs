@@ -49,6 +49,17 @@ function stableStringify(input: unknown): string {
   return JSON.stringify(walk(input));
 }
 
+// Non-crypto FNV-1a 32-bit hash — cache keys don't need cryptographic strength,
+// only stable + fast + collision-resistant enough for a 500-entry LRU.
+function fnv1a(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
 async function sha256(text: string): Promise<string> {
   const buf = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest("SHA-256", buf);
