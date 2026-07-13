@@ -6,6 +6,8 @@
 
 const LOVABLE_BASE = "https://ai.gateway.lovable.dev/v1";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+const GROQ_BASE = "https://api.groq.com/openai/v1";
+
 
 function isChatCompletions(url: string) {
   return url.includes("/chat/completions");
