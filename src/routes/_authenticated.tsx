@@ -195,14 +195,29 @@ function AuthLayout() {
     },
   ];
 
+  const pendingSignupsQ = useQuery({
+    queryKey: ["pending-signups-count"],
+    enabled: !!isSuper,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { count } = await supabaseClient
+        .from("signup_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+  });
+  const pendingSignups = pendingSignupsQ.data ?? 0;
+
   const adminSection: NavSection | null = isAdmin || isSuper ? {
     label: "Admin",
     items: [
+      ...(isSuper ? [{ to: "/admin/users", label: "Pending signups", icon: <UserPlus className="h-4 w-4" />, badge: pendingSignups }] : []),
       ...(isAdmin ? [{ to: "/projects", label: "Projects", icon: <FolderKanban className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/email-groups", label: "Email groups", icon: <Mail className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/email", label: "Email queue", icon: <Mail className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/smart-alerts", label: "Smart alerts", icon: <Radar className="h-4 w-4" /> }] : []),
-      ...(isSuper ? [{ to: "/admin/users", label: "Users", icon: <Users className="h-4 w-4" /> }] : []),
+      ...(isSuper ? [{ to: "/admin/users", label: "Users & roles", icon: <Users className="h-4 w-4" /> }] : []),
       ...(isSuper ? [{ to: "/admin/allowlist", label: "Signup allowlist", icon: <ShieldCheck className="h-4 w-4" /> }] : []),
       ...(isAdmin ? [{ to: "/admin/audit", label: "Audit", icon: <ScrollText className="h-4 w-4" /> }] : []),
     ],
