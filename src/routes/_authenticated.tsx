@@ -380,7 +380,9 @@ function NavGroup({ section }: { section: NavSection }) {
       </div>
       <div className="space-y-0.5">
         {section.items.map((item) => (
-          <SideLink key={item.to} to={item.to} icon={item.icon}>{item.label}</SideLink>
+          <SideLink key={`${item.to}-${item.label}`} to={item.to} icon={item.icon} badge={item.badge}>
+            {item.label}
+          </SideLink>
         ))}
       </div>
     </div>
