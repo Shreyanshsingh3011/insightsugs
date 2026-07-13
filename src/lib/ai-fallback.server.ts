@@ -9,9 +9,11 @@ const GROQ_BASE = "https://api.groq.com/openai/v1";
 
 // Free OpenRouter models, in preferred order. Tried in order until one accepts.
 const OPENROUTER_FREE_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemini-2.0-flash-exp:free",
-  "mistralai/mistral-small-3.2-24b-instruct:free",
+  "deepseek/deepseek-r1:free",
+  "openai/gpt-oss-20b:free",
+  "z-ai/glm-4.5-air:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "google/gemma-2-9b-it:free",
 ];
 
 type Provider = "gateway" | "gemini" | "openrouter" | "groq";
