@@ -39,34 +39,59 @@ async function attachProfiles(
   }));
 }
 
+async function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  return await Promise.race([
+    Promise.resolve(p),
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${label} timeout`)), ms)),
+  ]);
+}
+
 export const listInbox = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
-    const { data, error } = await supabase
-      .from("direct_messages")
-      .select("*")
-      .eq("recipient_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    const rows = await attachProfiles(supabase, (data ?? []) as DirectMessage[]);
-    return { messages: rows };
+    try {
+      const { data, error } = await withTimeout(
+        supabase
+          .from("direct_messages")
+          .select("*")
+          .eq("recipient_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        8000,
+        "listInbox",
+      );
+      if (error) throw new Error(error.message);
+      const rows = await attachProfiles(supabase, (data ?? []) as DirectMessage[]);
+      return { messages: rows, degraded: false as const };
+    } catch (e) {
+      console.error("[listInbox] degraded:", (e as Error).message);
+      return { messages: [] as DirectMessage[], degraded: true as const };
+    }
   });
 
 export const listSent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
-    const { data, error } = await supabase
-      .from("direct_messages")
-      .select("*")
-      .eq("sender_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(200);
-    if (error) throw new Error(error.message);
-    const rows = await attachProfiles(supabase, (data ?? []) as DirectMessage[]);
-    return { messages: rows };
+    try {
+      const { data, error } = await withTimeout(
+        supabase
+          .from("direct_messages")
+          .select("*")
+          .eq("sender_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        8000,
+        "listSent",
+      );
+      if (error) throw new Error(error.message);
+      const rows = await attachProfiles(supabase, (data ?? []) as DirectMessage[]);
+      return { messages: rows, degraded: false as const };
+    } catch (e) {
+      console.error("[listSent] degraded:", (e as Error).message);
+      return { messages: [] as DirectMessage[], degraded: true as const };
+    }
   });
 
 export const listDirectory = createServerFn({ method: "POST" })
