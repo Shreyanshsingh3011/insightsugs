@@ -148,6 +148,9 @@ async function testOpenRouterFallback() {
     return new Response("unexpected", { status: 500 });
   };
 
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = baseFetch as typeof fetch;
+
   const fetchWithFallback = createFallbackFetch(baseFetch);
   const res = await fetchWithFallback("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -158,6 +161,7 @@ async function testOpenRouterFallback() {
       tools: [{ type: "function", function: { name: "topDelays", parameters: {} } }],
     }),
   });
+  globalThis.fetch = originalFetch;
 
   check("fallback walked gateway → gemini → openrouter", seen.length >= 3 && seen[0].url.includes("lovable.dev") && seen[1].url.includes("googleapis.com") && seen[2].url.includes("openrouter.ai"));
   const orCall = seen.find((s) => s.url.includes("openrouter.ai"));
