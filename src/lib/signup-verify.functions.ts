@@ -113,8 +113,10 @@ export const verifySignupAgainstSheet = createServerFn({ method: "POST" })
       if (rpcErr2) return { verified: false, reason: rpcErr2.message };
       return { verified: true, reason: "Matched in allowlist sheet", role };
     }
+    await maybeNotify("not found in allowlist");
     return { verified: false, reason: "Not found in allowlist — awaiting super admin approval." };
   });
+
 
 // Fan out email + record notifications to all super admins for a pending signup.
 // Idempotent-ish: uses signup_notifications to dedupe repeated attempts.
