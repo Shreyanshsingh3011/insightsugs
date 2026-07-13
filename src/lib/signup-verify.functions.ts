@@ -80,7 +80,7 @@ export const verifySignupAgainstSheet = createServerFn({ method: "POST" })
     if (!email) return { verified: false, reason: "No email on profile" };
 
     const url = process.env.SIGNUP_ALLOWLIST_CSV_URL;
-    if (!url) return { verified: false, reason: "Not found in allowlist — awaiting super admin approval." };
+    if (!url) { await maybeNotify("no allowlist configured"); return { verified: false, reason: "Not found in allowlist — awaiting super admin approval." }; }
 
     let text: string;
     try {
