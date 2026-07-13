@@ -14,7 +14,7 @@ import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
   AlertTriangle, Mail, MessageSquareWarning, Bot, Inbox, Newspaper, Radar, Search,
-  Menu, X, Command, Keyboard, ShieldCheck,
+  Menu, X, Command, Keyboard, ShieldCheck, UserPlus,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
