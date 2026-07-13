@@ -23,6 +23,17 @@ export type MyRolesResult = {
 export const getMyRoles = createServerFn({ method: "GET" })
   .handler(async (): Promise<MyRolesResult> => {
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
+      try {
+        const payload = jwt.split(".")[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+      } catch {
+        return null;
+      }
+    };
     const applyBootstrapRoles = (roles: string[], email: string): string[] => {
       if (!bootstrapSuperAdminEmails.has(email)) return roles;
       return ["super_admin", ...roles.filter((role) => role !== "super_admin")];
@@ -55,7 +66,14 @@ export const getMyRoles = createServerFn({ method: "GET" })
         return { roles: ["user"], degraded: true };
       }
       userId = claims.sub;
-      userEmail = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+      const payload = readJwtPayload(token);
+      userEmail =
+        (typeof claims.email === "string" ? claims.email : "") ||
+        (typeof payload?.email === "string" ? payload.email : "") ||
+        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
+          ? String((payload?.user_metadata as Record<string, unknown>).email)
+          : "");
+      userEmail = userEmail.trim().toLowerCase();
       if (bootstrapSuperAdminEmails.has(userEmail)) {
         return { roles: ["super_admin"], degraded: true };
       }
