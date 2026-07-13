@@ -119,14 +119,21 @@ function isMeaningfulCompletionValue(raw: unknown): boolean {
 }
 
 function hasCompletionDateSerialInDurationColumn(row: StatusRow): boolean {
-  const raw = valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]);
-  if (!raw) return false;
-  const value = Number(String(raw).replace(/[,\s]/g, ""));
-  // Excel/Sheets date serials around current years are ~45k. If that appears
-  // in a duration column, the row has effectively recorded an actual date and
-  // should not stay in overdue/next-action lists.
-  return Number.isFinite(value) && value >= 30000 && value <= 70000;
+  const candidates = [
+    valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]),
+    valueForAliases(row, ["Delay in Days", "delay_in_days", "Delay Days", "Delay (Days)", "Delay"]),
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const value = Number(String(raw).replace(/[,\s]/g, ""));
+    // Excel/Sheets date serials around current years are ~45k. If that appears
+    // in a duration column, the row has effectively recorded an actual date and
+    // should not stay in overdue/next-action lists.
+    if (Number.isFinite(value) && value >= 30000 && value <= 70000) return true;
+  }
+  return false;
 }
+
 
 // Generic detection: any column whose name looks like a completion/actual/closed
 // date column and holds a meaningful date value implies the row is done.
