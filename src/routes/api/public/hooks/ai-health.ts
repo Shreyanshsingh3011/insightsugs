@@ -73,7 +73,7 @@ function statusFromPing(p: Ping): "ok" | "degraded" | "down" {
   return "down";
 }
 
-async function recordHealth(rows: Array<{ name: string; status: string; latency_ms: number; error?: string | null; meta?: unknown }>) {
+async function recordHealth(rows: Array<{ name: string; status: string; latency_ms: number; error?: string | null; meta?: Record<string, unknown> }>) {
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("integration_health").insert(
@@ -82,7 +82,7 @@ async function recordHealth(rows: Array<{ name: string; status: string; latency_
         status: r.status,
         latency_ms: r.latency_ms,
         error: r.error ?? null,
-        meta: r.meta ?? null,
+        meta: (r.meta ?? null) as never,
       })),
     );
   } catch {
