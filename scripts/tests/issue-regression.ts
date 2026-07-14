@@ -104,9 +104,10 @@ test("#9b", "Effectively-done ignores date-serial in duration column when Status
 });
 
 test("#9c", "recomputeDaysTaken overrides broken sheet value", () => {
-  const row = { "Start Date": "01/06/2026", "Completion Date": "10/06/2026", "Days Taken": 31 };
+  const row = { "Start Date": "2026-06-01", "Completion Date": "2026-06-10", "Days Taken": 31 };
   eq(recomputeDaysTaken(row), 9, "9 days between start and completion");
 });
+
 
 test("#9d", "isTerminalRow true when % Complete = 100", () => {
   assert(isTerminalRow({ "% Complete": "100" }), "100% complete → terminal");
