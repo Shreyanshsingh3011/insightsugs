@@ -82,8 +82,8 @@ async function runWatcher() {
 export const Route = createFileRoute("/api/public/hooks/stale-critical-watcher")({
   server: {
     handlers: {
-      GET: async () => Response.json(await runWatcher()),
-      POST: async () => Response.json(await runWatcher()),
+      GET: async ({ request }) => (isHookAuthorized(request) ? Response.json(await runWatcher()) : unauthorizedResponse()),
+      POST: async ({ request }) => (isHookAuthorized(request) ? Response.json(await runWatcher()) : unauthorizedResponse()),
     },
   },
 });
