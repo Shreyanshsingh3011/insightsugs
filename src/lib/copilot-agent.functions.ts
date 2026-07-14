@@ -444,12 +444,10 @@ export async function runCopilotAgent(
           if (matches.length === 0) {
             mode = "keyword";
             const strict = data.strictMatch === true;
-            const { strictPhrases, normalizeHaystack, matchesAllPhrases, contentTokens } =
+            const { strictPhrases, normalizeHaystack, matchesAllPhrases, countPhraseHits, contentTokens } =
               await import("./query-match");
             const basePhrases = strictPhrases(query);
             const tokens = contentTokens(query);
-            // In strict mode, if no explicit phrase was extracted, still
-            // require the full content-token phrase as a contiguous match.
             const phrases = strict && basePhrases.length === 0 && tokens.length >= 1
               ? [tokens.join(" ")]
               : basePhrases;
@@ -460,8 +458,6 @@ export async function runCopilotAgent(
                 if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
                 return { row_index: r.row_index, similarity: 10 + tokens.length };
               }
-              // Non-strict: fall back to per-token AND matching for single
-              // generic queries. Strict mode never reaches this branch.
               if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) {
                 return { row_index: r.row_index, similarity: 0 };
               }
@@ -471,8 +467,23 @@ export async function runCopilotAgent(
             const anyHit = scored.some((s) => s.similarity > 0);
             if (anyHit) {
               matches = scored.filter((s) => s.similarity > 0).slice(0, k);
+            } else if (!strict && phrases.length >= 2) {
+              // Graceful "partial match": rank rows by how many strict
+              // phrases hit. Prevents hard-fail lookups when the sheet
+              // stores a name slightly differently (extra initial, spaces,
+              // different casing across columns).
+              const partial = rows
+                .map((r) => ({
+                  row_index: r.row_index,
+                  similarity: countPhraseHits(normalizeHaystack(Object.values(r.data)), phrases),
+                }))
+                .filter((s) => s.similarity > 0)
+                .sort((a, b) => b.similarity - a.similarity)
+                .slice(0, k);
+              matches = partial;
+              if (partial.length > 0) mode = "keyword-partial";
+              else matches = [];
             } else if (strict || hasSpecificTarget || tokens.length >= 1) {
-              // Strict mode NEVER broadens; specific queries never leak.
               matches = [];
             } else {
               mode = "recent";
