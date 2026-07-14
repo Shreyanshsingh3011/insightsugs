@@ -207,18 +207,45 @@ export function statusBucketForRow(row: StatusRow): StatusBucket {
 // (Agent Inbox, watchers, etc.) can filter to the same live-actionable rows.
 export function isRowEffectivelyDone(row: StatusRow): boolean {
   if (isTerminalRow(row)) return true;
+  // If the row's status text explicitly reports an active delay/overdue,
+  // never silently mark it complete — sheet formulas often leak date serials
+  // into "Delay in Days" for rows that are genuinely late. Trust the human
+  // status over the numeric leak.
+  const statusText = rowStatusText(row).toLowerCase();
+  const explicitlyDelayed = /(delay|late|overdue|breach|slipp|pending|open|in\s*progress|not\s*(complete|done|start))/i.test(statusText);
   const toNum = (v: unknown) => {
     if (typeof v === "number") return v;
     const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
     return Number.isFinite(n) ? n : 0;
   };
   const isSerial = (n: number) => n >= 30000 && n <= 70000;
-  // Excel date serials leaked into duration/delay columns = completion date recorded.
-  if (isSerial(toNum(row["Days Taken"]))) return true;
-  if (isSerial(toNum(row["Delay in Days"]))) return true;
+  if (!explicitlyDelayed) {
+    // Excel date serials leaked into duration/delay columns = completion date recorded.
+    if (isSerial(toNum(row["Days Taken"]))) return true;
+    if (isSerial(toNum(row["Delay in Days"]))) return true;
+  }
   const tat = toNum(row["TAT"]);
   const rawTaken = toNum(row["Days Taken"]);
   const taken = rawTaken > 3650 || rawTaken < 0 ? 0 : rawTaken;
   if (taken > 0 && tat > 0 && taken <= tat) return true;
   return false;
+}
+
+// Sanitized delay value for UI display and aggregation. Prefers explicit
+// numeric "Delay in Days" when it's a real duration, otherwise falls back
+// to the number parsed from the status text ("Delay by 59 days").
+export function sanitizedDelayDays(row: StatusRow): number {
+  const toNum = (v: unknown) => {
+    if (typeof v === "number") return v;
+    const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const raw = toNum(row["Delay in Days"]);
+  const explicit = raw > 3650 || raw < 0 || (raw >= 30000 && raw <= 70000) ? 0 : raw;
+  if (explicit > 0) return Math.round(explicit);
+  const status = rowStatusText(row);
+  const m = status.match(/(?:delay(?:ed)?|late|overdue)\s*(?:by)?\s*(\d+(?:\.\d+)?)/i)
+    || status.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\s*(?:delay(?:ed)?|late|overdue)/i);
+  const n = Number(m?.[1] ?? 0);
+  return Number.isFinite(n) ? Math.round(n) : 0;
 }
