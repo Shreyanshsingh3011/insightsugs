@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
@@ -704,9 +705,32 @@ export const listSheets = createServerFn({ method: "GET" })
       code: "SOURCE_TIMEOUT",
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
-    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
-    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
+    const bootstrapSuperAdminUserIds = new Set(["b530da41-caa8-4ead-b5fe-8eb3bc446ace"]);
+    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
+      try {
+        const payload = jwt.split(".")[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+      } catch {
+        return null;
+      }
+    };
+    const authHeader = getRequestHeader("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+    const payload = readJwtPayload(token);
+    const payloadEmail = String(
+      (typeof payload?.email === "string" ? payload.email : "") ||
+        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
+          ? (payload?.user_metadata as Record<string, unknown>).email
+          : ""),
+    )
+      .trim()
+      .toLowerCase();
+    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase() || payloadEmail;
+    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail) || bootstrapSuperAdminUserIds.has(userId);
     const isAdminUser = async () => {
       if (isBootstrapSuper) return true;
       try {
@@ -717,9 +741,15 @@ export const listSheets = createServerFn({ method: "GET" })
       }
       try {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: roleRows, error: roleError } = await withTimeout(
+          supabaseAdmin.from("user_roles").select("role").eq("user_id", userId).in("role", ["admin", "super_admin"]),
+          12000,
+          { data: null, error: timedOutError("Admin role table lookup") } as any,
+        );
+        if (!roleError && (roleRows ?? []).length > 0) return true;
         const { data: authUser } = await withTimeout(
           supabaseAdmin.auth.admin.getUserById(userId),
-          1200,
+          12000,
           { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
         );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
@@ -739,7 +769,7 @@ export const listSheets = createServerFn({ method: "GET" })
               "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
             )
             .order("created_at", { ascending: false }),
-          1800,
+          12000,
           { data: null, error: timedOutError("Admin sheet list") } as any,
         );
         if (error) throw error;
@@ -752,7 +782,16 @@ export const listSheets = createServerFn({ method: "GET" })
     let data: any[] | null = null;
     let lastError: unknown = null;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Super-admins must never lose visibility of registered sources because
+    // the user-scoped RLS path is slow or temporarily degraded. Read through
+    // the trusted admin path first, then fall back to the RLS path for normal
+    // users or if the admin path itself is unavailable.
+    const adminFirstRows = await adminSheetList();
+    if (adminFirstRows) {
+      data = adminFirstRows;
+    }
+
+    for (let attempt = 0; data == null && attempt < 2; attempt += 1) {
       // RLS returns: owner + admin + public + shared-with-me
       const result = await withTimeout(
         supabase
@@ -761,7 +800,7 @@ export const listSheets = createServerFn({ method: "GET" })
             "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
           )
           .order("created_at", { ascending: false }),
-        1800,
+        12000,
         { data: null, error: timedOutError("Sheet list") } as any,
       );
 

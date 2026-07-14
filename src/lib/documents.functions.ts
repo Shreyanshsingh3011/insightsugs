@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   getAdminSupabase,
@@ -89,9 +90,32 @@ export const listDocuments = createServerFn({ method: "POST" })
       code: "SOURCE_TIMEOUT",
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
-    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
-    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
+    const bootstrapSuperAdminUserIds = new Set(["b530da41-caa8-4ead-b5fe-8eb3bc446ace"]);
+    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
+      try {
+        const payload = jwt.split(".")[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+      } catch {
+        return null;
+      }
+    };
+    const authHeader = getRequestHeader("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+    const payload = readJwtPayload(token);
+    const payloadEmail = String(
+      (typeof payload?.email === "string" ? payload.email : "") ||
+        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
+          ? (payload?.user_metadata as Record<string, unknown>).email
+          : ""),
+    )
+      .trim()
+      .toLowerCase();
+    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase() || payloadEmail;
+    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail) || bootstrapSuperAdminUserIds.has(userId);
     const isAdminUser = async () => {
       if (isBootstrapSuper) return true;
       try {
@@ -102,9 +126,15 @@ export const listDocuments = createServerFn({ method: "POST" })
       }
       try {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: roleRows, error: roleError } = await withTimeout(
+          supabaseAdmin.from("user_roles").select("role").eq("user_id", userId).in("role", ["admin", "super_admin"]),
+          12000,
+          { data: null, error: timedOutError("Admin role table lookup") } as any,
+        );
+        if (!roleError && (roleRows ?? []).length > 0) return true;
         const { data: authUser } = await withTimeout(
           supabaseAdmin.auth.admin.getUserById(userId),
-          1200,
+          12000,
           { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
         );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
@@ -124,7 +154,7 @@ export const listDocuments = createServerFn({ method: "POST" })
         if (data.folder_id) q = q.eq("folder_id", data.folder_id);
         const { data: rows, error } = await withTimeout(
           q,
-          1800,
+          12000,
           { data: null, error: timedOutError("Admin document list") } as any,
         );
         if (error) throw error;
@@ -135,6 +165,18 @@ export const listDocuments = createServerFn({ method: "POST" })
       }
     };
     try {
+      const adminFirstRows = await adminDocumentRows();
+      if (adminFirstRows) {
+        return {
+          documents: adminFirstRows.map((r: any) => ({
+            ...r,
+            share_count: 0,
+            is_owner: r.owner_id === userId,
+          })),
+          degraded: false,
+        };
+      }
+
       let q = supabase
         .from("documents")
         .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
@@ -142,7 +184,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       if (data.folder_id) q = q.eq("folder_id", data.folder_id);
       const { data: rows, error } = await withTimeout(
         q,
-        1800,
+        12000,
         { data: null, error: timedOutError("Document list") } as any,
       );
       let effectiveRows = rows ?? [];
