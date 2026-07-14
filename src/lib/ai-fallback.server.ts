@@ -158,6 +158,10 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
     const groqKey = process.env.GROQ_API_KEY;
     const hasFallback = !!(geminiKey || openRouterKey || groqKey);
 
+    // Track the most recent upstream failure across tiers so exhaustion returns
+    // it instead of re-issuing the original request.
+    let lastFailure: Response | null = null;
+
     // Skip gateway if breaker is open and a fallback is available
     if (chat && isOpen("gateway") && hasFallback) {
       // fall through to fallbacks directly
@@ -169,6 +173,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
       }
       if (!chat || !shouldRetry(response.status)) return response;
       trip("gateway", response.status);
+      lastFailure = response;
     }
 
     // Tier 2: Gemini
@@ -178,6 +183,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
         if (retry.ok) { reset("gemini"); served("gemini"); return retry; }
         if (shouldRetry(retry.status)) trip("gemini", retry.status);
         else if (!openRouterKey && !groqKey) return retry;
+        lastFailure = retry;
       } catch (e) {
         trip("gemini", 0, (e as Error).message);
       }
@@ -185,7 +191,6 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
 
     // Tier 3: OpenRouter free models (walk the list until one accepts)
     if (chat && openRouterKey && !isOpen("openrouter")) {
-      let lastResponse: Response | null = null;
       for (const model of OPENROUTER_FREE_MODELS) {
         try {
           const retry = await callOpenRouter(url, init, openRouterKey, model);
@@ -193,7 +198,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
           // Peek at body to detect "unavailable for free" errors and skip to next model
           const bodyText = await retry.clone().text().catch(() => "");
           const unavailableForFree = /unavailable for free|paid version is available/i.test(bodyText);
-          lastResponse = new Response(bodyText, { status: retry.status, headers: retry.headers });
+          lastFailure = new Response(bodyText, { status: retry.status, headers: retry.headers });
           if (retry.status === 401 || retry.status === 403) {
             trip("openrouter", retry.status);
             break; // key-level failure, all models will fail
@@ -208,12 +213,8 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
           break;
         }
       }
-      if (lastResponse && !groqKey) return lastResponse;
-      if (lastResponse && shouldRetry(lastResponse.status)) {
-        // fall through to groq
-      } else if (lastResponse) {
-        return lastResponse;
-      }
+      if (lastFailure && !groqKey) return lastFailure;
+      if (lastFailure && !shouldRetry(lastFailure.status)) return lastFailure;
     }
 
     // Tier 4: Groq
@@ -231,7 +232,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
     // All tiers exhausted — return the last upstream failure we captured
     // instead of re-issuing the original request (which would double-bill
     // and re-trigger the tripped breaker).
-    if (lastResponse) return lastResponse;
+    if (lastFailure) return lastFailure;
     return new Response(
       JSON.stringify({ error: { message: "All AI providers unavailable", code: "ai_all_providers_down" } }),
       { status: 503, headers: { "content-type": "application/json" } },
