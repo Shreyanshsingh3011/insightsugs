@@ -160,7 +160,7 @@ export const createAgentDraft = createServerFn({ method: "POST" })
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id")
-        .ilike("email", data.recipient_email)
+        .ilike("email", escapeIlike(normalizeEmail(data.recipient_email)))
         .maybeSingle();
       if (prof?.id) recipient_user_id = prof.id;
     }
