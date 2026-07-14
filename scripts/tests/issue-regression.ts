@@ -11,8 +11,10 @@ import {
   matchesAllPhrases,
   normalizeHaystack,
   extractSerialNumber,
+  extractRequestedColumns,
   describeSearchedColumns,
   hasStrictTarget,
+  contentTokens,
 } from "../../src/lib/query-match";
 import {
   computeRowStatus,
@@ -174,6 +176,29 @@ test("#extra", "describeSearchedColumns highlights name/activity columns", () =>
   assert(desc.toLowerCase().includes("activity"), "activity mentioned");
   assert(desc.toLowerCase().includes("owner"), "owner mentioned");
   assert(hasStrictTarget("phone of Arpita Das"), "specific query flagged");
+});
+
+test("#copilot-column-count", "Total-row count searches only requested columns and not active-only rows", () => {
+  const query = "How many total rows have 'Contractor not available' explicitly mentioned in the 'Store' or 'Contractor' column?";
+  const rows = [
+    { Store: "Contractor not available", Contractor: "", Status: "Excel Pending", Notes: "" },
+    { Store: "", Contractor: "Contractor not available", Status: "Completed", Notes: "" },
+    { Store: "", Contractor: "", Status: "Completed", Notes: "Contractor not available" },
+  ];
+  const columns = Object.keys(rows[0]);
+  const requested = extractRequestedColumns(query, columns);
+  eq(requested.join("|"), "Store|Contractor", "requested Store/Contractor columns only");
+  const requestedNorms = new Set(requested.map((col) => col.toLowerCase()));
+  const targetPhrases = strictPhrases(query).filter((phrase) => !requestedNorms.has(phrase));
+  assert(targetPhrases.includes("contractor not available"), "quoted target phrase stays required");
+  const targetTokens = contentTokens(query).filter((token) => !requested.some((col) => col.toLowerCase() === token));
+  const hits = rows.filter((row) => {
+    const hay = normalizeHaystack(requested.map((col) => row[col as keyof typeof row]));
+    return targetPhrases.length > 0
+      ? matchesAllPhrases(hay, targetPhrases)
+      : targetTokens.every((token) => hay.includes(token));
+  });
+  eq(hits.length, 2, "counts completed + active rows, but excludes Notes-only hit");
 });
 
 /* ── Runner ── */

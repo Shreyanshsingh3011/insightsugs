@@ -24,6 +24,7 @@ const STOP = new Set([
   "current","status","project","projects","row","rows","sheet","sheets","doc","docs","document",
   "documents","data","information","summarize","summary","summarise","details","detail","info",
   "regarding","related","about","concerning","named","called","entry","record","records",
+  "explicitly","mentioned","mention","column","columns","field","fields",
   "open","phone","number","email","mail","mobile","contact","responsible","person","owner","owners",
 ]);
 
@@ -199,5 +200,46 @@ export function describeSearchedColumns(
   });
   if (relevant.length === 0) return Array.from(cols).slice(0, 6).join(", ");
   return relevant.slice(0, 6).join(", ");
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasWholePhrase(hay: string, phrase: string): boolean {
+  if (!phrase) return false;
+  const escaped = escapeRegExp(phrase).replace(/\\\s\+/g, "\\s+");
+  return new RegExp(`(^|\\s)${escaped}(?=\\s|$)`).test(hay);
+}
+
+/**
+ * Detect columns explicitly requested by the user, e.g.
+ * "in the Store or Contractor column". This prevents the Copilot from
+ * matching the target phrase anywhere in the row when the question names a
+ * specific source column/field.
+ */
+export function extractRequestedColumns(query: string, availableColumns: string[]): string[] {
+  const q = normalizeText(query);
+  if (!/\b(columns?|fields?)\b/.test(q)) return [];
+
+  const quoted = new Set<string>();
+  const qre = /["'\u201c\u201d\u2018\u2019]([^"'\u201c\u201d\u2018\u2019]{2,})["'\u201c\u201d\u2018\u2019]/g;
+  let m: RegExpExecArray | null;
+  while ((m = qre.exec(query))) {
+    const p = normalizeText(m[1]);
+    if (p) quoted.add(p);
+  }
+
+  const hits: string[] = [];
+  const seen = new Set<string>();
+  for (const col of availableColumns) {
+    const c = normalizeText(col);
+    if (!c || seen.has(c)) continue;
+    if (quoted.has(c) || hasWholePhrase(q, c)) {
+      hits.push(col);
+      seen.add(c);
+    }
+  }
+  return hits;
 }
 
