@@ -6,7 +6,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isHookAuthorized } from "@/lib/hook-auth.server";
 import { createClient } from "@supabase/supabase-js";
-import { ensureSheetEmbeddings } from "@/lib/copilot-agent.functions";
+import { ensureSheetEmbeddings } from "@/lib/copilot-embeddings.server";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
