@@ -114,7 +114,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       })
       .select("id")
       .single(), 4, "ingest.registry.insert"));
-    const registryId = (reg as { id: string }).id;
+    const registryId = (reg as unknown as { id: string }).id;
 
     if (sharedIds.length > 0) {
       await withSchemaHeal(async () => await supabase.from("sheet_registry_shares").insert(
