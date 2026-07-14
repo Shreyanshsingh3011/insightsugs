@@ -1292,13 +1292,21 @@ export default function AgentDashboard() {
     const q = filters.q.trim().toLowerCase();
     return rowIndex.filter(r => {
       const statusBucket = r.statusBucket;
-      if (filters.status !== "all" && statusBucket !== filters.status) return false;
-      if (filters.status === "all" && (statusBucket === "Completed" || r.terminal)) return false;
+      // Completed filter = ONLY rows the numbers agree are done.
+      if (filters.status === "Completed") {
+        if (!r.terminal || statusBucket !== "Completed") return false;
+      } else if (filters.status !== "all") {
+        if (statusBucket !== filters.status) return false;
+        if (r.terminal) return false; // never leak done rows into active buckets
+      } else {
+        // "All" view hides completed work so the operator sees actionable rows.
+        if (statusBucket === "Completed" || r.terminal) return false;
+      }
       if (filters.crit !== "all" && r.crit !== filters.crit) return false;
       if (filters.stage !== "all" && r.stage !== filters.stage) return false;
       if (filters.person !== "all" && r.person !== filters.person) return false;
       if (min > 0 && r.delay < min) return false;
-      if (filters.onlyOverdue && !(r.delay > 0 && statusBucket !== "Completed" && !r.terminal)) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && !r.terminal)) return false;
       if (q && !r.hay.includes(q)) return false;
       return true;
     });
