@@ -82,6 +82,17 @@ type Turn = {
   citationOk?: boolean;
 };
 
+function ThinkingElapsed({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - startedAt) / 1000));
+  return <span>Thinking… <span className="tabular-nums opacity-70">({secs}s)</span></span>;
+}
+
+
 // Detailed citation validator. Returns { ok, issues[] } so the UI can explain
 // exactly what is missing when we reject an answer. Matches GROUNDING_RULES in
 // src/lib/gemini-client.ts:
