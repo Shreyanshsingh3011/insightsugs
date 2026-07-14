@@ -2007,14 +2007,20 @@ export default function AgentDashboard() {
                     </ResponsiveContainer>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-4xl font-semibold">{d.healthScore}</div>
-                    <div className="text-xs text-muted-foreground">out of 100</div>
+                    <div
+                      className="text-4xl font-semibold cursor-help"
+                      title={`Health = 0.4 × On-time + 0.4 × Completion + 0.1 × max(0, 200 − Pace)\n\n• On-time ${d.onTimeRate}% × 0.4 = ${(0.4 * d.onTimeRate).toFixed(1)}\n• Completion ${d.completionRate}% × 0.4 = ${(0.4 * d.completionRate).toFixed(1)}\n• Pace ${d.paceRatio}% → (200−${d.paceRatio})/2 × 0.2 = ${(0.2 * Math.max(0, 200 - d.paceRatio) / 2).toFixed(1)}\n\nTotal: ${d.healthScore} / 100`}
+                    >
+                      {d.healthScore}
+                    </div>
+                    <div className="text-xs text-muted-foreground">out of 100 · hover for breakdown</div>
                     <div className="mt-2 space-y-0.5 text-[11px]">
-                      <div>On-time <b>{d.onTimeRate}%</b></div>
-                      <div>Completion <b>{d.completionRate}%</b></div>
-                      <div>Pace <b>{d.paceRatio}%</b> of TAT</div>
+                      <div>On-time <b>{d.onTimeRate}%</b> <span className="opacity-60">(×0.4)</span></div>
+                      <div>Completion <b>{d.completionRate}%</b> <span className="opacity-60">(×0.4)</span></div>
+                      <div>Pace <b>{d.paceRatio}%</b> of TAT <span className="opacity-60">(×0.2)</span></div>
                     </div>
                   </div>
+
                 </CardContent>
               </Card>
             </Link>

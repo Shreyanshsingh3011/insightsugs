@@ -82,6 +82,17 @@ type Turn = {
   citationOk?: boolean;
 };
 
+function ThinkingElapsed({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - startedAt) / 1000));
+  return <span>Thinking… <span className="tabular-nums opacity-70">({secs}s)</span></span>;
+}
+
+
 // Detailed citation validator. Returns { ok, issues[] } so the UI can explain
 // exactly what is missing when we reject an answer. Matches GROUNDING_RULES in
 // src/lib/gemini-client.ts:
@@ -405,15 +416,24 @@ function CopilotPage() {
       const q = vars.retryForCitations
         ? `REMINDER: your previous answer was rejected because it lacked citations. Repeat your answer for the question below, but every factual sentence MUST have an inline citation marker like [flags[F-0003]] or [sheet:<name> row <n>], and the answer MUST end with a "Sources:" list. If a fact can't be cited from the provided data, say "I don't have that in the current dashboard data." instead.\n\nQuestion: ${vars.originalQuestion ?? vars.question}`
         : vars.question;
-      return ask({
-        data: {
-          question: q,
-          sheetIds: Array.from(selected),
-          documentIds: Array.from(selectedDocs),
-          history: vars.history,
-          strictMatch,
-        },
-      });
+      // Hard timeout: prevent indefinite "Thinking…" hangs when upstream
+      // AI providers stall. 90s covers slow tool loops but bails on true hangs.
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Copilot timed out after 90s. Try a narrower question or fewer sources.")), 90_000)
+      );
+      return Promise.race([
+        ask({
+          data: {
+            question: q,
+            sheetIds: Array.from(selected),
+            documentIds: Array.from(selectedDocs),
+            history: vars.history,
+            strictMatch,
+          },
+        }),
+        timeout,
+      ]);
+
     },
     onMutate: (vars) => {
       if (!vars.retryForCitations) setQuestion("");
@@ -1214,9 +1234,18 @@ function CopilotPage() {
           {askMut.isPending && (
             <Card className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Thinking…
+              <ThinkingElapsed startedAt={askMut.submittedAt} />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-7 px-2 text-xs"
+                onClick={() => askMut.reset()}
+              >
+                Cancel
+              </Button>
             </Card>
           )}
+
         </div>
 
         <Card className="p-3">
