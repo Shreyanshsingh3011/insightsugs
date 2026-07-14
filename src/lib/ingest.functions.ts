@@ -103,7 +103,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
 
     const sentinel = `upload://${data.sourceLabel ?? "file"}/${crypto.randomUUID()}`;
 
-    const reg = must(await withSchemaHeal(() => supabase
+    const reg = must(await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .insert({
         user_id: userId,
@@ -117,7 +117,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
     const registryId = (reg as { id: string }).id;
 
     if (sharedIds.length > 0) {
-      await withSchemaHeal(() => supabase.from("sheet_registry_shares").insert(
+      await withSchemaHeal(async () => await supabase.from("sheet_registry_shares").insert(
         sharedIds.map((uid) => ({ sheet_registry_id: registryId, user_id: uid, created_by: userId })),
       ), 4, "ingest.shares.insert");
     }
@@ -130,7 +130,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       position: idx,
     }));
     if (mappingRows.length > 0) {
-      must(await withSchemaHeal(() => supabase.from("sheet_column_mappings").insert(mappingRows), 4, "ingest.mappings.insert"));
+      must(await withSchemaHeal(async () => await supabase.from("sheet_column_mappings").insert(mappingRows), 4, "ingest.mappings.insert"));
     }
 
     // Convert parsed rows into canonical/extras split.
@@ -151,11 +151,11 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       const BATCH = 500;
       for (let i = 0; i < toInsert.length; i += BATCH) {
         const slice = toInsert.slice(i, i + BATCH);
-        must(await withSchemaHeal(() => supabase.from("sheet_rows").insert(slice), 4, "ingest.rows.insert"));
+        must(await withSchemaHeal(async () => await supabase.from("sheet_rows").insert(slice), 4, "ingest.rows.insert"));
       }
     }
 
-    await withSchemaHeal(() => supabase
+    await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .update({
         last_refreshed_at: new Date().toISOString(),
