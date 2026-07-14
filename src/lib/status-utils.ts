@@ -79,6 +79,13 @@ const COMPLETION_ALIASES = [
   "approved_date",
 ];
 
+const START_ALIASES = [
+  "Start Date", "Start", "Started On", "Start On", "Actual Start", "Actual Start Date",
+  "Planned Start", "Planned Start Date", "Kickoff Date", "Kick-off Date",
+  "start_date", "start", "started_on", "actual_start", "actual_start_date",
+  "planned_start", "planned_start_date",
+];
+
 
 function normKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -96,6 +103,48 @@ function valueForAliases(row: StatusRow, aliases: string[]): string {
   }
   return "";
 }
+
+// Parse a cell value into a Date. Supports Excel/Sheets date serials,
+// ISO strings, and common dd/mm/yyyy or mm/dd/yyyy formats.
+function parseDateCell(raw: unknown): Date | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const num = Number(s.replace(/[,\s]/g, ""));
+  if (Number.isFinite(num) && num >= 20000 && num <= 80000) {
+    const ms = Math.round((num - 25569) * 86400 * 1000);
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const iso = Date.parse(s);
+  if (Number.isFinite(iso) && iso > 0) return new Date(iso);
+  const m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+  if (m) {
+    const day = Number(m[1]), month = Number(m[2]);
+    let year = Number(m[3]);
+    if (year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      const d = new Date(Date.UTC(year, month - 1, day));
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  return null;
+}
+
+// Recompute "Days Taken" authoritatively from Start + Completion dates.
+// The sheet's own Days Taken column is unreliable (frequently TODAY()-Start
+// even after completion, or =DAY() of a date). When Start exists we use
+// End-Start (completed) or Today-Start (in progress); otherwise null.
+export function recomputeDaysTaken(row: StatusRow): number | null {
+  const start = parseDateCell(valueForAliases(row, START_ALIASES));
+  if (!start) return null;
+  const end = parseDateCell(valueForAliases(row, COMPLETION_ALIASES));
+  const ref = end ?? new Date();
+  const diff = Math.floor((ref.getTime() - start.getTime()) / 86400000);
+  if (!Number.isFinite(diff) || diff < 0 || diff > 3650) return null;
+  return diff;
+}
+
 
 export function isTerminalStatusText(raw: unknown): boolean {
   const value = String(raw ?? "").trim().toLowerCase();
@@ -250,8 +299,10 @@ export function isRowEffectivelyDone(row: StatusRow): boolean {
     if (isSerial(toNum(row["Delay in Days"]))) return true;
   }
   const tat = toNum(row["TAT"]);
-  const rawTaken = toNum(row["Days Taken"]);
+  const recomputed = recomputeDaysTaken(row);
+  const rawTaken = recomputed ?? toNum(row["Days Taken"]);
   const taken = rawTaken > 3650 || rawTaken < 0 ? 0 : rawTaken;
+
   if (taken > 0 && tat > 0 && taken <= tat) return true;
   return false;
 }
@@ -305,7 +356,12 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
     return Number.isFinite(n) ? n : 0;
   };
   const tat = sanitizeDuration(toNum(row["TAT"]));
-  const taken = sanitizeDuration(toNum(row["Days Taken"]));
+  const recomputed = recomputeDaysTaken(row);
+  const rawTaken = sanitizeDuration(toNum(row["Days Taken"]));
+  // Prefer authoritative recomputed value from Start/End dates; only fall back
+  // to the sheet's Days Taken column when we cannot derive it from dates.
+  const taken = recomputed ?? rawTaken;
+
   const explicitDelay = sanitizeDuration(toNum(row["Delay in Days"]));
   const statusText = rowStatusText(row);
   const statusLower = statusText.toLowerCase();
