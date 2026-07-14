@@ -1029,16 +1029,26 @@ export default function AgentDashboard() {
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const stage = pick(r, "Stages", "Stages of Process");
-    const status = statusOf(r);
-    const rowBucket = statusBucketForRow(r);
-    const terminal = isTerminalRow(r);
+    // Canonical computed status — one source of truth for bucket, label,
+    // done/delayed flags, tat/taken/delay. Prevents raw sheet text from
+    // contradicting the numbers (e.g. TAT=30 Taken=31 labelled "Timely").
+    const computed = computeRowStatus(r);
+    const rawStatus = statusOf(r);
     const crit = pick(r, "Criticality");
     const proj = pick(r, "__project");
-    const tat = num(r["TAT"]);
-    const taken = daysTakenForRow(r);
-    const delay = delayForRow(r, terminal, status);
-    const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
-    return { i, activity, person, email, stage, status, statusBucket: rowBucket, terminal, crit, proj, tat, taken, delay, hay };
+    const hay = [activity, person, email, stage, computed.label, rawStatus, crit, proj].join(" ").toLowerCase();
+    return {
+      i, activity, person, email, stage,
+      status: computed.label,         // display label (computed, not raw)
+      rawStatus,                       // preserved for search/debug
+      statusBucket: computed.bucket,
+      terminal: computed.isDone,
+      crit, proj,
+      tat: computed.tat,
+      taken: computed.taken,
+      delay: computed.delay,
+      hay,
+    };
   }), [rowsAll]);
 
   // Build a directory of every unique person that appears in the data so we
