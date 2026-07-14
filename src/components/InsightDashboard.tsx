@@ -35,13 +35,12 @@ import {
   LayoutDashboard, Sheet as SheetIcon, MessageSquareWarning, Bell, Sparkles,
   Wand2, Send, ChevronDown, AlertTriangle, RefreshCcw, Link as LinkIcon,
   TrendingUp, Activity, CheckCircle2, Circle, CircleDot, Plus, ArrowRight,
-  Download, Filter as FilterIcon, X as XIcon, Search as SearchIcon,
+  Download, Filter as FilterIcon, X as XIcon, Search as SearchIcon, FileDown,
 } from "lucide-react";
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 import { generateGemini, hasGemini, GROUNDING_RULES } from "@/lib/gemini-client";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { exportIncidentReportPdf } from "@/lib/incident-report";
-import { FileDown } from "lucide-react";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string; distinct?: number };
