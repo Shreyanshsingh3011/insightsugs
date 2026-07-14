@@ -131,6 +131,13 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
 
+  // Snapshot of applied filters/sources per message id (client-side context transparency)
+  const [msgFilters, setMsgFilters] = useState<Record<string, { sources: string[]; kind: string }>>({});
+  const enabledSourceLabels = useMemo(
+    () => sources.filter((s) => s.enabled).map((s) => `${s.type === "sheet" ? "" : s.type + ":"}${s.label}`),
+    [sources],
+  );
+
   const handleAsk = async (q: string) => {
     const question = q.trim();
     if (!question || sending) return;
@@ -138,9 +145,13 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
     setInput("");
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: question };
     setMessages((m) => [...m, userMsg]);
+    const filterSnapshot = { sources: enabledSourceLabels, kind: "" };
     try {
       const kind = classify(question);
+      filterSnapshot.kind = kind;
       const history = messages.slice(-6).map((m) => ({ role: m.role, content: m.content }));
+
+      const record = (id: string) => setMsgFilters((prev) => ({ ...prev, [id]: filterSnapshot }));
 
       if (kind === "quantitative") {
         const parsed = parseQuestion(question, sheetSources);
@@ -152,9 +163,11 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
               citations: resp.citations, sheets: sheetSources, concerns: enabledConcerns, reminders: enabledReminders,
             });
             setOffline(!!resp.offline);
+            const aid = `a-${Date.now()}`;
+            record(aid);
             setMessages((m) => [
               ...m,
-              { id: `a-${Date.now()}`, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
+              { id: aid, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
             ]);
             return;
           }
@@ -168,9 +181,11 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
         citations: resp.citations, sheets: sheetSources, concerns: enabledConcerns, reminders: enabledReminders,
       });
       setOffline(!!resp.offline);
+      const aid = `a-${Date.now()}`;
+      record(aid);
       setMessages((m) => [
         ...m,
-        { id: `a-${Date.now()}`, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
+        { id: aid, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
       ]);
     } catch (e) {
       toast.error((e as Error).message || "Co-pilot error");
@@ -264,6 +279,16 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
             </div>
           )}
 
+          {/* Applied filters (current) */}
+          {enabledSourceLabels.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="uppercase tracking-wider">Applied filters:</span>
+              {enabledSourceLabels.map((l) => (
+                <Badge key={l} variant="secondary" className="h-5 px-1.5 text-[10px]">{l}</Badge>
+              ))}
+            </div>
+          )}
+
           {/* History */}
           <div className="flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-3" ref={scrollRef}>
             {loadingHist ? (
@@ -276,6 +301,8 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
                   <MessageBubble
                     key={m.id}
                     msg={m}
+                    sheets={sheetSources}
+                    filters={msgFilters[m.id]}
                     onCitationClick={(c) => {
                       if (c.type === "sheet" && c.sheet && typeof c.row === "number") onJumpToSheetRow?.(c.sheet, c.row);
                       else if (c.type === "concern") onOpenConcern?.(c.id);
@@ -315,16 +342,39 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
   );
 }
 
-function MessageBubble({ msg, onCitationClick }: { msg: ChatMessage; onCitationClick: (c: Citation) => void }) {
+function MessageBubble({
+  msg, sheets, filters, onCitationClick,
+}: {
+  msg: ChatMessage;
+  sheets?: SheetSource[];
+  filters?: { sources: string[]; kind: string };
+  onCitationClick: (c: Citation) => void;
+}) {
   const isUser = msg.role === "user";
   const badge = msg.generated_by?.startsWith("computed") ? "Computed" : "AI";
   const BadgeIcon = badge === "Computed" ? Calculator : Bot;
+  const [openSources, setOpenSources] = useState(false);
+
+  const citations = msg.citations ?? [];
+  const enriched = citations.map((c) => enrichCitation(c, sheets));
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${isUser ? "bg-primary text-primary-foreground" : "bg-card border"}`}>
         {!isUser && (
-          <div className="mb-1 flex items-center gap-1">
+          <div className="mb-1 flex flex-wrap items-center gap-1">
             <Badge variant="outline" className="h-4 gap-1 px-1 text-[9px]"><BadgeIcon className="h-2.5 w-2.5" /> {badge}</Badge>
+            {filters?.sources?.length ? (
+              <>
+                <span className="text-[9px] uppercase tracking-wider text-muted-foreground">Filters:</span>
+                {filters.sources.slice(0, 4).map((s) => (
+                  <Badge key={s} variant="secondary" className="h-4 px-1 text-[9px]">{s}</Badge>
+                ))}
+                {filters.sources.length > 4 && (
+                  <span className="text-[9px] text-muted-foreground">+{filters.sources.length - 4}</span>
+                )}
+              </>
+            ) : null}
           </div>
         )}
         {isUser ? (
@@ -334,18 +384,53 @@ function MessageBubble({ msg, onCitationClick }: { msg: ChatMessage; onCitationC
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
           </div>
         )}
-        {!isUser && (msg.citations?.length ?? 0) > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {msg.citations!.map((c, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => onCitationClick(c)}
-                className="rounded border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                {citationLabel(c)}
-              </button>
-            ))}
+        {!isUser && enriched.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            <div className="flex flex-wrap gap-1">
+              {enriched.map((e, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onCitationClick(e.citation)}
+                  className="rounded border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title={e.field ? `${e.field}: ${e.value}` : undefined}
+                >
+                  {e.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenSources((v) => !v)}
+              className="text-[10px] text-primary hover:underline"
+            >
+              {openSources ? "Hide" : "Show"} sources used ({enriched.length})
+            </button>
+            {openSources && (
+              <div className="rounded border bg-muted/40 p-2 text-[11px]">
+                <ul className="space-y-1">
+                  {enriched.map((e, i) => (
+                    <li key={i} className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{e.label}</div>
+                        {e.field && (
+                          <div className="text-muted-foreground">
+                            <span className="font-mono">{e.field}</span> = <span className="font-mono">{String(e.value)}</span>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onCitationClick(e.citation)}
+                        className="shrink-0 text-primary hover:underline"
+                      >
+                        Open
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -353,8 +438,38 @@ function MessageBubble({ msg, onCitationClick }: { msg: ChatMessage; onCitationC
   );
 }
 
-function citationLabel(c: Citation): string {
-  if (c.type === "sheet") return `${c.sheet} · row ${typeof c.row === "number" ? c.row + 1 : "?"}`;
-  if (c.type === "concern") return `Concern${c.id ? ` #${c.id.slice(0, 6)}` : ""}`;
-  return `Reminder${c.id ? ` #${c.id.slice(0, 6)}` : ""}`;
+type EnrichedCitation = {
+  citation: Citation;
+  label: string;
+  field?: string;
+  value?: unknown;
+};
+
+function enrichCitation(c: Citation, sheets?: SheetSource[]): EnrichedCitation {
+  if (c.type === "sheet") {
+    const rowIdx = typeof c.row === "number" ? c.row : -1;
+    const sheet = sheets?.find((s) => s.label === c.sheet);
+    const row = sheet && rowIdx >= 0 ? sheet.rows[rowIdx] : undefined;
+    const field = pickKeyField(sheet?.columns ?? [], row);
+    const value = field && row ? row[field] : undefined;
+    const label = `${c.sheet} · row ${rowIdx + 1}${field ? ` · ${field}=${truncate(String(value ?? ""), 24)}` : ""}`;
+    return { citation: c, label, field, value };
+  }
+  if (c.type === "concern") return { citation: c, label: `Concern${c.id ? ` #${c.id.slice(0, 6)}` : ""}` };
+  return { citation: c, label: `Reminder${c.id ? ` #${c.id.slice(0, 6)}` : ""}` };
 }
+
+function pickKeyField(columns: string[], row?: Record<string, unknown>): string | undefined {
+  if (!row) return undefined;
+  const priorities = [
+    /days?[_ ]taken/i, /tat/i, /overdue/i, /status/i, /delay/i,
+    /activity/i, /task/i, /stage/i, /reason/i, /owner|assignee|person/i,
+  ];
+  for (const re of priorities) {
+    const hit = columns.find((c) => re.test(c) && row[c] != null && row[c] !== "");
+    if (hit) return hit;
+  }
+  return columns.find((c) => row[c] != null && row[c] !== "");
+}
+
+function truncate(s: string, n: number) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
