@@ -424,7 +424,7 @@ export async function runCopilotAgent(
           // (missing/mismatched embeddings for this sheet). Guarantees the
           // model always gets rows so it never refuses on a valid selected sheet.
           let matches: Array<{ row_index: number; similarity?: number }> = [];
-          let mode: "vector" | "keyword" | "recent" = "vector";
+          let mode: "vector" | "keyword" | "keyword-partial" | "recent" = "vector";
           try {
             const { embedQuery } = await import("./embeddings.server");
             void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
