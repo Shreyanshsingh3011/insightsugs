@@ -776,6 +776,12 @@ export const listSheets = createServerFn({ method: "GET" })
       const transientSchemaCacheError = message.toLowerCase().includes("schema cache");
       const timeoutError = String((result.error as any).code ?? "") === "SOURCE_TIMEOUT";
       if ((!transientSchemaCacheError && !timeoutError) || attempt === 1) break;
+      if (transientSchemaCacheError) {
+        try {
+          const { healSchemaCache } = await import("@/lib/schema-heal.server");
+          await healSchemaCache("listSheets PGRST002");
+        } catch { /* non-fatal */ }
+      }
       await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
     }
 
