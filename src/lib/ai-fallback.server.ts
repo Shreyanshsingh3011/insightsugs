@@ -32,9 +32,15 @@ function isOpen(p: Provider): BreakerState | null {
 }
 function trip(p: Provider, status: number, error?: string) {
   breakers[p] = { openedAt: Date.now(), status, error };
+  // Loud so downgrades are visible in server-function-logs, not silent failures.
+  console.warn(`[ai-fallback] breaker OPEN provider=${p} status=${status}${error ? ` error=${error}` : ""}`);
 }
 function reset(p: Provider) {
+  if (breakers[p]) console.warn(`[ai-fallback] breaker CLOSED provider=${p}`);
   delete breakers[p];
+}
+function served(p: Provider) {
+  if (p !== "gateway") console.warn(`[ai-fallback] request served by ${p} (primary gateway unavailable)`);
 }
 
 export function getBreakerSnapshot() {
@@ -158,7 +164,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
     } else {
       const response = await baseFetch(input, init);
       if (response.ok) {
-        if (chat) reset("gateway");
+        if (chat) { reset("gateway"); served("gateway"); }
         return response;
       }
       if (!chat || !shouldRetry(response.status)) return response;
@@ -169,7 +175,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
     if (chat && geminiKey && !isOpen("gemini")) {
       try {
         const retry = await callGemini(url, init, geminiKey);
-        if (retry.ok) { reset("gemini"); return retry; }
+        if (retry.ok) { reset("gemini"); served("gemini"); return retry; }
         if (shouldRetry(retry.status)) trip("gemini", retry.status);
         else if (!openRouterKey && !groqKey) return retry;
       } catch (e) {
@@ -183,7 +189,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
       for (const model of OPENROUTER_FREE_MODELS) {
         try {
           const retry = await callOpenRouter(url, init, openRouterKey, model);
-          if (retry.ok) { reset("openrouter"); return retry; }
+          if (retry.ok) { reset("openrouter"); served("openrouter"); return retry; }
           // Peek at body to detect "unavailable for free" errors and skip to next model
           const bodyText = await retry.clone().text().catch(() => "");
           const unavailableForFree = /unavailable for free|paid version is available/i.test(bodyText);
@@ -214,7 +220,7 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
     if (chat && groqKey && !isOpen("groq")) {
       try {
         const retry = await callGroq(url, init, groqKey);
-        if (retry.ok) { reset("groq"); return retry; }
+        if (retry.ok) { reset("groq"); served("groq"); return retry; }
         if (shouldRetry(retry.status)) trip("groq", retry.status);
         return retry;
       } catch (e) {
