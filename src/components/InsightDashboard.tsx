@@ -2008,11 +2008,31 @@ function OverviewSection({ data, exportPayload, exportFetchedAt, onRefreshExport
               </Card>
             )}
             {/* Flags */}
-            {flags.length > 0 && (
+            {(flags.length > 0 || (a as any).anomalies) && (
               <Card className="rounded-3xl border-border/60 shadow-sm transition-all hover:shadow-md lg:col-span-2">
                 <CardHeader className="pb-2">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600">Attention</div>
-                  <CardTitle className="text-base font-semibold">Flags</CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600">Attention</div>
+                      <CardTitle className="text-base font-semibold">Flags{flags.length ? ` (${flags.length})` : ""}</CardTitle>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs"
+                      onClick={() => exportIncidentReportPdf({
+                        project: (data as any).project,
+                        summary: typeof a.summary === "string" ? a.summary : undefined,
+                        totals: totals as Record<string, number>,
+                        risk_score: a.risk_score as any,
+                        flags: flags as any,
+                        anomalies: Array.isArray((a as any).anomalies) ? (a as any).anomalies : [],
+                        filters: { sheet: selected?.label },
+                      })}
+                    >
+                      <FileDown className="h-3.5 w-3.5" /> Incident report (PDF)
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-2 text-sm">
