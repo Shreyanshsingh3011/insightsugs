@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
 import { callEmergent } from "@/lib/emergent-client";
 import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
+import { isTransientDataApiError } from "@/lib/transient-errors";
 
 
 const SHEET_TYPE_ENUM = z.enum([
@@ -1781,26 +1782,76 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const fetchRegistry = async () =>
-      await supabase
+    let reg: { id: string; display_name: string; sheet_type: string | null } | null = null;
+    let regErr: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await supabase
         .from("sheet_registry")
         .select("id, display_name, sheet_type")
         .eq("id", data.sheetId)
         .maybeSingle();
-    let { data: reg, error: regErr } = await fetchRegistry();
-    if (regErr && /schema cache|PGRST002|retrying/i.test(regErr.message)) {
-      await new Promise((r) => setTimeout(r, 600));
-      ({ data: reg, error: regErr } = await fetchRegistry());
+      reg = result.data as typeof reg;
+      regErr = result.error;
+      if (!regErr) break;
+      if (!isTransientDataApiError(regErr) || attempt === 3) break;
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
     }
-    if (regErr) throw new Error(regErr.message);
+    if (regErr) {
+      if (isTransientDataApiError(regErr)) {
+        console.warn("Auto-insights registry lookup degraded; returning safe fallback.", regErr);
+        return {
+          sheetId: data.sheetId,
+          sheetName: "Selected sheet",
+          insights: [
+            {
+              title: "Data temporarily unavailable",
+              detail: "The backend is refreshing its data cache. Try again in a few seconds; the app will keep running.",
+              severity: "warning" as const,
+            },
+          ],
+          questions: ["Can you retry insights after the live data status returns to connected?"],
+          degraded: true,
+        };
+      }
+      throw new Error(regErr instanceof Error ? regErr.message : String((regErr as { message?: string })?.message ?? regErr));
+    }
     if (!reg) throw new Error("Sheet not found or you don't have access");
 
-    const { data: rows } = await supabase
-      .from("sheet_rows")
-      .select("row_index, canonical, extras")
-      .eq("sheet_registry_id", data.sheetId)
-      .order("row_index", { ascending: true })
-      .range(0, 4999);
+    let rows: any[] | null = null;
+    let rowsErr: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await supabase
+        .from("sheet_rows")
+        .select("row_index, canonical, extras")
+        .eq("sheet_registry_id", data.sheetId)
+        .order("row_index", { ascending: true })
+        .range(0, 4999);
+      rows = (result.data ?? null) as any[] | null;
+      rowsErr = result.error;
+      if (!rowsErr) break;
+      if (!isTransientDataApiError(rowsErr) || attempt === 3) break;
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+
+    if (rowsErr) {
+      if (isTransientDataApiError(rowsErr)) {
+        console.warn("Auto-insights row lookup degraded; returning safe fallback.", rowsErr);
+        return {
+          sheetId: reg.id,
+          sheetName: reg.display_name,
+          insights: [
+            {
+              title: "Rows temporarily unavailable",
+              detail: `${reg.display_name} is selected, but live rows could not be read while the backend refreshed its data cache. Try again in a few seconds.`,
+              severity: "warning" as const,
+            },
+          ],
+          questions: [`Can you retry ${reg.display_name} insights after the live data status returns to connected?`],
+          degraded: true,
+        };
+      }
+      throw new Error(rowsErr instanceof Error ? rowsErr.message : String((rowsErr as { message?: string })?.message ?? rowsErr));
+    }
 
 
     const storedRows = (rows ?? []) as any[];
@@ -1843,11 +1894,40 @@ export const generateCombinedAutoInsights = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data: regs, error: regErr } = await supabase
-      .from("sheet_registry")
-      .select("id, display_name, sheet_type")
-      .in("id", data.sheetIds);
-    if (regErr) throw new Error(regErr.message);
+    let regs: { id: string; display_name: string; sheet_type: string | null }[] | null = null;
+    let regErr: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await supabase
+        .from("sheet_registry")
+        .select("id, display_name, sheet_type")
+        .in("id", data.sheetIds);
+      regs = (result.data ?? null) as typeof regs;
+      regErr = result.error;
+      if (!regErr) break;
+      if (!isTransientDataApiError(regErr) || attempt === 3) break;
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+    if (regErr) {
+      if (isTransientDataApiError(regErr)) {
+        console.warn("Combined auto-insights registry lookup degraded; returning safe fallback.", regErr);
+        return {
+          insights: [
+            {
+              title: "Data temporarily unavailable",
+              detail: "Selected sheets could not be read while the backend refreshed its data cache. Try again in a few seconds.",
+              severity: "warning" as const,
+              sheetId: data.sheetIds[0] ?? "",
+              sheetName: "Selected sheets",
+            },
+          ],
+          questions: ["Can you retry combined insights after the live data status returns to connected?"],
+          perSheet: [],
+          sheetNames: [],
+          degraded: true,
+        };
+      }
+      throw new Error(regErr instanceof Error ? regErr.message : String((regErr as { message?: string })?.message ?? regErr));
+    }
     if (!regs || regs.length === 0) throw new Error("No sheets found or you don't have access");
 
     const { buildSheetAutoInsights } = await import("./auto-insights-fallback.server");
@@ -1858,12 +1938,37 @@ export const generateCombinedAutoInsights = createServerFn({ method: "POST" })
     const perSheet: { sheetId: string; sheetName: string; count: number }[] = [];
 
     for (const reg of regs) {
-      const { data: rows } = await supabase
-        .from("sheet_rows")
-        .select("row_index, canonical, extras")
-        .eq("sheet_registry_id", reg.id)
-        .order("row_index", { ascending: true })
-        .range(0, 4999);
+      let rows: any[] | null = null;
+      let rowsErr: unknown = null;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const result = await supabase
+          .from("sheet_rows")
+          .select("row_index, canonical, extras")
+          .eq("sheet_registry_id", reg.id)
+          .order("row_index", { ascending: true })
+          .range(0, 4999);
+        rows = (result.data ?? null) as any[] | null;
+        rowsErr = result.error;
+        if (!rowsErr) break;
+        if (!isTransientDataApiError(rowsErr) || attempt === 3) break;
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+      }
+      if (rowsErr) {
+        if (!isTransientDataApiError(rowsErr)) {
+          throw new Error(rowsErr instanceof Error ? rowsErr.message : String((rowsErr as { message?: string })?.message ?? rowsErr));
+        }
+        console.warn("Combined auto-insights row lookup skipped for one sheet.", rowsErr);
+        allInsights.push({
+          title: "Sheet rows temporarily unavailable",
+          detail: `${reg.display_name} could not be read while the backend refreshed its data cache. [sheet:${reg.display_name}]`,
+          severity: "warning",
+          sheetId: reg.id,
+          sheetName: reg.display_name,
+        });
+        allQuestions.push({ q: `Can you retry ${reg.display_name} insights after live data reconnects?`, sheetName: reg.display_name });
+        perSheet.push({ sheetId: reg.id, sheetName: reg.display_name, count: 1 });
+        continue;
+      }
       const storedRows = (rows ?? []) as any[];
       const { insights, questions } = buildSheetAutoInsights(reg.display_name, storedRows);
       perSheet.push({ sheetId: reg.id, sheetName: reg.display_name, count: insights.length });
