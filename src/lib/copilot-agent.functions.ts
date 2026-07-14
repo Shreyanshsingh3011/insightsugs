@@ -2447,7 +2447,7 @@ export async function runCopilotAgent(
     while ((finalMarkerMatch = finalInlineRe.exec(finalAnswer)) !== null) {
       if (finalAnswer[finalMarkerMatch.index + finalMarkerMatch[0].length] === "(") continue;
       const body = finalMarkerMatch[1].trim();
-      if (/^(sheet:|doc:|flags?\[)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
+      if (/^(sheet:|doc:)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
     }
     const finalCitationOk =
       /^i don'?t have that in the current dashboard data\b/i.test(finalAnswer.trim()) ||
