@@ -4,6 +4,13 @@ import { createClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { isRecoverableDataReadError } from "@/lib/transient-errors";
 import type { Database } from "@/integrations/supabase/types";
+import {
+  applyBootstrapSuperAdminRole,
+  emailFromJwtPayload,
+  isBootstrapSuperAdminEmail,
+  isBootstrapSuperAdminUserId,
+  readJwtPayload,
+} from "@/lib/bootstrap-super-admins";
 
 export type RoleCheckResult = {
   email: string;
@@ -23,42 +30,16 @@ export type MyRolesResult = {
 export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MyRolesResult> => {
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
-    const bootstrapSuperAdminUserIds = new Set(["b530da41-caa8-4ead-b5fe-8eb3bc446ace"]);
-    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
-      try {
-        const payload = jwt.split(".")[1];
-        if (!payload) return null;
-        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-      } catch {
-        return null;
-      }
-    };
-    const applyBootstrapRoles = (roles: string[], email: string): string[] => {
-      if (!bootstrapSuperAdminEmails.has(email)) return roles;
-      return ["super_admin", ...roles.filter((role) => role !== "super_admin")];
-    };
-    const emailFromPayload = (payload: Record<string, unknown> | null) => {
-      const metadata = payload?.user_metadata as Record<string, unknown> | undefined;
-      return String(
-        (typeof payload?.email === "string" ? payload.email : "") ||
-          (typeof metadata?.email === "string" ? metadata.email : ""),
-      )
-        .trim()
-        .toLowerCase();
-    };
     const authHeader = getRequestHeader("authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
     const payload = readJwtPayload(token);
     let userId = String((context as any).userId ?? payload?.sub ?? "");
     let userEmail =
-      String((context as any).claims?.email ?? "").trim().toLowerCase() || emailFromPayload(payload);
-    if (bootstrapSuperAdminUserIds.has(userId)) {
+      String((context as any).claims?.email ?? "").trim().toLowerCase() || emailFromJwtPayload(payload);
+    if (isBootstrapSuperAdminUserId(userId)) {
       return { roles: ["super_admin"], degraded: false };
     }
-    if (userEmail && bootstrapSuperAdminEmails.has(userEmail)) {
+    if (userEmail && isBootstrapSuperAdminEmail(userEmail)) {
       return { roles: ["super_admin"], degraded: false };
     }
     if (!token || !userId) return { roles: [], degraded: true };
@@ -87,14 +68,14 @@ export const getMyRoles = createServerFn({ method: "GET" })
         userEmail =
           (typeof claims.email === "string" ? claims.email : "").trim().toLowerCase() ||
           userEmail ||
-          emailFromPayload(payload);
+          emailFromJwtPayload(payload);
       }
-      if (bootstrapSuperAdminEmails.has(userEmail)) {
+      if (isBootstrapSuperAdminEmail(userEmail)) {
         return { roles: ["super_admin"], degraded: false };
       }
     } catch (error) {
       console.warn("Role lookup continuing with middleware-validated identity; auth validation unavailable.", error);
-      if (bootstrapSuperAdminEmails.has(userEmail)) {
+      if (isBootstrapSuperAdminEmail(userEmail)) {
         return { roles: ["super_admin"], degraded: false };
       }
     }
@@ -104,7 +85,7 @@ export const getMyRoles = createServerFn({ method: "GET" })
       const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
       const adminEmail = authUser.user?.email?.trim().toLowerCase();
       if (adminEmail) userEmail = adminEmail;
-      if (bootstrapSuperAdminEmails.has(userEmail)) {
+      if (isBootstrapSuperAdminEmail(userEmail)) {
         return { roles: ["super_admin"], degraded: false };
       }
       const { data, error } = await supabaseAdmin
@@ -113,7 +94,7 @@ export const getMyRoles = createServerFn({ method: "GET" })
         .eq("user_id", userId);
       if (error) throw error;
       const roles = (data ?? []).map((r: { role: string }) => r.role);
-      const recoveredRoles = applyBootstrapRoles(roles, userEmail);
+      const recoveredRoles = applyBootstrapSuperAdminRole(roles, userEmail, userId);
       if (recoveredRoles.length > 0) return { roles: recoveredRoles, degraded: true };
     } catch (error) {
       lastError = error;
@@ -127,14 +108,14 @@ export const getMyRoles = createServerFn({ method: "GET" })
           .select("role")
           .eq("user_id", userId);
         if (error) throw error;
-        return { roles: applyBootstrapRoles((data ?? []).map((r: { role: string }) => r.role), userEmail), degraded: true };
+        return { roles: applyBootstrapSuperAdminRole((data ?? []).map((r: { role: string }) => r.role), userEmail, userId), degraded: true };
       } catch (error) {
         lastError = error;
         if (!isRecoverableDataReadError(error)) throw error;
       }
     }
 
-    if (bootstrapSuperAdminEmails.has(userEmail)) {
+    if (isBootstrapSuperAdminEmail(userEmail) || isBootstrapSuperAdminUserId(userId)) {
       console.warn("Role lookup recovered through bootstrap super-admin mapping during backend grant outage.");
       return { roles: ["super_admin"], degraded: true };
     }

@@ -10,6 +10,12 @@ import {
   toPgVector,
 } from "./documents.server";
 import { isRecoverableDataReadError } from "./transient-errors";
+import {
+  emailFromJwtPayload,
+  isBootstrapSuperAdminEmail,
+  isBootstrapSuperAdminUserId,
+  readJwtPayload,
+} from "@/lib/bootstrap-super-admins";
 
 async function assertAdmin(supabase: any, userId: string) {
   const { data, error } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
@@ -90,32 +96,12 @@ export const listDocuments = createServerFn({ method: "POST" })
       code: "SOURCE_TIMEOUT",
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
-    const bootstrapSuperAdminUserIds = new Set(["b530da41-caa8-4ead-b5fe-8eb3bc446ace"]);
-    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
-      try {
-        const payload = jwt.split(".")[1];
-        if (!payload) return null;
-        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-      } catch {
-        return null;
-      }
-    };
     const authHeader = getRequestHeader("authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
     const payload = readJwtPayload(token);
-    const payloadEmail = String(
-      (typeof payload?.email === "string" ? payload.email : "") ||
-        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
-          ? (payload?.user_metadata as Record<string, unknown>).email
-          : ""),
-    )
-      .trim()
-      .toLowerCase();
+    const payloadEmail = emailFromJwtPayload(payload);
     const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase() || payloadEmail;
-    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail) || bootstrapSuperAdminUserIds.has(userId);
+    const isBootstrapSuper = isBootstrapSuperAdminEmail(claimEmail) || isBootstrapSuperAdminUserId(userId);
     const isAdminUser = async () => {
       if (isBootstrapSuper) return true;
       try {
@@ -138,7 +124,7 @@ export const listDocuments = createServerFn({ method: "POST" })
           { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
         );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
-        return bootstrapSuperAdminEmails.has(email);
+        return isBootstrapSuperAdminEmail(email);
       } catch {
         return false;
       }

@@ -60,6 +60,7 @@ export const Route = createFileRoute("/_authenticated/copilot")({
 });
 
 type Source = { id: string; name: string; type: string; rowsUsed: number; truncated: boolean };
+type CachedSourceList<T> = { rows: T[]; cachedAt: string };
 type ChartSpec = {
   sheetId: string;
   sheet: string;
@@ -69,6 +70,26 @@ type ChartSpec = {
   yKey: string;
   data: { name: string; value: number }[];
 };
+
+const COPILOT_SHEETS_CACHE_KEY = "copilot:lastGoodSheets";
+const COPILOT_DOCUMENTS_CACHE_KEY = "copilot:lastGoodDocuments";
+
+function readCachedSourceList<T>(key: string): CachedSourceList<T> {
+  if (typeof window === "undefined") return { rows: [], cachedAt: "" };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || "null") as CachedSourceList<T> | null;
+    return Array.isArray(parsed?.rows) ? parsed : { rows: [], cachedAt: "" };
+  } catch {
+    return { rows: [], cachedAt: "" };
+  }
+}
+
+function writeCachedSourceList<T>(key: string, rows: T[]) {
+  if (typeof window === "undefined" || rows.length === 0) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ rows, cachedAt: new Date().toISOString() }));
+  } catch { /* ignore quota/storage errors */ }
+}
 type Turn = {
   question: string;
   answer: string;
@@ -331,6 +352,14 @@ function CopilotPage() {
     queryKey: ["copilot-documents"],
     queryFn: () => fetchDocs({ data: {} }),
   });
+  const cachedSheets = useMemo(() => readCachedSourceList<any>(COPILOT_SHEETS_CACHE_KEY), []);
+  const cachedDocuments = useMemo(() => readCachedSourceList<any>(COPILOT_DOCUMENTS_CACHE_KEY), []);
+  const liveSheets = sheets.data?.sheets ?? [];
+  const liveDocuments = documents.data?.documents ?? [];
+  const visibleSheets = liveSheets.length > 0 ? liveSheets : cachedSheets.rows;
+  const visibleDocuments = liveDocuments.length > 0 ? liveDocuments : cachedDocuments.rows;
+  const usingCachedSheets = !sheets.isLoading && liveSheets.length === 0 && visibleSheets.length > 0;
+  const usingCachedDocuments = !documents.isLoading && liveDocuments.length === 0 && visibleDocuments.length > 0;
   const live = useLiveInvalidate(
     ["sheet_rows", "sheet_registry"],
     [["sheets-list"], ["copilot-documents"]],
@@ -372,6 +401,12 @@ function CopilotPage() {
     if (typeof window === "undefined") return;
     try { window.sessionStorage.setItem("copilot:selectedDocs", JSON.stringify([...selectedDocs])); } catch { /* ignore */ }
   }, [selectedDocs]);
+  useEffect(() => {
+    writeCachedSourceList(COPILOT_SHEETS_CACHE_KEY, liveSheets);
+  }, [liveSheets]);
+  useEffect(() => {
+    writeCachedSourceList(COPILOT_DOCUMENTS_CACHE_KEY, liveDocuments);
+  }, [liveDocuments]);
 
   const [strictMatch, setStrictMatch] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -592,19 +627,21 @@ function CopilotPage() {
         <Card className="p-3">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-medium">Sheets in context</h2>
-            <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+            <span className="text-xs text-muted-foreground">
+              {selected.size} selected{usingCachedSheets ? " · cached" : ""}
+            </span>
           </div>
           {sheets.isLoading ? (
             <div className="flex justify-center py-4 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
             </div>
-          ) : (sheets.data?.sheets ?? []).length === 0 ? (
+          ) : visibleSheets.length === 0 ? (
             <p className="py-2 text-xs text-muted-foreground">
               Register sheets first on the My Sheets page.
             </p>
           ) : (
             <ul className="space-y-1.5">
-              {sheets.data!.sheets.map((s: any) => (
+              {visibleSheets.map((s: any) => (
                 <li key={s.id}>
                   <label className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 hover:bg-muted/50">
                     <Checkbox
@@ -630,19 +667,21 @@ function CopilotPage() {
             <h2 className="flex items-center gap-1.5 text-sm font-medium">
               <FileText className="h-3.5 w-3.5" /> Documents
             </h2>
-            <span className="text-xs text-muted-foreground">{selectedDocs.size} selected</span>
+            <span className="text-xs text-muted-foreground">
+              {selectedDocs.size} selected{usingCachedDocuments ? " · cached" : ""}
+            </span>
           </div>
           {documents.isLoading ? (
             <div className="flex justify-center py-4 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
             </div>
-          ) : (documents.data?.documents ?? []).length === 0 ? (
+          ) : visibleDocuments.length === 0 ? (
             <p className="py-2 text-xs text-muted-foreground">
               Upload documents on the Documents page.
             </p>
           ) : (
             <ul className="max-h-64 space-y-1.5 overflow-y-auto">
-              {documents.data!.documents.map((d: any) => (
+              {visibleDocuments.map((d: any) => (
                 <li key={d.id}>
                   <label className="flex cursor-pointer items-start gap-2 rounded-md p-1.5 hover:bg-muted/50">
                     <Checkbox
