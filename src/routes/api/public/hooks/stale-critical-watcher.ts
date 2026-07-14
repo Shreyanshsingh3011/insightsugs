@@ -9,6 +9,7 @@
 //       headers := jsonb_build_object('Content-Type','application/json','apikey','YOUR_ANON_KEY'),
 //       body := '{}'::jsonb) $$);
 import { createFileRoute } from "@tanstack/react-router";
+import { isHookAuthorized, unauthorizedResponse } from "@/lib/hook-auth.server";
 
 async function runWatcher() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
