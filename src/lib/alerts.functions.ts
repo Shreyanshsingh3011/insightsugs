@@ -68,16 +68,17 @@ export const sendAlert = createServerFn({ method: "POST" })
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id, full_name, email")
-        .ilike("email", extra.email)
+        .ilike("email", escapeIlike(normalizeEmail(extra.email)))
         .maybeSingle();
       addRecip(extra.email, prof?.id ?? null, prof?.full_name ?? extra.name ?? null);
     }
 
-    // Match activity by title -> project_id
+    // Match activity by title -> project_id. Escape wildcards so a flagged
+    // title containing `%`/`_` can't broaden the query to unrelated rows.
     const { data: actMatches } = await supabaseAdmin
       .from("activities")
       .select("id, project_id, assignee_id, depends_on")
-      .ilike("title", flag.activity)
+      .ilike("title", escapeIlike(flag.activity))
       .limit(5);
 
     const projectIds = new Set<string>();
