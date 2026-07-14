@@ -103,7 +103,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
 
     const sentinel = `upload://${data.sourceLabel ?? "file"}/${crypto.randomUUID()}`;
 
-    const { data: reg, error: regErr } = await supabase
+    const reg = must(await withSchemaHeal(() => supabase
       .from("sheet_registry")
       .insert({
         user_id: userId,
@@ -113,14 +113,13 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
         visibility,
       })
       .select("id")
-      .single();
-    if (regErr) throw new Error(regErr.message);
-    const registryId = reg.id as string;
+      .single(), 4, "ingest.registry.insert"));
+    const registryId = (reg as { id: string }).id;
 
     if (sharedIds.length > 0) {
-      await supabase.from("sheet_registry_shares").insert(
+      await withSchemaHeal(() => supabase.from("sheet_registry_shares").insert(
         sharedIds.map((uid) => ({ sheet_registry_id: registryId, user_id: uid, created_by: userId })),
-      );
+      ), 4, "ingest.shares.insert");
     }
 
     const mapping = data.mapping ?? heuristicMapping(data.sheetType as SheetType, data.headers);
@@ -131,8 +130,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       position: idx,
     }));
     if (mappingRows.length > 0) {
-      const { error: mapErr } = await supabase.from("sheet_column_mappings").insert(mappingRows);
-      if (mapErr) throw new Error(mapErr.message);
+      must(await withSchemaHeal(() => supabase.from("sheet_column_mappings").insert(mappingRows), 4, "ingest.mappings.insert"));
     }
 
     // Convert parsed rows into canonical/extras split.
@@ -153,18 +151,17 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       const BATCH = 500;
       for (let i = 0; i < toInsert.length; i += BATCH) {
         const slice = toInsert.slice(i, i + BATCH);
-        const { error } = await supabase.from("sheet_rows").insert(slice);
-        if (error) throw new Error(error.message);
+        must(await withSchemaHeal(() => supabase.from("sheet_rows").insert(slice), 4, "ingest.rows.insert"));
       }
     }
 
-    await supabase
+    await withSchemaHeal(() => supabase
       .from("sheet_registry")
       .update({
         last_refreshed_at: new Date().toISOString(),
         row_count: toInsert.length,
       })
-      .eq("id", registryId);
+      .eq("id", registryId), 4, "ingest.registry.update");
 
     return { id: registryId, rowCount: toInsert.length };
   });
