@@ -87,6 +87,7 @@ import {
   normalizeHaystack,
   matchesAllPhrases,
   contentTokens as qmContentTokens,
+  extractRequestedColumns,
 } from "./query-match";
 
 function tokenize(q: string): string[] {
@@ -99,8 +100,9 @@ function tokenize(q: string): string[] {
 // authoritative stop-list now lives in ./query-match.
 const STOP = new Set<string>();
 
-function rowMatchesStrict(row: StoredRow, phrases: string[], tokens: string[]): number {
-  const hay = normalizeHaystack(Object.values(row.data));
+function rowMatchesStrict(row: StoredRow, phrases: string[], tokens: string[], requestedColumns: string[] = []): number {
+  const values = requestedColumns.length > 0 ? requestedColumns.map((col) => row.data[col]) : Object.values(row.data);
+  const hay = normalizeHaystack(values);
   // When the user's query contains any strict phrase (proper noun, quoted
   // text, or 2+ content tokens), require EVERY phrase to appear as a
   // contiguous substring in the row. This is what stops "Kunti Devi" from
@@ -125,6 +127,11 @@ function statusColumn(cols: string[]): string | null {
 function isTerminal(row: StoredRow, statusCol: string | null): boolean {
   if (!statusCol) return false;
   return TERMINAL.test(cellText(row.data[statusCol]));
+}
+
+function wantsActiveOnlyRows(q: string): boolean {
+  const s = q.toLowerCase();
+  return /\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached)\b/.test(s);
 }
 
 type Intent =
@@ -182,6 +189,7 @@ export async function deterministicAnswer(params: {
   const cap = params.maxRowsPerSheet ?? 8000;
   const strict = params.strictMatch === true;
   const intent = detectIntent(question);
+  const activeOnly = wantsActiveOnlyRows(question);
   const insightMode = isInsightShapedQuery(question);
   const rawTokens = tokenize(question);
   const rawPhrases = extractPhrases(question);
@@ -282,22 +290,27 @@ export async function deterministicAnswer(params: {
     const cols = allColumns(rows);
     const statusCol = statusColumn(cols);
     const activeRows = rows.filter((r) => !isTerminal(r, statusCol));
+    const searchRows = activeOnly ? activeRows : rows;
+    const requestedColumns = extractRequestedColumns(question, cols);
+    const requestedColumnNorms = new Set(requestedColumns.map((c) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
+    const searchPhrases = phrases.filter((p) => !requestedColumnNorms.has(p));
+    const hasCriteria = tokens.length > 0 || phrases.length > 0;
     const matched = (tokens.length > 0 || phrases.length > 0)
-      ? activeRows
-          .map((row) => ({ row, score: rowMatchesStrict(row, phrases, strict ? [] : tokens) }))
+      ? searchRows
+          .map((row) => ({ row, score: rowMatchesStrict(row, searchPhrases, strict ? [] : tokens, requestedColumns) }))
           .filter((x) => x.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)
-      : activeRows;
+      : searchRows;
     // In strict mode we NEVER broaden. Otherwise, if the user targeted a
     // specific phrase/name and nothing matches, we still return empty so
     // unrelated rows never leak.
-    const hasSpecificTarget = phrases.length > 0 || tokens.length >= 2;
+    const hasSpecificTarget = searchPhrases.length > 0 || tokens.length >= 2;
     const universe = matched.length > 0
       ? matched
       : strict
         ? []
-        : (hasSpecificTarget ? [] : activeRows);
+        : (hasSpecificTarget ? [] : searchRows);
 
     const emitRow = (row: StoredRow, note?: string) => {
       const marker = `[sheet:${reg.display_name} row ${row.row_index + 1}]`;
@@ -318,8 +331,11 @@ export async function deterministicAnswer(params: {
     };
 
     if (intent.kind === "count") {
+      const count = hasCriteria ? matched.length : searchRows.length;
+      const denominatorLabel = activeOnly ? "active" : "total";
+      const columnNote = requestedColumns.length ? ` in column(s): ${requestedColumns.map((c) => `\`${c}\``).join(", ")}` : "";
       parts.push(
-        `**${reg.display_name}** — ${fmt(matched.length || activeRows.length)} matching rows${matched.length && matched.length !== activeRows.length ? ` (of ${fmt(activeRows.length)} active)` : ""}.`,
+        `**${reg.display_name}** — ${fmt(count)} matching rows${columnNote}${hasCriteria ? ` (of ${fmt(searchRows.length)} ${denominatorLabel})` : ""}.`,
       );
       for (const r of universe.slice(0, 3)) parts.push(emitRow(r));
       continue;
@@ -466,12 +482,16 @@ export async function deterministicAnswer(params: {
       for (const { reg, rows } of sheetRows) {
         const cols = allColumns(rows);
         const statusCol = statusColumn(cols);
-        const active = rows.filter((r) => !isTerminal(r, statusCol));
-        const scored = active
+        const searchRows = activeOnly ? rows.filter((r) => !isTerminal(r, statusCol)) : rows;
+        const requestedColumns = extractRequestedColumns(question, cols);
+        const requestedColumnNorms = new Set(requestedColumns.map((c) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
+        const scoredPhrases = basePhrases.filter((p) => !requestedColumnNorms.has(p));
+        const scored = searchRows
           .map((r) => {
-            const hay = normalizeHaystack(Object.values(r.data));
+            const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
+            const hay = normalizeHaystack(values);
             let s = 0;
-            for (const t of phraseTokens) if (hay.includes(t)) s++;
+            for (const t of scoredPhrases.flatMap((p) => p.split(" ").filter((x) => x.length >= 2))) if (hay.includes(t)) s++;
             return { r, s };
           })
           .filter((x) => x.s > 0)

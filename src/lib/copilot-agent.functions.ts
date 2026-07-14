@@ -376,6 +376,20 @@ export async function runCopilotAgent(
       return rows;
     };
 
+    const rowColumns = (rows: Array<{ data: Record<string, unknown> }>) => {
+      const cols = new Set<string>();
+      for (const r of rows) for (const k of Object.keys(r.data)) cols.add(k);
+      return Array.from(cols);
+    };
+
+    const resolveColumn = (want: string, columns: string[]) => {
+      const exact = columns.find((c) => c.toLowerCase().trim() === want.toLowerCase().trim());
+      if (exact) return exact;
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const w = norm(want);
+      return columns.find((c) => norm(c) === w) ?? null;
+    };
+
     // 3) Tools — each records to the ledger and toolTrace.
 
     const withTrace = async <T>(name: string, args: unknown, fn: () => Promise<T>) => {
@@ -418,6 +432,10 @@ export async function runCopilotAgent(
           if (!reg) return { error: "Unknown sheet_id" };
           const rows = await getSheetRows(sheet_id);
           const byIndex = new Map(rows.map((r) => [r.row_index, r.data]));
+          const { strictPhrases, normalizeHaystack, matchesAllPhrases, countPhraseHits, contentTokens, extractRequestedColumns } =
+            await import("./query-match");
+          const columns = rowColumns(rows);
+          const requestedColumns = extractRequestedColumns(query, columns);
 
           // Try vector search first; fall back to keyword scan when embeddings
           // are unavailable (402/429) OR when the RPC returns zero matches
@@ -425,35 +443,40 @@ export async function runCopilotAgent(
           // model always gets rows so it never refuses on a valid selected sheet.
           let matches: Array<{ row_index: number; similarity?: number }> = [];
           let mode: "vector" | "keyword" | "keyword-partial" | "recent" = "vector";
-          try {
-            const { embedQuery } = await import("./embeddings.server");
-            void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
-            const qvec = await embedQuery(query);
-            const { data, error } = await supabase.rpc("match_sheet_rows", {
-              _user_id: userId,
-              _registry_id: sheet_id,
-              _query: qvec as any,
-              _match_count: k,
-            });
-            if (error) throw new Error(error.message);
-            matches = (data ?? []) as any;
-          } catch {
-            // handled below via keyword fallback
+          if (requestedColumns.length === 0) {
+            try {
+              const { embedQuery } = await import("./embeddings.server");
+              void ensureSheetEmbeddings(supabase, sheet_id, { batchCap: 200 }).catch(() => {});
+              const qvec = await embedQuery(query);
+              const { data, error } = await supabase.rpc("match_sheet_rows", {
+                _user_id: userId,
+                _registry_id: sheet_id,
+                _query: qvec as any,
+                _match_count: k,
+              });
+              if (error) throw new Error(error.message);
+              matches = (data ?? []) as any;
+            } catch {
+              // handled below via keyword fallback
+            }
           }
 
           if (matches.length === 0) {
             mode = "keyword";
             const strict = data.strictMatch === true;
-            const { strictPhrases, normalizeHaystack, matchesAllPhrases, countPhraseHits, contentTokens } =
-              await import("./query-match");
             const basePhrases = strictPhrases(query);
             const tokens = contentTokens(query);
-            const phrases = strict && basePhrases.length === 0 && tokens.length >= 1
+            const requestedColumnNorms = new Set(
+              requestedColumns.map((c) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()),
+            );
+            const searchBasePhrases = basePhrases.filter((p) => !requestedColumnNorms.has(p));
+            const phrases = strict && searchBasePhrases.length === 0 && tokens.length >= 1
               ? [tokens.join(" ")]
-              : basePhrases;
+              : searchBasePhrases;
             const hasSpecificTarget = phrases.length > 0;
             const scored = rows.map((r) => {
-              const hay = normalizeHaystack(Object.values(r.data));
+              const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
+              const hay = normalizeHaystack(values);
               if (phrases.length > 0) {
                 if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
                 return { row_index: r.row_index, similarity: 10 + tokens.length };
@@ -475,7 +498,10 @@ export async function runCopilotAgent(
               const partial = rows
                 .map((r) => ({
                   row_index: r.row_index,
-                  similarity: countPhraseHits(normalizeHaystack(Object.values(r.data)), phrases),
+                  similarity: countPhraseHits(
+                    normalizeHaystack(requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data)),
+                    phrases,
+                  ),
                 }))
                 .filter((s) => s.similarity > 0)
                 .sort((a, b) => b.similarity - a.similarity)
@@ -510,8 +536,8 @@ export async function runCopilotAgent(
           });
 
           return {
-            _summary: `${results.length} rows from "${reg.display_name}" (${mode})`,
-            _resultForModel: { sheet: reg.display_name, mode, matches: results },
+            _summary: `${results.length} rows from "${reg.display_name}" (${mode}${requestedColumns.length ? `, searched columns: ${requestedColumns.join(", ")}` : ""})`,
+            _resultForModel: { sheet: reg.display_name, mode, searched_columns: requestedColumns, matches: results },
           };
         }),
     });
@@ -1261,9 +1287,10 @@ export async function runCopilotAgent(
 
     const countWhere = tool({
       description:
-        "Count rows in a sheet matching one or more (column op value) conditions ANDed together. Faster than filter_sheet_rows when you only need a count.",
+        "Count rows in a sheet matching one or more (column op value) conditions. Use match='any' for OR questions such as 'Store or Contractor column'; use match='all' for AND filters.",
       inputSchema: z.object({
         sheet_id: z.string().uuid(),
+        match: z.enum(["all", "any"]).default("all"),
         conditions: z
           .array(
             z.object({
@@ -1275,42 +1302,48 @@ export async function runCopilotAgent(
           .min(1)
           .max(6),
       }),
-      execute: async ({ sheet_id, conditions }) =>
-        withTrace("count_where", { sheet_id, conditions }, async () => {
+      execute: async ({ sheet_id, match, conditions }) =>
+        withTrace("count_where", { sheet_id, match, conditions }, async () => {
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
           const rows = await getSheetRows(sheet_id);
+          const columns = rowColumns(rows);
+          const conditionMatches = (r: { data: Record<string, unknown> }, c: (typeof conditions)[number]) => {
+            const key = resolveColumn(c.column, columns);
+            if (!key) return false;
+            const v = r.data[key];
+            const isBlank = v == null || v === "";
+            if (c.op === "blank") return isBlank;
+            if (c.op === "not_blank") return !isBlank;
+            if (isBlank) return false;
+            const numeric = ["gt", "gte", "lt", "lte"].includes(c.op);
+            if (numeric) {
+              const nv = Number(v);
+              const nq = Number(c.value);
+              if (!Number.isFinite(nv) || !Number.isFinite(nq)) return false;
+              if (c.op === "gt") return nv > nq;
+              if (c.op === "gte") return nv >= nq;
+              if (c.op === "lt") return nv < nq;
+              if (c.op === "lte") return nv <= nq;
+            } else {
+              const sv = String(v).toLowerCase();
+              const sq = String(c.value ?? "").toLowerCase();
+              if (c.op === "eq") return sv === sq;
+              if (c.op === "neq") return sv !== sq;
+              if (c.op === "contains") return sv.includes(sq);
+            }
+            return false;
+          };
           let n = 0;
           for (const r of rows) {
-            let ok = true;
-            for (const c of conditions) {
-              const v = r.data[c.column];
-              const isBlank = v == null || v === "";
-              if (c.op === "blank") { if (!isBlank) { ok = false; break; } continue; }
-              if (c.op === "not_blank") { if (isBlank) { ok = false; break; } continue; }
-              if (isBlank) { ok = false; break; }
-              const numeric = ["gt", "gte", "lt", "lte"].includes(c.op);
-              if (numeric) {
-                const nv = Number(v);
-                const nq = Number(c.value);
-                if (!Number.isFinite(nv) || !Number.isFinite(nq)) { ok = false; break; }
-                if (c.op === "gt" && !(nv > nq)) { ok = false; break; }
-                if (c.op === "gte" && !(nv >= nq)) { ok = false; break; }
-                if (c.op === "lt" && !(nv < nq)) { ok = false; break; }
-                if (c.op === "lte" && !(nv <= nq)) { ok = false; break; }
-              } else {
-                const sv = String(v).toLowerCase();
-                const sq = String(c.value ?? "").toLowerCase();
-                if (c.op === "eq" && sv !== sq) { ok = false; break; }
-                if (c.op === "neq" && sv === sq) { ok = false; break; }
-                if (c.op === "contains" && !sv.includes(sq)) { ok = false; break; }
-              }
-            }
+            const ok = match === "any"
+              ? conditions.some((c) => conditionMatches(r, c))
+              : conditions.every((c) => conditionMatches(r, c));
             if (ok) n++;
           }
           return {
             _summary: `${n} of ${rows.length} rows match`,
-            _resultForModel: { sheet: reg.display_name, matched: n, total: rows.length, conditions },
+            _resultForModel: { sheet: reg.display_name, matched: n, total: rows.length, match, conditions },
           };
         }),
     });
@@ -2194,7 +2227,7 @@ export async function runCopilotAgent(
       "",
       "EXPLORATION HELPERS (use liberally to answer more questions from the same sources):",
       "- 'what statuses/stages/people/categories exist', 'list all X', 'unique values of X' → call distinct_values(sheet_id, column). Prefer over search_sheet_rows for enumeration questions.",
-      "- 'how many rows are <status>/<condition>', 'count of X where Y' → call count_where(sheet_id, [{column,op,value}, ...]). Use ops: eq, neq, contains, gt, gte, lt, lte, blank, not_blank. AND-combined.",
+      "- 'how many rows are <status>/<condition>', 'count of X where Y' → call count_where(sheet_id, conditions=[...]). Use match='all' for AND filters and match='any' for OR filters like 'Store or Contractor column'. Use ops: eq, neq, contains, gt, gte, lt, lte, blank, not_blank.",
       "- Cross-sheet lookup (a name/ID/keyword that could be in any selected sheet, or user didn't name a sheet) → call find_across_sheets(query) ONCE instead of search_sheet_rows per sheet.",
       "",
       "ANALYTICS TOOLS (use PROACTIVELY — do not wait for the user to ask by name):",
