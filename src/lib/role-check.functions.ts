@@ -30,10 +30,15 @@ export type MyRolesResult = {
 export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MyRolesResult> => {
+    // Fire-and-forget: extends the in-memory bootstrap set with DB entries.
+    void import("@/lib/bootstrap-super-admins.server").then((m) =>
+      m.refreshBootstrapSuperAdminsFromDb().catch(() => {}),
+    );
     const authHeader = getRequestHeader("authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
     const payload = readJwtPayload(token);
     let userId = String((context as any).userId ?? payload?.sub ?? "");
+
     let userEmail =
       String((context as any).claims?.email ?? "").trim().toLowerCase() || emailFromJwtPayload(payload);
     if (isBootstrapSuperAdminUserId(userId)) {
