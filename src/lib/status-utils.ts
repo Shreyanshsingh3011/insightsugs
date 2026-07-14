@@ -354,7 +354,12 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
     return Number.isFinite(n) ? n : 0;
   };
   const tat = sanitizeDuration(toNum(row["TAT"]));
-  const taken = sanitizeDuration(toNum(row["Days Taken"]));
+  const recomputed = recomputeDaysTaken(row);
+  const rawTaken = sanitizeDuration(toNum(row["Days Taken"]));
+  // Prefer authoritative recomputed value from Start/End dates; only fall back
+  // to the sheet's Days Taken column when we cannot derive it from dates.
+  const taken = recomputed ?? rawTaken;
+
   const explicitDelay = sanitizeDuration(toNum(row["Delay in Days"]));
   const statusText = rowStatusText(row);
   const statusLower = statusText.toLowerCase();
