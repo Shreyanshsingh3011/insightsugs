@@ -687,6 +687,43 @@ export const listSheets = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
+    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
+    const isAdminUser = async () => {
+      if (isBootstrapSuper) return true;
+      try {
+        const { data } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+        if (data) return true;
+      } catch {
+        // Continue to backend-auth lookup below; schema-cache hiccups must not hide super-admin sources.
+      }
+      try {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+        const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
+        return bootstrapSuperAdminEmails.has(email);
+      } catch {
+        return false;
+      }
+    };
+    const adminSheetList = async () => {
+      if (!(await isAdminUser())) return null;
+      try {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: rows, error } = await supabaseAdmin
+          .from("sheet_registry")
+          .select(
+            "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
+          )
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        return rows ?? [];
+      } catch (error) {
+        console.warn("Admin sheet list fallback failed.", error);
+        return null;
+      }
+    };
     let data: any[] | null = null;
     let lastError: unknown = null;
 
@@ -710,6 +747,14 @@ export const listSheets = createServerFn({ method: "GET" })
       const transientSchemaCacheError = message.toLowerCase().includes("schema cache");
       if (!transientSchemaCacheError || attempt === 2) break;
       await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+
+    if (lastError || (data ?? []).length === 0) {
+      const fallbackRows = await adminSheetList();
+      if (fallbackRows && fallbackRows.length > 0) {
+        data = fallbackRows;
+        lastError = null;
+      }
     }
 
     if (lastError) {
@@ -1041,6 +1086,7 @@ export const askCopilot = createServerFn({ method: "POST" })
         question: z.string().min(1).max(2000),
         sheetIds: z.array(z.string().uuid()).max(10).default([]),
         documentIds: z.array(z.string().uuid()).max(10).default([]),
+        strictMatch: z.boolean().optional(),
         history: z
           .array(
             z.object({
