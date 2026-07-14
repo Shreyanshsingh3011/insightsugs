@@ -3,7 +3,7 @@
 // side panel when a user clicks a chip.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrationsses/supabase/auth-middleware";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { escapeIlike } from "@/lib/sql-escape";
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
