@@ -32,9 +32,15 @@ function isOpen(p: Provider): BreakerState | null {
 }
 function trip(p: Provider, status: number, error?: string) {
   breakers[p] = { openedAt: Date.now(), status, error };
+  // Loud so downgrades are visible in server-function-logs, not silent failures.
+  console.warn(`[ai-fallback] breaker OPEN provider=${p} status=${status}${error ? ` error=${error}` : ""}`);
 }
 function reset(p: Provider) {
+  if (breakers[p]) console.warn(`[ai-fallback] breaker CLOSED provider=${p}`);
   delete breakers[p];
+}
+function served(p: Provider) {
+  if (p !== "gateway") console.warn(`[ai-fallback] request served by ${p} (primary gateway unavailable)`);
 }
 
 export function getBreakerSnapshot() {
