@@ -2,6 +2,17 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
+import { withSchemaHeal } from "@/lib/schema-retry";
+
+// Throw the Supabase error text so withSchemaHeal can detect PGRST002/205.
+function must<T>(result: { data: T | null; error: { message?: string; code?: string } | null }): T {
+  if (result.error) {
+    const err = new Error(result.error.message ?? "Database error") as Error & { code?: string };
+    err.code = result.error.code;
+    throw err;
+  }
+  return result.data as T;
+}
 
 const SHEET_TYPE_ENUM = z.enum([
   "generic",
