@@ -20,31 +20,41 @@ function timingSafeEqualStr(a: string, b: string): boolean {
   return mismatch === 0;
 }
 
-function extractProvided(request: Request): string {
-  const url = new URL(request.url);
+// Only accept the shared cron secret over query string (low-risk, purpose-built).
+// The service-role key must ONLY come from headers so it never leaks into
+// access logs, proxies, or the Referer header.
+function extractHeaderSecret(request: Request): string {
   const auth = request.headers.get("authorization") ?? "";
   const bearer = auth.replace(/^Bearer\s+/i, "");
   return (
     request.headers.get("x-cron-secret") ??
     request.headers.get("apikey") ??
     request.headers.get("x-api-key") ??
-    (bearer || null) ??
-    url.searchParams.get("apikey") ??
-    url.searchParams.get("secret") ??
+    (bearer || "") ??
     ""
   );
 }
 
+function extractQuerySecret(request: Request): string {
+  const url = new URL(request.url);
+  return url.searchParams.get("apikey") ?? "";
+}
+
 export function isHookAuthorized(request: Request): boolean {
-  const provided = extractProvided(request);
-  if (!provided) return false;
+  const headerSecret = extractHeaderSecret(request);
+  const querySecret = extractQuerySecret(request);
 
   const cronSecret = process.env.CRON_HOOK_SECRET ?? "";
   const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
-  // Publishable/anon keys are intentionally NOT accepted — they are public.
-  if (cronSecret && timingSafeEqualStr(provided, cronSecret)) return true;
-  if (serviceRole && timingSafeEqualStr(provided, serviceRole)) return true;
+  // CRON_HOOK_SECRET may arrive via header OR query (pg_cron friendly).
+  if (cronSecret) {
+    if (headerSecret && timingSafeEqualStr(headerSecret, cronSecret)) return true;
+    if (querySecret && timingSafeEqualStr(querySecret, cronSecret)) return true;
+  }
+  // SUPABASE_SERVICE_ROLE_KEY: header-only. Never accept via query string.
+  if (serviceRole && headerSecret && timingSafeEqualStr(headerSecret, serviceRole)) return true;
+
   return false;
 }
 
