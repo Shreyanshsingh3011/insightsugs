@@ -60,6 +60,7 @@ export const Route = createFileRoute("/_authenticated/copilot")({
 });
 
 type Source = { id: string; name: string; type: string; rowsUsed: number; truncated: boolean };
+type CachedSourceList<T> = { rows: T[]; cachedAt: string };
 type ChartSpec = {
   sheetId: string;
   sheet: string;
@@ -69,6 +70,26 @@ type ChartSpec = {
   yKey: string;
   data: { name: string; value: number }[];
 };
+
+const COPILOT_SHEETS_CACHE_KEY = "copilot:lastGoodSheets";
+const COPILOT_DOCUMENTS_CACHE_KEY = "copilot:lastGoodDocuments";
+
+function readCachedSourceList<T>(key: string): CachedSourceList<T> {
+  if (typeof window === "undefined") return { rows: [], cachedAt: "" };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || "null") as CachedSourceList<T> | null;
+    return Array.isArray(parsed?.rows) ? parsed : { rows: [], cachedAt: "" };
+  } catch {
+    return { rows: [], cachedAt: "" };
+  }
+}
+
+function writeCachedSourceList<T>(key: string, rows: T[]) {
+  if (typeof window === "undefined" || rows.length === 0) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ rows, cachedAt: new Date().toISOString() }));
+  } catch { /* ignore quota/storage errors */ }
+}
 type Turn = {
   question: string;
   answer: string;
