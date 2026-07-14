@@ -13,7 +13,8 @@
     "test:rls": "bun run scripts/tests/rls-role-regression.ts",
     "test:rls:ui": "python3 scripts/tests/rls-ui-smoke.py",
     "test:citations": "bun run scripts/tests/citation-contract.ts",
-    "test:openrouter": "bun run scripts/tests/openrouter-tools.ts"
+    "test:openrouter": "bun run scripts/tests/openrouter-tools.ts",
+    "test:issues": "bun run scripts/tests/issue-regression.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.10",
