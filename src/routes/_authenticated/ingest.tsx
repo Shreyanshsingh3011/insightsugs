@@ -25,6 +25,8 @@ import {
 } from "@/lib/sheets.functions";
 import { useIsAdmin } from "@/hooks/useSession";
 import { VisibilityPicker, type Visibility } from "@/components/VisibilityPicker";
+import { IngestValidationPanel } from "@/components/IngestValidationPanel";
+
 
 export const Route = createFileRoute("/_authenticated/ingest")({
   head: () => ({
