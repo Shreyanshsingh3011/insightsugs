@@ -41,7 +41,7 @@ export const getCitationContext = createServerFn({ method: "POST" })
       const { data: reg } = await context.supabase
         .from("sheet_registry")
         .select("id, display_name, source_url, last_refreshed_at")
-        .ilike("display_name", data.label.trim())
+        .ilike("display_name", escapeIlike(data.label.trim()))
         .limit(1)
         .maybeSingle();
       if (!reg) return { kind: "sheet", label: data.label, row, found: false };
