@@ -17,7 +17,15 @@ export function useSession() {
     let bootstrapped = false;
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (!mounted) return;
-      setSession(isUsableSession(s) ? s : null);
+      // Only clear session on explicit sign-out. Transient refresh failures
+      // (auth server 504s) emit null sessions on TOKEN_REFRESHED — ignore
+      // those and keep the last usable session so the user isn't bounced
+      // to /login every time the auth server has a hiccup.
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+      } else if (isUsableSession(s)) {
+        setSession(s);
+      }
       if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED" || bootstrapped) {
         setLoading(false);
       }
