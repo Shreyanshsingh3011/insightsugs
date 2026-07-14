@@ -3,26 +3,10 @@
 // have a live rolling view. Never returns keys.
 
 import { createFileRoute } from "@tanstack/react-router";
+import { isHookAuthorized } from "@/lib/hook-auth.server";
 import { getBreakerSnapshot } from "@/lib/ai-fallback.server";
 
 type Ping = { ok: boolean; status: number; ms: number; error?: string };
-
-function isAuthorized(request: Request): boolean {
-  const url = new URL(request.url);
-  const provided =
-    request.headers.get("apikey") ??
-    request.headers.get("x-api-key") ??
-    (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") ??
-    url.searchParams.get("apikey") ??
-    "";
-  if (!provided) return false;
-  const allowed = [
-    process.env.SUPABASE_PUBLISHABLE_KEY,
-    process.env.SUPABASE_ANON_KEY,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-  ].filter(Boolean) as string[];
-  return allowed.includes(provided);
-}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -91,7 +75,7 @@ async function recordHealth(rows: Array<{ name: string; status: string; latency_
 }
 
 async function handle(request: Request): Promise<Response> {
-  if (!isAuthorized(request)) return json({ error: "unauthorized" }, 401);
+  if (!isHookAuthorized(request)) return json({ error: "unauthorized" }, 401);
 
   const lovableKey = process.env.LOVABLE_API_KEY ?? "";
   const geminiKey = process.env.GEMINI_API_KEY ?? "";

@@ -2,23 +2,7 @@
 // super admins via email (and Slack when a Slack connector is linked).
 
 import { createFileRoute } from "@tanstack/react-router";
-
-function isAuthorized(request: Request): boolean {
-  const url = new URL(request.url);
-  const provided =
-    request.headers.get("apikey") ??
-    request.headers.get("x-api-key") ??
-    (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") ??
-    url.searchParams.get("apikey") ??
-    "";
-  if (!provided) return false;
-  const allowed = [
-    process.env.SUPABASE_PUBLISHABLE_KEY,
-    process.env.SUPABASE_ANON_KEY,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-  ].filter(Boolean) as string[];
-  return allowed.includes(provided);
-}
+import { isHookAuthorized } from "@/lib/hook-auth.server";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -28,7 +12,7 @@ function json(body: unknown, status = 200) {
 }
 
 async function handle(request: Request): Promise<Response> {
-  if (!isAuthorized(request)) return json({ error: "Unauthorized" }, 401);
+  if (!isHookAuthorized(request)) return json({ error: "Unauthorized" }, 401);
   try {
     const { runAgentDigest } = await import("@/lib/agent-digest.server");
     const result = await runAgentDigest();
