@@ -53,45 +53,43 @@ export function strictPhrases(query: string): string[] {
   const out = new Set<string>();
   let hasExplicitTarget = false;
 
+  // Strip serial-number prefixes ("S. No. 67", "Sr No 12", "Sl.No 4",
+  // "Serial No 9") — sheets label the column many different ways ("S.No.",
+  // "Sr.No.", "S/N"), so requiring the literal "s no" as a contiguous
+  // haystack substring produces false negatives. Keep the number as an
+  // identifier and drop the prefix.
+  const cleaned = query.replace(/\b(?:s|sr|sl|serial|sno|s\.no|sr\.no|sl\.no)\s*\.?\s*(?:no|number|num|#)?\s*\.?\s*(?=\d)/gi, "");
+
   const qre = /["'\u201c\u201d\u2018\u2019]([^"'\u201c\u201d\u2018\u2019]{2,})["'\u201c\u201d\u2018\u2019]/g;
   let m: RegExpExecArray | null;
-  while ((m = qre.exec(query))) {
+  while ((m = qre.exec(cleaned))) {
     const p = normalizeText(m[1]);
-    if (p) {
-      out.add(p);
-      hasExplicitTarget = true;
-    }
+    if (p) { out.add(p); hasExplicitTarget = true; }
   }
 
   const pre = /\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b/g;
-  while ((m = pre.exec(query))) {
+  while ((m = pre.exec(cleaned))) {
     const p = normalizeText(m[1]);
-    if (p) {
-      out.add(p);
-      hasExplicitTarget = true;
-    }
+    if (p) { out.add(p); hasExplicitTarget = true; }
+  }
+
+  // ALL-CAPS multi-word proper nouns ("MANKA BIBI", "MUNNA MANJHI").
+  const upre = /\b([A-Z]{2,}(?:\s+[A-Z]{2,})+)\b/g;
+  while ((m = upre.exec(cleaned))) {
+    const p = normalizeText(m[1]);
+    if (p) { out.add(p); hasExplicitTarget = true; }
   }
 
   // Identifier-like tokens: anything with a digit (IT76, IT-76, #123, 45678),
-  // or all-caps codes 2+ chars (SKU, GSTIN). These MUST appear verbatim —
-  // "76" and "77" are not the same project.
+  // or all-caps codes 2+ chars (SKU, GSTIN).
   const idRe = /\b([A-Za-z]*\d+[A-Za-z0-9-]*|\d+[A-Za-z][A-Za-z0-9-]*|[A-Z]{2,}[A-Z0-9-]*)\b/g;
-  while ((m = idRe.exec(query))) {
+  while ((m = idRe.exec(cleaned))) {
     const raw = m[1];
-    // Skip plain year-like tokens only if part of a longer date phrase — safest to keep.
     const p = normalizeText(raw);
-    if (p && p.length >= 2) {
-      out.add(p);
-      hasExplicitTarget = true;
-    }
+    if (p && p.length >= 2) { out.add(p); hasExplicitTarget = true; }
   }
 
-  const tokens = contentTokens(query);
-  // Only synthesize a full lower-case phrase when the query did not already
-  // expose a proper noun / quoted target / identifier. Otherwise questions
-  // like "what is open with Jai Singh in Nit 76" incorrectly require the
-  // artificial contiguous phrase "jai singh nit 76", even though the row may
-  // store the person and project in separate columns.
+  const tokens = contentTokens(cleaned);
   if (!hasExplicitTarget && tokens.length >= 2) out.add(tokens.join(" "));
 
   return Array.from(out);
@@ -106,16 +104,34 @@ export function normalizeHaystack(values: Iterable<unknown>): string {
   return normalizeText(parts.join(" "));
 }
 
+/** True when a phrase is a pure short number (needs word-boundary match). */
+function isShortNumeric(phrase: string): boolean {
+  return /^\d{1,4}$/.test(phrase);
+}
+
+function phraseHit(hay: string, phrase: string): boolean {
+  if (isShortNumeric(phrase)) {
+    // Word-boundary so "56" doesn't accidentally match "560" or "1560".
+    return new RegExp(`(^|\\D)${phrase}(\\D|$)`).test(hay);
+  }
+  return hay.includes(phrase);
+}
+
 /**
- * A row matches strictly when EVERY strict phrase appears as a contiguous
- * substring of the normalised haystack. If there are no strict phrases the
- * caller should fall back to its own per-token logic (this returns true so
- * the caller can decide).
+ * A row matches strictly when EVERY strict phrase appears in the normalised
+ * haystack (substring for text, word-boundary for short numbers).
  */
 export function matchesAllPhrases(hay: string, phrases: string[]): boolean {
   if (phrases.length === 0) return true;
-  for (const p of phrases) if (!hay.includes(p)) return false;
+  for (const p of phrases) if (!phraseHit(hay, p)) return false;
   return true;
+}
+
+/** Count how many strict phrases hit — for graceful "partial match" fallback. */
+export function countPhraseHits(hay: string, phrases: string[]): number {
+  let n = 0;
+  for (const p of phrases) if (phraseHit(hay, p)) n++;
+  return n;
 }
 
 /** True when the query is specific enough that unrelated rows are unsafe. */
