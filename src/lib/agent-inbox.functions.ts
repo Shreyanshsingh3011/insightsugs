@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { writeAuditRow } from "./audit.functions";
+import { escapeIlike, normalizeEmail } from "@/lib/sql-escape";
 
 // ---------- Types ----------
 
