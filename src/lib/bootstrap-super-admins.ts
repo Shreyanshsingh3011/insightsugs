@@ -1,3 +1,8 @@
+// Baseline hardcoded bootstrap super admins. These MUST always work even if
+// the database is unreachable, so they are the resilience floor. The
+// `bootstrap_admins` DB table can EXTEND this set at runtime via
+// `mergeBootstrapSuperAdmins()`.
+
 export const BOOTSTRAP_SUPER_ADMIN_EMAILS = [
   "shreyansh.singh3011@gmail.com",
   "yash@sugslloyds.com",
@@ -8,7 +13,7 @@ export const BOOTSTRAP_SUPER_ADMIN_USER_IDS = [
   "b530da41-caa8-4ead-b5fe-8eb3bc446ace",
 ] as const;
 
-const bootstrapEmailSet = new Set<string>(BOOTSTRAP_SUPER_ADMIN_EMAILS);
+const bootstrapEmailSet = new Set<string>(BOOTSTRAP_SUPER_ADMIN_EMAILS.map((e) => e.toLowerCase()));
 const bootstrapUserIdSet = new Set<string>(BOOTSTRAP_SUPER_ADMIN_USER_IDS);
 
 export function normalizeEmail(value: unknown): string {
@@ -21,6 +26,20 @@ export function isBootstrapSuperAdminEmail(email: unknown): boolean {
 
 export function isBootstrapSuperAdminUserId(userId: unknown): boolean {
   return bootstrapUserIdSet.has(String(userId ?? ""));
+}
+
+/**
+ * Extend the in-memory bootstrap sets with entries loaded from the DB.
+ * Never removes hardcoded entries — those are the resilience floor.
+ * Safe to call repeatedly.
+ */
+export function mergeBootstrapSuperAdmins(entries: { email?: string | null; user_id?: string | null }[]): void {
+  for (const entry of entries) {
+    const email = normalizeEmail(entry.email);
+    if (email) bootstrapEmailSet.add(email);
+    const uid = String(entry.user_id ?? "").trim();
+    if (uid) bootstrapUserIdSet.add(uid);
+  }
 }
 
 export function readJwtPayload(jwt: string): Record<string, unknown> | null {
