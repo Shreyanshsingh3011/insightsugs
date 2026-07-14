@@ -180,23 +180,22 @@ export const replaceUploadedRows = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: reg, error: regErr } = await supabase
+    const reg = must(await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .select("id, user_id, apps_script_url")
       .eq("id", data.registryId)
-      .maybeSingle();
-    if (regErr) throw new Error(regErr.message);
+      .maybeSingle(), 4, "replace.registry.read")) as { id: string; user_id: string; apps_script_url: string } | null;
     if (!reg || reg.user_id !== userId) throw new Error("Dataset not found.");
     if (!String(reg.apps_script_url ?? "").startsWith("upload://")) {
       throw new Error("This dataset came from a URL. Use Refresh instead.");
     }
 
-    const { data: maps } = await supabase
+    const mapsResp = await withSchemaHeal(async () => await supabase
       .from("sheet_column_mappings")
       .select("source_header, canonical_field")
-      .eq("sheet_registry_id", data.registryId);
+      .eq("sheet_registry_id", data.registryId), 4, "replace.mappings.read");
     const mapping: Record<string, string | null> = {};
-    for (const m of maps ?? []) mapping[m.source_header] = m.canonical_field;
+    for (const m of (mapsResp.data ?? [])) mapping[m.source_header] = m.canonical_field;
 
     const toInsert = data.rows.map((row, idx) => {
       const canonical: Record<string, string> = {};
@@ -211,27 +210,25 @@ export const replaceUploadedRows = createServerFn({ method: "POST" })
       return { sheet_registry_id: data.registryId, row_index: idx, canonical, extras };
     });
 
-    const { error: delErr } = await supabase
+    must(await withSchemaHeal(async () => await supabase
       .from("sheet_rows")
       .delete()
-      .eq("sheet_registry_id", data.registryId);
-    if (delErr) throw new Error(delErr.message);
+      .eq("sheet_registry_id", data.registryId), 4, "replace.rows.delete"));
 
     if (toInsert.length > 0) {
       const BATCH = 500;
       for (let i = 0; i < toInsert.length; i += BATCH) {
-        const { error } = await supabase.from("sheet_rows").insert(toInsert.slice(i, i + BATCH));
-        if (error) throw new Error(error.message);
+        must(await withSchemaHeal(async () => await supabase.from("sheet_rows").insert(toInsert.slice(i, i + BATCH)), 4, "replace.rows.insert"));
       }
     }
 
-    await supabase
+    await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .update({
         last_refreshed_at: new Date().toISOString(),
         row_count: toInsert.length,
       })
-      .eq("id", data.registryId);
+      .eq("id", data.registryId), 4, "replace.registry.update");
 
     return { rowCount: toInsert.length };
   });
