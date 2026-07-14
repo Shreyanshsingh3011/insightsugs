@@ -39,10 +39,17 @@ const DATE_FIELDS = /(_date$|^date_|_start$|_end$|_on$)/i;
 const NUMBER_FIELDS = /(amount|qty|percent|days|target|actual|variance|balance)/i;
 
 function isDateish(s: string): boolean {
-  if (!s.trim()) return true; // empty allowed here; empty_required is separate
-  if (/^\d{5}(\.\d+)?$/.test(s.trim())) return true; // excel serial
-  if (!Number.isNaN(Date.parse(s))) return true;
-  if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(s.trim())) return true;
+  const t = s.trim();
+  if (!t) return true; // empty allowed here; empty_required is separate
+  // Excel serial: bounded to plausible range (1900-01-01 ≈ 1 → 2100 ≈ 73415)
+  if (/^\d{4,5}(\.\d+)?$/.test(t)) {
+    const n = Number(t);
+    if (n >= 1 && n <= 80000) return true;
+  }
+  if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(t)) return true;
+  if (/^\d{4}-\d{2}-\d{2}/.test(t) && !Number.isNaN(Date.parse(t))) return true;
+  // Only accept named-month formats via Date.parse to avoid false positives on plain numbers
+  if (/[A-Za-z]/.test(t) && !Number.isNaN(Date.parse(t))) return true;
   return false;
 }
 
