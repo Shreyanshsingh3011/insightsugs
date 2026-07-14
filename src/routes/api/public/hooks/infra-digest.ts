@@ -28,7 +28,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-type HealthRow = { name: string; status: string; latency_ms: number | null; error: string | null; created_at: string };
+type HealthRow = { name: string; status: string; latency_ms: number | null; error: string | null; checked_at: string };
 
 function summarize(rows: HealthRow[]) {
   const byName = new Map<string, { total: number; down: number; degraded: number; avgMs: number; lastError?: string | null }>();
@@ -89,13 +89,13 @@ async function handle(request: Request): Promise<Response> {
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: rows, error } = await supabaseAdmin
     .from("integration_health")
-    .select("name,status,latency_ms,error,created_at")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
+    .select("name,status,latency_ms,error,checked_at")
+    .gte("checked_at", since)
+    .order("checked_at", { ascending: false })
     .limit(5000);
   if (error) return json({ error: error.message }, 500);
 
-  const summary = summarize((rows ?? []) as HealthRow[]);
+  const summary = summarize((rows ?? []) as unknown as HealthRow[]);
   const html = renderHtml(summary);
 
   const { data: recipients } = await supabaseAdmin.rpc("list_super_admin_emails");

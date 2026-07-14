@@ -23,7 +23,7 @@ export async function healSchemaCache(reason: string): Promise<boolean> {
     // `user_roles` is enough to warm the pool.
     await supabaseAdmin.from("user_roles").select("user_id").limit(1);
     // Send the reload notify via a raw RPC if the project ever adds one.
-    await supabaseAdmin.rpc("pgrst_reload" as never).catch(() => {});
+    try { await supabaseAdmin.rpc("pgrst_reload" as never); } catch { /* optional */ }
     console.warn(`[schema-heal] triggered reload after: ${reason}`);
     return true;
   } catch (error) {
