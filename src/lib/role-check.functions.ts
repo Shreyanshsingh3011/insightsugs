@@ -11,6 +11,7 @@ import {
   isBootstrapSuperAdminUserId,
   readJwtPayload,
 } from "@/lib/bootstrap-super-admins";
+import { escapeIlike, normalizeEmail } from "@/lib/sql-escape";
 
 export type RoleCheckResult = {
   email: string;
