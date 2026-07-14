@@ -72,6 +72,17 @@ export const Route = createFileRoute("/api/public/hooks/agent/$agentId")({
           request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
           null;
 
+        // Rate limit AFTER secret verification (so probes with a bad secret
+        // don't help attackers map the limiter), but BEFORE we spend money.
+        const ipKey = `${agent.id}:${sourceIp ?? "noip"}`;
+        const agentKey = `${agent.id}:*`;
+        if (!rateCheck(ipKey, RATE_MAX_PER_IP) || !rateCheck(agentKey, RATE_MAX_PER_AGENT)) {
+          return new Response(JSON.stringify({ ok: false, error: "rate_limited" }), {
+            status: 429,
+            headers: { "content-type": "application/json", "retry-after": "60" },
+          });
+        }
+
         const t0 = Date.now();
         try {
           const [{ generateText, stepCountIs, tool: mkTool }, { createLovableAiGatewayProvider }, { z }, runsMod] =
