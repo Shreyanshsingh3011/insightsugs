@@ -237,7 +237,7 @@ export function IngestValidationPanel({
                         const row = rows[rowIdx] ?? [];
                         return (
                           <tr key={rowIdx} className="border-b bg-amber-500/5 last:border-0 hover:bg-amber-500/10">
-                            <td className="sticky left-0 z-10 bg-inherit p-1.5 font-mono font-medium text-amber-700 dark:text-amber-400">
+                            <td className="sticky left-0 z-10 bg-amber-500/10 p-1.5 font-mono font-medium text-amber-700 dark:text-amber-400">
                               {rowIdx + 2}
                             </td>
                             {headers.map((h, ci) => {

@@ -39,10 +39,17 @@ const DATE_FIELDS = /(_date$|^date_|_start$|_end$|_on$)/i;
 const NUMBER_FIELDS = /(amount|qty|percent|days|target|actual|variance|balance)/i;
 
 function isDateish(s: string): boolean {
-  if (!s.trim()) return true; // empty allowed here; empty_required is separate
-  if (/^\d{5}(\.\d+)?$/.test(s.trim())) return true; // excel serial
-  if (!Number.isNaN(Date.parse(s))) return true;
-  if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(s.trim())) return true;
+  const t = s.trim();
+  if (!t) return true; // empty allowed here; empty_required is separate
+  // Excel serial: bounded to plausible range (1900-01-01 ≈ 1 → 2100 ≈ 73415)
+  if (/^\d{4,5}(\.\d+)?$/.test(t)) {
+    const n = Number(t);
+    if (n >= 1 && n <= 80000) return true;
+  }
+  if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(t)) return true;
+  if (/^\d{4}-\d{2}-\d{2}/.test(t) && !Number.isNaN(Date.parse(t))) return true;
+  // Only accept named-month formats via Date.parse to avoid false positives on plain numbers
+  if (/[A-Za-z]/.test(t) && !Number.isNaN(Date.parse(t))) return true;
   return false;
 }
 
@@ -79,13 +86,18 @@ export function validateParsedTable(input: {
   const unmappedRequired = required.filter((f) => !mappedCanon.has(f));
 
   const issues: RowIssue[] = [];
-  const dupKeys = new Set<string>();
-  const seenKeys = new Set<string>();
 
-  // Pick an "id-like" canonical for duplicate detection.
+  // Pick an "id-like" canonical for duplicate detection, and find the source
+  // header mapped to it so highlights land on the actual column the user sees.
   const idKey = canonicalAll.find((f) => /(_no$|^bill_no$|^po_no$|^activity$|^item$|^kpi$)/.test(f));
+  const idHeader = idKey
+    ? (Object.entries(mapping).find(([, canon]) => canon === idKey)?.[0] ?? null)
+    : null;
 
   const rowsWithIssuesSet = new Set<number>();
+  // Map id value → first row index seen; used so the original also gets flagged when a dup appears.
+  const firstSeenAt = new Map<string, number>();
+  const flaggedRows = new Set<number>();
 
   for (let ri = 0; ri < rows.length; ri++) {
     const r = rows[ri];
@@ -112,15 +124,22 @@ export function validateParsedTable(input: {
         }
       }
     }
-    if (idKey && idVal) {
+    if (idKey && idHeader && idVal) {
       const k = idVal.toLowerCase();
-      if (seenKeys.has(k)) {
-        if (!dupKeys.has(k)) {
-          issues.push({ rowIndex: ri, header: idKey, canonical: idKey, value: idVal, kind: "duplicate_key", message: `Duplicate ${idKey} "${idVal}"` });
-          dupKeys.add(k);
-          rowsWithIssuesSet.add(ri);
+      const firstRow = firstSeenAt.get(k);
+      if (firstRow === undefined) {
+        firstSeenAt.set(k, ri);
+      } else {
+        // Flag the original once, and every dup row.
+        if (!flaggedRows.has(firstRow)) {
+          issues.push({ rowIndex: firstRow, header: idHeader, canonical: idKey, value: idVal, kind: "duplicate_key", message: `Duplicate ${idKey} "${idVal}" (first occurrence)` });
+          rowsWithIssuesSet.add(firstRow);
+          flaggedRows.add(firstRow);
         }
-      } else seenKeys.add(k);
+        issues.push({ rowIndex: ri, header: idHeader, canonical: idKey, value: idVal, kind: "duplicate_key", message: `Duplicate ${idKey} "${idVal}"` });
+        rowsWithIssuesSet.add(ri);
+        flaggedRows.add(ri);
+      }
     }
     if (issues.length >= 500) break;
   }
