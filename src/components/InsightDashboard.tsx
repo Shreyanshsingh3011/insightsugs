@@ -40,6 +40,8 @@ import {
 import NotebookCopilot from "@/components/notebook/NotebookCopilot";
 import { generateGemini, hasGemini, GROUNDING_RULES } from "@/lib/gemini-client";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
+import { exportIncidentReportPdf } from "@/lib/incident-report";
+import { FileDown } from "lucide-react";
 
 /* ============================== Types ============================== */
 type Column = { name: string; type?: string; distinct?: number };
