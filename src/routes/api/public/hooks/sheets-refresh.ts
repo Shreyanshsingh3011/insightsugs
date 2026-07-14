@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { isHookAuthorized, unauthorizedResponse } from "@/lib/hook-auth.server";
 
 // Server-side scheduled sheet refresh. pg_cron hits this every 5 minutes;
 // iterates every registered sheet and re-pulls rows from the source so the
@@ -7,7 +8,8 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/public/hooks/sheets-refresh")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
+        if (!isHookAuthorized(request)) return unauthorizedResponse();
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { syncRowsInternal } = await import("@/lib/sheets.functions");
 
