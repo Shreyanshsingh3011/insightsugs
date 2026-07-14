@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { escapeIlike, normalizeEmail } from "@/lib/sql-escape";
 
 const FlagSnapshot = z.object({
   id: z.string().min(1).max(100),
