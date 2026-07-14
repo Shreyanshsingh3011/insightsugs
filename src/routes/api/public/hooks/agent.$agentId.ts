@@ -10,6 +10,31 @@
 // AI SDK deps are lazy-loaded to keep the SSR bundle small.
 import { createFileRoute } from "@tanstack/react-router";
 
+// Ad-hoc per-agent+IP rate limiter. Sliding 60s window; caps a leaked
+// webhook_secret from burning unbounded LOVABLE_API_KEY credits before the
+// owner can rotate it. In-memory is fine here — a single Worker isolate
+// throttles the common case; a determined attacker rotating IPs is bounded
+// by the per-agent limit below.
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_PER_IP = 20;   // per (agent, ip) per minute
+const RATE_MAX_PER_AGENT = 60; // per agent per minute across all IPs
+const rateHits = new Map<string, number[]>();
+function rateCheck(key: string, limit: number): boolean {
+  const now = Date.now();
+  const arr = (rateHits.get(key) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (arr.length >= limit) { rateHits.set(key, arr); return false; }
+  arr.push(now);
+  rateHits.set(key, arr);
+  // Opportunistic GC to keep the map bounded.
+  if (rateHits.size > 5000) {
+    for (const [k, v] of rateHits) {
+      const kept = v.filter((t) => now - t < RATE_WINDOW_MS);
+      if (kept.length === 0) rateHits.delete(k); else rateHits.set(k, kept);
+    }
+  }
+  return true;
+}
+
 export const Route = createFileRoute("/api/public/hooks/agent/$agentId")({
   server: {
     handlers: {
