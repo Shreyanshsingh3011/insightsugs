@@ -68,13 +68,33 @@ export function clearStoredSupabaseAuth() {
   }
 }
 
+// Single-flight refresh with 3x retry. Concurrent callers share the same
+// in-flight promise so an auth-server 504 storm only produces one refresh.
+let inflightRefresh: Promise<Session | null> | null = null;
+
 async function refreshSession(timeoutMs: number): Promise<Session | null> {
-  const refreshed = await withTimeout(
-    supabase.auth.refreshSession().then(({ data }) => data.session),
-    timeoutMs,
-    null,
-  );
-  return isUsableSession(refreshed) ? refreshed : null;
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = (async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const refreshed = await withTimeout(
+          supabase.auth.refreshSession().then(({ data }) => data.session),
+          timeoutMs,
+          null,
+        );
+        if (isUsableSession(refreshed)) return refreshed;
+      } catch {
+        // fall through and retry
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+    return null;
+  })().finally(() => {
+    // Release the single-flight lock a tick later so a burst of callers
+    // all see the same result before we allow a fresh attempt.
+    setTimeout(() => { inflightRefresh = null; }, 250);
+  });
+  return inflightRefresh;
 }
 
 async function validateSession(session: Session, timeoutMs: number, strictValidation = false): Promise<Session | null> {
