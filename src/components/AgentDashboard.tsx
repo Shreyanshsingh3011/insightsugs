@@ -127,10 +127,15 @@ function rawDaysTakenForRow(r: Row): number {
 }
 
 function hasCompletionDateSerialInDaysTaken(r: Row): boolean {
+  // Only treat a leaked date-serial as "completed" when the row's status
+  // text does NOT explicitly report an active delay. Otherwise sheet
+  // formulas mask genuinely-late rows as done — the exact symptom in
+  // Issues 6/8/9 (Completed filter showed delayed task, 46,200-day row
+  // painted green, Avg delay = 0 despite many delays).
+  const statusText = String(rowStatusText(r) ?? "").toLowerCase();
+  const explicitlyDelayed = /(delay|late|overdue|breach|slipp|pending|open|in\s*progress|not\s*(complete|done|start))/i.test(statusText);
+  if (explicitlyDelayed) return false;
   if (isLikelySheetDateSerial(rawDaysTakenForRow(r))) return true;
-  // Sheet formulas sometimes leak an Excel date serial (e.g. 46029) into the
-  // "Delay in Days" column when the task is actually completed. Treat that as
-  // a completion signal so the row drops out of overdue / KPI averages.
   if (isLikelySheetDateSerial(num(r["Delay in Days"]))) return true;
   return false;
 }
@@ -146,6 +151,9 @@ function statusDelayDays(status: string): number {
 function delayForRow(r: Row, terminal: boolean, status: string): number {
   if (terminal) return 0;
   const explicit = clampRealDays(num(r["Delay in Days"]));
+  // Fallback: use status text when the numeric column is empty OR was
+  // clamped away because it held a date serial. Ensures Avg Delay isn't
+  // pinned at 0 when the sheet only encodes delay in the status string.
   return explicit || statusDelayDays(status);
 }
 
