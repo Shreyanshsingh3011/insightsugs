@@ -1662,6 +1662,22 @@ type ParsedInsights = {
   insights: { title: string; detail: string; severity: InsightSeverity }[];
   questions: string[];
 };
+type SheetRegistryLite = { id: string; display_name: string; sheet_type: string | null };
+type AutoInsightsResult = {
+  sheetId: string;
+  sheetName: string;
+  insights: ParsedInsights["insights"];
+  questions: string[];
+  degraded: boolean;
+};
+type CombinedInsight = ParsedInsights["insights"][number] & { sheetId: string; sheetName: string };
+type CombinedAutoInsightsResult = {
+  insights: CombinedInsight[];
+  questions: string[];
+  perSheet: { sheetId: string; sheetName: string; count: number }[];
+  sheetNames: string[];
+  degraded: boolean;
+};
 
 function parseInsightsJson(raw: string): ParsedInsights {
   const out: ParsedInsights = { insights: [], questions: [] };
@@ -1780,9 +1796,9 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z.object({ sheetId: z.string().uuid() }).parse(input),
   )
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<AutoInsightsResult> => {
     const { supabase } = context;
-    let reg: { id: string; display_name: string; sheet_type: string | null } | null = null;
+    let reg: SheetRegistryLite | null = null;
     let regErr: unknown = null;
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const result = await supabase
@@ -1790,7 +1806,7 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
         .select("id, display_name, sheet_type")
         .eq("id", data.sheetId)
         .maybeSingle();
-      reg = result.data as typeof reg;
+      reg = result.data as SheetRegistryLite | null;
       regErr = result.error;
       if (!regErr) break;
       if (!isTransientDataApiError(regErr) || attempt === 3) break;
@@ -1879,7 +1895,7 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
       if (parsed.questions.length === 0) parsed.questions = fallback.questions;
     }
 
-    return { sheetId: reg.id, sheetName: reg.display_name, insights: parsed.insights, questions: parsed.questions };
+    return { sheetId: reg.id, sheetName: reg.display_name, insights: parsed.insights, questions: parsed.questions, degraded: false };
   });
 
 // ============================================================================
@@ -1892,16 +1908,16 @@ export const generateCombinedAutoInsights = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z.object({ sheetIds: z.array(z.string().uuid()).min(1).max(10) }).parse(input),
   )
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<CombinedAutoInsightsResult> => {
     const { supabase } = context;
-    let regs: { id: string; display_name: string; sheet_type: string | null }[] | null = null;
+    let regs: SheetRegistryLite[] | null = null;
     let regErr: unknown = null;
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const result = await supabase
         .from("sheet_registry")
         .select("id, display_name, sheet_type")
         .in("id", data.sheetIds);
-      regs = (result.data ?? null) as typeof regs;
+      regs = (result.data ?? null) as SheetRegistryLite[] | null;
       regErr = result.error;
       if (!regErr) break;
       if (!isTransientDataApiError(regErr) || attempt === 3) break;
@@ -1932,7 +1948,7 @@ export const generateCombinedAutoInsights = createServerFn({ method: "POST" })
 
     const { buildSheetAutoInsights } = await import("./auto-insights-fallback.server");
 
-    type Ins = { title: string; detail: string; severity: "info" | "warning" | "critical"; sheetId: string; sheetName: string };
+    type Ins = CombinedInsight;
     const allInsights: Ins[] = [];
     const allQuestions: { q: string; sheetName: string }[] = [];
     const perSheet: { sheetId: string; sheetName: string; count: number }[] = [];
@@ -2037,6 +2053,7 @@ export const generateCombinedAutoInsights = createServerFn({ method: "POST" })
       questions: interleaved,
       perSheet,
       sheetNames: regs.map((r) => r.display_name),
+      degraded: false,
     };
   });
 
