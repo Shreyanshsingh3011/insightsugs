@@ -66,6 +66,8 @@ import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksStaleCriticalWatcherRouteImport } from './routes/api/public/hooks/stale-critical-watcher'
 import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
 import { Route as ApiPublicHooksSheetsRefreshRouteImport } from './routes/api/public/hooks/sheets-refresh'
+import { Route as ApiPublicHooksModelHealthRouteImport } from './routes/api/public/hooks/model-health'
+import { Route as ApiPublicHooksInfraDigestRouteImport } from './routes/api/public/hooks/infra-digest'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
 import { Route as ApiPublicHooksEmbedBackfillRouteImport } from './routes/api/public/hooks/embed-backfill'
 import { Route as ApiPublicHooksEmailInboundRouteImport } from './routes/api/public/hooks/email-inbound'
@@ -392,6 +394,18 @@ const ApiPublicHooksSheetsRefreshRoute =
     path: '/api/public/hooks/sheets-refresh',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksModelHealthRoute =
+  ApiPublicHooksModelHealthRouteImport.update({
+    id: '/api/public/hooks/model-health',
+    path: '/api/public/hooks/model-health',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksInfraDigestRoute =
+  ApiPublicHooksInfraDigestRouteImport.update({
+    id: '/api/public/hooks/infra-digest',
+    path: '/api/public/hooks/infra-digest',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksEscalateRoute = ApiPublicHooksEscalateRouteImport.update({
   id: '/api/public/hooks/escalate',
   path: '/api/public/hooks/escalate',
@@ -543,6 +557,8 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/embed-backfill': typeof ApiPublicHooksEmbedBackfillRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/infra-digest': typeof ApiPublicHooksInfraDigestRoute
+  '/api/public/hooks/model-health': typeof ApiPublicHooksModelHealthRoute
   '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -613,6 +629,8 @@ export interface FileRoutesByTo {
   '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/embed-backfill': typeof ApiPublicHooksEmbedBackfillRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/infra-digest': typeof ApiPublicHooksInfraDigestRoute
+  '/api/public/hooks/model-health': typeof ApiPublicHooksModelHealthRoute
   '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -688,6 +706,8 @@ export interface FileRoutesById {
   '/api/public/hooks/email-inbound': typeof ApiPublicHooksEmailInboundRoute
   '/api/public/hooks/embed-backfill': typeof ApiPublicHooksEmbedBackfillRoute
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
+  '/api/public/hooks/infra-digest': typeof ApiPublicHooksInfraDigestRoute
+  '/api/public/hooks/model-health': typeof ApiPublicHooksModelHealthRoute
   '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -763,6 +783,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/embed-backfill'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/infra-digest'
+    | '/api/public/hooks/model-health'
     | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -833,6 +855,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/embed-backfill'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/infra-digest'
+    | '/api/public/hooks/model-health'
     | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -907,6 +931,8 @@ export interface FileRouteTypes {
     | '/api/public/hooks/email-inbound'
     | '/api/public/hooks/embed-backfill'
     | '/api/public/hooks/escalate'
+    | '/api/public/hooks/infra-digest'
+    | '/api/public/hooks/model-health'
     | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -938,6 +964,8 @@ export interface RootRouteChildren {
   ApiPublicHooksEmailInboundRoute: typeof ApiPublicHooksEmailInboundRoute
   ApiPublicHooksEmbedBackfillRoute: typeof ApiPublicHooksEmbedBackfillRoute
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
+  ApiPublicHooksInfraDigestRoute: typeof ApiPublicHooksInfraDigestRoute
+  ApiPublicHooksModelHealthRoute: typeof ApiPublicHooksModelHealthRoute
   ApiPublicHooksSheetsRefreshRoute: typeof ApiPublicHooksSheetsRefreshRoute
   ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
   ApiPublicHooksStaleCriticalWatcherRoute: typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -1350,6 +1378,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSheetsRefreshRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/model-health': {
+      id: '/api/public/hooks/model-health'
+      path: '/api/public/hooks/model-health'
+      fullPath: '/api/public/hooks/model-health'
+      preLoaderRoute: typeof ApiPublicHooksModelHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/infra-digest': {
+      id: '/api/public/hooks/infra-digest'
+      path: '/api/public/hooks/infra-digest'
+      fullPath: '/api/public/hooks/infra-digest'
+      preLoaderRoute: typeof ApiPublicHooksInfraDigestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/escalate': {
       id: '/api/public/hooks/escalate'
       path: '/api/public/hooks/escalate'
@@ -1604,6 +1646,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksEmailInboundRoute: ApiPublicHooksEmailInboundRoute,
   ApiPublicHooksEmbedBackfillRoute: ApiPublicHooksEmbedBackfillRoute,
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
+  ApiPublicHooksInfraDigestRoute: ApiPublicHooksInfraDigestRoute,
+  ApiPublicHooksModelHealthRoute: ApiPublicHooksModelHealthRoute,
   ApiPublicHooksSheetsRefreshRoute: ApiPublicHooksSheetsRefreshRoute,
   ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
   ApiPublicHooksStaleCriticalWatcherRoute:
