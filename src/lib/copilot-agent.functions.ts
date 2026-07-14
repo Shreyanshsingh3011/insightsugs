@@ -2258,7 +2258,10 @@ export async function runCopilotAgent(
       if (rawAnswer[m.index + m[0].length] === "(") continue;
       const marker = m[0];
       const body = m[1].trim();
-      if (!/^(sheet:|doc:|flags?\[)/i.test(body)) continue;
+      // Only sheet:/doc: markers are ledger-verifiable. Legacy `flags[...]`
+      // markers are ignored entirely (not counted, not auto-verified) so they
+      // cannot bypass the grounding guard.
+      if (!/^(sheet:|doc:)/i.test(body)) continue;
       if (seen.has(marker)) continue;
       seen.add(marker);
       inlineCount++;
