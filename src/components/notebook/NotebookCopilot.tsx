@@ -145,9 +145,13 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
     setInput("");
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: question };
     setMessages((m) => [...m, userMsg]);
+    const filterSnapshot = { sources: enabledSourceLabels, kind: "" };
     try {
       const kind = classify(question);
+      filterSnapshot.kind = kind;
       const history = messages.slice(-6).map((m) => ({ role: m.role, content: m.content }));
+
+      const record = (id: string) => setMsgFilters((prev) => ({ ...prev, [id]: filterSnapshot }));
 
       if (kind === "quantitative") {
         const parsed = parseQuestion(question, sheetSources);
@@ -159,9 +163,11 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
               citations: resp.citations, sheets: sheetSources, concerns: enabledConcerns, reminders: enabledReminders,
             });
             setOffline(!!resp.offline);
+            const aid = `a-${Date.now()}`;
+            record(aid);
             setMessages((m) => [
               ...m,
-              { id: `a-${Date.now()}`, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
+              { id: aid, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
             ]);
             return;
           }
@@ -175,9 +181,11 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
         citations: resp.citations, sheets: sheetSources, concerns: enabledConcerns, reminders: enabledReminders,
       });
       setOffline(!!resp.offline);
+      const aid = `a-${Date.now()}`;
+      record(aid);
       setMessages((m) => [
         ...m,
-        { id: `a-${Date.now()}`, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
+        { id: aid, role: "assistant", content: resp.text, citations: verified, generated_by: resp.generated_by },
       ]);
     } catch (e) {
       toast.error((e as Error).message || "Co-pilot error");
