@@ -274,3 +274,86 @@ export function sanitizedDelayDays(row: StatusRow): number {
   const n = Number(m?.[1] ?? 0);
   return Number.isFinite(n) ? Math.round(n) : 0;
 }
+
+// ─────────────── Canonical computed status ───────────────
+// Single source of truth for a row's status. Compares TAT vs Days Taken
+// and terminal/active signals so the dashboard never displays a label
+// that contradicts the numbers (root cause of Issues #6/#8/#9 and the
+// "In Progress row inside Completed filter" bug).
+export type ComputedRowStatus = {
+  bucket: StatusBucket;      // used for filtering + grouping
+  label: string;             // human label to render in the Status pill
+  isDone: boolean;           // true when the row should NOT surface as actionable
+  isDelayed: boolean;        // true when the row is actively breaching TAT
+  tat: number;
+  taken: number;
+  delay: number;
+};
+
+function sanitizeDuration(raw: number): number {
+  // Reject Excel date-serial leaks and impossible values.
+  if (!Number.isFinite(raw)) return 0;
+  if (raw < 0 || raw > 3650) return 0;
+  if (raw >= 30000 && raw <= 70000) return 0;
+  return raw;
+}
+
+export function computeRowStatus(row: StatusRow): ComputedRowStatus {
+  const toNum = (v: unknown) => {
+    if (typeof v === "number") return v;
+    const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const tat = sanitizeDuration(toNum(row["TAT"]));
+  const taken = sanitizeDuration(toNum(row["Days Taken"]));
+  const explicitDelay = sanitizeDuration(toNum(row["Delay in Days"]));
+  const statusText = rowStatusText(row);
+  const statusLower = statusText.toLowerCase();
+  const explicitlyActive = /(in\s*progress|under\s*progress|ongoing|wip|working|pending|open|not\s*(complete|completed|done|started?)|yet\s*to)/.test(statusLower);
+  const explicitlyDelayed = /(delay|late|overdue|breach|slipp)/.test(statusLower);
+  const terminal = isTerminalRow(row);
+
+  // Compute delay from numbers first, then fall back to status-text hint.
+  const computedBreach = tat > 0 && taken > tat ? taken - tat : 0;
+  let delay = Math.max(explicitDelay, computedBreach);
+  if (!delay) {
+    const m = statusText.match(/(?:delay(?:ed)?|late|overdue)\s*(?:by)?\s*(\d+(?:\.\d+)?)/i)
+      || statusText.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\s*(?:delay(?:ed)?|late|overdue)/i);
+    const n = Number(m?.[1] ?? 0);
+    if (Number.isFinite(n)) delay = Math.round(n);
+  }
+
+  // TERMINAL — the row is completed. Label reflects timely vs late per numbers,
+  // never the raw sheet text (which is where "TAT=45 Taken=31 → Timely" errors
+  // and "TAT=30 Taken=31 → Completed" errors originate).
+  if (terminal && !explicitlyActive) {
+    if (tat > 0 && taken > 0) {
+      if (taken > tat) {
+        return { bucket: "Completed", label: "Late Completed", isDone: true, isDelayed: false, tat, taken, delay: taken - tat };
+      }
+      return { bucket: "Completed", label: "Timely Completed", isDone: true, isDelayed: false, tat, taken, delay: 0 };
+    }
+    return { bucket: "Completed", label: "Completed", isDone: true, isDelayed: false, tat, taken, delay: 0 };
+  }
+
+  // ACTIVE — never leak into Completed. If TAT is breached OR status text says
+  // delayed, bucket as Delayed. Otherwise honor the explicit active label.
+  if (delay > 0 || explicitlyDelayed || (tat > 0 && taken > tat)) {
+    return { bucket: "Delayed", label: delay > 0 ? `Delayed (${delay}d)` : "Delayed", isDone: false, isDelayed: true, tat, taken, delay };
+  }
+  if (explicitlyActive) {
+    const bucket = statusBucket(statusText);
+    return { bucket: bucket === "Completed" ? "In Progress" : bucket, label: statusText || "In Progress", isDone: false, isDelayed: false, tat, taken, delay: 0 };
+  }
+  // Fallback to text-based bucket.
+  const b = statusBucket(statusText);
+  return {
+    bucket: b === "Completed" ? "In Progress" : b,
+    label: statusText || "—",
+    isDone: false,
+    isDelayed: b === "Delayed",
+    tat,
+    taken,
+    delay,
+  };
+}
