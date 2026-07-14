@@ -401,15 +401,19 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
     const bucket = statusBucket(statusText);
     return { bucket: bucket === "Completed" ? "In Progress" : bucket, label: statusText || "In Progress", isDone: false, isDelayed: false, tat, taken, delay: 0 };
   }
-  // Fallback to text-based bucket.
+  // Fallback to text-based bucket. Only surface a delay when the bucket is
+  // actually Delayed — otherwise a stale numeric `delay` from `computeDelay`
+  // (e.g. a completed-but-mislabelled row) leaks a phantom "In Progress" delay.
   const b = statusBucket(statusText);
+  const bucketOut = b === "Completed" ? "In Progress" : b;
+  const isDelayedOut = bucketOut === "Delayed";
   return {
-    bucket: b === "Completed" ? "In Progress" : b,
+    bucket: bucketOut,
     label: statusText || "—",
     isDone: false,
-    isDelayed: b === "Delayed",
+    isDelayed: isDelayedOut,
     tat,
     taken,
-    delay,
+    delay: isDelayedOut ? delay : 0,
   };
 }
