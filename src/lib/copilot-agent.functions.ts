@@ -2337,10 +2337,9 @@ export async function runCopilotAgent(
         else unverified.push(marker);
         continue;
       }
-      // Legacy flag references are not row/doc grounded, but they are intentional
-      // citation markers from older answers and should not make unrelated sheet/doc
-      // citations look malformed.
-      if (/^flags?\[.+\]$/i.test(body)) verified.add(marker);
+      // Legacy `flags[...]` markers are no longer auto-verified — they were a
+      // hallucination bypass since nothing ties them to the ledger.
+
     }
 
     const isFallback =
