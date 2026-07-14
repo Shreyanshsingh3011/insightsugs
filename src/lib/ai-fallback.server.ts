@@ -228,8 +228,14 @@ export function createFallbackFetch(baseFetch: typeof fetch = fetch): typeof fet
       }
     }
 
-    // All tiers exhausted — surface the last gateway response
-    return baseFetch(input, init);
+    // All tiers exhausted — return the last upstream failure we captured
+    // instead of re-issuing the original request (which would double-bill
+    // and re-trigger the tripped breaker).
+    if (lastResponse) return lastResponse;
+    return new Response(
+      JSON.stringify({ error: { message: "All AI providers unavailable", code: "ai_all_providers_down" } }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
   }) as typeof fetch;
 }
 
