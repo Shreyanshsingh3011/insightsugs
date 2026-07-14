@@ -27,6 +27,26 @@ const STOP = new Set([
   "open","phone","number","email","mail","mobile","contact","responsible","person","owner","owners",
 ]);
 
+/** Header aliases that mean "row identifier / serial number". Kept broad so
+ * question phrasings like "S. No. 67", "sr no 12", "sl no 4", "SNO 9" all
+ * resolve to the identifier column regardless of the sheet's label spelling. */
+export const SNO_ALIASES = [
+  "s.no","s.no.","s no","sno","sr","sr.","sr no","sr.no","sr.no.","srno",
+  "sl","sl.","sl no","sl.no","sl.no.","slno","serial","serial no","serial number",
+  "s/n","s / n","#","no.","no",
+];
+
+/** Header aliases that mean "activity / task / name". Used to describe which
+ * columns we searched when a strict match fails, so the user sees an
+ * actionable "not found in X columns" message instead of a silent grounding
+ * failure. */
+export const NAME_ALIASES = [
+  "activity","activity name","task","task name","name","full name","beneficiary",
+  "beneficiary name","applicant","applicant name","owner","assignee","responsible",
+  "vendor","contractor","material","item","kpi","bill no","po no","contract",
+];
+
+
 export function normalizeText(s: string): string {
   return s
     .toLowerCase()
