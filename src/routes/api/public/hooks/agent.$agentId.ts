@@ -110,21 +110,12 @@ export const Route = createFileRoute("/api/public/hooks/agent/$agentId")({
             output: output.slice(0, 4000),
             latency_ms: Date.now() - t0,
           });
-          await supabaseAdmin
-            .from("custom_agents")
-            .update({ last_run_at: new Date().toISOString(), run_count: 1 + (0) })
-            .eq("id", agent.id);
-          // Increment via RPC-less path: fetch & write. Best-effort.
-          try {
-            const { data: fresh } = await supabaseAdmin
-              .from("custom_agents").select("run_count").eq("id", agent.id).single();
-            if (fresh) {
-              await supabaseAdmin
-                .from("custom_agents")
-                .update({ run_count: (fresh.run_count ?? 0) + 1 })
-                .eq("id", agent.id);
-            }
-          } catch { /* best-effort */ }
+          // Atomic increment: single UPDATE avoids the lost-update race that a
+          // read-then-write path had under concurrent webhook fan-out.
+          await (supabaseAdmin.rpc as unknown as (
+            fn: string,
+            args: Record<string, unknown>,
+          ) => Promise<{ error: unknown }>)("increment_agent_run_count", { _agent_id: agent.id });
 
           return new Response(
             JSON.stringify({ ok: true, output, tools_called: called, run_id: run?.id ?? null }),
