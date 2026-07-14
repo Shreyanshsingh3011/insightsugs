@@ -89,7 +89,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       code: "SOURCE_TIMEOUT",
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
     const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
     const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
     const isAdminUser = async () => {
@@ -124,7 +124,7 @@ export const listDocuments = createServerFn({ method: "POST" })
         if (data.folder_id) q = q.eq("folder_id", data.folder_id);
         const { data: rows, error } = await withTimeout(
           q,
-          1800,
+          12000,
           { data: null, error: timedOutError("Admin document list") } as any,
         );
         if (error) throw error;
@@ -135,6 +135,18 @@ export const listDocuments = createServerFn({ method: "POST" })
       }
     };
     try {
+      const adminFirstRows = await adminDocumentRows();
+      if (adminFirstRows) {
+        return {
+          documents: adminFirstRows.map((r: any) => ({
+            ...r,
+            share_count: 0,
+            is_owner: r.owner_id === userId,
+          })),
+          degraded: false,
+        };
+      }
+
       let q = supabase
         .from("documents")
         .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
@@ -142,7 +154,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       if (data.folder_id) q = q.eq("folder_id", data.folder_id);
       const { data: rows, error } = await withTimeout(
         q,
-        1800,
+        12000,
         { data: null, error: timedOutError("Document list") } as any,
       );
       let effectiveRows = rows ?? [];

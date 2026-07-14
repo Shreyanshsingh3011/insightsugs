@@ -704,7 +704,7 @@ export const listSheets = createServerFn({ method: "GET" })
       code: "SOURCE_TIMEOUT",
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
     const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
     const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
     const isAdminUser = async () => {
@@ -739,7 +739,7 @@ export const listSheets = createServerFn({ method: "GET" })
               "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
             )
             .order("created_at", { ascending: false }),
-          1800,
+          12000,
           { data: null, error: timedOutError("Admin sheet list") } as any,
         );
         if (error) throw error;
@@ -752,7 +752,16 @@ export const listSheets = createServerFn({ method: "GET" })
     let data: any[] | null = null;
     let lastError: unknown = null;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Super-admins must never lose visibility of registered sources because
+    // the user-scoped RLS path is slow or temporarily degraded. Read through
+    // the trusted admin path first, then fall back to the RLS path for normal
+    // users or if the admin path itself is unavailable.
+    const adminFirstRows = await adminSheetList();
+    if (adminFirstRows) {
+      data = adminFirstRows;
+    }
+
+    for (let attempt = 0; data == null && attempt < 2; attempt += 1) {
       // RLS returns: owner + admin + public + shared-with-me
       const result = await withTimeout(
         supabase
@@ -761,7 +770,7 @@ export const listSheets = createServerFn({ method: "GET" })
             "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
           )
           .order("created_at", { ascending: false }),
-        1800,
+        12000,
         { data: null, error: timedOutError("Sheet list") } as any,
       );
 
