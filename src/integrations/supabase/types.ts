@@ -2163,6 +2163,27 @@ export type Database = {
         }
         Relationships: []
       }
+      system_bootstrap_state: {
+        Row: {
+          bootstrapped_at: string | null
+          bootstrapped_user_id: string | null
+          id: boolean
+          super_admin_bootstrapped: boolean
+        }
+        Insert: {
+          bootstrapped_at?: string | null
+          bootstrapped_user_id?: string | null
+          id?: boolean
+          super_admin_bootstrapped?: boolean
+        }
+        Update: {
+          bootstrapped_at?: string | null
+          bootstrapped_user_id?: string | null
+          id?: boolean
+          super_admin_bootstrapped?: boolean
+        }
+        Relationships: []
+      }
       user_project_assignments: {
         Row: {
           created_at: string
