@@ -2423,6 +2423,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_agent_run_count: {
+        Args: { _agent_id: string }
+        Returns: undefined
+      }
       is_admin_or_super: { Args: { _user_id: string }; Returns: boolean }
       is_alert_recipient: {
         Args: { _alert_id: string; _user_id: string }
