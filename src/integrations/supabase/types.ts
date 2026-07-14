@@ -540,6 +540,33 @@ export type Database = {
           },
         ]
       }
+      bootstrap_admins: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          email: string | null
+          id: string
+          note: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          note?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          note?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       briefing_preferences: {
         Row: {
           created_at: string
@@ -2379,6 +2406,13 @@ export type Database = {
       is_alert_recipient: {
         Args: { _alert_id: string; _user_id: string }
         Returns: boolean
+      }
+      list_bootstrap_admins: {
+        Args: never
+        Returns: {
+          email: string
+          user_id: string
+        }[]
       }
       list_super_admin_emails: {
         Args: never
