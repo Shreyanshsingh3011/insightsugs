@@ -4,8 +4,9 @@ import { useRoles } from "@/hooks/useSession";
 import { supabase } from "@/integrations/supabase/client";
 import {
   UserPlus, FolderKanban, Mail, Radar, Users, ShieldCheck, ScrollText,
-  Lock, CheckCircle2, ShieldAlert, Activity,
+  Lock, CheckCircle2, ShieldAlert, Activity, Crown,
 } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/admin/")({
   component: AdminIndex,
@@ -74,6 +75,14 @@ function AdminIndex() {
       icon: <ShieldAlert className="h-5 w-5" />,
       requires: "super_admin",
     },
+    {
+      to: "/admin/bootstrap",
+      label: "Bootstrap super admins",
+      description: "Always-on super_admin accounts that survive DB outages.",
+      icon: <Crown className="h-5 w-5" />,
+      requires: "super_admin",
+    },
+
     {
       to: "/projects",
       label: "Projects",
