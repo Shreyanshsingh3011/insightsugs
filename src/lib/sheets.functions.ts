@@ -1781,11 +1781,17 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data: reg, error: regErr } = await supabase
-      .from("sheet_registry")
-      .select("id, display_name, sheet_type")
-      .eq("id", data.sheetId)
-      .maybeSingle();
+    const fetchRegistry = async () =>
+      await supabase
+        .from("sheet_registry")
+        .select("id, display_name, sheet_type")
+        .eq("id", data.sheetId)
+        .maybeSingle();
+    let { data: reg, error: regErr } = await fetchRegistry();
+    if (regErr && /schema cache|PGRST002|retrying/i.test(regErr.message)) {
+      await new Promise((r) => setTimeout(r, 600));
+      ({ data: reg, error: regErr } = await fetchRegistry());
+    }
     if (regErr) throw new Error(regErr.message);
     if (!reg) throw new Error("Sheet not found or you don't have access");
 
@@ -1795,6 +1801,7 @@ export const generateAutoInsights = createServerFn({ method: "POST" })
       .eq("sheet_registry_id", data.sheetId)
       .order("row_index", { ascending: true })
       .range(0, 4999);
+
 
     const storedRows = (rows ?? []) as any[];
     const { context: ctx, rowCount } = buildSheetContext(reg.display_name, storedRows);
