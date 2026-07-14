@@ -405,15 +405,24 @@ function CopilotPage() {
       const q = vars.retryForCitations
         ? `REMINDER: your previous answer was rejected because it lacked citations. Repeat your answer for the question below, but every factual sentence MUST have an inline citation marker like [flags[F-0003]] or [sheet:<name> row <n>], and the answer MUST end with a "Sources:" list. If a fact can't be cited from the provided data, say "I don't have that in the current dashboard data." instead.\n\nQuestion: ${vars.originalQuestion ?? vars.question}`
         : vars.question;
-      return ask({
-        data: {
-          question: q,
-          sheetIds: Array.from(selected),
-          documentIds: Array.from(selectedDocs),
-          history: vars.history,
-          strictMatch,
-        },
-      });
+      // Hard timeout: prevent indefinite "Thinking…" hangs when upstream
+      // AI providers stall. 90s covers slow tool loops but bails on true hangs.
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Copilot timed out after 90s. Try a narrower question or fewer sources.")), 90_000)
+      );
+      return Promise.race([
+        ask({
+          data: {
+            question: q,
+            sheetIds: Array.from(selected),
+            documentIds: Array.from(selectedDocs),
+            history: vars.history,
+            strictMatch,
+          },
+        }),
+        timeout,
+      ]);
+
     },
     onMutate: (vars) => {
       if (!vars.retryForCitations) setQuestion("");
