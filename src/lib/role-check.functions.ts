@@ -130,8 +130,13 @@ export const getMyRoles = createServerFn({ method: "GET" })
       return { roles: ["super_admin"], degraded: true };
     }
 
-    console.warn("Role lookup failed after retries; rendering user-level workspace.", lastError);
-    return { roles: ["user"], degraded: true };
+    // Fail closed. We could not confirm the caller's role from either the
+    // service-role admin client or the user-scoped client — do not synthesize
+    // a `user` role, since that would silently grant access during outages to
+    // callers who may not actually be provisioned. Bootstrap super-admins were
+    // already returned above.
+    console.warn("Role lookup failed after retries; failing closed with no roles.", lastError);
+    return { roles: [], degraded: true };
   });
 
 export const checkUserRoles = createServerFn({ method: "POST" })
