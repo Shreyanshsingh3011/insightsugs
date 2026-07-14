@@ -22,7 +22,7 @@ export type MyRolesResult = {
 
 export const getMyRoles = createServerFn({ method: "GET" })
   .handler(async (): Promise<MyRolesResult> => {
-    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
     const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
       try {
         const payload = jwt.split(".")[1];
