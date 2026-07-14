@@ -188,10 +188,15 @@ test("#copilot-column-count", "Total-row count searches only requested columns a
   const columns = Object.keys(rows[0]);
   const requested = extractRequestedColumns(query, columns);
   eq(requested.join("|"), "Store|Contractor", "requested Store/Contractor columns only");
+  const requestedNorms = new Set(requested.map((col) => col.toLowerCase()));
+  const targetPhrases = strictPhrases(query).filter((phrase) => !requestedNorms.has(phrase));
+  assert(targetPhrases.includes("contractor not available"), "quoted target phrase stays required");
   const targetTokens = contentTokens(query).filter((token) => !requested.some((col) => col.toLowerCase() === token));
   const hits = rows.filter((row) => {
     const hay = normalizeHaystack(requested.map((col) => row[col as keyof typeof row]));
-    return targetTokens.every((token) => hay.includes(token));
+    return targetPhrases.length > 0
+      ? matchesAllPhrases(hay, targetPhrases)
+      : targetTokens.every((token) => hay.includes(token));
   });
   eq(hits.length, 2, "counts completed + active rows, but excludes Notes-only hit");
 });
