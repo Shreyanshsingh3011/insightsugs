@@ -55,6 +55,7 @@ import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_aut
 import { Route as AuthenticatedAdminHealthRouteImport } from './routes/_authenticated/admin.health'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
 import { Route as AuthenticatedAdminEmailRouteImport } from './routes/_authenticated/admin.email'
+import { Route as AuthenticatedAdminBootstrapRouteImport } from './routes/_authenticated/admin.bootstrap'
 import { Route as AuthenticatedAdminAuditRouteImport } from './routes/_authenticated/admin.audit'
 import { Route as AuthenticatedAdminApprovalsRouteImport } from './routes/_authenticated/admin.approvals'
 import { Route as AuthenticatedAdminAllowlistRouteImport } from './routes/_authenticated/admin.allowlist'
@@ -329,6 +330,12 @@ const AuthenticatedAdminEmailRoute = AuthenticatedAdminEmailRouteImport.update({
   path: '/admin/email',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminBootstrapRoute =
+  AuthenticatedAdminBootstrapRouteImport.update({
+    id: '/admin/bootstrap',
+    path: '/admin/bootstrap',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminAuditRoute = AuthenticatedAdminAuditRouteImport.update({
   id: '/admin/audit',
   path: '/admin/audit',
@@ -518,6 +525,7 @@ export interface FileRoutesByFullPath {
   '/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/admin/approvals': typeof AuthenticatedAdminApprovalsRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
+  '/admin/bootstrap': typeof AuthenticatedAdminBootstrapRoute
   '/admin/email': typeof AuthenticatedAdminEmailRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/health': typeof AuthenticatedAdminHealthRoute
@@ -590,6 +598,7 @@ export interface FileRoutesByTo {
   '/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/admin/approvals': typeof AuthenticatedAdminApprovalsRoute
   '/admin/audit': typeof AuthenticatedAdminAuditRoute
+  '/admin/bootstrap': typeof AuthenticatedAdminBootstrapRoute
   '/admin/email': typeof AuthenticatedAdminEmailRoute
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/health': typeof AuthenticatedAdminHealthRoute
@@ -667,6 +676,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/allowlist': typeof AuthenticatedAdminAllowlistRoute
   '/_authenticated/admin/approvals': typeof AuthenticatedAdminApprovalsRoute
   '/_authenticated/admin/audit': typeof AuthenticatedAdminAuditRoute
+  '/_authenticated/admin/bootstrap': typeof AuthenticatedAdminBootstrapRoute
   '/_authenticated/admin/email': typeof AuthenticatedAdminEmailRoute
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/health': typeof AuthenticatedAdminHealthRoute
@@ -744,6 +754,7 @@ export interface FileRouteTypes {
     | '/admin/allowlist'
     | '/admin/approvals'
     | '/admin/audit'
+    | '/admin/bootstrap'
     | '/admin/email'
     | '/admin/email-groups'
     | '/admin/health'
@@ -816,6 +827,7 @@ export interface FileRouteTypes {
     | '/admin/allowlist'
     | '/admin/approvals'
     | '/admin/audit'
+    | '/admin/bootstrap'
     | '/admin/email'
     | '/admin/email-groups'
     | '/admin/health'
@@ -892,6 +904,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/allowlist'
     | '/_authenticated/admin/approvals'
     | '/_authenticated/admin/audit'
+    | '/_authenticated/admin/bootstrap'
     | '/_authenticated/admin/email'
     | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/health'
@@ -1301,6 +1314,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminEmailRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/bootstrap': {
+      id: '/_authenticated/admin/bootstrap'
+      path: '/admin/bootstrap'
+      fullPath: '/admin/bootstrap'
+      preLoaderRoute: typeof AuthenticatedAdminBootstrapRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/audit': {
       id: '/_authenticated/admin/audit'
       path: '/admin/audit'
@@ -1585,6 +1605,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminAllowlistRoute: typeof AuthenticatedAdminAllowlistRoute
   AuthenticatedAdminApprovalsRoute: typeof AuthenticatedAdminApprovalsRoute
   AuthenticatedAdminAuditRoute: typeof AuthenticatedAdminAuditRoute
+  AuthenticatedAdminBootstrapRoute: typeof AuthenticatedAdminBootstrapRoute
   AuthenticatedAdminEmailRoute: typeof AuthenticatedAdminEmailRoute
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
   AuthenticatedAdminHealthRoute: typeof AuthenticatedAdminHealthRoute
@@ -1613,6 +1634,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminAllowlistRoute: AuthenticatedAdminAllowlistRoute,
   AuthenticatedAdminApprovalsRoute: AuthenticatedAdminApprovalsRoute,
   AuthenticatedAdminAuditRoute: AuthenticatedAdminAuditRoute,
+  AuthenticatedAdminBootstrapRoute: AuthenticatedAdminBootstrapRoute,
   AuthenticatedAdminEmailRoute: AuthenticatedAdminEmailRoute,
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
   AuthenticatedAdminHealthRoute: AuthenticatedAdminHealthRoute,
