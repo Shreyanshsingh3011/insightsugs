@@ -150,6 +150,27 @@ function hasAnyCompletionDateColumn(row: StatusRow): boolean {
   return false;
 }
 
+function statusTextExplicitlyActive(row: StatusRow): boolean {
+  // Trust the sheet's Status column when it explicitly reports an active /
+  // non-terminal state. Otherwise a stray completion-date column (or a leaked
+  // Excel date serial in a duration column) silently promotes the row to
+  // Completed and it leaks into the Completed filter with an "In Progress"
+  // pill — the exact bug users hit on the Bihar report.
+  for (const key of STATUS_ALIASES) {
+    const value = String(row[key] ?? "").trim().toLowerCase();
+    if (!value) continue;
+    if (/\b(in\s*progress|under\s*progress|ongoing|wip|active|working|delay|delayed|late|overdue|breach|slipp|pending|open|not\s*(complete|completed|done|started?)|yet\s*to)\b/.test(value)) return true;
+  }
+  const normalizedStatusKeys = new Set(STATUS_ALIASES.map(normKey));
+  for (const [key, value] of Object.entries(row)) {
+    if (!normalizedStatusKeys.has(normKey(key))) continue;
+    const text = String(value ?? "").trim().toLowerCase();
+    if (!text) continue;
+    if (/\b(in\s*progress|under\s*progress|ongoing|wip|active|working|delay|delayed|late|overdue|breach|slipp|pending|open|not\s*(complete|completed|done|started?)|yet\s*to)\b/.test(text)) return true;
+  }
+  return false;
+}
+
 export function isTerminalRow(row: StatusRow): boolean {
   for (const key of STATUS_ALIASES) {
     if (isTerminalStatusText(row[key])) return true;
@@ -166,6 +187,10 @@ export function isTerminalRow(row: StatusRow): boolean {
       if (Number.isFinite(num) && num >= 100) return true;
     }
   }
+  // Secondary heuristics (date columns / date-serial leaks) only apply when
+  // the sheet's Status column is silent or already terminal — never override
+  // an explicit "In Progress / Delayed / Pending" label.
+  if (statusTextExplicitlyActive(row)) return false;
   const completion = valueForAliases(row, COMPLETION_ALIASES);
   return isMeaningfulCompletionValue(completion)
     || hasCompletionDateSerialInDurationColumn(row)
