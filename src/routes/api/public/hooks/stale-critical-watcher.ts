@@ -9,6 +9,7 @@
 //       headers := jsonb_build_object('Content-Type','application/json','apikey','YOUR_ANON_KEY'),
 //       body := '{}'::jsonb) $$);
 import { createFileRoute } from "@tanstack/react-router";
+import { isHookAuthorized, unauthorizedResponse } from "@/lib/hook-auth.server";
 
 async function runWatcher() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -81,8 +82,8 @@ async function runWatcher() {
 export const Route = createFileRoute("/api/public/hooks/stale-critical-watcher")({
   server: {
     handlers: {
-      GET: async () => Response.json(await runWatcher()),
-      POST: async () => Response.json(await runWatcher()),
+      GET: async ({ request }) => (isHookAuthorized(request) ? Response.json(await runWatcher()) : unauthorizedResponse()),
+      POST: async ({ request }) => (isHookAuthorized(request) ? Response.json(await runWatcher()) : unauthorizedResponse()),
     },
   },
 });

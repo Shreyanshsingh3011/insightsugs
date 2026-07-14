@@ -3,6 +3,7 @@
 // flag dead free slugs before the Copilot fallback path hits them at runtime.
 
 import { createFileRoute } from "@tanstack/react-router";
+import { isHookAuthorized } from "@/lib/hook-auth.server";
 
 const OPENROUTER_FREE_MODELS = [
   "deepseek/deepseek-r1:free",
@@ -11,23 +12,6 @@ const OPENROUTER_FREE_MODELS = [
   "meta-llama/llama-3.2-3b-instruct:free",
   "google/gemma-2-9b-it:free",
 ];
-
-function isAuthorized(request: Request): boolean {
-  const url = new URL(request.url);
-  const provided =
-    request.headers.get("apikey") ??
-    request.headers.get("x-api-key") ??
-    (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") ??
-    url.searchParams.get("apikey") ??
-    "";
-  if (!provided) return false;
-  const allowed = [
-    process.env.SUPABASE_PUBLISHABLE_KEY,
-    process.env.SUPABASE_ANON_KEY,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-  ].filter(Boolean) as string[];
-  return allowed.includes(provided);
-}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -69,7 +53,7 @@ async function probeModel(key: string, model: string) {
 }
 
 async function handle(request: Request): Promise<Response> {
-  if (!isAuthorized(request)) return json({ error: "unauthorized" }, 401);
+  if (!isHookAuthorized(request)) return json({ error: "unauthorized" }, 401);
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) return json({ error: "OPENROUTER_API_KEY not set" }, 500);
 

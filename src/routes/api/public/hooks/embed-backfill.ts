@@ -4,25 +4,9 @@
 // until `remaining` is 0.
 
 import { createFileRoute } from "@tanstack/react-router";
+import { isHookAuthorized } from "@/lib/hook-auth.server";
 import { createClient } from "@supabase/supabase-js";
 import { ensureSheetEmbeddings } from "@/lib/copilot-agent.functions";
-
-function isAuthorized(request: Request): boolean {
-  const url = new URL(request.url);
-  const provided =
-    request.headers.get("apikey") ??
-    request.headers.get("x-api-key") ??
-    (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") ??
-    url.searchParams.get("apikey") ??
-    "";
-  if (!provided) return false;
-  const allowed = [
-    process.env.SUPABASE_PUBLISHABLE_KEY,
-    process.env.SUPABASE_ANON_KEY,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-  ].filter(Boolean) as string[];
-  return allowed.includes(provided);
-}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -32,7 +16,7 @@ function json(body: unknown, status = 200) {
 }
 
 async function run(request: Request) {
-  if (!isAuthorized(request)) return json({ error: "unauthorized" }, 401);
+  if (!isHookAuthorized(request)) return json({ error: "unauthorized" }, 401);
 
   const url = new URL(request.url);
   const perInvocationCap = Math.min(
