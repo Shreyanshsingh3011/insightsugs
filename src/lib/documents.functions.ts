@@ -72,6 +72,23 @@ export const listDocuments = createServerFn({ method: "POST" })
   .inputValidator((d: { folder_id?: string | null } = {}) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
+    const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number, fallback: T): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.resolve(promise),
+          new Promise<T>((resolve) => {
+            timer = setTimeout(() => resolve(fallback), ms);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const timedOutError = (label: string) => ({
+      code: "SOURCE_TIMEOUT",
+      message: `${label} timed out while the backend data cache was refreshing.`,
+    });
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
     const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
     const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
@@ -85,7 +102,11 @@ export const listDocuments = createServerFn({ method: "POST" })
       }
       try {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+        const { data: authUser } = await withTimeout(
+          supabaseAdmin.auth.admin.getUserById(userId),
+          2000,
+          { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
+        );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
         return bootstrapSuperAdminEmails.has(email);
       } catch {
@@ -101,7 +122,11 @@ export const listDocuments = createServerFn({ method: "POST" })
           .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
           .order("created_at", { ascending: false });
         if (data.folder_id) q = q.eq("folder_id", data.folder_id);
-        const { data: rows, error } = await q;
+        const { data: rows, error } = await withTimeout(
+          q,
+          3500,
+          { data: null, error: timedOutError("Admin document list") } as any,
+        );
         if (error) throw error;
         return rows ?? [];
       } catch (error) {
@@ -115,7 +140,11 @@ export const listDocuments = createServerFn({ method: "POST" })
         .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
         .order("created_at", { ascending: false });
       if (data.folder_id) q = q.eq("folder_id", data.folder_id);
-      const { data: rows, error } = await q;
+      const { data: rows, error } = await withTimeout(
+        q,
+        3500,
+        { data: null, error: timedOutError("Document list") } as any,
+      );
       let effectiveRows = rows ?? [];
       let degraded = false;
       if (error || effectiveRows.length === 0) {

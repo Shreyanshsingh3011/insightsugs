@@ -687,6 +687,23 @@ export const listSheets = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number, fallback: T): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.resolve(promise),
+          new Promise<T>((resolve) => {
+            timer = setTimeout(() => resolve(fallback), ms);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const timedOutError = (label: string) => ({
+      code: "SOURCE_TIMEOUT",
+      message: `${label} timed out while the backend data cache was refreshing.`,
+    });
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
     const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
     const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
@@ -700,7 +717,11 @@ export const listSheets = createServerFn({ method: "GET" })
       }
       try {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+        const { data: authUser } = await withTimeout(
+          supabaseAdmin.auth.admin.getUserById(userId),
+          2000,
+          { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
+        );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
         return bootstrapSuperAdminEmails.has(email);
       } catch {
@@ -711,12 +732,16 @@ export const listSheets = createServerFn({ method: "GET" })
       if (!(await isAdminUser())) return null;
       try {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data: rows, error } = await supabaseAdmin
-          .from("sheet_registry")
-          .select(
-            "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
-          )
-          .order("created_at", { ascending: false });
+        const { data: rows, error } = await withTimeout(
+          supabaseAdmin
+            .from("sheet_registry")
+            .select(
+              "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
+            )
+            .order("created_at", { ascending: false }),
+          3500,
+          { data: null, error: timedOutError("Admin sheet list") } as any,
+        );
         if (error) throw error;
         return rows ?? [];
       } catch (error) {
@@ -729,12 +754,16 @@ export const listSheets = createServerFn({ method: "GET" })
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       // RLS returns: owner + admin + public + shared-with-me
-      const result = await supabase
-        .from("sheet_registry")
-        .select(
-          "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
-        )
-        .order("created_at", { ascending: false });
+      const result = await withTimeout(
+        supabase
+          .from("sheet_registry")
+          .select(
+            "id, sheet_type, display_name, apps_script_url, source_url, row_count, last_refreshed_at, created_at, visibility, user_id",
+          )
+          .order("created_at", { ascending: false }),
+        3500,
+        { data: null, error: timedOutError("Sheet list") } as any,
+      );
 
       if (!result.error) {
         data = result.data ?? [];
@@ -745,7 +774,8 @@ export const listSheets = createServerFn({ method: "GET" })
       lastError = result.error;
       const message = String(result.error.message ?? "");
       const transientSchemaCacheError = message.toLowerCase().includes("schema cache");
-      if (!transientSchemaCacheError || attempt === 2) break;
+      const timeoutError = String((result.error as any).code ?? "") === "SOURCE_TIMEOUT";
+      if ((!transientSchemaCacheError && !timeoutError) || attempt === 2) break;
       await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
     }
 
