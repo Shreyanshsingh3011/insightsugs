@@ -536,12 +536,26 @@ export async function deterministicAnswer(params: {
       docs.length ? `${docs.length} document${docs.length === 1 ? "" : "s"}` : "",
     ].filter(Boolean).join(" and ") || "the selected sources";
     const missing = tokens.length ? tokens.slice(0, 6).join(", ") : "matching data";
+
+    // Explain exactly what we searched: per-sheet row counts + which columns
+    // are name/identifier-like (via query-match.describeSearchedColumns), so
+    // the user can retarget or fix the source.
+    const { describeSearchedColumns } = await import("./query-match");
+    const perSheet = sheetRows.map(({ reg, rows }) => {
+      const cols = allColumns(rows);
+      const nameCols = describeSearchedColumns([{ display_name: reg.display_name, headers: cols }]);
+      return `- **${reg.display_name}**: scanned ${fmt(rows.length)} rows across columns [${nameCols || cols.slice(0, 6).join(", ")}]`;
+    });
+    const perDoc = docs.map((d) => `- **${d.name}**: scanned document chunks`);
+    const searchedBlock = [...perSheet, ...perDoc].join("\n") || "_(no rows found in the selected sources)_";
+
     const answer =
       `I don't have that in the current dashboard data.\n\n` +
-      `Searched ${scope} but found no rows or document excerpts matching your query. ` +
-      `Missing: ${missing}.\n\n` +
+      `**Searched:** ${scope}.\n${searchedBlock}\n\n` +
+      `**Missing tokens:** ${missing}.\n\n` +
       `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.`;
     return { answer, citations: [], matched: false };
+
   }
 
 
