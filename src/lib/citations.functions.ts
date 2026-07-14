@@ -66,7 +66,7 @@ export const getCitationContext = createServerFn({ method: "POST" })
     const { data: doc } = await context.supabase
       .from("documents")
       .select("id, name, page_count, summary, key_points")
-      .ilike("name", data.label.trim())
+      .ilike("name", escapeIlike(data.label.trim()))
       .limit(1)
       .maybeSingle();
     if (!doc) return { kind: "doc", label: data.label, page, found: false };
