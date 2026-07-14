@@ -131,6 +131,13 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
 
+  // Snapshot of applied filters/sources per message id (client-side context transparency)
+  const [msgFilters, setMsgFilters] = useState<Record<string, { sources: string[]; kind: string }>>({});
+  const enabledSourceLabels = useMemo(
+    () => sources.filter((s) => s.enabled).map((s) => `${s.type === "sheet" ? "" : s.type + ":"}${s.label}`),
+    [sources],
+  );
+
   const handleAsk = async (q: string) => {
     const question = q.trim();
     if (!question || sending) return;
