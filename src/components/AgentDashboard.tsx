@@ -14,7 +14,7 @@ import { generateGeminiFn } from "@/lib/gemini.functions";
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, type StatusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, computeRowStatus, type StatusBucket } from "@/lib/status-utils";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 
@@ -1029,16 +1029,26 @@ export default function AgentDashboard() {
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const stage = pick(r, "Stages", "Stages of Process");
-    const status = statusOf(r);
-    const rowBucket = statusBucketForRow(r);
-    const terminal = isTerminalRow(r);
+    // Canonical computed status — one source of truth for bucket, label,
+    // done/delayed flags, tat/taken/delay. Prevents raw sheet text from
+    // contradicting the numbers (e.g. TAT=30 Taken=31 labelled "Timely").
+    const computed = computeRowStatus(r);
+    const rawStatus = statusOf(r);
     const crit = pick(r, "Criticality");
     const proj = pick(r, "__project");
-    const tat = num(r["TAT"]);
-    const taken = daysTakenForRow(r);
-    const delay = delayForRow(r, terminal, status);
-    const hay = [activity, person, email, stage, status, crit, proj].join(" ").toLowerCase();
-    return { i, activity, person, email, stage, status, statusBucket: rowBucket, terminal, crit, proj, tat, taken, delay, hay };
+    const hay = [activity, person, email, stage, computed.label, rawStatus, crit, proj].join(" ").toLowerCase();
+    return {
+      i, activity, person, email, stage,
+      status: computed.label,         // display label (computed, not raw)
+      rawStatus,                       // preserved for search/debug
+      statusBucket: computed.bucket,
+      terminal: computed.isDone,
+      crit, proj,
+      tat: computed.tat,
+      taken: computed.taken,
+      delay: computed.delay,
+      hay,
+    };
   }), [rowsAll]);
 
   // Build a directory of every unique person that appears in the data so we
@@ -1282,13 +1292,21 @@ export default function AgentDashboard() {
     const q = filters.q.trim().toLowerCase();
     return rowIndex.filter(r => {
       const statusBucket = r.statusBucket;
-      if (filters.status !== "all" && statusBucket !== filters.status) return false;
-      if (filters.status === "all" && (statusBucket === "Completed" || r.terminal)) return false;
+      // Completed filter = ONLY rows the numbers agree are done.
+      if (filters.status === "Completed") {
+        if (!r.terminal || statusBucket !== "Completed") return false;
+      } else if (filters.status !== "all") {
+        if (statusBucket !== filters.status) return false;
+        if (r.terminal) return false; // never leak done rows into active buckets
+      } else {
+        // "All" view hides completed work so the operator sees actionable rows.
+        if (statusBucket === "Completed" || r.terminal) return false;
+      }
       if (filters.crit !== "all" && r.crit !== filters.crit) return false;
       if (filters.stage !== "all" && r.stage !== filters.stage) return false;
       if (filters.person !== "all" && r.person !== filters.person) return false;
       if (min > 0 && r.delay < min) return false;
-      if (filters.onlyOverdue && !(r.delay > 0 && statusBucket !== "Completed" && !r.terminal)) return false;
+      if (filters.onlyOverdue && !(r.delay > 0 && !r.terminal)) return false;
       if (q && !r.hay.includes(q)) return false;
       return true;
     });
