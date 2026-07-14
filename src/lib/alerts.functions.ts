@@ -58,7 +58,7 @@ export const sendAlert = createServerFn({ method: "POST" })
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id, full_name, email")
-        .ilike("email", flag.responsible_email)
+        .ilike("email", escapeIlike(normalizeEmail(flag.responsible_email)))
         .maybeSingle();
       addRecip(flag.responsible_email, prof?.id ?? null, prof?.full_name ?? flag.responsible_name ?? null);
     }
