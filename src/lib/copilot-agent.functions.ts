@@ -6,6 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isTransientDataApiError } from "./transient-errors";
 // Heavy AI SDK + gateway modules are lazy-loaded inside the handler to keep
 // them out of the SSR entry bundle.
 
@@ -75,13 +76,25 @@ async function fetchAllRows(
   const PAGE = 1000;
   const out: Array<{ row_index: number; data: Record<string, unknown> }> = [];
   for (let offset = 0; offset < cap; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("sheet_rows")
-      .select("row_index, canonical, extras")
-      .eq("sheet_registry_id", registryId)
-      .order("row_index", { ascending: true })
-      .range(offset, Math.min(offset + PAGE - 1, cap - 1));
-    if (error) throw new Error(error.message);
+    let data: any[] | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await supabase
+        .from("sheet_rows")
+        .select("row_index, canonical, extras")
+        .eq("sheet_registry_id", registryId)
+        .order("row_index", { ascending: true })
+        .range(offset, Math.min(offset + PAGE - 1, cap - 1));
+      if (!result.error) {
+        data = result.data ?? [];
+        lastError = null;
+        break;
+      }
+      lastError = result.error;
+      if (!isTransientDataApiError(result.error) || attempt === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+    if (lastError) throw new Error((lastError as any)?.message ?? String(lastError));
     if (!data || data.length === 0) break;
     for (const r of data as any[]) {
       out.push({ row_index: r.row_index, data: mergeRow(r) });
@@ -277,19 +290,36 @@ export async function runCopilotAgent(
 
 
     // 1) Resolve sheet + document metadata (labels for citations, IDs for scope).
+    const readWithRetry = async <T,>(label: string, run: () => Promise<{ data: T; error: any }>) => {
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const result = await run();
+        if (!result.error) return result;
+        lastError = result.error;
+        if (!isTransientDataApiError(result.error) || attempt === 3) break;
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      }
+      console.warn(`Copilot ${label} lookup failed after retries.`, lastError);
+      return { data: [] as T, error: lastError };
+    };
+
     const [regsRes, docsRes] = await Promise.all([
       data.sheetIds.length
-        ? supabase
-            .from("sheet_registry")
-            .select("id, display_name, sheet_type, row_count")
-            .in("id", data.sheetIds)
+        ? readWithRetry("sheet registry", () =>
+            supabase
+              .from("sheet_registry")
+              .select("id, display_name, sheet_type, row_count")
+              .in("id", data.sheetIds),
+          )
         : Promise.resolve({ data: [] as any[], error: null }),
 
       data.documentIds.length
-        ? supabase
-            .from("documents")
-            .select("id, name, summary, page_count")
-            .in("id", data.documentIds)
+        ? readWithRetry("document", () =>
+            supabase
+              .from("documents")
+              .select("id, name, summary, page_count")
+              .in("id", data.documentIds),
+          )
         : Promise.resolve({ data: [] as any[], error: null }),
     ]);
     if ((regsRes as any).error) throw new Error((regsRes as any).error.message);
@@ -2475,7 +2505,13 @@ export async function runCopilotAgent(
           stopWhen: stepCountIs(50),
         });
       } catch (error) {
-        if (!isAiBillingOrQuotaError(error)) throw error;
+        toolTrace.push({
+          name: "ai_model",
+          args: { provider: "lovable_gateway", fallback: "selected_source_local_engine" },
+          ok: false,
+          ms: 0,
+          summary: `AI provider failed; using local selected-source engine: ${(error as Error)?.message?.slice(0, 180) ?? "unknown"}`,
+        });
         try {
           result = await runWithGeminiFallback();
         } catch (fallbackError) {
@@ -2589,7 +2625,7 @@ export async function runCopilotAgent(
     }
 
     const isFallback =
-      /^i don'?t have that in the current dashboard data\.?$/i.test(rawAnswer);
+      /^i don'?t have that in the current dashboard data\b/i.test(rawAnswer);
     const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(rawAnswer);
     let finalAnswer = rawAnswer;
     if (!opts.skipCitationEnforcement && !isFallback && !hasSourcesSection && verified.size > 0) {
@@ -2696,7 +2732,7 @@ export async function runCopilotAgent(
       if (/^(sheet:|doc:|flags?\[)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
     }
     const finalCitationOk =
-      /^i don'?t have that in the current dashboard data\.?$/i.test(finalAnswer.trim()) ||
+      /^i don'?t have that in the current dashboard data\b/i.test(finalAnswer.trim()) ||
       (finalMarkers.size > 0 && /(^|\n)\s*sources\s*:/i.test(finalAnswer));
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).

@@ -72,17 +72,91 @@ export const listDocuments = createServerFn({ method: "POST" })
   .inputValidator((d: { folder_id?: string | null } = {}) => d)
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context as { supabase: any; userId: string };
+    const withTimeout = async <T,>(promise: PromiseLike<T>, ms: number, fallback: T): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.resolve(promise),
+          new Promise<T>((resolve) => {
+            timer = setTimeout(() => resolve(fallback), ms);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    const timedOutError = (label: string) => ({
+      code: "SOURCE_TIMEOUT",
+      message: `${label} timed out while the backend data cache was refreshing.`,
+    });
+    const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com"]);
+    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
+    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
+    const isAdminUser = async () => {
+      if (isBootstrapSuper) return true;
+      try {
+        const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+        if (isAdmin) return true;
+      } catch {
+        // Continue to backend-auth lookup below; schema-cache hiccups must not hide super-admin documents.
+      }
+      try {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: authUser } = await withTimeout(
+          supabaseAdmin.auth.admin.getUserById(userId),
+          2000,
+          { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
+        );
+        const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
+        return bootstrapSuperAdminEmails.has(email);
+      } catch {
+        return false;
+      }
+    };
+    const adminDocumentRows = async () => {
+      if (!(await isAdminUser())) return null;
+      try {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        let q = supabaseAdmin
+          .from("documents")
+          .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
+          .order("created_at", { ascending: false });
+        if (data.folder_id) q = q.eq("folder_id", data.folder_id);
+        const { data: rows, error } = await withTimeout(
+          q,
+          3500,
+          { data: null, error: timedOutError("Admin document list") } as any,
+        );
+        if (error) throw error;
+        return rows ?? [];
+      } catch (error) {
+        console.warn("Admin document list fallback failed.", error);
+        return null;
+      }
+    };
     try {
       let q = supabase
         .from("documents")
         .select("id,name,mime_type,size_bytes,status,summary,key_points,folder_id,created_at,page_count,status_error,visibility,owner_id")
         .order("created_at", { ascending: false });
       if (data.folder_id) q = q.eq("folder_id", data.folder_id);
-      const { data: rows, error } = await q;
-      if (error) {
-        return { documents: [], degraded: true, reason: String(error.message || "Documents unavailable") };
+      const { data: rows, error } = await withTimeout(
+        q,
+        3500,
+        { data: null, error: timedOutError("Document list") } as any,
+      );
+      let effectiveRows = rows ?? [];
+      let degraded = false;
+      if (error || effectiveRows.length === 0) {
+        const fallbackRows = await adminDocumentRows();
+        if (fallbackRows && fallbackRows.length > 0) {
+          effectiveRows = fallbackRows;
+          degraded = true;
+        } else if (error) {
+          return { documents: [], degraded: true, reason: String(error.message || "Documents unavailable") };
+        }
       }
-      const ids = (rows ?? []).filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
+      const ids = effectiveRows.filter((r: any) => r.visibility === "shared").map((r: any) => r.id);
       const shareCounts = new Map<string, number>();
       if (ids.length > 0) {
         try {
@@ -96,11 +170,12 @@ export const listDocuments = createServerFn({ method: "POST" })
         } catch { /* non-fatal */ }
       }
       return {
-        documents: (rows ?? []).map((r: any) => ({
+        documents: effectiveRows.map((r: any) => ({
           ...r,
           share_count: shareCounts.get(r.id) ?? 0,
           is_owner: r.owner_id === userId,
         })),
+        degraded,
       };
     } catch (e: any) {
       return { documents: [], degraded: true, reason: String(e?.message || e || "Documents unavailable") };
