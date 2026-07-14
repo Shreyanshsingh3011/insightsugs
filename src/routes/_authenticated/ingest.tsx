@@ -25,6 +25,8 @@ import {
 } from "@/lib/sheets.functions";
 import { useIsAdmin } from "@/hooks/useSession";
 import { VisibilityPicker, type Visibility } from "@/components/VisibilityPicker";
+import { IngestValidationPanel } from "@/components/IngestValidationPanel";
+
 
 export const Route = createFileRoute("/_authenticated/ingest")({
   head: () => ({
@@ -434,6 +436,14 @@ function PreviewAndCommit({
         sheetType={sheetType}
         mappingLoading={mappingLoading}
       />
+
+      <IngestValidationPanel
+        sheetType={sheetType}
+        headers={parsed.headers}
+        rows={parsed.rows}
+        mapping={mapping}
+      />
+
 
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onReset}>Cancel</Button>
