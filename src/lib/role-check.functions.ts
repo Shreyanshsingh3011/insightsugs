@@ -159,7 +159,7 @@ export const checkUserRoles = createServerFn({ method: "POST" })
     const { data: prof, error: pErr } = await supabaseAdmin
       .from("profiles")
       .select("id, full_name, email")
-      .ilike("email", data.email)
+      .ilike("email", escapeIlike(normalizeEmail(data.email)))
       .maybeSingle();
     if (pErr) throw pErr;
     if (!prof) {
