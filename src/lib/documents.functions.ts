@@ -104,7 +104,7 @@ export const listDocuments = createServerFn({ method: "POST" })
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: authUser } = await withTimeout(
           supabaseAdmin.auth.admin.getUserById(userId),
-          2000,
+          1200,
           { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
         );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();
@@ -124,7 +124,7 @@ export const listDocuments = createServerFn({ method: "POST" })
         if (data.folder_id) q = q.eq("folder_id", data.folder_id);
         const { data: rows, error } = await withTimeout(
           q,
-          3500,
+          1800,
           { data: null, error: timedOutError("Admin document list") } as any,
         );
         if (error) throw error;
@@ -142,7 +142,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       if (data.folder_id) q = q.eq("folder_id", data.folder_id);
       const { data: rows, error } = await withTimeout(
         q,
-        3500,
+        1800,
         { data: null, error: timedOutError("Document list") } as any,
       );
       let effectiveRows = rows ?? [];
