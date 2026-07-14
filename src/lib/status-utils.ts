@@ -299,8 +299,10 @@ export function isRowEffectivelyDone(row: StatusRow): boolean {
     if (isSerial(toNum(row["Delay in Days"]))) return true;
   }
   const tat = toNum(row["TAT"]);
-  const rawTaken = toNum(row["Days Taken"]);
+  const recomputed = recomputeDaysTaken(row);
+  const rawTaken = recomputed ?? toNum(row["Days Taken"]);
   const taken = rawTaken > 3650 || rawTaken < 0 ? 0 : rawTaken;
+
   if (taken > 0 && tat > 0 && taken <= tat) return true;
   return false;
 }
