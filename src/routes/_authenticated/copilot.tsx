@@ -1223,9 +1223,18 @@ function CopilotPage() {
           {askMut.isPending && (
             <Card className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Thinking…
+              <ThinkingElapsed startedAt={askMut.submittedAt} />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-7 px-2 text-xs"
+                onClick={() => askMut.reset()}
+              >
+                Cancel
+              </Button>
             </Card>
           )}
+
         </div>
 
         <Card className="p-3">
