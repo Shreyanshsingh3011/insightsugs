@@ -2,6 +2,17 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
+import { withSchemaHeal } from "@/lib/schema-retry";
+
+// Throw the Supabase error text so withSchemaHeal can detect PGRST002/205.
+function must<T>(result: { data: T | null; error: { message?: string; code?: string } | null }): T {
+  if (result.error) {
+    const err = new Error(result.error.message ?? "Database error") as Error & { code?: string };
+    err.code = result.error.code;
+    throw err;
+  }
+  return result.data as T;
+}
 
 const SHEET_TYPE_ENUM = z.enum([
   "generic",
@@ -92,7 +103,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
 
     const sentinel = `upload://${data.sourceLabel ?? "file"}/${crypto.randomUUID()}`;
 
-    const { data: reg, error: regErr } = await supabase
+    const reg = must(await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .insert({
         user_id: userId,
@@ -102,14 +113,13 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
         visibility,
       })
       .select("id")
-      .single();
-    if (regErr) throw new Error(regErr.message);
-    const registryId = reg.id as string;
+      .single(), 4, "ingest.registry.insert"));
+    const registryId = (reg as unknown as { id: string }).id;
 
     if (sharedIds.length > 0) {
-      await supabase.from("sheet_registry_shares").insert(
+      await withSchemaHeal(async () => await supabase.from("sheet_registry_shares").insert(
         sharedIds.map((uid) => ({ sheet_registry_id: registryId, user_id: uid, created_by: userId })),
-      );
+      ), 4, "ingest.shares.insert");
     }
 
     const mapping = data.mapping ?? heuristicMapping(data.sheetType as SheetType, data.headers);
@@ -120,8 +130,7 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       position: idx,
     }));
     if (mappingRows.length > 0) {
-      const { error: mapErr } = await supabase.from("sheet_column_mappings").insert(mappingRows);
-      if (mapErr) throw new Error(mapErr.message);
+      must(await withSchemaHeal(async () => await supabase.from("sheet_column_mappings").insert(mappingRows), 4, "ingest.mappings.insert"));
     }
 
     // Convert parsed rows into canonical/extras split.
@@ -142,18 +151,17 @@ export const ingestParsedTable = createServerFn({ method: "POST" })
       const BATCH = 500;
       for (let i = 0; i < toInsert.length; i += BATCH) {
         const slice = toInsert.slice(i, i + BATCH);
-        const { error } = await supabase.from("sheet_rows").insert(slice);
-        if (error) throw new Error(error.message);
+        must(await withSchemaHeal(async () => await supabase.from("sheet_rows").insert(slice), 4, "ingest.rows.insert"));
       }
     }
 
-    await supabase
+    await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .update({
         last_refreshed_at: new Date().toISOString(),
         row_count: toInsert.length,
       })
-      .eq("id", registryId);
+      .eq("id", registryId), 4, "ingest.registry.update");
 
     return { id: registryId, rowCount: toInsert.length };
   });
@@ -172,23 +180,22 @@ export const replaceUploadedRows = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: reg, error: regErr } = await supabase
+    const reg = must(await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .select("id, user_id, apps_script_url")
       .eq("id", data.registryId)
-      .maybeSingle();
-    if (regErr) throw new Error(regErr.message);
+      .maybeSingle(), 4, "replace.registry.read")) as { id: string; user_id: string; apps_script_url: string } | null;
     if (!reg || reg.user_id !== userId) throw new Error("Dataset not found.");
     if (!String(reg.apps_script_url ?? "").startsWith("upload://")) {
       throw new Error("This dataset came from a URL. Use Refresh instead.");
     }
 
-    const { data: maps } = await supabase
+    const mapsResp = await withSchemaHeal(async () => await supabase
       .from("sheet_column_mappings")
       .select("source_header, canonical_field")
-      .eq("sheet_registry_id", data.registryId);
+      .eq("sheet_registry_id", data.registryId), 4, "replace.mappings.read");
     const mapping: Record<string, string | null> = {};
-    for (const m of maps ?? []) mapping[m.source_header] = m.canonical_field;
+    for (const m of (mapsResp.data ?? [])) mapping[m.source_header] = m.canonical_field;
 
     const toInsert = data.rows.map((row, idx) => {
       const canonical: Record<string, string> = {};
@@ -203,27 +210,25 @@ export const replaceUploadedRows = createServerFn({ method: "POST" })
       return { sheet_registry_id: data.registryId, row_index: idx, canonical, extras };
     });
 
-    const { error: delErr } = await supabase
+    must(await withSchemaHeal(async () => await supabase
       .from("sheet_rows")
       .delete()
-      .eq("sheet_registry_id", data.registryId);
-    if (delErr) throw new Error(delErr.message);
+      .eq("sheet_registry_id", data.registryId), 4, "replace.rows.delete"));
 
     if (toInsert.length > 0) {
       const BATCH = 500;
       for (let i = 0; i < toInsert.length; i += BATCH) {
-        const { error } = await supabase.from("sheet_rows").insert(toInsert.slice(i, i + BATCH));
-        if (error) throw new Error(error.message);
+        must(await withSchemaHeal(async () => await supabase.from("sheet_rows").insert(toInsert.slice(i, i + BATCH)), 4, "replace.rows.insert"));
       }
     }
 
-    await supabase
+    await withSchemaHeal(async () => await supabase
       .from("sheet_registry")
       .update({
         last_refreshed_at: new Date().toISOString(),
         row_count: toInsert.length,
       })
-      .eq("id", data.registryId);
+      .eq("id", data.registryId), 4, "replace.registry.update");
 
     return { rowCount: toInsert.length };
   });
