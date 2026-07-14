@@ -61,13 +61,12 @@ export const Route = createFileRoute("/api/public/hooks/email-inbound")({
           return new Response("Server not configured", { status: 500 });
         }
 
-        // Accept `Authorization: Bearer <token>` or `?token=<token>`.
+        // Header-only: `Authorization: Bearer <token>`. Query strings leak
+        // through access logs, proxies, and the Referer header, so we no
+        // longer accept `?token=`.
         const authHeader = request.headers.get("authorization") ?? "";
         const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
-        const url = new URL(request.url);
-        const qToken = url.searchParams.get("token") ?? "";
-        const provided = bearer || qToken;
-        if (!provided || !timingSafeEqual(provided, secret)) {
+        if (!bearer || !timingSafeEqual(bearer, secret)) {
           return new Response("Unauthorized", { status: 401 });
         }
 

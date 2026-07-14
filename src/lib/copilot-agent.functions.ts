@@ -2258,7 +2258,10 @@ export async function runCopilotAgent(
       if (rawAnswer[m.index + m[0].length] === "(") continue;
       const marker = m[0];
       const body = m[1].trim();
-      if (!/^(sheet:|doc:|flags?\[)/i.test(body)) continue;
+      // Only sheet:/doc: markers are ledger-verifiable. Legacy `flags[...]`
+      // markers are ignored entirely (not counted, not auto-verified) so they
+      // cannot bypass the grounding guard.
+      if (!/^(sheet:|doc:)/i.test(body)) continue;
       if (seen.has(marker)) continue;
       seen.add(marker);
       inlineCount++;
@@ -2334,10 +2337,9 @@ export async function runCopilotAgent(
         else unverified.push(marker);
         continue;
       }
-      // Legacy flag references are not row/doc grounded, but they are intentional
-      // citation markers from older answers and should not make unrelated sheet/doc
-      // citations look malformed.
-      if (/^flags?\[.+\]$/i.test(body)) verified.add(marker);
+      // Legacy `flags[...]` markers are no longer auto-verified — they were a
+      // hallucination bypass since nothing ties them to the ledger.
+
     }
 
     const isFallback =
@@ -2445,7 +2447,7 @@ export async function runCopilotAgent(
     while ((finalMarkerMatch = finalInlineRe.exec(finalAnswer)) !== null) {
       if (finalAnswer[finalMarkerMatch.index + finalMarkerMatch[0].length] === "(") continue;
       const body = finalMarkerMatch[1].trim();
-      if (/^(sheet:|doc:|flags?\[)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
+      if (/^(sheet:|doc:)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
     }
     const finalCitationOk =
       /^i don'?t have that in the current dashboard data\b/i.test(finalAnswer.trim()) ||
