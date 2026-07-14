@@ -437,6 +437,14 @@ function PreviewAndCommit({
         mappingLoading={mappingLoading}
       />
 
+      <IngestValidationPanel
+        sheetType={sheetType}
+        headers={parsed.headers}
+        rows={parsed.rows}
+        mapping={mapping}
+      />
+
+
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onReset}>Cancel</Button>
         <Button size="sm" onClick={() => ingestMut.mutate()} disabled={ingestMut.isPending || !displayName.trim()}>
