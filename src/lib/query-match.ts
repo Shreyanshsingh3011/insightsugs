@@ -27,6 +27,26 @@ const STOP = new Set([
   "open","phone","number","email","mail","mobile","contact","responsible","person","owner","owners",
 ]);
 
+/** Header aliases that mean "row identifier / serial number". Kept broad so
+ * question phrasings like "S. No. 67", "sr no 12", "sl no 4", "SNO 9" all
+ * resolve to the identifier column regardless of the sheet's label spelling. */
+export const SNO_ALIASES = [
+  "s.no","s.no.","s no","sno","sr","sr.","sr no","sr.no","sr.no.","srno",
+  "sl","sl.","sl no","sl.no","sl.no.","slno","serial","serial no","serial number",
+  "s/n","s / n","#","no.","no",
+];
+
+/** Header aliases that mean "activity / task / name". Used to describe which
+ * columns we searched when a strict match fails, so the user sees an
+ * actionable "not found in X columns" message instead of a silent grounding
+ * failure. */
+export const NAME_ALIASES = [
+  "activity","activity name","task","task name","name","full name","beneficiary",
+  "beneficiary name","applicant","applicant name","owner","assignee","responsible",
+  "vendor","contractor","material","item","kpi","bill no","po no","contract",
+];
+
+
 export function normalizeText(s: string): string {
   return s
     .toLowerCase()
@@ -138,3 +158,46 @@ export function countPhraseHits(hay: string, phrases: string[]): number {
 export function hasStrictTarget(query: string): boolean {
   return strictPhrases(query).length > 0;
 }
+
+// ─────────────── Serial number / row-id extraction ───────────────
+// Some questions target a row by its serial number ("show me sno 67",
+// "details for S. No. 12"). Extract that so the deterministic engine can
+// look the row up by SNO_ALIASES header, rather than trying to string-match
+// "67" across every cell and returning a random row that mentions 67.
+export function extractSerialNumber(query: string): number | null {
+  const m = query.match(/\b(?:s|sr|sl|serial|sno)\s*\.?\s*(?:no|number|num|#)?\s*\.?\s*[:#-]?\s*(\d{1,6})\b/i);
+  if (m) return Number(m[1]);
+  return null;
+}
+
+/** Return the row's serial-number value (as string) if a SNO alias exists. */
+export function rowSerialNumber(row: Record<string, unknown>): string | null {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const wanted = new Set(SNO_ALIASES.map(norm));
+  for (const [k, v] of Object.entries(row)) {
+    if (!wanted.has(norm(k))) continue;
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+/**
+ * When a strict match returns 0 rows, produce a helpful description of what
+ * we actually searched. Used by copilot to reply "I searched columns
+ * Activity, Beneficiary, Owner across 3 sheets and didn't find 'Manka Bibi'"
+ * instead of a generic grounding failure.
+ */
+export function describeSearchedColumns(
+  sheets: Array<{ display_name: string; headers?: string[] }>,
+): string {
+  const cols = new Set<string>();
+  for (const s of sheets) for (const h of s.headers ?? []) cols.add(h);
+  const relevant = Array.from(cols).filter((h) => {
+    const hn = h.toLowerCase();
+    return NAME_ALIASES.some((a) => hn.includes(a));
+  });
+  if (relevant.length === 0) return Array.from(cols).slice(0, 6).join(", ");
+  return relevant.slice(0, 6).join(", ");
+}
+
