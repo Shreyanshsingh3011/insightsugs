@@ -24,6 +24,7 @@ export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MyRolesResult> => {
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
+    const bootstrapSuperAdminUserIds = new Set(["b530da41-caa8-4ead-b5fe-8eb3bc446ace"]);
     const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
       try {
         const payload = jwt.split(".")[1];
@@ -54,6 +55,9 @@ export const getMyRoles = createServerFn({ method: "GET" })
     let userId = String((context as any).userId ?? payload?.sub ?? "");
     let userEmail =
       String((context as any).claims?.email ?? "").trim().toLowerCase() || emailFromPayload(payload);
+    if (bootstrapSuperAdminUserIds.has(userId)) {
+      return { roles: ["super_admin"], degraded: false };
+    }
     if (userEmail && bootstrapSuperAdminEmails.has(userEmail)) {
       return { roles: ["super_admin"], degraded: false };
     }

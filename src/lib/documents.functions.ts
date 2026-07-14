@@ -91,6 +91,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
+    const bootstrapSuperAdminUserIds = new Set(["b530da41-caa8-4ead-b5fe-8eb3bc446ace"]);
     const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
       try {
         const payload = jwt.split(".")[1];
@@ -114,7 +115,7 @@ export const listDocuments = createServerFn({ method: "POST" })
       .trim()
       .toLowerCase();
     const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase() || payloadEmail;
-    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
+    const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail) || bootstrapSuperAdminUserIds.has(userId);
     const isAdminUser = async () => {
       if (isBootstrapSuper) return true;
       try {
