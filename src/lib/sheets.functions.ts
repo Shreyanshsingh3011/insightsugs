@@ -705,7 +705,29 @@ export const listSheets = createServerFn({ method: "GET" })
       message: `${label} timed out while the backend data cache was refreshing.`,
     });
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
-    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase();
+    const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
+      try {
+        const payload = jwt.split(".")[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+      } catch {
+        return null;
+      }
+    };
+    const authHeader = getRequestHeader("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
+    const payload = readJwtPayload(token);
+    const payloadEmail = String(
+      (typeof payload?.email === "string" ? payload.email : "") ||
+        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
+          ? (payload?.user_metadata as Record<string, unknown>).email
+          : ""),
+    )
+      .trim()
+      .toLowerCase();
+    const claimEmail = String((context as any).claims?.email ?? "").trim().toLowerCase() || payloadEmail;
     const isBootstrapSuper = bootstrapSuperAdminEmails.has(claimEmail);
     const isAdminUser = async () => {
       if (isBootstrapSuper) return true;
@@ -717,9 +739,15 @@ export const listSheets = createServerFn({ method: "GET" })
       }
       try {
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: roleRows, error: roleError } = await withTimeout(
+          supabaseAdmin.from("user_roles").select("role").eq("user_id", userId).in("role", ["admin", "super_admin"]),
+          12000,
+          { data: null, error: timedOutError("Admin role table lookup") } as any,
+        );
+        if (!roleError && (roleRows ?? []).length > 0) return true;
         const { data: authUser } = await withTimeout(
           supabaseAdmin.auth.admin.getUserById(userId),
-          1200,
+          12000,
           { data: { user: null }, error: timedOutError("Admin role lookup") } as any,
         );
         const email = String(authUser?.user?.email ?? "").trim().toLowerCase();

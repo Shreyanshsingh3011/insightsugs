@@ -21,7 +21,8 @@ export type MyRolesResult = {
 };
 
 export const getMyRoles = createServerFn({ method: "GET" })
-  .handler(async (): Promise<MyRolesResult> => {
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<MyRolesResult> => {
     const bootstrapSuperAdminEmails = new Set(["shreyansh.singh3011@gmail.com", "yash@sugslloyds.com", "r.sharma@sugslloyds.com"]);
     const readJwtPayload = (jwt: string): Record<string, unknown> | null => {
       try {
@@ -38,9 +39,25 @@ export const getMyRoles = createServerFn({ method: "GET" })
       if (!bootstrapSuperAdminEmails.has(email)) return roles;
       return ["super_admin", ...roles.filter((role) => role !== "super_admin")];
     };
+    const emailFromPayload = (payload: Record<string, unknown> | null) => {
+      const metadata = payload?.user_metadata as Record<string, unknown> | undefined;
+      return String(
+        (typeof payload?.email === "string" ? payload.email : "") ||
+          (typeof metadata?.email === "string" ? metadata.email : ""),
+      )
+        .trim()
+        .toLowerCase();
+    };
     const authHeader = getRequestHeader("authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
-    if (!token) return { roles: [], degraded: true };
+    const payload = readJwtPayload(token);
+    let userId = String((context as any).userId ?? payload?.sub ?? "");
+    let userEmail =
+      String((context as any).claims?.email ?? "").trim().toLowerCase() || emailFromPayload(payload);
+    if (userEmail && bootstrapSuperAdminEmails.has(userEmail)) {
+      return { roles: ["super_admin"], degraded: false };
+    }
+    if (!token || !userId) return { roles: [], degraded: true };
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -52,34 +69,30 @@ export const getMyRoles = createServerFn({ method: "GET" })
     });
 
     let lastError: unknown = null;
-    let userId = "";
-    let userEmail = "";
 
     try {
       const claimsResult = await Promise.race([
         supabase.auth.getClaims(token),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
       ]);
       const claims = claimsResult?.data?.claims;
       if (claimsResult?.error || !claims?.sub) {
-        console.warn("Role lookup skipped: invalid or unavailable auth token.", claimsResult?.error?.message);
-        return { roles: ["user"], degraded: true };
+        console.warn("Role lookup continuing with middleware-validated identity; auth claims endpoint unavailable.", claimsResult?.error?.message);
+      } else {
+        userId = claims.sub;
+        userEmail =
+          (typeof claims.email === "string" ? claims.email : "").trim().toLowerCase() ||
+          userEmail ||
+          emailFromPayload(payload);
       }
-      userId = claims.sub;
-      const payload = readJwtPayload(token);
-      userEmail =
-        (typeof claims.email === "string" ? claims.email : "") ||
-        (typeof payload?.email === "string" ? payload.email : "") ||
-        (typeof (payload?.user_metadata as Record<string, unknown> | undefined)?.email === "string"
-          ? String((payload?.user_metadata as Record<string, unknown>).email)
-          : "");
-      userEmail = userEmail.trim().toLowerCase();
       if (bootstrapSuperAdminEmails.has(userEmail)) {
-        return { roles: ["super_admin"], degraded: true };
+        return { roles: ["super_admin"], degraded: false };
       }
     } catch (error) {
-      console.warn("Role lookup skipped: auth validation unavailable.", error);
-      return { roles: ["user"], degraded: true };
+      console.warn("Role lookup continuing with middleware-validated identity; auth validation unavailable.", error);
+      if (bootstrapSuperAdminEmails.has(userEmail)) {
+        return { roles: ["super_admin"], degraded: false };
+      }
     }
 
     try {
@@ -88,7 +101,7 @@ export const getMyRoles = createServerFn({ method: "GET" })
       const adminEmail = authUser.user?.email?.trim().toLowerCase();
       if (adminEmail) userEmail = adminEmail;
       if (bootstrapSuperAdminEmails.has(userEmail)) {
-        return { roles: ["super_admin"], degraded: true };
+        return { roles: ["super_admin"], degraded: false };
       }
       const { data, error } = await supabaseAdmin
         .from("user_roles")
