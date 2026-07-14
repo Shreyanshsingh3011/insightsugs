@@ -52,7 +52,11 @@ export const getMyRoles = createServerFn({ method: "GET" })
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-    if (!supabaseUrl || !publishableKey) return { roles: ["user"], degraded: true };
+    // Fail closed: if the backend is unreachable we cannot verify roles, so
+    // return an empty role set rather than silently promoting the caller to
+    // the generic `user` role (which grants access to /copilot and every
+    // authenticated surface). The UI treats [] + degraded as "retry".
+    if (!supabaseUrl || !publishableKey) return { roles: [], degraded: true };
 
     const supabase = createClient<Database>(supabaseUrl, publishableKey, {
       auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
