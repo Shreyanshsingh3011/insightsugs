@@ -279,6 +279,16 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
             </div>
           )}
 
+          {/* Applied filters (current) */}
+          {enabledSourceLabels.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="uppercase tracking-wider">Applied filters:</span>
+              {enabledSourceLabels.map((l) => (
+                <Badge key={l} variant="secondary" className="h-5 px-1.5 text-[10px]">{l}</Badge>
+              ))}
+            </div>
+          )}
+
           {/* History */}
           <div className="flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-3" ref={scrollRef}>
             {loadingHist ? (
@@ -291,6 +301,8 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
                   <MessageBubble
                     key={m.id}
                     msg={m}
+                    sheets={sheetSources}
+                    filters={msgFilters[m.id]}
                     onCitationClick={(c) => {
                       if (c.type === "sheet" && c.sheet && typeof c.row === "number") onJumpToSheetRow?.(c.sheet, c.row);
                       else if (c.type === "concern") onOpenConcern?.(c.id);
