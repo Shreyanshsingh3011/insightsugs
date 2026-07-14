@@ -11,6 +11,7 @@ import {
   isBootstrapSuperAdminUserId,
   readJwtPayload,
 } from "@/lib/bootstrap-super-admins";
+import { escapeIlike, normalizeEmail } from "@/lib/sql-escape";
 
 export type RoleCheckResult = {
   email: string;
@@ -51,7 +52,11 @@ export const getMyRoles = createServerFn({ method: "GET" })
 
     const supabaseUrl = process.env.SUPABASE_URL;
     const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-    if (!supabaseUrl || !publishableKey) return { roles: ["user"], degraded: true };
+    // Fail closed: if the backend is unreachable we cannot verify roles, so
+    // return an empty role set rather than silently promoting the caller to
+    // the generic `user` role (which grants access to /copilot and every
+    // authenticated surface). The UI treats [] + degraded as "retry".
+    if (!supabaseUrl || !publishableKey) return { roles: [], degraded: true };
 
     const supabase = createClient<Database>(supabaseUrl, publishableKey, {
       auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
@@ -125,8 +130,13 @@ export const getMyRoles = createServerFn({ method: "GET" })
       return { roles: ["super_admin"], degraded: true };
     }
 
-    console.warn("Role lookup failed after retries; rendering user-level workspace.", lastError);
-    return { roles: ["user"], degraded: true };
+    // Fail closed. We could not confirm the caller's role from either the
+    // service-role admin client or the user-scoped client — do not synthesize
+    // a `user` role, since that would silently grant access during outages to
+    // callers who may not actually be provisioned. Bootstrap super-admins were
+    // already returned above.
+    console.warn("Role lookup failed after retries; failing closed with no roles.", lastError);
+    return { roles: [], degraded: true };
   });
 
 export const checkUserRoles = createServerFn({ method: "POST" })
@@ -149,7 +159,7 @@ export const checkUserRoles = createServerFn({ method: "POST" })
     const { data: prof, error: pErr } = await supabaseAdmin
       .from("profiles")
       .select("id, full_name, email")
-      .ilike("email", data.email)
+      .ilike("email", escapeIlike(normalizeEmail(data.email)))
       .maybeSingle();
     if (pErr) throw pErr;
     if (!prof) {

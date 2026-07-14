@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { escapeIlike, normalizeEmail } from "@/lib/sql-escape";
 
 const FlagSnapshot = z.object({
   id: z.string().min(1).max(100),
@@ -57,7 +58,7 @@ export const sendAlert = createServerFn({ method: "POST" })
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id, full_name, email")
-        .ilike("email", flag.responsible_email)
+        .ilike("email", escapeIlike(normalizeEmail(flag.responsible_email)))
         .maybeSingle();
       addRecip(flag.responsible_email, prof?.id ?? null, prof?.full_name ?? flag.responsible_name ?? null);
     }
@@ -67,16 +68,17 @@ export const sendAlert = createServerFn({ method: "POST" })
       const { data: prof } = await supabaseAdmin
         .from("profiles")
         .select("id, full_name, email")
-        .ilike("email", extra.email)
+        .ilike("email", escapeIlike(normalizeEmail(extra.email)))
         .maybeSingle();
       addRecip(extra.email, prof?.id ?? null, prof?.full_name ?? extra.name ?? null);
     }
 
-    // Match activity by title -> project_id
+    // Match activity by title -> project_id. Escape wildcards so a flagged
+    // title containing `%`/`_` can't broaden the query to unrelated rows.
     const { data: actMatches } = await supabaseAdmin
       .from("activities")
       .select("id, project_id, assignee_id, depends_on")
-      .ilike("title", flag.activity)
+      .ilike("title", escapeIlike(flag.activity))
       .limit(5);
 
     const projectIds = new Set<string>();

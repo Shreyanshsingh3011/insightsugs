@@ -4,6 +4,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { escapeIlike } from "@/lib/sql-escape";
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
@@ -40,7 +41,7 @@ export const getCitationContext = createServerFn({ method: "POST" })
       const { data: reg } = await context.supabase
         .from("sheet_registry")
         .select("id, display_name, source_url, last_refreshed_at")
-        .ilike("display_name", data.label.trim())
+        .ilike("display_name", escapeIlike(data.label.trim()))
         .limit(1)
         .maybeSingle();
       if (!reg) return { kind: "sheet", label: data.label, row, found: false };
@@ -65,7 +66,7 @@ export const getCitationContext = createServerFn({ method: "POST" })
     const { data: doc } = await context.supabase
       .from("documents")
       .select("id, name, page_count, summary, key_points")
-      .ilike("name", data.label.trim())
+      .ilike("name", escapeIlike(data.label.trim()))
       .limit(1)
       .maybeSingle();
     if (!doc) return { kind: "doc", label: data.label, page, found: false };

@@ -67,6 +67,24 @@ export const Route = createFileRoute("/api/public/hooks/agent/$agentId")({
         for (let i = 0; i < Math.min(a.length, b.length); i++) mismatch |= a[i] ^ b[i];
         if (mismatch) return new Response("bad secret", { status: 401 });
 
+        // Owner-active gate. An agent's webhook must not run — and must not
+        // spend LOVABLE_API_KEY credits or read owner-scoped data — after the
+        // owner has been deprovisioned (all roles revoked). RLS-backed tools
+        // key off the owner_id, so treating a role-less owner as active would
+        // let a leaked secret keep firing indefinitely.
+        if (!agent.owner_id) {
+          return new Response("agent owner missing", { status: 403 });
+        }
+        const { data: ownerRoles, error: ownerErr } = await supabaseAdmin
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", agent.owner_id)
+          .limit(1);
+        if (ownerErr) return new Response(ownerErr.message, { status: 500 });
+        if (!ownerRoles || ownerRoles.length === 0) {
+          return new Response("agent owner not active", { status: 403 });
+        }
+
         const sourceIp =
           request.headers.get("cf-connecting-ip") ??
           request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
