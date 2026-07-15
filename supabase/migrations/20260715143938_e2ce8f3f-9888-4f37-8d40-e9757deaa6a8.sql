@@ -1,0 +1,1 @@
+ALTER TABLE public.sheet_registry ADD COLUMN IF NOT EXISTS last_content_hash text;
