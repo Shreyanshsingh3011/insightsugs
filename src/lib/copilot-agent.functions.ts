@@ -2499,7 +2499,7 @@ export async function runCopilotAgent(
         })()
       : null;
     const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
-    if (!actionQuestion) {
+    if (!actionQuestion && !result) {
       const deterministicFirst = await runDeterministic("selected_source_fast_path");
       if (deterministicFirst.matched) {
         result = { text: deterministicFirst.text };
