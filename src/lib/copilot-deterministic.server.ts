@@ -85,7 +85,6 @@ function pickNumericColumn(rows: StoredRow[], cols: string[], hint?: string | nu
 import {
   strictPhrases as qmStrictPhrases,
   normalizeHaystack,
-  matchesAllPhrases,
   matchesExactTarget,
   exactTargetScore,
   contentTokens as qmContentTokens,

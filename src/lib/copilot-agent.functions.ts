@@ -264,7 +264,7 @@ export async function runCopilotAgent(
           const idx = await getSheetIndexCached(sheet_id);
           const rows = idx.rows;
           const byIndex = idx.byIndex;
-            const { strictPhrases, normalizeHaystack, matchesAllPhrases, matchesExactTarget, exactTargetScore, countPhraseHits, contentTokens, extractRequestedColumns } =
+            const { strictPhrases, normalizeHaystack, matchesExactTarget, exactTargetScore, countPhraseHits, contentTokens, extractRequestedColumns } =
             await import("./query-match");
           const columns = idx.columns;
           const requestedColumns = extractRequestedColumns(query, columns);
