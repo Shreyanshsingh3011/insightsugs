@@ -16,6 +16,7 @@ import {
   fetchAllRows,
 } from "./copilot-helpers.server";
 import { ensureSheetEmbeddings } from "./copilot-embeddings.server";
+import { getSheetIndex, candidatesForTokens, type SheetIndex } from "./copilot-index.server";
 
 // Re-export so existing importers (e.g. the embed-backfill hook) keep working.
 export { ensureSheetEmbeddings };
@@ -177,17 +178,19 @@ export async function runCopilotAgent(
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
     const toolTrace: ToolCallLog[] = [];
-    const cachedRowsBySheet = new Map<
-      string,
-      Array<{ row_index: number; data: Record<string, unknown> }>
-    >();
+    const cachedIndexBySheet = new Map<string, SheetIndex>();
+
+    const getSheetIndexCached = async (registryId: string): Promise<SheetIndex> => {
+      const cached = cachedIndexBySheet.get(registryId);
+      if (cached) return cached;
+      const idx = await getSheetIndex(supabase, registryId);
+      cachedIndexBySheet.set(registryId, idx);
+      return idx;
+    };
 
     const getSheetRows = async (registryId: string) => {
-      const cached = cachedRowsBySheet.get(registryId);
-      if (cached) return cached;
-      const rows = await fetchAllRows(supabase, registryId);
-      cachedRowsBySheet.set(registryId, rows);
-      return rows;
+      const idx = await getSheetIndexCached(registryId);
+      return idx.rows;
     };
 
     const rowColumns = (rows: Array<{ data: Record<string, unknown> }>) => {
@@ -244,11 +247,12 @@ export async function runCopilotAgent(
         withTrace("search_sheet_rows", { sheet_id, query, k }, async () => {
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
-          const rows = await getSheetRows(sheet_id);
-          const byIndex = new Map(rows.map((r) => [r.row_index, r.data]));
+          const idx = await getSheetIndexCached(sheet_id);
+          const rows = idx.rows;
+          const byIndex = idx.byIndex;
           const { strictPhrases, normalizeHaystack, matchesAllPhrases, countPhraseHits, contentTokens, extractRequestedColumns } =
             await import("./query-match");
-          const columns = rowColumns(rows);
+          const columns = idx.columns;
           const requestedColumns = extractRequestedColumns(query, columns);
 
           // Try vector search first; fall back to keyword scan when embeddings
@@ -288,9 +292,23 @@ export async function runCopilotAgent(
               ? [tokens.join(" ")]
               : searchBasePhrases;
             const hasSpecificTarget = phrases.length > 0;
-            const scored = rows.map((r) => {
-              const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
-              const hay = normalizeHaystack(values);
+            const useIndexHaystack = requestedColumns.length === 0;
+            // Narrow candidate set using the token inverted index — avoids
+            // scanning all 50k+ rows when at least one selective token exists.
+            let candidateIds: number[] | null = null;
+            if (useIndexHaystack && tokens.length > 0) {
+              candidateIds = candidatesForTokens(idx, tokens);
+            }
+            const candidateRows =
+              candidateIds === null
+                ? rows
+                : (candidateIds
+                    .map((ri) => ({ row_index: ri, data: byIndex.get(ri) ?? {} }))
+                    .filter((r) => r.data));
+            const scored = candidateRows.map((r) => {
+              const hay = useIndexHaystack
+                ? (idx.haystackByIndex.get(r.row_index) ?? "")
+                : normalizeHaystack(requestedColumns.map((col) => r.data[col]));
               if (phrases.length > 0) {
                 if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
                 return { row_index: r.row_index, similarity: 10 + tokens.length };
@@ -396,31 +414,50 @@ export async function runCopilotAgent(
         withTrace("filter_sheet_rows", { sheet_id, column, op, value, limit }, async () => {
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
-          const rows = await getSheetRows(sheet_id);
+          const idx = await getSheetIndexCached(sheet_id);
+          const rows = idx.rows;
           const num = typeof value === "number" ? value : Number(value);
           const numeric = ["gt", "gte", "lt", "lte"].includes(op);
-          const s = String(value).toLowerCase();
+          const s = String(value).toLowerCase().trim();
           const matches: Array<{ row_index: number; data: Record<string, unknown> }> = [];
-          for (const r of rows) {
-            const v = r.data[column];
-            if (v == null) continue;
-            let hit = false;
-            if (numeric) {
-              const nv = Number(v);
-              if (!Number.isFinite(nv) || !Number.isFinite(num)) continue;
-              if (op === "gt") hit = nv > num;
-              else if (op === "gte") hit = nv >= num;
-              else if (op === "lt") hit = nv < num;
-              else if (op === "lte") hit = nv <= num;
-            } else {
-              const sv = String(v).toLowerCase();
-              if (op === "eq") hit = sv === s;
-              else if (op === "neq") hit = sv !== s;
-              else if (op === "contains") hit = sv.includes(s);
-            }
-            if (hit) {
-              matches.push(r);
+
+          // Fast path: eq via valuePostings (O(1) lookup instead of full scan).
+          if (op === "eq") {
+            const colMap = idx.valuePostings.get(column);
+            const hits = colMap?.get(s) ?? [];
+            for (const ri of hits) {
+              matches.push({ row_index: ri, data: idx.byIndex.get(ri) ?? {} });
               if (matches.length >= limit) break;
+            }
+          } else if (numeric) {
+            // Fast path: binary-search the sorted numeric list.
+            const nums = idx.numericByColumn.get(column) ?? [];
+            if (Number.isFinite(num) && nums.length > 0) {
+              for (const { n, row_index } of nums) {
+                let hit = false;
+                if (op === "gt") hit = n > num;
+                else if (op === "gte") hit = n >= num;
+                else if (op === "lt") hit = n < num;
+                else if (op === "lte") hit = n <= num;
+                if (hit) {
+                  matches.push({ row_index, data: idx.byIndex.get(row_index) ?? {} });
+                  if (matches.length >= limit) break;
+                }
+              }
+            }
+          } else {
+            // neq / contains — must visit every row in that column
+            for (const r of rows) {
+              const v = r.data[column];
+              if (v == null) continue;
+              const sv = String(v).toLowerCase();
+              let hit = false;
+              if (op === "neq") hit = sv !== s;
+              else if (op === "contains") hit = sv.includes(s);
+              if (hit) {
+                matches.push(r);
+                if (matches.length >= limit) break;
+              }
             }
           }
           for (const r of matches) {
