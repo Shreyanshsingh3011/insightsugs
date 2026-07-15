@@ -53,6 +53,16 @@ type ToolCallLog = {
   result?: any;
 };
 
+type RetrievalDiagnostic = {
+  sourceId: string;
+  sourceName: string;
+  sourceType: "sheet" | "document";
+  matcherPath: string;
+  rowsScanned: number;
+  rowsMatched: number;
+  columnsSearched?: string[];
+};
+
 // -------------------- main server function --------------------
 
 const InputSchema = z
@@ -180,6 +190,7 @@ export async function runCopilotAgent(
         sources: [],
         suggestions: [],
         toolTrace: [],
+        retrievalDiagnostics: [],
         citationOk: true,
         scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
       };
@@ -194,6 +205,7 @@ export async function runCopilotAgent(
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
     const toolTrace: ToolCallLog[] = [];
+    const retrievalDiagnostics: RetrievalDiagnostic[] = [];
     const cachedIndexBySheet = new Map<string, SheetIndex>();
 
     const getSheetIndexCached = async (registryId: string): Promise<SheetIndex> => {
@@ -224,6 +236,10 @@ export async function runCopilotAgent(
     };
 
     // 3) Tools — each records to the ledger and toolTrace.
+
+    const pushRetrievalDiagnostic = (diagnostic: RetrievalDiagnostic) => {
+      retrievalDiagnostics.push(diagnostic);
+    };
 
     const withTrace = async <T>(name: string, args: unknown, fn: () => Promise<T>) => {
       const started = performance.now();
@@ -317,7 +333,11 @@ export async function runCopilotAgent(
               // The index is an accelerator only. If exact token postings miss
               // because the sheet stores a substring/compound value, fall back
               // to the original haystack scan instead of returning 0 rows.
-              if (candidateIds && candidateIds.length === 0) candidateIds = null;
+              if (candidateIds && candidateIds.length === 0) {
+                candidateIds = candidatesForAnyToken(idx, tokens);
+                if (candidateIds && candidateIds.length > 0) mode = "keyword-partial";
+                else candidateIds = null;
+              }
             }
             const candidateRows =
               candidateIds === null
@@ -412,6 +432,16 @@ export async function runCopilotAgent(
             };
           });
 
+          pushRetrievalDiagnostic({
+            sourceId: sheet_id,
+            sourceName: reg.display_name,
+            sourceType: "sheet",
+            matcherPath: `search_sheet_rows:${mode}`,
+            rowsScanned: rows.length,
+            rowsMatched: results.length,
+            columnsSearched: requestedColumns.length ? requestedColumns : columns,
+          });
+
           return {
             _summary: `${results.length} rows from "${reg.display_name}" (${mode}${requestedColumns.length ? `, searched columns: ${requestedColumns.join(", ")}` : ""})`,
             _resultForModel: { sheet: reg.display_name, mode, searched_columns: requestedColumns, matches: results },
@@ -492,6 +522,15 @@ export async function runCopilotAgent(
               data: r.data,
             });
           }
+          pushRetrievalDiagnostic({
+            sourceId: sheet_id,
+            sourceName: reg.display_name,
+            sourceType: "sheet",
+            matcherPath: `filter_sheet_rows:${op}`,
+            rowsScanned: rows.length,
+            rowsMatched: matches.length,
+            columnsSearched: [resolvedColumn],
+          });
           return {
             _summary: `${matches.length} rows match ${resolvedColumn} ${op} ${JSON.stringify(value)}`,
             _resultForModel: {
@@ -1011,6 +1050,14 @@ export async function runCopilotAgent(
               similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
               cite: `[doc:${m.document_name ?? doc.name} p.${m.page_no ?? 0}]`,
             };
+          });
+          pushRetrievalDiagnostic({
+            sourceId: document_id,
+            sourceName: doc.name,
+            sourceType: "document",
+            matcherPath: `search_doc_chunks:${mode}`,
+            rowsScanned: mode === "keyword" ? Math.max(results.length, matches.length) : matches.length,
+            rowsMatched: results.length,
           });
           return {
             _summary: `${results.length} chunks from "${doc.name}" (${mode})`,
@@ -1770,6 +1817,14 @@ export async function runCopilotAgent(
                     data: row.data,
                   });
                 }
+                pushRetrievalDiagnostic({
+                  sourceId: r.id,
+                  sourceName: r.display_name,
+                  sourceType: "sheet",
+                  matcherPath: "cross_reference:substring",
+                  rowsScanned: rows.length,
+                  rowsMatched: matched.length,
+                });
                 return {
                   sheet: r.display_name,
                   hits: matched.map((row) => ({
@@ -1786,11 +1841,7 @@ export async function runCopilotAgent(
           const docHits = await Promise.all(
             docs.map(async (d) => {
               try {
-                const { data: chunks } = await supabase
-                  .from("document_chunks")
-                  .select("document_id, content, page_no")
-                  .eq("document_id", d.id)
-                  .limit(300);
+                const chunks = await fetchAllDocumentChunks(supabase, [d.id]);
                 const matched = ((chunks ?? []) as any[])
                   .filter((c) => String(c.content ?? "").toLowerCase().includes(needle))
                   .slice(0, k_per_source);
@@ -1803,6 +1854,14 @@ export async function runCopilotAgent(
                     snippet: c.content ?? "",
                   });
                 }
+                pushRetrievalDiagnostic({
+                  sourceId: d.id,
+                  sourceName: d.name,
+                  sourceType: "document",
+                  matcherPath: "cross_reference:document_full_chunk_substring",
+                  rowsScanned: chunks.length,
+                  rowsMatched: matched.length,
+                });
                 return {
                   document: d.name,
                   hits: matched.map((c) => ({
@@ -2231,6 +2290,7 @@ export async function runCopilotAgent(
         regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
         docs: docs.map((d) => ({ id: d.id, name: d.name })),
         ledgerSink: ledger as any,
+        diagnosticsSink: retrievalDiagnostics,
         strictMatch: data.strictMatch === true,
       });
       toolTrace.push({
@@ -2536,6 +2596,7 @@ export async function runCopilotAgent(
           regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
           docs: docs.map((d) => ({ id: d.id, name: d.name })),
           ledgerSink: ledger as any,
+          diagnosticsSink: retrievalDiagnostics,
           strictMatch: data.strictMatch === true,
         });
         finalAnswer = det.answer;
@@ -2634,6 +2695,7 @@ export async function runCopilotAgent(
       sources,
       suggestions,
       toolTrace,
+      retrievalDiagnostics,
       retrievalLedger: ledger.map((l) =>
         l.kind === "sheet_row"
           ? {
