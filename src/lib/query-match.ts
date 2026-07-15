@@ -155,6 +155,28 @@ export function countPhraseHits(hay: string, phrases: string[]): number {
   return n;
 }
 
+/**
+ * Fuzzy variant: any phrase that looks like a name (2+ alphabetic tokens
+ * and no digits) may match via Levenshtein window scan when strict misses.
+ * Use ONLY as a fallback after `matchesAllPhrases` returns zero rows —
+ * strict correctness is still the default. Import `fuzzyNameInText` from
+ * `@/lib/person-resolver` at the call site.
+ */
+export function matchesAllPhrasesFuzzy(
+  hay: string,
+  phrases: string[],
+  fuzzy: (name: string, text: string) => boolean,
+): boolean {
+  if (phrases.length === 0) return true;
+  for (const p of phrases) {
+    if (phraseHit(hay, p)) continue;
+    const isNameish = /^[a-z]+(?:\s+[a-z]+)+$/.test(p);
+    if (isNameish && fuzzy(p, hay)) continue;
+    return false;
+  }
+  return true;
+}
+
 /** True when the query is specific enough that unrelated rows are unsafe. */
 export function hasStrictTarget(query: string): boolean {
   return strictPhrases(query).length > 0;

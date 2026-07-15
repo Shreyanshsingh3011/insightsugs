@@ -301,10 +301,36 @@ export async function runCopilotAgent(
               return { row_index: r.row_index, similarity: tokens.length };
             });
             scored.sort((a, b) => b.similarity - a.similarity);
-            const anyHit = scored.some((s) => s.similarity > 0);
+            let anyHit = scored.some((s) => s.similarity > 0);
             if (anyHit) {
               matches = scored.filter((s) => s.similarity > 0).slice(0, k);
+            } else if (phrases.length > 0) {
+              // Fuzzy fallback for name-like phrases (typos, initials,
+              // "Arpita D" vs "Arpita Das"). Strict remains the default;
+              // we only reach here when strict returned zero rows.
+              const { matchesAllPhrasesFuzzy } = await import("./query-match");
+              const { fuzzyNameInText } = await import("./person-resolver");
+              const fuzzyScored = rows
+                .map((r) => {
+                  const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
+                  const hay = normalizeHaystack(values);
+                  return {
+                    row_index: r.row_index,
+                    similarity: matchesAllPhrasesFuzzy(hay, phrases, fuzzyNameInText) ? 5 : 0,
+                  };
+                })
+                .filter((s) => s.similarity > 0)
+                .slice(0, k);
+              if (fuzzyScored.length > 0) {
+                matches = fuzzyScored;
+                mode = "keyword-partial";
+                anyHit = true;
+              }
+            }
+            if (anyHit) {
+              // matches already set above
             } else if (!strict && phrases.length >= 2) {
+
               // Graceful "partial match": rank rows by how many strict
               // phrases hit. Prevents hard-fail lookups when the sheet
               // stores a name slightly differently (extra initial, spaces,
