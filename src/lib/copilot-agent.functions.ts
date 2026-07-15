@@ -2842,25 +2842,21 @@ export async function runCopilotAgent(
         finalAnswer = det.answer;
       }
     }
-
-
-
-    const finalMarkers = new Set<string>();
-    const finalInlineRe = /\[([^\]\n]{2,}?)\]/g;
-    let finalMarkerMatch: RegExpExecArray | null;
-    while ((finalMarkerMatch = finalInlineRe.exec(finalAnswer)) !== null) {
-      if (finalAnswer[finalMarkerMatch.index + finalMarkerMatch[0].length] === "(") continue;
-      const body = finalMarkerMatch[1].trim();
-      if (/^(sheet:|doc:)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
-    }
+    const finalCitationCheck = verifyAnswerCitations(finalAnswer);
     const isGroundedTemporalNoDateResult =
       temporalOp != null &&
       /no usable date\/expiry column was detected/i.test(finalAnswer) &&
-      retrievalDiagnostics.some((d) => d.matcherPath.includes("no_date_column") && d.rowsScanned > 0);
+      retrievalDiagnostics.some((d) => d.matcherPath.includes("no_date_column") && d.rowsScanned > 0) &&
+      finalCitationCheck.verified.size > 0 &&
+      finalCitationCheck.unverified.length === 0 &&
+      finalCitationCheck.hasSourcesSection;
     const finalCitationOk =
-      /^i don'?t have that in the current dashboard data\b/i.test(finalAnswer.trim()) ||
+      finalCitationCheck.isFallback ||
       isGroundedTemporalNoDateResult ||
-      (finalMarkers.size > 0 && /(^|\n)\s*sources\s*:/i.test(finalAnswer));
+      (finalCitationCheck.inlineCount > 0 &&
+        finalCitationCheck.verified.size > 0 &&
+        finalCitationCheck.unverified.length === 0 &&
+        finalCitationCheck.hasSourcesSection);
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
     const rowsUsedBySheet = new Map<string, number>();
@@ -2957,7 +2953,7 @@ export async function runCopilotAgent(
             },
       ),
       citationOk: finalCitationOk,
-      unverifiedCitations: finalCitationOk ? [] : unverified,
+      unverifiedCitations: finalCitationOk ? [] : finalCitationCheck.unverified,
     };
   }
 
