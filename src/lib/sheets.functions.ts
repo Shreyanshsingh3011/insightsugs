@@ -13,6 +13,12 @@ import {
   readJwtPayload,
 } from "@/lib/bootstrap-super-admins";
 
+const PLAIN_COPILOT_COUNT_RE = /\b(how\s+many|count|number\s+of|total\s+number)\b/i;
+
+function normalizeCopilotScopeText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 
 const SHEET_TYPE_ENUM = z.enum([
   "generic",
@@ -1243,6 +1249,66 @@ export const askCopilot = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    const normalizedQuestion = normalizeCopilotScopeText(data.question);
+    const looksLikePlainSheetCount =
+      data.sheetIds.length > 0 &&
+      data.documentIds.length === 0 &&
+      PLAIN_COPILOT_COUNT_RE.test(data.question) &&
+      !/\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached|where|with|by|per|status|owner|contractor|store|jmc|rate|grn|value)\b/i.test(data.question);
+    if (looksLikePlainSheetCount) {
+      const { data: scopedSheets, error } = await context.supabase
+        .from("sheet_registry")
+        .select("id, display_name, sheet_type, row_count")
+        .in("id", data.sheetIds);
+      if (error) throw new Error(error.message);
+      const rows = (scopedSheets ?? []) as Array<{ id: string; display_name: string; sheet_type: string | null; row_count: number | null }>;
+      if (rows.length > 0) {
+        const mentionedSheet = rows.find((sheet) => normalizedQuestion.includes(normalizeCopilotScopeText(sheet.display_name)));
+        const scoped = mentionedSheet ? [mentionedSheet] : rows;
+        const markers = scoped.map((sheet) => `[sheet:${sheet.display_name}]`);
+        const answer =
+          scoped.map((sheet) => `**${sheet.display_name}** — ${new Intl.NumberFormat("en-IN").format(sheet.row_count ?? 0)} total rows. [sheet:${sheet.display_name}]`).join("\n") +
+          `\n\nSources:\n${markers.map((marker) => `- ${marker}`).join("\n")}`;
+        await context.supabase.from("copilot_messages").insert([
+          {
+            user_id: context.userId,
+            role: "user",
+            content: data.question,
+            scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+          },
+          {
+            user_id: context.userId,
+            role: "assistant",
+            content: answer,
+            scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+            citations: scoped.map((sheet) => ({
+              id: sheet.id,
+              name: sheet.display_name,
+              type: sheet.sheet_type ?? "sheet",
+              rowsTotal: sheet.row_count ?? 0,
+              rowsUsed: 0,
+              truncated: false,
+            })),
+          },
+        ]);
+        return {
+          answer,
+          sources: scoped.map((sheet) => ({
+            id: sheet.id,
+            name: sheet.display_name,
+            type: sheet.sheet_type ?? "sheet",
+            rowsTotal: sheet.row_count ?? 0,
+            rowsUsed: 0,
+            truncated: false,
+          })),
+          suggestions: [],
+          toolTrace: [{ name: "sheet_count_metadata", args: { sheetIds: data.sheetIds }, ok: true, ms: 0, summary: "Answered from selected sheet metadata." }],
+          retrievalLedger: [],
+          citationOk: true,
+          unverifiedCitations: [],
+        };
+      }
+    }
     const { runCopilotAgent } = await import("./copilot-agent.functions");
     return await runCopilotAgent(data, {
       supabase: context.supabase,

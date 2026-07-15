@@ -102,6 +102,20 @@ export async function runCopilotAgent(
       key ? import("@/lib/ai-gateway") : Promise.resolve(null),
     ]);
 
+    const withServerTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<T>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
 
 
     // 1) Resolve sheet + document metadata (labels for citations, IDs for scope).
@@ -298,6 +312,10 @@ export async function runCopilotAgent(
             let candidateIds: number[] | null = null;
             if (useIndexHaystack && tokens.length > 0) {
               candidateIds = candidatesForTokens(idx, tokens);
+              // The index is an accelerator only. If exact token postings miss
+              // because the sheet stores a substring/compound value, fall back
+              // to the original haystack scan instead of returning 0 rows.
+              if (candidateIds && candidateIds.length === 0) candidateIds = null;
             }
             const candidateRows =
               candidateIds === null
@@ -416,6 +434,10 @@ export async function runCopilotAgent(
           if (!reg) return { error: "Unknown sheet_id" };
           const idx = await getSheetIndexCached(sheet_id);
           const rows = idx.rows;
+          const resolvedColumn = resolveColumn(column, idx.columns);
+          if (!resolvedColumn) {
+            return { error: `Unknown column ${JSON.stringify(column)} in ${reg.display_name}` };
+          }
           const num = typeof value === "number" ? value : Number(value);
           const numeric = ["gt", "gte", "lt", "lte"].includes(op);
           const s = String(value).toLowerCase().trim();
@@ -423,7 +445,7 @@ export async function runCopilotAgent(
 
           // Fast path: eq via valuePostings (O(1) lookup instead of full scan).
           if (op === "eq") {
-            const colMap = idx.valuePostings.get(column);
+            const colMap = idx.valuePostings.get(resolvedColumn);
             const hits = colMap?.get(s) ?? [];
             for (const ri of hits) {
               matches.push({ row_index: ri, data: idx.byIndex.get(ri) ?? {} });
@@ -431,7 +453,7 @@ export async function runCopilotAgent(
             }
           } else if (numeric) {
             // Fast path: binary-search the sorted numeric list.
-            const nums = idx.numericByColumn.get(column) ?? [];
+            const nums = idx.numericByColumn.get(resolvedColumn) ?? [];
             if (Number.isFinite(num) && nums.length > 0) {
               for (const { n, row_index } of nums) {
                 let hit = false;
@@ -448,7 +470,7 @@ export async function runCopilotAgent(
           } else {
             // neq / contains — must visit every row in that column
             for (const r of rows) {
-              const v = r.data[column];
+              const v = r.data[resolvedColumn];
               if (v == null) continue;
               const sv = String(v).toLowerCase();
               let hit = false;
@@ -470,9 +492,10 @@ export async function runCopilotAgent(
             });
           }
           return {
-            _summary: `${matches.length} rows match ${column} ${op} ${JSON.stringify(value)}`,
+            _summary: `${matches.length} rows match ${resolvedColumn} ${op} ${JSON.stringify(value)}`,
             _resultForModel: {
               sheet: reg.display_name,
+              column: resolvedColumn,
               total_scanned: rows.length,
               rows: matches.map((r) => ({
                 row_index: r.row_index,
@@ -2199,12 +2222,12 @@ export async function runCopilotAgent(
 
 
 
-    async function runDeterministic(reason: string): Promise<{ text?: string }> {
+    async function runDeterministic(reason: string): Promise<{ text?: string; matched: boolean }> {
       const { deterministicAnswer } = await import("./copilot-deterministic.server");
       const det = await deterministicAnswer({
         supabase,
         question: data.question,
-        regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+        regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
         docs: docs.map((d) => ({ id: d.id, name: d.name })),
         ledgerSink: ledger as any,
         strictMatch: data.strictMatch === true,
@@ -2221,9 +2244,10 @@ export async function runCopilotAgent(
       if (!det.matched) {
         return {
           text: det.answer,
+          matched: false,
         };
       }
-      return { text: det.answer };
+      return { text: det.answer, matched: true };
     }
 
     async function polishWithGemini(factualAnswer: string): Promise<string> {
@@ -2234,16 +2258,20 @@ export async function runCopilotAgent(
       try {
         const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
         const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
-        const polish = await generateText({
-          model: google("gemini-2.5-flash"),
-          system:
-            "You are an editor. Rewrite the user's draft answer so it reads clearly and concisely. " +
-            "STRICT RULES: (1) Do NOT invent, add, remove, or change any number, name, ID, date, or [bracketed citation]. " +
-            "(2) Keep every citation like [sheet:X row N col Y] verbatim in place. " +
-            "(3) Preserve bullet lists and structure. (4) If the draft is a clarifying question or refusal, keep it as-is. " +
-            "Output only the rewritten answer, nothing else.",
-          prompt: `User question: ${data.question}\n\nDraft answer (facts are correct — polish the wording only):\n\n${factualAnswer}`,
-        });
+        const polish = await withServerTimeout(
+          generateText({
+            model: google("gemini-2.5-flash"),
+            system:
+              "You are an editor. Rewrite the user's draft answer so it reads clearly and concisely. " +
+              "STRICT RULES: (1) Do NOT invent, add, remove, or change any number, name, ID, date, or [bracketed citation]. " +
+              "(2) Keep every citation like [sheet:X row N col Y] verbatim in place. " +
+              "(3) Preserve bullet lists and structure. (4) If the draft is a clarifying question or refusal, keep it as-is. " +
+              "Output only the rewritten answer, nothing else.",
+            prompt: `User question: ${data.question}\n\nDraft answer (facts are correct — polish the wording only):\n\n${factualAnswer}`,
+          }),
+          8_000,
+          "Gemini polish",
+        );
         const polished = (polish.text ?? "").trim();
         return polished.length > 20 ? polished : factualAnswer;
       } catch {
@@ -2269,20 +2297,31 @@ export async function runCopilotAgent(
       return { text: polished };
     }
 
-    let result: { text?: string };
-    if (!key) {
+    let result: { text?: string } | null = null;
+    const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
+    if (!actionQuestion) {
+      const deterministicFirst = await runDeterministic("selected_source_fast_path");
+      if (deterministicFirst.matched) {
+        result = { text: deterministicFirst.text };
+      }
+    }
+    if (!result && !key) {
       result = await runWithGeminiFallback();
-    } else {
+    } else if (!result && key) {
       try {
         const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
         const model = gateway("google/gemini-3-flash-preview");
-        result = await generateText({
-          model,
-          system: systemWithPreflight,
-          messages: messages as any,
-          tools: toolset,
-          stopWhen: stepCountIs(50),
-        });
+        result = await withServerTimeout(
+          generateText({
+            model,
+            system: systemWithPreflight,
+            messages: messages as any,
+            tools: toolset,
+            stopWhen: stepCountIs(50),
+          }),
+          45_000,
+          "Copilot model",
+        );
       } catch (error) {
         toolTrace.push({
           name: "ai_model",
@@ -2307,7 +2346,7 @@ export async function runCopilotAgent(
     }
 
 
-    const rawAnswer = (result.text ?? "").trim();
+    const rawAnswer = (result?.text ?? "").trim();
 
     // 6) Structural citation validator against the ledger.
     const inlineRe = /\[([^\]\n]{2,}?)\]/g;
@@ -2493,7 +2532,7 @@ export async function runCopilotAgent(
         const det = await deterministicAnswer({
           supabase,
           question: data.question,
-          regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+          regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
           docs: docs.map((d) => ({ id: d.id, name: d.name })),
           ledgerSink: ledger as any,
           strictMatch: data.strictMatch === true,
@@ -2573,12 +2612,16 @@ export async function runCopilotAgent(
         suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
       }
       if (!suggestionModel) throw new Error("No suggestion model available");
-      const sug = await generateText({
-        model: suggestionModel,
-        system:
-          "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
-        prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
-      });
+      const sug = await withServerTimeout(
+        generateText({
+          model: suggestionModel,
+          system:
+            "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
+          prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
+        }),
+        4_000,
+        "Copilot suggestions",
+      );
       const parsed = JSON.parse(sug.text.trim().replace(/^```(?:json)?\n?|\n?```$/g, ""));
       if (Array.isArray(parsed)) suggestions = parsed.filter((s) => typeof s === "string").slice(0, 3);
     } catch {
