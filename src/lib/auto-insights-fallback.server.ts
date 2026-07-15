@@ -277,7 +277,13 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
   }
 
   // Owner / assignee workload if such a column exists.
-  const ownerColumn = columns.find((c) => /owner|assignee|responsible|assigned|person|engineer|contractor|vendor/i.test(c) && !isMostlyNumeric(activeRows, c));
+  const ownerColumn = columns.find(
+    (c) =>
+      /owner|assignee|responsible|assigned|person|engineer|contractor|vendor/i.test(c) &&
+      !MEASURE_NAME_RE.test(c) &&
+      !isMostlyNumeric(activeRows, c) &&
+      scoreCategorical(activeRows, c) != null,
+  );
   if (ownerColumn && activeRows.length > 0) {
     const counts = valueCounts(activeRows, ownerColumn).filter((v) => v.value !== "(blank)").slice(0, 3);
     if (counts.length > 0 && counts[0].count > 0) {
