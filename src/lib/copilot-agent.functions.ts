@@ -102,6 +102,20 @@ export async function runCopilotAgent(
       key ? import("@/lib/ai-gateway") : Promise.resolve(null),
     ]);
 
+    const withServerTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<T>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)), ms);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
 
 
     // 1) Resolve sheet + document metadata (labels for citations, IDs for scope).
@@ -2199,7 +2213,7 @@ export async function runCopilotAgent(
 
 
 
-    async function runDeterministic(reason: string): Promise<{ text?: string }> {
+    async function runDeterministic(reason: string): Promise<{ text?: string; matched: boolean }> {
       const { deterministicAnswer } = await import("./copilot-deterministic.server");
       const det = await deterministicAnswer({
         supabase,
@@ -2221,9 +2235,10 @@ export async function runCopilotAgent(
       if (!det.matched) {
         return {
           text: det.answer,
+          matched: false,
         };
       }
-      return { text: det.answer };
+      return { text: det.answer, matched: true };
     }
 
     async function polishWithGemini(factualAnswer: string): Promise<string> {
@@ -2234,16 +2249,20 @@ export async function runCopilotAgent(
       try {
         const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
         const google = createGoogleGenerativeAI({ apiKey: directGeminiKey });
-        const polish = await generateText({
-          model: google("gemini-2.5-flash"),
-          system:
-            "You are an editor. Rewrite the user's draft answer so it reads clearly and concisely. " +
-            "STRICT RULES: (1) Do NOT invent, add, remove, or change any number, name, ID, date, or [bracketed citation]. " +
-            "(2) Keep every citation like [sheet:X row N col Y] verbatim in place. " +
-            "(3) Preserve bullet lists and structure. (4) If the draft is a clarifying question or refusal, keep it as-is. " +
-            "Output only the rewritten answer, nothing else.",
-          prompt: `User question: ${data.question}\n\nDraft answer (facts are correct — polish the wording only):\n\n${factualAnswer}`,
-        });
+        const polish = await withServerTimeout(
+          generateText({
+            model: google("gemini-2.5-flash"),
+            system:
+              "You are an editor. Rewrite the user's draft answer so it reads clearly and concisely. " +
+              "STRICT RULES: (1) Do NOT invent, add, remove, or change any number, name, ID, date, or [bracketed citation]. " +
+              "(2) Keep every citation like [sheet:X row N col Y] verbatim in place. " +
+              "(3) Preserve bullet lists and structure. (4) If the draft is a clarifying question or refusal, keep it as-is. " +
+              "Output only the rewritten answer, nothing else.",
+            prompt: `User question: ${data.question}\n\nDraft answer (facts are correct — polish the wording only):\n\n${factualAnswer}`,
+          }),
+          8_000,
+          "Gemini polish",
+        );
         const polished = (polish.text ?? "").trim();
         return polished.length > 20 ? polished : factualAnswer;
       } catch {
@@ -2270,19 +2289,30 @@ export async function runCopilotAgent(
     }
 
     let result: { text?: string };
-    if (!key) {
+    const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
+    if (!actionQuestion) {
+      const deterministicFirst = await runDeterministic("selected_source_fast_path");
+      if (deterministicFirst.matched) {
+        result = { text: deterministicFirst.text };
+      }
+    }
+    if (!result! && !key) {
       result = await runWithGeminiFallback();
-    } else {
+    } else if (!result!) {
       try {
         const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
         const model = gateway("google/gemini-3-flash-preview");
-        result = await generateText({
-          model,
-          system: systemWithPreflight,
-          messages: messages as any,
-          tools: toolset,
-          stopWhen: stepCountIs(50),
-        });
+        result = await withServerTimeout(
+          generateText({
+            model,
+            system: systemWithPreflight,
+            messages: messages as any,
+            tools: toolset,
+            stopWhen: stepCountIs(50),
+          }),
+          45_000,
+          "Copilot model",
+        );
       } catch (error) {
         toolTrace.push({
           name: "ai_model",
@@ -2573,12 +2603,16 @@ export async function runCopilotAgent(
         suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
       }
       if (!suggestionModel) throw new Error("No suggestion model available");
-      const sug = await generateText({
-        model: suggestionModel,
-        system:
-          "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
-        prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
-      });
+      const sug = await withServerTimeout(
+        generateText({
+          model: suggestionModel,
+          system:
+            "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
+          prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
+        }),
+        4_000,
+        "Copilot suggestions",
+      );
       const parsed = JSON.parse(sug.text.trim().replace(/^```(?:json)?\n?|\n?```$/g, ""));
       if (Array.isArray(parsed)) suggestions = parsed.filter((s) => typeof s === "string").slice(0, 3);
     } catch {
