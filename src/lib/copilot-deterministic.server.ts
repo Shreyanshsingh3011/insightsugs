@@ -252,13 +252,15 @@ function isInsightShapedQuery(q: string): boolean {
 
 function extractTargetedRowTarget(q: string): string | null {
   const trimmed = q.trim();
-  const rowish = /\b(row|record|entry|item|entity|profile|details?|full\s+record)\b/i.test(trimmed);
-  if (!rowish) return null;
+  const rowish = /\b(row|record|entry|item|entity|profile|details?|full\s+record|highlights?|snapshot|findings?|takeaways?|notes?|status)\b/i.test(trimmed);
+  const prepTail = /\b(?:for|of|about|on|regarding|around|re|named|called)\s+["'`]?[\p{L}\p{N}][\p{L}\p{N}_\-./ ]{1,}["'`]?\s*[?.!]*$/iu.test(trimmed);
+  if (!rowish && !prepTail) return null;
 
   const patterns = [
-    /\b(?:summari[sz]e|show|display|get|find|open|pull|give\s+me)\b[\s\S]{0,80}?\b(?:row|record|entry|item|entity|profile|details?|full\s+record)\b[\s\S]{0,40}?\b(?:for|of|about|named|called)\s+(.+?)\s*[?.!]*$/iu,
-    /\b(?:row|record|entry|item|entity|profile|details?|full\s+record)\b\s*(?:for|of|about|named|called)\s+(.+?)\s*[?.!]*$/iu,
-    /\b(?:details?|full\s+record)\s+(?:for|of|about)\s+(.+?)\s*[?.!]*$/iu,
+    /\b(?:summari[sz]e|show|display|get|find|open|pull|give\s+me|tell\s+me\s+about)\b[\s\S]{0,80}?\b(?:row|record|entry|item|entity|profile|details?|full\s+record|highlights?|snapshot|findings?|takeaways?|notes?|status)\b[\s\S]{0,40}?\b(?:for|of|about|on|regarding|named|called)\s+(.+?)\s*[?.!]*$/iu,
+    /\b(?:row|record|entry|item|entity|profile|details?|full\s+record|highlights?|snapshot|findings?|takeaways?|notes?|status)\b\s*(?:for|of|about|on|regarding|named|called)\s+(.+?)\s*[?.!]*$/iu,
+    /\b(?:details?|full\s+record|highlights?|snapshot|findings?|takeaways?|status)\s+(?:for|of|about|on|regarding)\s+(.+?)\s*[?.!]*$/iu,
+    /\b(?:for|about|regarding|named|called)\s+(.+?)\s*[?.!]*$/iu,
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(trimmed);
@@ -269,7 +271,10 @@ function extractTargetedRowTarget(q: string): string | null {
       .replace(/\s+/g, " ")
       .replace(/[?.!,;:]+$/g, "")
       .trim();
-    if (cleaned.length >= 2) return cleaned;
+    // Guard against catching common stopword tails like "for me", "about it".
+    if (cleaned.length >= 2 && !/^(me|it|us|them|this|that|these|those|now|today|yesterday|tomorrow)$/i.test(cleaned)) {
+      return cleaned;
+    }
   }
   return null;
 }
