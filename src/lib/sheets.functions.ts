@@ -684,17 +684,68 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
     return;
   }
 
-  const { error: delErr } = await supabase
-    .from("sheet_rows")
-    .delete()
-    .eq("sheet_registry_id", registryId);
-  if (delErr) throw new Error(delErr.message);
+  // Row-level diff: fetch current snapshot, upsert only rows whose
+  // (canonical, extras) changed, and delete only row_indices that disappeared.
+  // Avoids the full DELETE + re-INSERT churn that dominated WAL and INSERT
+  // time when a sheet had a small edit.
+  const existingByIndex = new Map<number, string>();
+  {
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("sheet_rows")
+        .select("row_index, canonical, extras")
+        .eq("sheet_registry_id", registryId)
+        .order("row_index", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw new Error(error.message);
+      const rowsPage = (page ?? []) as Array<{ row_index: number; canonical: unknown; extras: unknown }>;
+      for (const r of rowsPage) {
+        existingByIndex.set(
+          r.row_index,
+          JSON.stringify([r.canonical ?? {}, r.extras ?? {}]),
+        );
+      }
+      if (rowsPage.length < PAGE) break;
+      from += PAGE;
+    }
+  }
 
-  if (toInsert.length > 0) {
+  const toUpsert: typeof toInsert = [];
+  const newIndices = new Set<number>();
+  for (const row of toInsert) {
+    newIndices.add(row.row_index);
+    const sig = JSON.stringify([row.canonical, row.extras]);
+    if (existingByIndex.get(row.row_index) !== sig) toUpsert.push(row);
+  }
+
+  const toDeleteIndices: number[] = [];
+  for (const idx of existingByIndex.keys()) {
+    if (!newIndices.has(idx)) toDeleteIndices.push(idx);
+  }
+
+  if (toDeleteIndices.length > 0) {
+    // Chunk IN() lists to keep URL/JSON size reasonable.
+    const DBATCH = 500;
+    for (let i = 0; i < toDeleteIndices.length; i += DBATCH) {
+      const slice = toDeleteIndices.slice(i, i + DBATCH);
+      const { error } = await supabase
+        .from("sheet_rows")
+        .delete()
+        .eq("sheet_registry_id", registryId)
+        .in("row_index", slice);
+      if (error) throw new Error(error.message);
+    }
+  }
+
+  if (toUpsert.length > 0) {
     const BATCH = 500;
-    for (let i = 0; i < toInsert.length; i += BATCH) {
-      const slice = toInsert.slice(i, i + BATCH);
-      const { error } = await supabase.from("sheet_rows").insert(slice);
+    for (let i = 0; i < toUpsert.length; i += BATCH) {
+      const slice = toUpsert.slice(i, i + BATCH);
+      const { error } = await supabase
+        .from("sheet_rows")
+        .upsert(slice, { onConflict: "sheet_registry_id,row_index" });
       if (error) throw new Error(error.message);
     }
   }
