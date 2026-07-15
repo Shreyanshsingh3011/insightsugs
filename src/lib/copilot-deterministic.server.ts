@@ -603,8 +603,20 @@ export async function deterministicAnswer(params: {
             .slice(0, 6)
             .map(([k, v]) => `${k}: ${cellText(v).slice(0, 80)}`)
             .join(" · ");
-          if (candidateMatchesRequestedTarget(label, targetPhrases, tokens)) {
-            exactRescueLines.push(`- ${preview || label} ${marker}`);
+          // Exact-match rescue is fully case-insensitive and
+          // separator-normalized: check the chosen label AND every other
+          // cell in the row. If ANY cell in this row equals the requested
+          // target after case/punctuation normalization, treat it as an
+          // exact hit — not a "did you mean" suggestion. This prevents
+          // self-contradictory clarifications when the matching value
+          // lives in an identifier cell that wasn't picked as the label.
+          const cellMatchesTarget = (v: string) =>
+            candidateMatchesRequestedTarget(v, targetPhrases, tokens);
+          const matchedCell = cellMatchesTarget(label)
+            ? label
+            : texts.find(cellMatchesTarget);
+          if (matchedCell) {
+            exactRescueLines.push(`- ${preview || matchedCell} ${marker}`);
             exactRescueCites.push(marker);
           } else {
             const labelKey = normalizeHaystack([label]);
