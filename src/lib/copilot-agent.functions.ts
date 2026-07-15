@@ -2752,8 +2752,13 @@ export async function runCopilotAgent(
       const body = finalMarkerMatch[1].trim();
       if (/^(sheet:|doc:)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
     }
+    const isGroundedTemporalNoDateResult =
+      temporalOp != null &&
+      /no usable date\/expiry column was detected/i.test(finalAnswer) &&
+      retrievalDiagnostics.some((d) => d.matcherPath.includes("no_date_column") && d.rowsScanned > 0);
     const finalCitationOk =
       /^i don'?t have that in the current dashboard data\b/i.test(finalAnswer.trim()) ||
+      isGroundedTemporalNoDateResult ||
       (finalMarkers.size > 0 && /(^|\n)\s*sources\s*:/i.test(finalAnswer));
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
