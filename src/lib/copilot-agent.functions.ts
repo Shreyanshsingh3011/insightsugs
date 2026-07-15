@@ -889,6 +889,7 @@ export async function runCopilotAgent(
 
             let picked: typeof parsed = [];
             let explain = "";
+            let tatKey: string | undefined;
             if (op === "earliest") {
               picked = [...parsed].sort((a, b) => +a.date - +b.date).slice(0, limit);
               explain = `earliest by ${dateCol}`;
@@ -925,7 +926,7 @@ export async function runCopilotAgent(
                 .slice(0, limit);
               explain = `${dateCol} between ${f.toISOString().slice(0, 10)} and ${t.toISOString().slice(0, 10)}`;
             } else if (op === "tat_breached") {
-              const tatKey = tat_column
+              tatKey = tat_column
                 ? Object.keys(rows[0]?.data ?? {}).find(
                     (k) => k.toLowerCase().trim() === tat_column.toLowerCase().trim(),
                   )
