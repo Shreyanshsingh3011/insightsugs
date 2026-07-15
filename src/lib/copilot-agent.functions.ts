@@ -2243,7 +2243,7 @@ export async function runCopilotAgent(
             op: temporalOp,
             column: null,
             column_hint: columnHint,
-            days: null,
+            days: expiryWindowDays,
             from: null,
             to: null,
             tat_column: null,
