@@ -363,6 +363,61 @@ export function buildTools(
         }),
     }),
 
+    joinSheets: tool({
+      description:
+        "Equality-join rows across two selected sheets on a shared column value (e.g. join sheet 'Activities' to sheet 'Owners' on person). Only sees rows from sources currently enabled in the Sources panel. Returns up to 20 matched pairs with citations from both sides.",
+      inputSchema: z.object({
+        leftSheet: z.string().describe("Left sheet display name (case-insensitive substring match)"),
+        rightSheet: z.string().describe("Right sheet display name"),
+        onColumn: z.enum(["person", "activity", "stage", "status", "row_key"]).describe("Column to equality-join on"),
+        leftFilter: z.string().nullable().describe("Optional substring filter on the left sheet's activity"),
+      }),
+      execute: async ({ leftSheet, rightSheet, onColumn, leftFilter }) =>
+        timed("joinSheets", { leftSheet, rightSheet, onColumn, leftFilter }, () => {
+          const normSheet = (s: string) => (s ?? "").toLowerCase().trim();
+          const l = normSheet(leftSheet);
+          const r = normSheet(rightSheet);
+          const all = (ctx.rows ?? []).map(cleanRow);
+          const leftRows = all.filter((row) => normSheet(row.sheet).includes(l));
+          const rightRows = all.filter((row) => normSheet(row.sheet).includes(r));
+          if (leftRows.length === 0 || rightRows.length === 0) {
+            return {
+              matched: 0,
+              items: [],
+              note: `No rows in scope for ${leftRows.length === 0 ? `sheet "${leftSheet}"` : `sheet "${rightSheet}"`}. Enable it in the Sources panel.`,
+            };
+          }
+          const key = (row: Record<string, unknown>) => String(row[onColumn] ?? "").toLowerCase().trim();
+          const rightIndex = new Map<string, typeof rightRows>();
+          for (const row of rightRows) {
+            const k = key(row);
+            if (!k) continue;
+            const bucket = rightIndex.get(k) ?? [];
+            bucket.push(row);
+            rightIndex.set(k, bucket);
+          }
+          const filter = (leftFilter ?? "").toLowerCase().trim();
+          const items: Array<Record<string, unknown>> = [];
+          for (const lr of leftRows) {
+            if (filter && !lr.activity.toLowerCase().includes(filter)) continue;
+            const k = key(lr);
+            if (!k) continue;
+            const matches = rightIndex.get(k);
+            if (!matches) continue;
+            for (const rr of matches) {
+              items.push({
+                join_value: lr[onColumn],
+                left: { sheet: lr.sheet, row_index: lr.row_index, activity: lr.activity, person: lr.person, status: lr.status, citation: lr.citation },
+                right: { sheet: rr.sheet, row_index: rr.row_index, activity: rr.activity, person: rr.person, status: rr.status, citation: rr.citation },
+              });
+              if (items.length >= 20) break;
+            }
+            if (items.length >= 20) break;
+          }
+          return { matched: items.length, on: onColumn, items };
+        }),
+    }),
+
     proposeCreateAlert: tool({
       description:
         "Propose a new alert for a specific delayed activity or person. This queues an approval request — the alert is NOT created until a human approves it in /agent/approvals. Use when the user says 'flag', 'raise alert', 'notify about', or clearly asks you to escalate.",

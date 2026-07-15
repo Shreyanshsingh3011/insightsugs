@@ -18,6 +18,7 @@ const READ_TOOLS = [
   "investigateDelay",
   "summarizeThread",
   "generateStatusReport",
+  "joinSheets",
 ];
 
 const WRITE_TOOLS = [

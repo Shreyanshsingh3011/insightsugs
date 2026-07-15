@@ -160,6 +160,7 @@ export const CACHEABLE_TOOLS = new Set([
   "date_query_rows",
   "investigateDelay",
   "summarizeThread",
+  "joinSheets",
 ]);
 
 /** Test-only: clear the whole cache. */
