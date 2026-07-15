@@ -1232,22 +1232,20 @@ function CopilotPage() {
                           variant="outline"
                           className="h-6 px-2 text-xs"
                           disabled={askMut.isPending}
-                          onClick={() =>
-                            {
-                              const scoped = currentScopedSourceIds();
-                              return askMut.mutate({
-                                question: t.question,
-                                sheetIds: scoped.sheetIds,
-                                documentIds: scoped.documentIds,
-                                history: history.slice(0, i).flatMap((x) => [
-                                  { role: "user" as const, content: x.question },
-                                  { role: "assistant" as const, content: x.answer },
-                                ]),
-                                retryForCitations: true,
-                                originalQuestion: t.question,
-                              });
-                            }
-                          }
+                          onClick={() => {
+                            const scoped = currentScopedSourceIds();
+                            askMut.mutate({
+                              question: t.question,
+                              sheetIds: scoped.sheetIds,
+                              documentIds: scoped.documentIds,
+                              history: history.slice(0, i).flatMap((x) => [
+                                { role: "user" as const, content: x.question },
+                                { role: "assistant" as const, content: x.answer },
+                              ]),
+                              retryForCitations: true,
+                              originalQuestion: t.question,
+                            });
+                          }}
                         >
                           <RefreshCw className="mr-1 h-3 w-3" /> Re-ask with citations
                         </Button>
