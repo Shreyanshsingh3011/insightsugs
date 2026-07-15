@@ -769,23 +769,45 @@ export async function runCopilotAgent(
       const keys = new Set<string>();
       for (const r of rows.slice(0, 200)) for (const k of Object.keys(r.data)) keys.add(k);
       const scored: Array<{ key: string; score: number; parseRate: number }> = [];
+      const measureName = /(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|unit|units|stock|jmc|cons|grn|mrn|transfer|loan|paid|outstanding|percent|percentage|score|weight|volume|capacity)/i;
+      const idName = /(^|[\s_.-])(id|no|num|number|code|ref|serial|sr|s\.?no|sno|po|mrn|grn|invoice|bill)([\s_.-]|$)/i;
+      const hasDateShape = (value: unknown) => {
+        const s = String(value ?? "").trim();
+        if (!s) return false;
+        if (/\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/.test(s)) return true;
+        if (/\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}/.test(s)) return true;
+        if (/[a-z]{3,}\s+\d{1,2},?\s+\d{4}/i.test(s)) return true;
+        return false;
+      };
       for (const k of keys) {
         const kl = k.toLowerCase();
         const nameHit = DATE_COL_HINTS.some((h) => kl.includes(h));
+        const safeNameHit = nameHit && !measureName.test(k) && !idName.test(k);
+        const hintText = hint?.toLowerCase() ?? "";
+        const hintHit = hintText
+          ? hintText.startsWith("expir")
+            ? /expir|expiry|expires|renewal|end\s*date/i.test(k)
+            : kl.includes(hintText)
+          : false;
         let parsed = 0;
         let non_empty = 0;
+        let shaped = 0;
         for (const r of rows.slice(0, 150)) {
           const v = r.data[k];
           if (v == null || v === "") continue;
           non_empty++;
+          if (hasDateShape(v)) shaped++;
           if (parseAnyDate(v)) parsed++;
         }
         const rate = non_empty > 0 ? parsed / non_empty : 0;
+        const shapeRate = non_empty > 0 ? shaped / non_empty : 0;
         // A column is date-like if either name matches AND >30% parse,
-        // OR >70% parse regardless of name.
-        if ((nameHit && rate >= 0.3) || rate >= 0.7) {
-          const hintBoost = hint && kl.includes(hint.toLowerCase()) ? 5 : 0;
-          scored.push({ key: k, score: (nameHit ? 2 : 0) + rate + hintBoost, parseRate: rate });
+        // OR >70% parse with actual date separators/text. Do NOT let plain
+        // numeric measure columns (Transfer Value, Balance, Rate, IDs) become
+        // fake Excel-serial date columns.
+        if ((safeNameHit && rate >= 0.3) || (shapeRate >= 0.7 && rate >= 0.7)) {
+          const hintBoost = hintHit ? 5 : 0;
+          scored.push({ key: k, score: (safeNameHit ? 2 : 0) + rate + hintBoost, parseRate: rate });
         }
       }
       scored.sort((a, b) => b.score - a.score);
