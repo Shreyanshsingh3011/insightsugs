@@ -508,15 +508,21 @@ function CopilotPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const sendAsk = (q: string) => {
+  const currentScopedSourceIds = () => {
     const liveSheetIds = new Set(liveSheets.map((s: any) => s.id));
     const liveDocumentIds = new Set(liveDocuments.map((d: any) => d.id));
-    const scopedSheetIds = Array.from(selected).filter((id) => liveSheets.length > 0 && liveSheetIds.has(id));
-    const scopedDocumentIds = Array.from(selectedDocs).filter((id) => liveDocuments.length > 0 && liveDocumentIds.has(id));
+    return {
+      sheetIds: Array.from(selected).filter((id) => liveSheets.length > 0 && liveSheetIds.has(id)),
+      documentIds: Array.from(selectedDocs).filter((id) => liveDocuments.length > 0 && liveDocumentIds.has(id)),
+    };
+  };
+
+  const sendAsk = (q: string) => {
+    const scoped = currentScopedSourceIds();
     askMut.mutate({
       question: q,
-      sheetIds: scopedSheetIds,
-      documentIds: scopedDocumentIds,
+      sheetIds: scoped.sheetIds,
+      documentIds: scoped.documentIds,
       history: history.flatMap((t) => [
         { role: "user" as const, content: t.question },
         { role: "assistant" as const, content: t.answer },
@@ -681,8 +687,11 @@ function CopilotPage() {
     const last = history[history.length - 1];
     const priorHistory = history.slice(0, -1);
     setHistory(priorHistory);
+    const scoped = currentScopedSourceIds();
     askMut.mutate({
       question: last.question,
+      sheetIds: scoped.sheetIds,
+      documentIds: scoped.documentIds,
       history: priorHistory.flatMap((t) => [
         { role: "user" as const, content: t.question },
         { role: "assistant" as const, content: t.answer },
@@ -1224,15 +1233,20 @@ function CopilotPage() {
                           className="h-6 px-2 text-xs"
                           disabled={askMut.isPending}
                           onClick={() =>
-                            askMut.mutate({
-                              question: t.question,
-                              history: history.slice(0, i).flatMap((x) => [
-                                { role: "user" as const, content: x.question },
-                                { role: "assistant" as const, content: x.answer },
-                              ]),
-                              retryForCitations: true,
-                              originalQuestion: t.question,
-                            })
+                            {
+                              const scoped = currentScopedSourceIds();
+                              return askMut.mutate({
+                                question: t.question,
+                                sheetIds: scoped.sheetIds,
+                                documentIds: scoped.documentIds,
+                                history: history.slice(0, i).flatMap((x) => [
+                                  { role: "user" as const, content: x.question },
+                                  { role: "assistant" as const, content: x.answer },
+                                ]),
+                                retryForCitations: true,
+                                originalQuestion: t.question,
+                              });
+                            }
                           }
                         >
                           <RefreshCw className="mr-1 h-3 w-3" /> Re-ask with citations
