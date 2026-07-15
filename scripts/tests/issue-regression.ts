@@ -282,6 +282,60 @@ test("#copilot-nbpdcl", "Deterministic Copilot strict mode answers split-column 
   assert(!/Did you mean[\s\S]*Nos/i.test(result.answer), "must not suggest generic unit values like Nos");
 });
 
+test("#copilot-targeted-row", "Summarize the row for an identifier never falls back to Auto-Insights", async () => {
+  const registryId = "22222222-2222-2222-2222-222222222222";
+  const rows = [
+    {
+      row_index: 0,
+      canonical: {
+        "Store Name": "Punjab_Kharar_Store",
+        Status: "Completed",
+        "RO No.": "RO-17",
+        remarks: "Verified",
+      },
+      extras: { "Photo 10": "" },
+    },
+    {
+      row_index: 1,
+      canonical: {
+        "Store Name": "Punjab_Ropar_Store",
+        Status: "Not Started",
+        "RO No.": "RO-18",
+      },
+      extras: {},
+    },
+  ];
+  const supabase = {
+    from(table: string) {
+      assert(table === "sheet_rows", "only sheet_rows should be queried for this regression");
+      return {
+        select() { return this; },
+        eq(column: string, value: string) {
+          assert(column === "sheet_registry_id", "filters by registry id");
+          assert(value === registryId, "uses selected sheet id");
+          return this;
+        },
+        order() { return this; },
+        async range() { return { data: rows, error: null }; },
+      };
+    },
+  };
+
+  const result = await deterministicAnswer({
+    supabase,
+    question: "Summarize the row for Punjab_Kharar_Store.",
+    regs: [{ id: registryId, display_name: "Site_Verification_Data (1)", row_count: rows.length }],
+    docs: [],
+  });
+
+  assert(result.matched, "targeted row lookup should match the exact row");
+  assert(result.answer.includes("Punjab_Kharar_Store"), "answer includes the requested store identifier");
+  assert(result.answer.includes("RO-17"), "answer summarizes fields from the matched row");
+  assert(result.answer.includes("[sheet:Site_Verification_Data (1) row 1]"), "answer cites the exact row");
+  assert(!/Auto-Insights/i.test(result.answer), "targeted row summary must not return sheet-wide Auto-Insights");
+  assert(!/Punjab_Ropar_Store/i.test(result.answer), "must not leak neighboring store rows");
+});
+
 /* ── Runner ── */
 
 async function main() {
