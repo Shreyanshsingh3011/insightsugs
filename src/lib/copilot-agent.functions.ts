@@ -2193,8 +2193,19 @@ export async function runCopilotAgent(
     // grounded in the selected sheet even when the model skips the tool
     // (e.g. Gemini fallback under 402 pressure).
     const qLower = data.question.toLowerCase();
-    const temporalOp: "earliest" | "latest" | "overdue" | "tat_breached" | null =
-      /\b(earliest|oldest|first\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
+    // Detect "expire in next N days" / "expiring/renewal within N days" as an
+    // overdue-style forward-window query on the expiry column.
+    const expiryWindowMatch = /\b(expir\w*|renewal)\b[^.?!]*?\b(in|within|next)\b\s*(\d{1,4})\s*(day|days|week|weeks|month|months)?/.exec(qLower);
+    let expiryWindowDays: number | null = null;
+    if (expiryWindowMatch) {
+      const n = Number(expiryWindowMatch[3]);
+      const unit = (expiryWindowMatch[4] ?? "day").toLowerCase();
+      expiryWindowDays = unit.startsWith("week") ? n * 7 : unit.startsWith("month") ? n * 30 : n;
+    }
+    const temporalOp: "earliest" | "latest" | "overdue" | "tat_breached" | "due_within" | null =
+      expiryWindowDays != null
+        ? "due_within"
+        : /\b(earliest|oldest|first\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
         ? "earliest"
         : /\b(latest|most\s+recent|newest|last\s+(start|due|delivery|dispatch|receipt|eta))\b/.test(qLower)
           ? "latest"
@@ -2202,8 +2213,12 @@ export async function runCopilotAgent(
             ? "overdue"
             : /\btat\b.*\b(breach|missed|exceed|over)|sla\s+(missed|breach)/.test(qLower)
               ? "tat_breached"
-              : null;
-    const columnHint = /start/.test(qLower)
+              : /\b(due|expir\w*|renewal)\b\s*(in|within|next)\s*\d+/.test(qLower)
+                ? "due_within"
+                : null;
+    const columnHint = expiryWindowDays != null || /\bexpir|renewal/.test(qLower)
+      ? "expir"
+      : /start/.test(qLower)
       ? "start"
       : /due|deadline/.test(qLower)
         ? "due"
@@ -2228,7 +2243,7 @@ export async function runCopilotAgent(
             op: temporalOp,
             column: null,
             column_hint: columnHint,
-            days: null,
+            days: expiryWindowDays,
             from: null,
             to: null,
             tat_column: null,
