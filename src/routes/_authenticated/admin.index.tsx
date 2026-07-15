@@ -125,6 +125,13 @@ function AdminIndex() {
       icon: <Activity className="h-5 w-5" />,
       requires: "admin",
     },
+    {
+      to: "/admin/sources-health",
+      label: "Sources health",
+      description: "Per-sheet sync freshness and per-document embedding coverage.",
+      icon: <Activity className="h-5 w-5" />,
+      requires: "admin",
+    },
   ];
 
   const hasAccess = (e: Entry) => (e.requires === "super_admin" ? isSuper : isAdmin);
