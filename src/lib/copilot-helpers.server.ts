@@ -61,10 +61,13 @@ export function isAiBillingOrQuotaError(error: unknown): boolean {
   );
 }
 
+// Cap high enough to cover the largest sheets we ingest (stock/store
+// summaries ~50k rows). Copilot's deterministic + keyword tools scan the
+// full row set, so a truncated cap = silently missing answers on big sheets.
 export async function fetchAllRows(
   supabase: any,
   registryId: string,
-  cap = 20000,
+  cap = 200000,
 ): Promise<Array<{ row_index: number; data: Record<string, unknown> }>> {
   const PAGE = 1000;
   const out: Array<{ row_index: number; data: Record<string, unknown> }> = [];
