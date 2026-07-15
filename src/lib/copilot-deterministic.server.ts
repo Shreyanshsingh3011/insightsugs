@@ -317,7 +317,11 @@ export async function deterministicAnswer(params: {
     const hasCriteria = tokens.length > 0 || phrases.length > 0;
     const matched = (tokens.length > 0 || phrases.length > 0)
       ? searchRows
-          .map((row) => ({ row, score: rowMatchesStrict(row, searchPhrases, strict ? [] : tokens, requestedColumns) }))
+          // Always pass tokens, even in strict mode. `matchesExactTarget` uses
+          // them to permit identifier lookups split across columns (for example
+          // NBPDCL / NIT 48 / Samastipur) while still requiring contiguous
+          // natural-language names such as Kunti Devi.
+          .map((row) => ({ row, score: rowMatchesStrict(row, searchPhrases, tokens, requestedColumns) }))
           .filter((x) => x.score > 0)
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)

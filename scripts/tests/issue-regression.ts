@@ -10,12 +10,14 @@ import {
   strictPhrases,
   matchesAllPhrases,
   normalizeHaystack,
+  matchesExactTarget,
   extractSerialNumber,
   extractRequestedColumns,
   describeSearchedColumns,
   hasStrictTarget,
   contentTokens,
 } from "../../src/lib/query-match";
+import { deterministicAnswer } from "../../src/lib/copilot-deterministic.server";
 import {
   computeRowStatus,
   isRowEffectivelyDone,
@@ -65,6 +67,16 @@ test("#5", "Identifier codes like IT76 stay strict", () => {
   assert(phrases.some((p) => p === "it76"), "IT76 required as identifier");
   assert(matchesAllPhrases(normalizeHaystack(["IT76 - Foundation"]), phrases));
   assert(!matchesAllPhrases(normalizeHaystack(["IT77 - Roof"]), phrases), "IT77 must NOT satisfy IT76");
+});
+
+test("#5b", "Cross-column tender identifiers match without contiguous row text", () => {
+  const query = "nbpdcl nit 48 samastipur";
+  const phrases = strictPhrases(query);
+  const tokens = contentTokens(query);
+  const hay = normalizeHaystack(["Tender No", "NIT 48", "District", "Samastipur", "Client", "NBPDCL"]);
+  assert(phrases.includes("nbpdcl nit 48 samastipur"), "full code-like phrase is required");
+  assert(!matchesAllPhrases(hay, phrases), "non-adjacent columns are not a contiguous phrase hit");
+  assert(matchesExactTarget(hay, phrases, tokens), "code-like tokens may match across columns");
 });
 
 /* ── Status derivation: Issues #6, #8, #9 ── */
@@ -199,6 +211,64 @@ test("#copilot-column-count", "Total-row count searches only requested columns a
       : targetTokens.every((token) => hay.includes(token));
   });
   eq(hits.length, 2, "counts completed + active rows, but excludes Notes-only hit");
+});
+
+test("#copilot-nbpdcl", "Deterministic Copilot strict mode answers split-column NBPDCL NIT 48 Samastipur", async () => {
+  const registryId = "11111111-1111-1111-1111-111111111111";
+  const rows = [
+    {
+      row_index: 0,
+      canonical: {
+        "Tender No": "NIT 48",
+        District: "Samastipur",
+        Client: "NBPDCL",
+        Unit: "Nos",
+        Status: "Active",
+      },
+      extras: { Scope: "Rural electrification package" },
+    },
+    {
+      row_index: 1,
+      canonical: {
+        "Tender No": "NIT 48",
+        District: "Patna",
+        Client: "SBPDCL",
+        Unit: "Nos",
+        Status: "Active",
+      },
+      extras: {},
+    },
+  ];
+  const supabase = {
+    from(table: string) {
+      assert(table === "sheet_rows", "only sheet_rows should be queried for this regression");
+      return {
+        select() { return this; },
+        eq(column: string, value: string) {
+          assert(column === "sheet_registry_id", "filters by registry id");
+          assert(value === registryId, "uses selected sheet id");
+          return this;
+        },
+        order() { return this; },
+        async range() { return { data: rows, error: null }; },
+      };
+    },
+  };
+
+  const result = await deterministicAnswer({
+    supabase,
+    question: "nbpdcl nit 48 samastipur",
+    regs: [{ id: registryId, display_name: "Tender Tracker", row_count: rows.length }],
+    docs: [],
+    strictMatch: true,
+  });
+
+  assert(result.matched, "strict deterministic path should match the selected row");
+  assert(result.answer.includes("NBPDCL"), "answer includes the actual matching client");
+  assert(result.answer.includes("Samastipur"), "answer includes the actual matching district");
+  assert(result.answer.includes("[sheet:Tender Tracker row 1]"), "answer cites the exact row");
+  assert(!/No exact match/i.test(result.answer), "must not ask for clarification when exact split-column match exists");
+  assert(!/Did you mean[\s\S]*Nos/i.test(result.answer), "must not suggest generic unit values like Nos");
 });
 
 /* ── Runner ── */
