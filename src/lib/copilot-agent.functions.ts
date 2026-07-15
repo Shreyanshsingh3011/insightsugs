@@ -247,11 +247,12 @@ export async function runCopilotAgent(
         withTrace("search_sheet_rows", { sheet_id, query, k }, async () => {
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
-          const rows = await getSheetRows(sheet_id);
-          const byIndex = new Map(rows.map((r) => [r.row_index, r.data]));
+          const idx = await getSheetIndexCached(sheet_id);
+          const rows = idx.rows;
+          const byIndex = idx.byIndex;
           const { strictPhrases, normalizeHaystack, matchesAllPhrases, countPhraseHits, contentTokens, extractRequestedColumns } =
             await import("./query-match");
-          const columns = rowColumns(rows);
+          const columns = idx.columns;
           const requestedColumns = extractRequestedColumns(query, columns);
 
           // Try vector search first; fall back to keyword scan when embeddings
