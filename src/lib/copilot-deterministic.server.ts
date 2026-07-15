@@ -203,7 +203,22 @@ export async function deterministicAnswer(params: {
   const strict = params.strictMatch === true;
   const intent = detectIntent(question);
   const activeOnly = wantsActiveOnlyRows(question);
-  const insightMode = isInsightShapedQuery(question);
+  // Strip scope (sheet/doc) name substrings from the question BEFORE running
+  // intent detection. Otherwise a sheet called "Stock Summary" hijacks any
+  // question that mentions it — "Which contracts expire in the next 30 days
+  // in stock summary?" would match `\bsummary\b` and short-circuit to
+  // Auto-Insights instead of answering the temporal query.
+  const scopeStripRegex = [
+    ...regs.map((r) => r.display_name),
+    ...docs.map((d) => d.name),
+  ]
+    .filter((n) => n && n.trim().length >= 3)
+    .sort((a, b) => b.length - a.length)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const questionForIntent = scopeStripRegex.length
+    ? question.replace(new RegExp(scopeStripRegex.join("|"), "gi"), " ")
+    : question;
+  const insightMode = isInsightShapedQuery(questionForIntent);
   const rawTokens = tokenize(question);
   const rawPhrases = extractPhrases(question);
 
