@@ -176,7 +176,13 @@ function isTerminal(row: StoredRow, statusCol: string | null): boolean {
 
 function wantsActiveOnlyRows(q: string): boolean {
   const s = q.toLowerCase();
-  return /\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached)\b/.test(s);
+  const activeHit = /\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached)\b/.test(s);
+  if (!activeHit) return false;
+  // Mixed-status questions ("delayed vs completed", "pending and closed",
+  // "list open and done tasks") must not silently drop terminal rows.
+  const terminalHit = /\b(complete[d]?|completion|done|closed|finished|resolved|delivered|dispatched|handover|handed\s+over|cancel(l)?ed)\b/.test(s);
+  if (terminalHit) return false;
+  return true;
 }
 
 type Intent =
