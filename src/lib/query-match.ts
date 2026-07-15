@@ -10,10 +10,10 @@
 //   2. Normalise both the row haystack and the phrase (collapse whitespace,
 //      lowercase, strip punctuation) so "Kunti  Devi\n" still matches
 //      "kunti devi".
-//   3. A row matches ONLY if every strict phrase appears as a contiguous
-//      substring in the normalised haystack. Callers must NOT fall back to
-//      per-token AND matching when strict phrases exist and none match —
-//      that's what leaks unrelated rows.
+//   3. A row matches ONLY if every strict phrase appears in the normalised
+//      haystack, with one sheet-specific exception: code/tender lookups can
+//      match all requested tokens across columns. Callers must NOT fall back
+//      to loose single-token matches — that's what leaks unrelated rows.
 
 const STOP = new Set([
   "the","a","an","and","or","of","in","on","for","to","with","is","are","was","were","be","by",
@@ -111,7 +111,8 @@ export function strictPhrases(query: string): string[] {
   }
 
   const tokens = contentTokens(cleaned);
-  if (!hasExplicitTarget && tokens.length >= 2) out.add(tokens.join(" "));
+  const hasCodeLikeTarget = tokens.some((t) => /\d/.test(t) || t.length <= 3 || (t.length >= 4 && !/[aeiou]/.test(t)));
+  if (tokens.length >= 2 && (!hasExplicitTarget || hasCodeLikeTarget)) out.add(tokens.join(" "));
 
   return Array.from(out);
 }
@@ -173,7 +174,7 @@ export function matchesExactTarget(hay: string, phrases: string[], tokens: strin
   if (phrases.length === 0) return tokens.length > 0 && tokens.every((t) => phraseHit(hay, t));
   if (matchesAllPhrases(hay, phrases)) return true;
   if (tokens.length === 0) return false;
-  if (!phrases.every(phraseCanMatchAcrossColumns)) return false;
+  if (!phrases.some(phraseCanMatchAcrossColumns)) return false;
   return tokens.every((t) => phraseHit(hay, t));
 }
 
