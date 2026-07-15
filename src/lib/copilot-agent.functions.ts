@@ -870,9 +870,18 @@ export async function runCopilotAgent(
               dateCol = candidates[0] ?? null;
             }
             if (!dateCol) {
+              pushRetrievalDiagnostic({
+                sourceId: sheet_id,
+                sourceName: reg.display_name,
+                sourceType: "sheet",
+                matcherPath: `date_query_rows:${op}:no_date_column`,
+                rowsScanned: rows.length,
+                rowsMatched: 0,
+                columnsSearched: Object.keys(rows[0]?.data ?? {}).filter((k) => /date|due|deadline|expir|renewal|end|target|planned|delivery|dispatch|receipt|transfer/i.test(k)).slice(0, 20),
+              });
               return {
                 error:
-                  "No date-like column detected. Call get_sheet_schema and re-run with an explicit `column`.",
+                  "No usable date/expiry column was detected in this selected sheet.",
               };
             }
 
