@@ -85,7 +85,8 @@ function pickNumericColumn(rows: StoredRow[], cols: string[], hint?: string | nu
 import {
   strictPhrases as qmStrictPhrases,
   normalizeHaystack,
-  matchesAllPhrases,
+  matchesExactTarget,
+  exactTargetScore,
   contentTokens as qmContentTokens,
   extractRequestedColumns,
 } from "./query-match";
@@ -105,11 +106,11 @@ function rowMatchesStrict(row: StoredRow, phrases: string[], tokens: string[], r
   const hay = normalizeHaystack(values);
   // When the user's query contains any strict phrase (proper noun, quoted
   // text, or 2+ content tokens), require EVERY phrase to appear as a
-  // contiguous substring in the row. This is what stops "Kunti Devi" from
-  // matching every "Devi" row.
+  // contiguous substring in the row, except code-like lookups may match all
+  // tokens across columns (NBPDCL / NIT / 48 / Samastipur). This still stops
+  // "Kunti Devi" from matching every "Devi" row.
   if (phrases.length > 0) {
-    if (!matchesAllPhrases(hay, phrases)) return 0;
-    return 10 + tokens.length;
+    return exactTargetScore(hay, phrases, tokens);
   }
   if (tokens.length === 0) return 0;
   for (const t of tokens) if (!hay.includes(t)) return 0;
@@ -527,15 +528,23 @@ export async function deterministicAnswer(params: {
           .sort((a, b) => b.s - a.s)
           .slice(0, 3);
         for (const { r } of scored) {
-          // Pick a short label: prefer a text-like cell (letters present,
-          // not just a number/id-less numeric like "0" or "877") so
-          // suggestions read as names, not row-indexes.
-          const texts = Object.values(r.data).map((v) => cellText(v)).filter((v) => v.length > 0);
-          const label =
-            texts.find((v) => /[a-zA-Z]/.test(v) && v.length >= 3) ??
-            texts.find((v) => v.length >= 3) ??
-            texts[0] ??
-            `row ${r.row_index + 1}`;
+          // Pick a useful label from the cells that actually overlap the
+          // user's target. Avoid unit/header-like values such as "Nos".
+          const targetTokens = scoredPhrases.flatMap((p) => p.split(" ").filter((x) => x.length >= 2));
+          const genericCell = /^(nos?|n\/a|na|nil|none|yes|no|unit|qty|quantity|blank|0)$/i;
+          const texts = Object.values(r.data)
+            .map((v) => cellText(v))
+            .filter((v) => v.length > 0 && !genericCell.test(v.trim()));
+          const ranked = texts
+            .map((v) => {
+              const h = normalizeHaystack([v]);
+              const tokenHits = targetTokens.filter((t) => h.includes(t)).length;
+              const phraseHits = scoredPhrases.filter((p) => matchesExactTarget(h, [p], p.split(" "))).length;
+              return { v, score: phraseHits * 10 + tokenHits * 2 + Math.min(v.length, 80) / 80 };
+            })
+            .filter((x) => /[a-zA-Z]/.test(x.v) && x.v.length >= 4)
+            .sort((a, b) => b.score - a.score);
+          const label = ranked[0]?.v ?? texts.find((v) => /[a-zA-Z]/.test(v) && v.length >= 4) ?? `row ${r.row_index + 1}`;
           const key = `${reg.id}#${r.row_index}`;
           if (seen.has(key)) continue;
           seen.add(key);
