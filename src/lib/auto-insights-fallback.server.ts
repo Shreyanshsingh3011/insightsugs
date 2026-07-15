@@ -477,7 +477,7 @@ export function detectSheetShape(columns: string[]): SheetShape {
   if (/attendance|check[- ]?in|check[- ]?out|shift|leave|absent|present|hours worked|payroll/.test(cols)) return "hr_attendance";
   if (/email|phone|mobile|contact|address|city|pincode|zip/.test(cols) && !/status|stage|progress/.test(cols)) return "contacts";
   if (/stock|inventory|sku|units in|on hand|qty on|reorder|warehouse/.test(cols)) return "inventory";
-  if (/contract|agreement|expiry|expires|renewal|clause|nda|mou/.test(cols)) return "contracts";
+  if (/\bcontract\b|agreement|expiry|expires|renewal|clause|nda|mou/.test(cols)) return "contracts";
   if (/milestone|phase|planned|actual|baseline|start date|end date|target date|completion/.test(cols)) return "timeline";
   if (/lead|opportunity|deal|pipeline|prospect|conversion|revenue|customer/.test(cols)) return "sales_crm";
   if (/ticket|complaint|issue|resolution|sla|priority|reported/.test(cols)) return "tickets";
