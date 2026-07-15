@@ -26,6 +26,8 @@ const STOP = new Set([
   "regarding","related","about","concerning","named","called","entry","record","records",
   "explicitly","mentioned","mention","column","columns","field","fields",
   "open","phone","number","email","mail","mobile","contact","responsible","person","owner","owners",
+  "status","stage","state","progress","delay","delays","delayed","reason","reasons","risk","risks",
+  "issue","issues","blocker","blockers","pending","active","open","closed","complete","completed",
 ]);
 
 /** Header aliases that mean "row identifier / serial number". Kept broad so
