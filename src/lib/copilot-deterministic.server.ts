@@ -14,6 +14,16 @@ type DocMeta = { id: string; name: string };
 type StoredRow = { row_index: number; data: Record<string, unknown> };
 type DocChunk = { document_id: string; page_no: number | null; content: string | null };
 
+export type CopilotRetrievalDiagnostic = {
+  sourceId: string;
+  sourceName: string;
+  sourceType: "sheet" | "document";
+  matcherPath: string;
+  rowsScanned: number;
+  rowsMatched: number;
+  columnsSearched?: string[];
+};
+
 export type DeterministicLedgerRow = {
   kind: "sheet_row";
   registryId: string;
@@ -182,6 +192,7 @@ export async function deterministicAnswer(params: {
   docs: DocMeta[];
   maxRowsPerSheet?: number;
   ledgerSink?: DeterministicLedgerEntry[];
+  diagnosticsSink?: CopilotRetrievalDiagnostic[];
   /** When true: only contiguous full-phrase matches are returned. No token
    * AND fallback, no "recent rows" fallback, no surname-only leakage. */
   strictMatch?: boolean;
@@ -220,6 +231,9 @@ export async function deterministicAnswer(params: {
 
   const cites: string[] = [];
   const parts: string[] = [];
+  const recordDiagnostic = (diag: CopilotRetrievalDiagnostic) => {
+    params.diagnosticsSink?.push(diag);
+  };
 
   // Fast path for plain sheet-size questions. Do not fetch 50k+ rows just to
   // answer "how many rows are in this selected sheet?" — use registry metadata
@@ -326,6 +340,26 @@ export async function deterministicAnswer(params: {
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)
       : searchRows;
+    const matcherPath = insightMode
+      ? "auto_insights"
+      : activeOnly
+        ? "deterministic_active_filter"
+        : requestedColumns.length > 0
+          ? "deterministic_column_exact"
+          : searchPhrases.length > 0
+            ? "deterministic_phrase_exact"
+            : tokens.length > 0
+              ? "deterministic_token_exact"
+              : "deterministic_all_rows";
+    recordDiagnostic({
+      sourceId: reg.id,
+      sourceName: reg.display_name,
+      sourceType: "sheet",
+      matcherPath,
+      rowsScanned: searchRows.length,
+      rowsMatched: matched.length,
+      columnsSearched: requestedColumns.length ? requestedColumns : cols,
+    });
     // In strict mode we NEVER broaden. Otherwise, if the user targeted a
     // specific phrase/name and nothing matches, we still return empty so
     // unrelated rows never leak.
@@ -440,12 +474,9 @@ export async function deterministicAnswer(params: {
   }
 
   // Documents: keyword-hit snippets by page.
-  if (docs.length > 0 && tokens.length > 0) {
-    const { data: chunks } = await supabase
-      .from("document_chunks")
-      .select("document_id, page_no, content")
-      .in("document_id", docs.map((d) => d.id))
-      .limit(2000);
+  if (docs.length > 0) {
+    const { fetchAllDocumentChunks } = await import("./copilot-helpers.server");
+    const chunks = await fetchAllDocumentChunks(supabase, docs.map((d) => d.id));
     const grouped = new Map<string, DocChunk[]>();
     for (const c of (chunks ?? []) as DocChunk[]) {
       const key = c.document_id;
@@ -454,16 +485,26 @@ export async function deterministicAnswer(params: {
     }
     for (const d of docs) {
       const list = grouped.get(d.id) ?? [];
-      const scored = list
-        .map((c) => {
-          const text = (c.content ?? "").toLowerCase();
-          let s = 0;
-          for (const t of tokens) if (text.includes(t)) s += 1;
-          return { c, s };
-        })
-        .filter((x) => x.s > 0)
-        .sort((a, b) => b.s - a.s)
-        .slice(0, 4);
+      const scored = tokens.length > 0
+        ? list
+            .map((c) => {
+              const text = (c.content ?? "").toLowerCase();
+              let s = 0;
+              for (const t of tokens) if (text.includes(t)) s += 1;
+              return { c, s };
+            })
+            .filter((x) => x.s > 0)
+            .sort((a, b) => b.s - a.s)
+            .slice(0, 4)
+        : list.slice(0, 4).map((c) => ({ c, s: 1 }));
+      recordDiagnostic({
+        sourceId: d.id,
+        sourceName: d.name,
+        sourceType: "document",
+        matcherPath: tokens.length > 0 ? "document_full_chunk_keyword" : "document_full_chunk_sample",
+        rowsScanned: list.length,
+        rowsMatched: scored.length,
+      });
       if (scored.length === 0) continue;
       parts.push(`**${d.name}** — ${scored.length} relevant excerpt${scored.length === 1 ? "" : "s"}:`);
       for (const { c } of scored) {
@@ -574,10 +615,15 @@ export async function deterministicAnswer(params: {
           `Sources:\n${suggestCites.slice(0, 5).map((m) => `- ${m}`).join("\n")}`;
         return { answer, citations: suggestCites.slice(0, 5), matched: false };
       }
+      const scopeMarkers = [
+        ...regs.map((r) => `[sheet:${r.display_name}]`),
+        ...docs.map((d) => `[doc:${d.name}]`),
+      ];
       const answer =
         `**No exact match for "${asked}"** in the selected sources, and I found no close candidates either. ` +
-        `Please double-check the spelling / identifier, or pick a different sheet or document from the source picker.`;
-      return { answer, citations: [], matched: false };
+        `Please double-check the spelling / identifier, or pick a different sheet or document from the source picker. ${scopeMarkers[0] ?? ""}` +
+        `\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`;
+      return { answer, citations: scopeMarkers, matched: false };
     }
 
     // Before refusing, fall back to the computed Auto-Insights for the
@@ -616,12 +662,17 @@ export async function deterministicAnswer(params: {
     const perDoc = docs.map((d) => `- **${d.name}**: scanned document chunks`);
     const searchedBlock = [...perSheet, ...perDoc].join("\n") || "_(no rows found in the selected sources)_";
 
+    const scopeMarkers = [
+      ...regs.map((r) => `[sheet:${r.display_name}]`),
+      ...docs.map((d) => `[doc:${d.name}]`),
+    ];
     const answer =
-      `I don't have that in the current dashboard data.\n\n` +
+      `I don't have that in the selected uploaded sources. ${scopeMarkers[0] ?? ""}\n\n` +
       `**Searched:** ${scope}.\n${searchedBlock}\n\n` +
       `**Missing tokens:** ${missing}.\n\n` +
-      `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.`;
-    return { answer, citations: [], matched: false };
+      `Try rephrasing with a specific name, ID, date, or column value, or pick a different sheet/document from the source picker.` +
+      (scopeMarkers.length ? `\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}` : "");
+    return { answer, citations: scopeMarkers, matched: false };
 
   }
 

@@ -14,9 +14,10 @@ import {
   parseCitationRowSpec,
   isAiBillingOrQuotaError,
   fetchAllRows,
+  fetchAllDocumentChunks,
 } from "./copilot-helpers.server";
 import { ensureSheetEmbeddings } from "./copilot-embeddings.server";
-import { getSheetIndex, candidatesForTokens, type SheetIndex } from "./copilot-index.server";
+import { getSheetIndex, candidatesForTokens, candidatesForAnyToken, type SheetIndex } from "./copilot-index.server";
 
 // Re-export so existing importers (e.g. the embed-backfill hook) keep working.
 export { ensureSheetEmbeddings };
@@ -29,6 +30,7 @@ void normalizeCitationLabel;
 void parseCitationRowSpec;
 void isAiBillingOrQuotaError;
 void fetchAllRows;
+void fetchAllDocumentChunks;
 
 // Heavy AI SDK + gateway modules are lazy-loaded inside the handler to keep
 // them out of the SSR entry bundle.
