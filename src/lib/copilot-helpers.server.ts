@@ -99,3 +99,45 @@ export async function fetchAllRows(
   }
   return out;
 }
+
+export async function fetchAllDocumentChunks(
+  supabase: any,
+  documentIds: string[],
+  cap = 50000,
+): Promise<Array<{ document_id: string; page_no: number | null; content: string | null }>> {
+  if (documentIds.length === 0) return [];
+  const PAGE = 1000;
+  const out: Array<{ document_id: string; page_no: number | null; content: string | null }> = [];
+  for (let offset = 0; offset < cap; offset += PAGE) {
+    let data: any[] | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await supabase
+        .from("document_chunks")
+        .select("document_id, page_no, content")
+        .in("document_id", documentIds)
+        .order("document_id", { ascending: true })
+        .order("page_no", { ascending: true })
+        .range(offset, Math.min(offset + PAGE - 1, cap - 1));
+      if (!result.error) {
+        data = result.data ?? [];
+        lastError = null;
+        break;
+      }
+      lastError = result.error;
+      if (!isTransientDataApiError(result.error) || attempt === 3) break;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+    if (lastError) throw new Error((lastError as any)?.message ?? String(lastError));
+    if (!data || data.length === 0) break;
+    for (const chunk of data as any[]) {
+      out.push({
+        document_id: chunk.document_id,
+        page_no: chunk.page_no ?? null,
+        content: chunk.content ?? null,
+      });
+    }
+    if (data.length < PAGE) break;
+  }
+  return out;
+}

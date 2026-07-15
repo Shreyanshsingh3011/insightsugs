@@ -100,7 +100,18 @@ type Turn = {
   citationValidation?: CitationValidation;
   retriedForCitations?: boolean;
   toolTrace?: import("@/components/copilot/ToolCallTrace").ToolCall[];
+  retrievalDiagnostics?: RetrievalDiagnostic[];
   citationOk?: boolean;
+};
+
+type RetrievalDiagnostic = {
+  sourceId: string;
+  sourceName: string;
+  sourceType: "sheet" | "document";
+  matcherPath: string;
+  rowsScanned: number;
+  rowsMatched: number;
+  columnsSearched?: string[];
 };
 
 function ThinkingElapsed({ startedAt }: { startedAt: number }) {
@@ -331,6 +342,47 @@ function GroundingInspector({ answer, sources }: { answer: string; sources: Sour
   );
 }
 
+function GroundingDiagnostics({ diagnostics }: { diagnostics?: RetrievalDiagnostic[] }) {
+  const [open, setOpen] = useState(true);
+  if (!diagnostics || diagnostics.length === 0) return null;
+
+  const totalMatched = diagnostics.reduce((sum, d) => sum + (d.rowsMatched ?? 0), 0);
+
+  return (
+    <div className="mb-2 rounded-md border border-border/60 bg-muted/30 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-muted-foreground hover:text-foreground"
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        <ShieldCheck className="h-3.5 w-3.5" />
+        <span className="font-medium">Retrieval diagnostics</span>
+        <span className="text-[0.7rem] opacity-70">{totalMatched} row/chunk match{totalMatched === 1 ? "" : "es"}</span>
+      </button>
+      {open && (
+        <div className="divide-y divide-border/60 px-2 pb-2">
+          {diagnostics.map((d, index) => (
+            <div key={`${d.sourceId}-${d.matcherPath}-${index}`} className="py-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" className="text-[10px] capitalize">{d.sourceType}</Badge>
+                <span className="font-medium">{d.sourceName}</span>
+                <code className="rounded bg-background px-1 font-mono text-[10px]">{d.matcherPath}</code>
+              </div>
+              <div className="mt-1 text-muted-foreground">
+                scanned {d.rowsScanned.toLocaleString()} · matched {d.rowsMatched.toLocaleString()}
+                {d.columnsSearched && d.columnsSearched.length > 0 && (
+                  <> · columns: {d.columnsSearched.slice(0, 8).join(", ")}{d.columnsSearched.length > 8 ? "…" : ""}</>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 type Insight = { title: string; detail: string; severity: "info" | "warning" | "critical" };
 
@@ -497,6 +549,7 @@ function CopilotPage() {
           citationValidation: validation,
           retriedForCitations: vars.retryForCitations,
           toolTrace: (res as any).toolTrace ?? [],
+          retrievalDiagnostics: (res as any).retrievalDiagnostics ?? [],
           citationOk: (res as any).citationOk ?? validation.ok,
         },
       ]);
@@ -1151,6 +1204,10 @@ function CopilotPage() {
                           <RefreshCw className="mr-1 h-3 w-3" /> Re-ask with citations
                         </Button>
                       </div>
+                    )}
+
+                    {t.retrievalDiagnostics && t.retrievalDiagnostics.length > 0 && (
+                      <GroundingDiagnostics diagnostics={t.retrievalDiagnostics} />
                     )}
 
                     {t.toolTrace && t.toolTrace.length > 0 && (

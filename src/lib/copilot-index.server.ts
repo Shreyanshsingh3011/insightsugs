@@ -11,9 +11,9 @@
 //   • valuePostings     — column → normalizedValue → row_index[] for eq/contains
 //   • numericByColumn   — column → sorted [{n, row_index}] for range queries
 //
-// Everything derives from `fetchAllRows`, so if the row-set changes size the
-// cache is discarded and rebuilt. Small enough to stay under Worker memory
-// even for the 50k-row stock summary sheets.
+// Everything derives from `fetchAllRows`, so if the row-set changes the cache
+// is discarded and rebuilt. Small enough to stay under Worker memory even for
+// the 50k-row stock summary sheets.
 
 import { fetchAllRows } from "./copilot-helpers.server";
 import { normalizeText } from "./query-match";
@@ -144,14 +144,25 @@ export async function getSheetIndex(
   supabase: any,
   registryId: string,
 ): Promise<SheetIndex> {
-  // Fingerprint = row count. Cheap head query; if it matches, the cached
-  // index is still valid. On mismatch we drop and rebuild.
-  const { count } = await supabase
-    .from("sheet_rows")
-    .select("row_index", { count: "exact", head: true })
-    .eq("sheet_registry_id", registryId);
+  // Fingerprint = row count + max created_at. Row count alone is unsafe for
+  // sheet refreshes that replace rows with the same length, which made Copilot
+  // answer from stale indexes after uploaded/future sheet changes.
+  const [{ count }, latestRes] = await Promise.all([
+    supabase
+      .from("sheet_rows")
+      .select("row_index", { count: "exact", head: true })
+      .eq("sheet_registry_id", registryId),
+    supabase
+      .from("sheet_rows")
+      .select("created_at")
+      .eq("sheet_registry_id", registryId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   const rowCount = count ?? 0;
-  const cacheKey = `${registryId}:${rowCount}`;
+  const newest = latestRes?.data?.created_at ?? "none";
+  const cacheKey = `${registryId}:${rowCount}:${newest}`;
 
   const cached = CACHE.get(cacheKey);
   if (cached) {
@@ -159,7 +170,7 @@ export async function getSheetIndex(
     return cached.index;
   }
 
-  // Drop any stale entry for this registry (different row count).
+  // Drop any stale entry for this registry (different fingerprint).
   for (const [k] of CACHE) {
     if (k.startsWith(`${registryId}:`)) CACHE.delete(k);
   }
@@ -192,4 +203,15 @@ export function candidatesForTokens(index: SheetIndex, tokens: string[]): number
     out.push(idx);
   }
   return out;
+}
+
+export function candidatesForAnyToken(index: SheetIndex, tokens: string[]): number[] | null {
+  if (tokens.length === 0) return null;
+  const out = new Set<number>();
+  for (const t of tokens) {
+    const bucket = index.tokenPostings.get(t);
+    if (!bucket) continue;
+    for (const rowIndex of bucket) out.add(rowIndex);
+  }
+  return out.size ? Array.from(out) : null;
 }

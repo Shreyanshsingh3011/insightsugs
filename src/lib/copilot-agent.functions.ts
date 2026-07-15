@@ -14,9 +14,10 @@ import {
   parseCitationRowSpec,
   isAiBillingOrQuotaError,
   fetchAllRows,
+  fetchAllDocumentChunks,
 } from "./copilot-helpers.server";
 import { ensureSheetEmbeddings } from "./copilot-embeddings.server";
-import { getSheetIndex, candidatesForTokens, type SheetIndex } from "./copilot-index.server";
+import { getSheetIndex, candidatesForTokens, candidatesForAnyToken, type SheetIndex } from "./copilot-index.server";
 
 // Re-export so existing importers (e.g. the embed-backfill hook) keep working.
 export { ensureSheetEmbeddings };
@@ -29,6 +30,7 @@ void normalizeCitationLabel;
 void parseCitationRowSpec;
 void isAiBillingOrQuotaError;
 void fetchAllRows;
+void fetchAllDocumentChunks;
 
 // Heavy AI SDK + gateway modules are lazy-loaded inside the handler to keep
 // them out of the SSR entry bundle.
@@ -49,6 +51,16 @@ type ToolCallLog = {
   ms: number;
   summary: string;
   result?: any;
+};
+
+type RetrievalDiagnostic = {
+  sourceId: string;
+  sourceName: string;
+  sourceType: "sheet" | "document";
+  matcherPath: string;
+  rowsScanned: number;
+  rowsMatched: number;
+  columnsSearched?: string[];
 };
 
 // -------------------- main server function --------------------
@@ -178,6 +190,7 @@ export async function runCopilotAgent(
         sources: [],
         suggestions: [],
         toolTrace: [],
+        retrievalDiagnostics: [],
         citationOk: true,
         scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
       };
@@ -192,6 +205,7 @@ export async function runCopilotAgent(
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
     const toolTrace: ToolCallLog[] = [];
+    const retrievalDiagnostics: RetrievalDiagnostic[] = [];
     const cachedIndexBySheet = new Map<string, SheetIndex>();
 
     const getSheetIndexCached = async (registryId: string): Promise<SheetIndex> => {
@@ -222,6 +236,10 @@ export async function runCopilotAgent(
     };
 
     // 3) Tools — each records to the ledger and toolTrace.
+
+    const pushRetrievalDiagnostic = (diagnostic: RetrievalDiagnostic) => {
+      retrievalDiagnostics.push(diagnostic);
+    };
 
     const withTrace = async <T>(name: string, args: unknown, fn: () => Promise<T>) => {
       const started = performance.now();
@@ -315,7 +333,11 @@ export async function runCopilotAgent(
               // The index is an accelerator only. If exact token postings miss
               // because the sheet stores a substring/compound value, fall back
               // to the original haystack scan instead of returning 0 rows.
-              if (candidateIds && candidateIds.length === 0) candidateIds = null;
+              if (candidateIds && candidateIds.length === 0) {
+                candidateIds = candidatesForAnyToken(idx, tokens);
+                if (candidateIds && candidateIds.length > 0) mode = "keyword-partial";
+                else candidateIds = null;
+              }
             }
             const candidateRows =
               candidateIds === null
@@ -410,6 +432,16 @@ export async function runCopilotAgent(
             };
           });
 
+          pushRetrievalDiagnostic({
+            sourceId: sheet_id,
+            sourceName: reg.display_name,
+            sourceType: "sheet",
+            matcherPath: `search_sheet_rows:${mode}`,
+            rowsScanned: rows.length,
+            rowsMatched: results.length,
+            columnsSearched: requestedColumns.length ? requestedColumns : columns,
+          });
+
           return {
             _summary: `${results.length} rows from "${reg.display_name}" (${mode}${requestedColumns.length ? `, searched columns: ${requestedColumns.join(", ")}` : ""})`,
             _resultForModel: { sheet: reg.display_name, mode, searched_columns: requestedColumns, matches: results },
@@ -490,6 +522,15 @@ export async function runCopilotAgent(
               data: r.data,
             });
           }
+          pushRetrievalDiagnostic({
+            sourceId: sheet_id,
+            sourceName: reg.display_name,
+            sourceType: "sheet",
+            matcherPath: `filter_sheet_rows:${op}`,
+            rowsScanned: rows.length,
+            rowsMatched: matches.length,
+            columnsSearched: [resolvedColumn],
+          });
           return {
             _summary: `${matches.length} rows match ${resolvedColumn} ${op} ${JSON.stringify(value)}`,
             _resultForModel: {
@@ -848,6 +889,7 @@ export async function runCopilotAgent(
 
             let picked: typeof parsed = [];
             let explain = "";
+            let tatKey: string | undefined;
             if (op === "earliest") {
               picked = [...parsed].sort((a, b) => +a.date - +b.date).slice(0, limit);
               explain = `earliest by ${dateCol}`;
@@ -884,7 +926,7 @@ export async function runCopilotAgent(
                 .slice(0, limit);
               explain = `${dateCol} between ${f.toISOString().slice(0, 10)} and ${t.toISOString().slice(0, 10)}`;
             } else if (op === "tat_breached") {
-              const tatKey = tat_column
+              tatKey = tat_column
                 ? Object.keys(rows[0]?.data ?? {}).find(
                     (k) => k.toLowerCase().trim() === tat_column.toLowerCase().trim(),
                   )
@@ -895,9 +937,10 @@ export async function runCopilotAgent(
                     "No TAT column found. Call get_sheet_schema and pass `tat_column` (a numeric days column).",
                 };
               }
+              const activeTatKey = tatKey;
               const breached = excludeTerminal(parsed)
                 .map((r) => {
-                  const tat = Number(r.data[tatKey]);
+                  const tat = Number(r.data[activeTatKey]);
                   if (!Number.isFinite(tat)) return null;
                   const ageDays = Math.floor((+now - +r.date) / dayMs);
                   return ageDays > tat
@@ -920,6 +963,16 @@ export async function runCopilotAgent(
                 data: r.data,
               });
             }
+
+            pushRetrievalDiagnostic({
+              sourceId: sheet_id,
+              sourceName: reg.display_name,
+              sourceType: "sheet",
+              matcherPath: `date_query_rows:${op}`,
+              rowsScanned: rows.length,
+              rowsMatched: picked.length,
+              columnsSearched: [dateCol, statusKey, tatKey].filter((value): value is string => Boolean(value)),
+            });
 
             return {
               _summary: `${picked.length} rows — ${explain} in "${reg.display_name}"`,
@@ -957,6 +1010,7 @@ export async function runCopilotAgent(
           if (!doc) return { error: "Unknown document_id" };
           let matches: any[] = [];
           let mode: "vector" | "keyword" = "vector";
+          let rowsScanned = 0;
           try {
             // Doc chunks are stored at 768d (google/gemini-embedding-001 via
             // documents.server.embedTexts). Must query with the SAME model or
@@ -972,14 +1026,12 @@ export async function runCopilotAgent(
             });
             if (error) throw new Error(error.message);
             matches = (vectorMatches ?? []) as any[];
+            if (matches.length === 0) throw new Error("No vector matches");
+            rowsScanned = matches.length;
           } catch {
             mode = "keyword";
-            const { data: chunks, error } = await supabase
-              .from("document_chunks")
-              .select("document_id, content, page_no")
-              .eq("document_id", document_id)
-              .limit(300);
-            if (error) return { error: error.message };
+            const chunks = await fetchAllDocumentChunks(supabase, [document_id]);
+            rowsScanned = chunks.length;
             const tokens = query
               .toLowerCase()
               .split(/[^a-z0-9]+/i)
@@ -1009,6 +1061,14 @@ export async function runCopilotAgent(
               similarity: Number(m.similarity?.toFixed?.(3) ?? 0),
               cite: `[doc:${m.document_name ?? doc.name} p.${m.page_no ?? 0}]`,
             };
+          });
+          pushRetrievalDiagnostic({
+            sourceId: document_id,
+            sourceName: doc.name,
+            sourceType: "document",
+            matcherPath: `search_doc_chunks:${mode}`,
+            rowsScanned,
+            rowsMatched: results.length,
           });
           return {
             _summary: `${results.length} chunks from "${doc.name}" (${mode})`,
@@ -1768,6 +1828,14 @@ export async function runCopilotAgent(
                     data: row.data,
                   });
                 }
+                pushRetrievalDiagnostic({
+                  sourceId: r.id,
+                  sourceName: r.display_name,
+                  sourceType: "sheet",
+                  matcherPath: "cross_reference:substring",
+                  rowsScanned: rows.length,
+                  rowsMatched: matched.length,
+                });
                 return {
                   sheet: r.display_name,
                   hits: matched.map((row) => ({
@@ -1784,11 +1852,7 @@ export async function runCopilotAgent(
           const docHits = await Promise.all(
             docs.map(async (d) => {
               try {
-                const { data: chunks } = await supabase
-                  .from("document_chunks")
-                  .select("document_id, content, page_no")
-                  .eq("document_id", d.id)
-                  .limit(300);
+                const chunks = await fetchAllDocumentChunks(supabase, [d.id]);
                 const matched = ((chunks ?? []) as any[])
                   .filter((c) => String(c.content ?? "").toLowerCase().includes(needle))
                   .slice(0, k_per_source);
@@ -1801,6 +1865,14 @@ export async function runCopilotAgent(
                     snippet: c.content ?? "",
                   });
                 }
+                pushRetrievalDiagnostic({
+                  sourceId: d.id,
+                  sourceName: d.name,
+                  sourceType: "document",
+                  matcherPath: "cross_reference:document_full_chunk_substring",
+                  rowsScanned: chunks.length,
+                  rowsMatched: matched.length,
+                });
                 return {
                   document: d.name,
                   hits: matched.map((c) => ({
@@ -2229,6 +2301,7 @@ export async function runCopilotAgent(
         regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
         docs: docs.map((d) => ({ id: d.id, name: d.name })),
         ledgerSink: ledger as any,
+        diagnosticsSink: retrievalDiagnostics,
         strictMatch: data.strictMatch === true,
       });
       toolTrace.push({
@@ -2534,6 +2607,7 @@ export async function runCopilotAgent(
           regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
           docs: docs.map((d) => ({ id: d.id, name: d.name })),
           ledgerSink: ledger as any,
+          diagnosticsSink: retrievalDiagnostics,
           strictMatch: data.strictMatch === true,
         });
         finalAnswer = det.answer;
@@ -2632,6 +2706,7 @@ export async function runCopilotAgent(
       sources,
       suggestions,
       toolTrace,
+      retrievalDiagnostics,
       retrievalLedger: ledger.map((l) =>
         l.kind === "sheet_row"
           ? {
