@@ -51,6 +51,7 @@ import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authe
 import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
 import { Route as AuthenticatedAdminVerifyRoleRouteImport } from './routes/_authenticated/admin.verify-role'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
+import { Route as AuthenticatedAdminSourcesHealthRouteImport } from './routes/_authenticated/admin.sources-health'
 import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_authenticated/admin.smart-alerts'
 import { Route as AuthenticatedAdminHealthRouteImport } from './routes/_authenticated/admin.health'
 import { Route as AuthenticatedAdminEmailGroupsRouteImport } from './routes/_authenticated/admin.email-groups'
@@ -308,6 +309,12 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminSourcesHealthRoute =
+  AuthenticatedAdminSourcesHealthRouteImport.update({
+    id: '/admin/sources-health',
+    path: '/admin/sources-health',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminSmartAlertsRoute =
   AuthenticatedAdminSmartAlertsRouteImport.update({
     id: '/admin/smart-alerts',
@@ -537,6 +544,7 @@ export interface FileRoutesByFullPath {
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/health': typeof AuthenticatedAdminHealthRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
+  '/admin/sources-health': typeof AuthenticatedAdminSourcesHealthRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
@@ -611,6 +619,7 @@ export interface FileRoutesByTo {
   '/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/admin/health': typeof AuthenticatedAdminHealthRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
+  '/admin/sources-health': typeof AuthenticatedAdminSourcesHealthRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
@@ -690,6 +699,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/email-groups': typeof AuthenticatedAdminEmailGroupsRoute
   '/_authenticated/admin/health': typeof AuthenticatedAdminHealthRoute
   '/_authenticated/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
+  '/_authenticated/admin/sources-health': typeof AuthenticatedAdminSourcesHealthRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
@@ -769,6 +779,7 @@ export interface FileRouteTypes {
     | '/admin/email-groups'
     | '/admin/health'
     | '/admin/smart-alerts'
+    | '/admin/sources-health'
     | '/admin/users'
     | '/admin/verify-role'
     | '/agent/activity'
@@ -843,6 +854,7 @@ export interface FileRouteTypes {
     | '/admin/email-groups'
     | '/admin/health'
     | '/admin/smart-alerts'
+    | '/admin/sources-health'
     | '/admin/users'
     | '/admin/verify-role'
     | '/agent/activity'
@@ -921,6 +933,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/email-groups'
     | '/_authenticated/admin/health'
     | '/_authenticated/admin/smart-alerts'
+    | '/_authenticated/admin/sources-health'
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/verify-role'
     | '/_authenticated/agent/activity'
@@ -1300,6 +1313,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/sources-health': {
+      id: '/_authenticated/admin/sources-health'
+      path: '/admin/sources-health'
+      fullPath: '/admin/sources-health'
+      preLoaderRoute: typeof AuthenticatedAdminSourcesHealthRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/smart-alerts': {
       id: '/_authenticated/admin/smart-alerts'
       path: '/admin/smart-alerts'
@@ -1631,6 +1651,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminEmailGroupsRoute: typeof AuthenticatedAdminEmailGroupsRoute
   AuthenticatedAdminHealthRoute: typeof AuthenticatedAdminHealthRoute
   AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
+  AuthenticatedAdminSourcesHealthRoute: typeof AuthenticatedAdminSourcesHealthRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminVerifyRoleRoute: typeof AuthenticatedAdminVerifyRoleRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -1660,6 +1681,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminEmailGroupsRoute: AuthenticatedAdminEmailGroupsRoute,
   AuthenticatedAdminHealthRoute: AuthenticatedAdminHealthRoute,
   AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
+  AuthenticatedAdminSourcesHealthRoute: AuthenticatedAdminSourcesHealthRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminVerifyRoleRoute: AuthenticatedAdminVerifyRoleRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
@@ -1706,13 +1728,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

@@ -100,7 +100,7 @@ export const getSourcesHealth = createServerFn({ method: "GET" })
     const documents: DocumentHealth[] = (docsRaw ?? []).map((d) => {
       const c = chunkCounts.get(d.id) ?? { total: 0, withEmb: 0 };
       let health: DocumentHealth["health"] = "ok";
-      if (d.status_error || d.status === "error") health = "error";
+      if (d.status_error || d.status === "failed") health = "error";
       else if (c.total === 0) health = "no-chunks";
       else if (c.withEmb < c.total) health = "missing-embeddings";
       return {
