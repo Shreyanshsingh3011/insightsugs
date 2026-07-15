@@ -178,17 +178,19 @@ export async function runCopilotAgent(
     // 2) Ledger — every row/chunk the model was given via a tool call.
     const ledger: LedgerEntry[] = [];
     const toolTrace: ToolCallLog[] = [];
-    const cachedRowsBySheet = new Map<
-      string,
-      Array<{ row_index: number; data: Record<string, unknown> }>
-    >();
+    const cachedIndexBySheet = new Map<string, SheetIndex>();
+
+    const getSheetIndexCached = async (registryId: string): Promise<SheetIndex> => {
+      const cached = cachedIndexBySheet.get(registryId);
+      if (cached) return cached;
+      const idx = await getSheetIndex(supabase, registryId);
+      cachedIndexBySheet.set(registryId, idx);
+      return idx;
+    };
 
     const getSheetRows = async (registryId: string) => {
-      const cached = cachedRowsBySheet.get(registryId);
-      if (cached) return cached;
-      const rows = await fetchAllRows(supabase, registryId);
-      cachedRowsBySheet.set(registryId, rows);
-      return rows;
+      const idx = await getSheetIndexCached(registryId);
+      return idx.rows;
     };
 
     const rowColumns = (rows: Array<{ data: Record<string, unknown> }>) => {
