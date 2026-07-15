@@ -292,9 +292,23 @@ export async function runCopilotAgent(
               ? [tokens.join(" ")]
               : searchBasePhrases;
             const hasSpecificTarget = phrases.length > 0;
-            const scored = rows.map((r) => {
-              const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
-              const hay = normalizeHaystack(values);
+            const useIndexHaystack = requestedColumns.length === 0;
+            // Narrow candidate set using the token inverted index — avoids
+            // scanning all 50k+ rows when at least one selective token exists.
+            let candidateIds: number[] | null = null;
+            if (useIndexHaystack && tokens.length > 0) {
+              candidateIds = candidatesForTokens(idx, tokens);
+            }
+            const candidateRows =
+              candidateIds === null
+                ? rows
+                : (candidateIds
+                    .map((ri) => ({ row_index: ri, data: byIndex.get(ri) ?? {} }))
+                    .filter((r) => r.data));
+            const scored = candidateRows.map((r) => {
+              const hay = useIndexHaystack
+                ? (idx.haystackByIndex.get(r.row_index) ?? "")
+                : normalizeHaystack(requestedColumns.map((col) => r.data[col]));
               if (phrases.length > 0) {
                 if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
                 return { row_index: r.row_index, similarity: 10 + tokens.length };
