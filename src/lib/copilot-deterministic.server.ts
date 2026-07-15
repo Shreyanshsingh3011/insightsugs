@@ -227,7 +227,15 @@ function scopeMentionRegex(scopeName: string): RegExp | null {
 // token matching.
 function isInsightShapedQuery(q: string): boolean {
   const s = q.toLowerCase();
-  return /\b(insight|insights|summary|summarise|summarize|overview|highlights?|findings?|what'?s\s+(in|inside|on)|what\s+(should|do)\s+i\s+know|anything\s+(interesting|notable|important)|key\s+(points?|takeaways?)|tell\s+me\s+about|snapshot|health\s+check)\b/.test(s);
+  // Row/record/entity-specific asks are NOT insight-mode even when they
+  // contain "summarize" / "summary" / "tell me about". These are targeted
+  // lookups — Copilot must find that specific row, not dump sheet-wide
+  // Auto-Insights. Example: "Summarize the row for Punjab_Kharar_Store."
+  if (/\b(row|record|entry|item|entity|profile)\b/.test(s)) return false;
+  if (/\bfor\s+["'`]?[\p{L}\p{N}][\p{L}\p{N}_\-./ ]{1,}["'`]?\s*$/u.test(s.trim())) return false;
+  // Broad-scope insight/overview asks only.
+  return /\b(insight|insights|overview|highlights?|findings?|what'?s\s+(in|inside|on)|what\s+(should|do)\s+i\s+know|anything\s+(interesting|notable|important)|key\s+(points?|takeaways?)|snapshot|health\s+check)\b/.test(s)
+    || /\b(summary|summari[sz]e|tell\s+me\s+about)\s+(this|the|these|that|selected)?\s*(sheet|data|dataset|table|source|sources)\b/.test(s);
 }
 
 export async function deterministicAnswer(params: {
