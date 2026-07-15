@@ -11,9 +11,9 @@
 //   • valuePostings     — column → normalizedValue → row_index[] for eq/contains
 //   • numericByColumn   — column → sorted [{n, row_index}] for range queries
 //
-// Everything derives from `fetchAllRows`, so if the row-set changes size the
-// cache is discarded and rebuilt. Small enough to stay under Worker memory
-// even for the 50k-row stock summary sheets.
+// Everything derives from `fetchAllRows`, so if the row-set changes the cache
+// is discarded and rebuilt. Small enough to stay under Worker memory even for
+// the 50k-row stock summary sheets.
 
 import { fetchAllRows } from "./copilot-helpers.server";
 import { normalizeText } from "./query-match";
@@ -144,9 +144,77 @@ export async function getSheetIndex(
   supabase: any,
   registryId: string,
 ): Promise<SheetIndex> {
-  // Fingerprint = row count. Cheap head query; if it matches, the cached
-  // index is still valid. On mismatch we drop and rebuild.
-  const { count } = await supabase
+  // Fingerprint = row count + max created_at. Row count alone is unsafe for
+  // sheet refreshes that replace rows with the same length, which made Copilot
+  // answer from stale indexes after uploaded/future sheet changes.
+  const [{ count }, latestRes] = await Promise.all([
+    supabase
+      .from("sheet_rows")
+      .select("row_index", { count: "exact", head: true })
+      .eq("sheet_registry_id", registryId),
+    supabase
+      .from("sheet_rows")
+      .select("created_at")
+      .eq("sheet_registry_id", registryId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const rowCount = count ?? 0;
+  const newest = latestRes?.data?.created_at ?? "none";
+  const cacheKey = `${registryId}:${rowCount}:${newest}`;
+
+  const cached = CACHE.get(cacheKey);
+  if (cached) {
+    cached.lastUsed = Date.now();
+    return cached.index;
+  }
+
+  // Drop any stale entry for this registry (different fingerprint).
+  for (const [k] of CACHE) {
+    if (k.startsWith(`${registryId}:`)) CACHE.delete(k);
+  }
+
+  const rows = await fetchAllRows(supabase, registryId);
+  const index = buildIndex(registryId, rows);
+  CACHE.set(cacheKey, { key: cacheKey, index, lastUsed: Date.now() });
+  evictIfNeeded();
+  return index;
+}
+
+/**
+ * Fast token-AND candidate lookup using the inverted index. Returns the
+ * smallest posting list intersected with the others, avoiding a full-row
+ * scan when at least one token is selective.
+ */
+export function candidatesForTokens(index: SheetIndex, tokens: string[]): number[] | null {
+  if (tokens.length === 0) return null;
+  const lists: Set<number>[] = [];
+  for (const t of tokens) {
+    const bucket = index.tokenPostings.get(t);
+    if (!bucket || bucket.size === 0) return []; // AND with empty → empty
+    lists.push(bucket);
+  }
+  lists.sort((a, b) => a.size - b.size);
+  const [first, ...rest] = lists;
+  const out: number[] = [];
+  outer: for (const idx of first) {
+    for (const r of rest) if (!r.has(idx)) continue outer;
+    out.push(idx);
+  }
+  return out;
+}
+
+export function candidatesForAnyToken(index: SheetIndex, tokens: string[]): number[] | null {
+  if (tokens.length === 0) return null;
+  const out = new Set<number>();
+  for (const t of tokens) {
+    const bucket = index.tokenPostings.get(t);
+    if (!bucket) continue;
+    for (const rowIndex of bucket) out.add(rowIndex);
+  }
+  return out.size ? Array.from(out) : null;
+}
     .from("sheet_rows")
     .select("row_index", { count: "exact", head: true })
     .eq("sheet_registry_id", registryId);
