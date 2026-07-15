@@ -191,6 +191,10 @@ function detectIntent(q: string): Intent {
   const s = q.toLowerCase();
   if (/\b(how\s+many|count|number\s+of|total\s+number)\b/.test(s)) return { kind: "count" };
   const numHint = /(amount|total|value|cost|price|qty|quantity|days|delay|score|balance|paid|revenue|budget)/i.exec(s)?.[1] ?? null;
+  if (/\b(distribution|breakdown|by\s+\w+|group(ed)?\s+by|per\s+\w+)\b/.test(s)) {
+    const groupHint = /(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department)/i.exec(s)?.[1] ?? null;
+    return { kind: "distribution", hint: groupHint };
+  }
   if (/\b(sum|total)\b/.test(s) && !/\bnumber\b/.test(s)) return { kind: "sum", hint: numHint };
   if (/\b(average|avg|mean)\b/.test(s)) return { kind: "avg", hint: numHint };
   if (/\b(minimum|min|lowest\s+value|smallest)\b/.test(s)) return { kind: "min", hint: numHint };
@@ -199,12 +203,19 @@ function detectIntent(q: string): Intent {
   if (topMatch) return { kind: "top", direction: "highest", hint: numHint, n: Number(topMatch[2] ?? 5) };
   const botMatch = /\b(bottom|lowest|smallest)\s+(\d+)?/.exec(s);
   if (botMatch) return { kind: "top", direction: "lowest", hint: numHint, n: Number(botMatch[2] ?? 5) };
-  if (/\b(distribution|breakdown|by\s+\w+|group(ed)?\s+by|per\s+\w+)\b/.test(s)) {
-    const groupHint = /(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department)/i.exec(s)?.[1] ?? null;
-    return { kind: "distribution", hint: groupHint };
-  }
   if (/\b(list|show|display|which|what\s+are|find|give\s+me)\b/.test(s)) return { kind: "list" };
   return { kind: "generic" };
+}
+
+function scopeMentionRegex(scopeName: string): RegExp | null {
+  const normalized = scopeName.trim().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  if (normalized.length < 3) return null;
+  const escapedParts = normalized
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (escapedParts.length === 0) return null;
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapedParts.join("[^\\p{L}\\p{N}]+")}(?=$|[^\\p{L}\\p{N}])`, "giu");
 }
 
 // -------------------- main entry --------------------
@@ -234,23 +245,23 @@ export async function deterministicAnswer(params: {
   const { supabase, question, regs, docs } = params;
   const cap = params.maxRowsPerSheet ?? 200000;
   const strict = params.strictMatch === true;
-  const intent = detectIntent(question);
   const activeOnly = wantsActiveOnlyRows(question);
   // Strip scope (sheet/doc) name substrings from the question BEFORE running
   // intent detection. Otherwise a sheet called "Stock Summary" hijacks any
   // question that mentions it — "Which contracts expire in the next 30 days
   // in stock summary?" would match `\bsummary\b` and short-circuit to
   // Auto-Insights instead of answering the temporal query.
-  const scopeStripRegex = [
+  const scopeStripPatterns = [
     ...regs.map((r) => r.display_name),
     ...docs.map((d) => d.name),
   ]
     .filter((n) => n && n.trim().length >= 3)
     .sort((a, b) => b.length - a.length)
-    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const questionForIntent = scopeStripRegex.length
-    ? question.replace(new RegExp(scopeStripRegex.join("|"), "gi"), " ")
-    : question;
+    .map(scopeMentionRegex)
+    .filter((re): re is RegExp => re != null);
+  let questionForIntent = question;
+  for (const re of scopeStripPatterns) questionForIntent = questionForIntent.replace(re, " ");
+  const intent = detectIntent(questionForIntent);
   const insightMode = isInsightShapedQuery(questionForIntent);
   const rawTokens = tokenize(question);
   const rawPhrases = extractPhrases(question);
@@ -263,16 +274,18 @@ export async function deterministicAnswer(params: {
   // scope, not row-content filters. Without this we'd search every row for
   // the literal words "stock" / "summary" and return 0 matches even though
   // the sheet is full of relevant data.
+  const normalizedQuestion = question.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const scopeNames = [
     ...regs.map((r) => r.display_name),
     ...docs.map((d) => d.name),
-  ].map((n) => n.toLowerCase());
+  ].map((n) => n.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim());
+  const mentionedScopeTokenSet = new Set<string>();
+  for (const scopeName of scopeNames) {
+    if (!scopeName || !new RegExp(`(^|\\s)${scopeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\s|$)`).test(normalizedQuestion)) continue;
+    for (const token of scopeName.split(/\s+/)) mentionedScopeTokenSet.add(token);
+  }
   const tokenIsOnlyScope = (t: string) =>
-    scopeNames.some((n) => n.includes(t)) &&
-    // Keep the token if it also looks like a real content word (has 4+ chars
-    // and isn't a generic scope word). We only strip when the token is
-    // clearly part of a sheet/doc label.
-    scopeNames.some((n) => n.split(/\s+/).includes(t));
+    mentionedScopeTokenSet.has(t) && scopeNames.some((n) => n.split(/\s+/).includes(t));
   const tokens = rawTokens.filter((t) => !tokenIsOnlyScope(t));
   const phraseIsOnlyScope = (p: string) => {
     const lc = p.toLowerCase().trim();
