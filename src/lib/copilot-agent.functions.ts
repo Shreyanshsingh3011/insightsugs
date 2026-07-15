@@ -937,9 +937,10 @@ export async function runCopilotAgent(
                     "No TAT column found. Call get_sheet_schema and pass `tat_column` (a numeric days column).",
                 };
               }
+              const activeTatKey = tatKey;
               const breached = excludeTerminal(parsed)
                 .map((r) => {
-                  const tat = Number(r.data[tatKey]);
+                  const tat = Number(r.data[activeTatKey]);
                   if (!Number.isFinite(tat)) return null;
                   const ageDays = Math.floor((+now - +r.date) / dayMs);
                   return ageDays > tat
