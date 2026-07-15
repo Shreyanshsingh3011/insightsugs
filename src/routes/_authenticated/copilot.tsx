@@ -655,7 +655,6 @@ function CopilotPage() {
 
   const canSend =
     question.trim().length > 0 &&
-    (selected.size > 0 || selectedDocs.size > 0) &&
     !askMut.isPending;
 
   const regenerate = () => {

@@ -112,7 +112,7 @@ export async function runCopilotAgent(
     // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
     const [{ generateText, stepCountIs, tool }, gatewayModule] = await Promise.all([
       import("ai"),
-      key ? import("@/lib/ai-gateway") : Promise.resolve(null),
+      key ? import("@/lib/ai-gateway.server") : Promise.resolve(null),
     ]);
 
     const withServerTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
@@ -2485,6 +2485,61 @@ export async function runCopilotAgent(
       return { text: det.answer, matched: true };
     }
 
+    function extractSourceMarkers(text: string): string[] {
+      const markers: string[] = [];
+      const re = /\[(sheet:[^\]\n]+|doc:[^\]\n]+)\]/gi;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(text)) !== null) markers.push(match[0]);
+      return Array.from(new Set(markers));
+    }
+
+    function extractNumericTokens(text: string): string[] {
+      const matches = text.match(/[-+]?\d[\d,]*(?:\.\d+)?%?/g) ?? [];
+      return Array.from(new Set(matches.map((value) => value.replace(/,/g, ""))));
+    }
+
+    function polishedAnswerIsSafe(original: string, polished: string): boolean {
+      if (!polished.trim()) return false;
+      const polishedNorm = polished.replace(/,/g, "");
+      for (const marker of extractSourceMarkers(original)) {
+        if (!polished.includes(marker)) return false;
+      }
+      for (const num of extractNumericTokens(original)) {
+        if (!polishedNorm.includes(num)) return false;
+      }
+      return /(^|\n)\s*sources\s*:/i.test(polished);
+    }
+
+    async function polishSelectedSourceAnswer(factualAnswer: string): Promise<string> {
+      if (!factualAnswer.trim()) return factualAnswer;
+      if (/\b(no exact match|i don't have|i don’t have|could not answer|select a sheet|does not contain contract-expiry fields)\b/i.test(factualAnswer)) {
+        return factualAnswer;
+      }
+      const system =
+        "You are a copy editor for a grounded data copilot. Rewrite the draft so it sounds like a concise, fluent LLM answer, but preserve the facts exactly. " +
+        "Never add, remove, round, infer, or change any number, date, name, ID, column name, or bracketed citation. Keep the Sources section and every [sheet:...] / [doc:...] marker verbatim. Output only the rewritten answer.";
+      const prompt = `User question: ${data.question}\n\nDraft answer to polish without changing facts:\n\n${factualAnswer}`;
+      if (key && gatewayModule) {
+        try {
+          const gateway = gatewayModule.createLovableAiGatewayProvider(key);
+          const polished = await withServerTimeout(
+            generateText({
+              model: gateway("openai/gpt-5.5"),
+              system,
+              prompt,
+            }),
+            8_000,
+            "Copilot answer polish",
+          );
+          const text = (polished.text ?? "").trim();
+          if (polishedAnswerIsSafe(factualAnswer, text)) return text;
+        } catch {
+          // Fall through to direct Gemini polish if configured.
+        }
+      }
+      return polishWithGemini(factualAnswer);
+    }
+
     async function polishWithGemini(factualAnswer: string): Promise<string> {
       // Take a factually correct deterministic answer and ask Gemini to rewrite it
       // as clean prose while preserving every number, name, ID, and [citation]
@@ -2508,7 +2563,7 @@ export async function runCopilotAgent(
           "Gemini polish",
         );
         const polished = (polish.text ?? "").trim();
-        return polished.length > 20 ? polished : factualAnswer;
+        return polishedAnswerIsSafe(factualAnswer, polished) ? polished : factualAnswer;
       } catch {
         return factualAnswer;
       }
@@ -2532,17 +2587,16 @@ export async function runCopilotAgent(
       return { text: polished };
     }
 
-    let result: { text?: string } | null = temporalOp
-      ? (() => {
-          const answer = synthesizeTemporalPreflightAnswer();
-          return answer ? { text: answer } : null;
-        })()
-      : null;
+    let result: { text?: string } | null = null;
+    if (temporalOp) {
+      const answer = synthesizeTemporalPreflightAnswer();
+      if (answer) result = { text: await polishSelectedSourceAnswer(answer) };
+    }
     const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
     if (!actionQuestion && !result) {
       const deterministicFirst = await runDeterministic("selected_source_fast_path");
       if (deterministicFirst.matched) {
-        result = { text: deterministicFirst.text };
+        result = { text: await polishSelectedSourceAnswer(deterministicFirst.text ?? "") };
       }
     }
     if (!result && !key) {
@@ -2550,7 +2604,7 @@ export async function runCopilotAgent(
     } else if (!result && key) {
       try {
         const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
-        const model = gateway("google/gemini-3-flash-preview");
+        const model = gateway("openai/gpt-5.5");
         result = await withServerTimeout(
           generateText({
             model,
@@ -2855,7 +2909,7 @@ export async function runCopilotAgent(
         const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
         suggestionModel = createGoogleGenerativeAI({ apiKey: directGeminiKey })("gemini-2.5-flash");
       } else if (key && gatewayModule) {
-        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
+        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("openai/gpt-5.5");
       }
       if (!suggestionModel) throw new Error("No suggestion model available");
       const sug = await withServerTimeout(

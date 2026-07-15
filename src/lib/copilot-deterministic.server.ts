@@ -100,6 +100,8 @@ import {
   candidateMatchesRequestedTarget,
   contentTokens as qmContentTokens,
   extractRequestedColumns,
+  extractSerialNumber,
+  rowSerialNumber,
 } from "./query-match";
 
 function tokenize(q: string): string[] {
@@ -134,6 +136,37 @@ function extractPhrases(q: string): string[] {
 
 function statusColumn(cols: string[]): string | null {
   return pickColumn(cols, [/^status$/i, /status/i, /stage/i, /state/i, /progress/i]);
+}
+
+function requestedFieldColumn(q: string, cols: string[]): string | null {
+  const s = q.toLowerCase();
+  const direct = cols.find((c) => {
+    const normalizedColumn = c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    return normalizedColumn.length >= 3 && new RegExp(`\\b${normalizedColumn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(s);
+  });
+  if (direct) return direct;
+  if (/\b(phone|mobile|contact\s*(no|number)?|whats\s*app|whatsapp|tel(?:ephone)?)\b/.test(s)) {
+    return pickColumn(cols, [/mobile/i, /phone/i, /whats\s*app|whatsapp/i, /contact.*(no|number)|contact$/i, /tel/i]);
+  }
+  if (/\b(email|e-mail|mail\s*id)\b/.test(s)) return pickColumn(cols, [/e-?mail/i, /mail\s*id/i]);
+  if (/\b(status|stage|state|progress)\b/.test(s)) return statusColumn(cols);
+  if (/\b(owner|responsible|assignee|assigned\s*to|person\s*responsible)\b/.test(s)) {
+    return pickColumn(cols, [/responsible/i, /assignee/i, /assigned\s*to/i, /owner/i, /person/i]);
+  }
+  if (/\b(contractor|vendor|agency|supplier)\b/.test(s)) return pickColumn(cols, [/contractor/i, /vendor/i, /agency/i, /supplier/i]);
+  if (/\b(due|deadline|eta|expiry|expires|validity|renewal|date)\b/.test(s)) {
+    return pickColumn(cols, [/expiry|expires|expiration/i, /validity|valid\s*up/i, /renewal/i, /due/i, /deadline/i, /eta/i, /date/i]);
+  }
+  if (/\b(amount|value|balance|rate|price|cost|qty|quantity|total)\b/.test(s)) {
+    return pickColumn(cols, [/amount/i, /value/i, /balance/i, /rate/i, /price|cost/i, /qty|quantity/i, /total/i]);
+  }
+  return null;
+}
+
+function positionalRowNumber(q: string): number | null {
+  const match = /\b(?:row|line)\s*#?\s*(\d{1,6})\b/i.exec(q);
+  if (!match || /\b(row\s*count|count\s*rows|how\s+many\s+rows)\b/i.test(q)) return null;
+  return Number(match[1]);
 }
 
 function isTerminal(row: StoredRow, statusCol: string | null): boolean {
@@ -221,6 +254,8 @@ export async function deterministicAnswer(params: {
   const insightMode = isInsightShapedQuery(questionForIntent);
   const rawTokens = tokenize(question);
   const rawPhrases = extractPhrases(question);
+  const serialLookup = extractSerialNumber(question);
+  const positionalRowLookup = positionalRowNumber(question);
 
   // Strip tokens/phrases that only match the selected sheet's OWN name
   // (or the selected document's name). Example: user picks a sheet called
@@ -345,7 +380,7 @@ export async function deterministicAnswer(params: {
     const requestedColumnNorms = new Set(requestedColumns.map((c) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
     const searchPhrases = phrases.filter((p) => !requestedColumnNorms.has(p));
     const hasCriteria = tokens.length > 0 || phrases.length > 0;
-    const matched = (tokens.length > 0 || phrases.length > 0)
+    let matched = (tokens.length > 0 || phrases.length > 0)
       ? searchRows
           // Always pass tokens, even in strict mode. `matchesExactTarget` uses
           // them to permit identifier lookups split across columns (for example
@@ -356,6 +391,14 @@ export async function deterministicAnswer(params: {
           .sort((a, b) => b.score - a.score)
           .map((x) => x.row)
       : searchRows;
+    if (serialLookup !== null) {
+      const serialMatches = searchRows.filter((row) => rowSerialNumber(row.data) === String(serialLookup));
+      if (serialMatches.length > 0) matched = serialMatches;
+    }
+    if (positionalRowLookup !== null) {
+      const rowHit = rows.find((row) => row.row_index === positionalRowLookup - 1);
+      matched = rowHit ? [rowHit] : [];
+    }
     const matcherPath = insightMode
       ? "auto_insights"
       : activeOnly
@@ -403,6 +446,29 @@ export async function deterministicAnswer(params: {
         .join(" · ");
       return `- ${note ? `${note} — ` : ""}${preview} ${marker}`;
     };
+
+    const fieldCol = requestedFieldColumn(question, cols);
+    if (fieldCol && universe.length > 0 && (hasCriteria || serialLookup !== null || positionalRowLookup !== null)) {
+      parts.push(`**${reg.display_name}** — exact \`${fieldCol}\` value${universe.length === 1 ? "" : "s"}:`);
+      for (const row of universe.slice(0, 10)) {
+        const marker = `[sheet:${reg.display_name} row ${row.row_index + 1} col ${fieldCol}]`;
+        cites.push(marker);
+        params.ledgerSink?.push({
+          kind: "sheet_row",
+          registryId: reg.id,
+          sheetLabel: reg.display_name,
+          rowIndex: row.row_index,
+          data: row.data,
+        });
+        const identifier = Object.entries(row.data)
+          .filter(([key, value]) => key !== fieldCol && cellText(value) !== "")
+          .slice(0, 2)
+          .map(([key, value]) => `${key}: ${cellText(value).slice(0, 50)}`)
+          .join(" · ");
+        parts.push(`- ${identifier ? `${identifier} — ` : ""}${fieldCol}: **${cellText(row.data[fieldCol]) || "(blank)"}** ${marker}`);
+      }
+      continue;
+    }
 
     if (intent.kind === "count") {
       const count = hasCriteria ? matched.length : searchRows.length;
