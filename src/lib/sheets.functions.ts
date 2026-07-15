@@ -1250,16 +1250,43 @@ export const askCopilot = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const normalizedQuestion = normalizeCopilotScopeText(data.question);
+    let scopedData = data;
+    if (data.sheetIds.length === 0 || data.documentIds.length > 0) {
+      const { data: candidateSheets, error: candidateError } = await context.supabase
+        .from("sheet_registry")
+        .select("id, display_name, sheet_type, row_count")
+        .limit(200);
+      if (candidateError) throw new Error(candidateError.message);
+      const mentionedSheet = (candidateSheets ?? [])
+        .map((sheet: any) => ({
+          id: sheet.id as string,
+          display_name: sheet.display_name as string,
+          sheet_type: sheet.sheet_type as string | null,
+          row_count: sheet.row_count as number | null,
+          normalized: normalizeCopilotScopeText(sheet.display_name as string),
+        }))
+        .filter((sheet) => sheet.normalized.length >= 3 && normalizedQuestion.includes(sheet.normalized))
+        .sort((a, b) => b.normalized.length - a.normalized.length)[0];
+      if (mentionedSheet) {
+        scopedData = {
+          ...data,
+          sheetIds: [mentionedSheet.id],
+          // If the user explicitly names a sheet, stale checked documents must
+          // not hijack the turn. The sheet phrase is the scope for this query.
+          documentIds: [],
+        };
+      }
+    }
     const looksLikePlainSheetCount =
-      data.sheetIds.length > 0 &&
-      data.documentIds.length === 0 &&
+      scopedData.sheetIds.length > 0 &&
+      scopedData.documentIds.length === 0 &&
       PLAIN_COPILOT_COUNT_RE.test(data.question) &&
       !/\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached|where|with|by|per|status|owner|contractor|store|jmc|rate|grn|value)\b/i.test(data.question);
     if (looksLikePlainSheetCount) {
       const { data: scopedSheets, error } = await context.supabase
         .from("sheet_registry")
         .select("id, display_name, sheet_type, row_count")
-        .in("id", data.sheetIds);
+        .in("id", scopedData.sheetIds);
       if (error) throw new Error(error.message);
       const rows = (scopedSheets ?? []) as Array<{ id: string; display_name: string; sheet_type: string | null; row_count: number | null }>;
       if (rows.length > 0) {
@@ -1274,13 +1301,13 @@ export const askCopilot = createServerFn({ method: "POST" })
             user_id: context.userId,
             role: "user",
             content: data.question,
-            scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+            scope: { sheetIds: scopedData.sheetIds, documentIds: scopedData.documentIds },
           },
           {
             user_id: context.userId,
             role: "assistant",
             content: answer,
-            scope: { sheetIds: data.sheetIds, documentIds: data.documentIds },
+            scope: { sheetIds: scopedData.sheetIds, documentIds: scopedData.documentIds },
             citations: scoped.map((sheet) => ({
               id: sheet.id,
               name: sheet.display_name,
@@ -1302,7 +1329,7 @@ export const askCopilot = createServerFn({ method: "POST" })
             truncated: false,
           })),
           suggestions: [],
-          toolTrace: [{ name: "sheet_count_metadata", args: { sheetIds: data.sheetIds }, ok: true, ms: 0, summary: "Answered from selected sheet metadata." }],
+          toolTrace: [{ name: "sheet_count_metadata", args: { sheetIds: scopedData.sheetIds }, ok: true, ms: 0, summary: "Answered from selected sheet metadata." }],
           retrievalLedger: [],
           citationOk: true,
           unverifiedCitations: [],
@@ -1310,7 +1337,7 @@ export const askCopilot = createServerFn({ method: "POST" })
       }
     }
     const { runCopilotAgent } = await import("./copilot-agent.functions");
-    return await runCopilotAgent(data, {
+    return await runCopilotAgent(scopedData, {
       supabase: context.supabase,
       userId: context.userId,
     });
