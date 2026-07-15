@@ -8,7 +8,7 @@
 // citation markers plus a "Sources:" section so it satisfies the same
 // citation contract the LLM path uses.
 
-type SheetReg = { id: string; display_name: string };
+type SheetReg = { id: string; display_name: string; row_count?: number | null };
 type DocMeta = { id: string; name: string };
 
 type StoredRow = { row_index: number; data: Record<string, unknown> };
@@ -219,6 +219,25 @@ export async function deterministicAnswer(params: {
 
   const cites: string[] = [];
   const parts: string[] = [];
+
+  // Fast path for plain sheet-size questions. Do not fetch 50k+ rows just to
+  // answer "how many rows are in this selected sheet?" — use registry metadata
+  // and a sheet-level citation instead.
+  const noRowCriteria = tokens.length === 0 && basePhrases.length === 0 && !activeOnly && !insightMode;
+  if (intent.kind === "count" && noRowCriteria && regs.length > 0) {
+    const countParts: string[] = [];
+    for (const reg of regs) {
+      const marker = `[sheet:${reg.display_name}]`;
+      cites.push(marker);
+      countParts.push(`**${reg.display_name}** — ${fmt(reg.row_count ?? 0)} total rows. ${marker}`);
+    }
+    const uniq = Array.from(new Set(cites));
+    return {
+      answer: countParts.join("\n") + `\n\nSources:\n${uniq.map((m) => `- ${m}`).join("\n")}`,
+      citations: uniq,
+      matched: true,
+    };
+  }
 
   // Load rows for every scoped sheet in parallel.
   const sheetRows = await Promise.all(
