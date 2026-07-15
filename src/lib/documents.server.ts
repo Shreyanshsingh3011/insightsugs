@@ -114,6 +114,51 @@ async function ocrImage(buffer: ArrayBuffer, mime: string): Promise<string> {
   return j.choices?.[0]?.message?.content ?? "";
 }
 
+async function ocrPdfWithGemini(
+  buffer: ArrayBuffer,
+  name: string,
+): Promise<ExtractedText | null> {
+  if (buffer.byteLength >= 15 * 1024 * 1024) return null;
+  const b64 = Buffer.from(buffer).toString("base64");
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Lovable-API-Key": LOVABLE_API_KEY,
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                "OCR every page of this PDF, including scanned pages, images, tables, and handwriting. " +
+                "Return plain text with [PAGE n] markers before each page's text. " +
+                "Preserve tables as tab-separated rows. No commentary.",
+            },
+            {
+              type: "file",
+              file: {
+                filename: name || "document.pdf",
+                file_data: `data:application/pdf;base64,${b64}`,
+              },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const text = j.choices?.[0]?.message?.content ?? "";
+  if (!text.trim()) return null;
+  const pages = splitOcrPages(text);
+  return { pages, pageCount: pages.length };
+}
+
 export async function extractText(
   buffer: ArrayBuffer,
   mime: string,
@@ -123,40 +168,15 @@ export async function extractText(
   if (mime === "application/pdf" || lower.endsWith(".pdf")) {
     const result = await extractPdf(buffer);
     const total = result.pages.reduce((n, p) => n + p.text.trim().length, 0);
-    // OCR fallback only when we extracted very little text AND the file is
-    // small enough to send to Gemini in one shot (~10 MB).
-    if (total < 200 && buffer.byteLength < 10 * 1024 * 1024) {
-      const b64 = Buffer.from(buffer).toString("base64");
-      const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Lovable-API-Key": LOVABLE_API_KEY,
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: "OCR every page of this PDF. Return plain text with [PAGE n] markers between pages.",
-                },
-                {
-                  type: "image_url",
-                  image_url: { url: `data:application/pdf;base64,${b64}` },
-                },
-              ],
-            },
-          ],
-        }),
-      });
-      if (res.ok) {
-        const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-        const text = j.choices?.[0]?.message?.content ?? "";
-        const pages = splitOcrPages(text);
-        return { pages, pageCount: pages.length };
+    const avgPerPage = total / Math.max(1, result.pageCount);
+    // OCR when the native extractor got very little text — indicates a
+    // scanned/image PDF. Threshold: <500 chars total OR <80 chars/page avg.
+    const needsOcr = total < 500 || avgPerPage < 80;
+    if (needsOcr && LOVABLE_API_KEY) {
+      const ocr = await ocrPdfWithGemini(buffer, name);
+      if (ocr) {
+        const ocrTotal = ocr.pages.reduce((n, p) => n + p.text.trim().length, 0);
+        if (ocrTotal > total) return ocr;
       }
     }
     return result;
