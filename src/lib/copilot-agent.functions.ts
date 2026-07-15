@@ -399,31 +399,50 @@ export async function runCopilotAgent(
         withTrace("filter_sheet_rows", { sheet_id, column, op, value, limit }, async () => {
           const reg = sheetById.get(sheet_id);
           if (!reg) return { error: "Unknown sheet_id" };
-          const rows = await getSheetRows(sheet_id);
+          const idx = await getSheetIndexCached(sheet_id);
+          const rows = idx.rows;
           const num = typeof value === "number" ? value : Number(value);
           const numeric = ["gt", "gte", "lt", "lte"].includes(op);
-          const s = String(value).toLowerCase();
+          const s = String(value).toLowerCase().trim();
           const matches: Array<{ row_index: number; data: Record<string, unknown> }> = [];
-          for (const r of rows) {
-            const v = r.data[column];
-            if (v == null) continue;
-            let hit = false;
-            if (numeric) {
-              const nv = Number(v);
-              if (!Number.isFinite(nv) || !Number.isFinite(num)) continue;
-              if (op === "gt") hit = nv > num;
-              else if (op === "gte") hit = nv >= num;
-              else if (op === "lt") hit = nv < num;
-              else if (op === "lte") hit = nv <= num;
-            } else {
-              const sv = String(v).toLowerCase();
-              if (op === "eq") hit = sv === s;
-              else if (op === "neq") hit = sv !== s;
-              else if (op === "contains") hit = sv.includes(s);
-            }
-            if (hit) {
-              matches.push(r);
+
+          // Fast path: eq via valuePostings (O(1) lookup instead of full scan).
+          if (op === "eq") {
+            const colMap = idx.valuePostings.get(column);
+            const hits = colMap?.get(s) ?? [];
+            for (const ri of hits) {
+              matches.push({ row_index: ri, data: idx.byIndex.get(ri) ?? {} });
               if (matches.length >= limit) break;
+            }
+          } else if (numeric) {
+            // Fast path: binary-search the sorted numeric list.
+            const nums = idx.numericByColumn.get(column) ?? [];
+            if (Number.isFinite(num) && nums.length > 0) {
+              for (const { n, row_index } of nums) {
+                let hit = false;
+                if (op === "gt") hit = n > num;
+                else if (op === "gte") hit = n >= num;
+                else if (op === "lt") hit = n < num;
+                else if (op === "lte") hit = n <= num;
+                if (hit) {
+                  matches.push({ row_index, data: idx.byIndex.get(row_index) ?? {} });
+                  if (matches.length >= limit) break;
+                }
+              }
+            }
+          } else {
+            // neq / contains — must visit every row in that column
+            for (const r of rows) {
+              const v = r.data[column];
+              if (v == null) continue;
+              const sv = String(v).toLowerCase();
+              let hit = false;
+              if (op === "neq") hit = sv !== s;
+              else if (op === "contains") hit = sv.includes(s);
+              if (hit) {
+                matches.push(r);
+                if (matches.length >= limit) break;
+              }
             }
           }
           for (const r of matches) {
