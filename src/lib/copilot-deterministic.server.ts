@@ -176,7 +176,13 @@ function isTerminal(row: StoredRow, statusCol: string | null): boolean {
 
 function wantsActiveOnlyRows(q: string): boolean {
   const s = q.toLowerCase();
-  return /\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached)\b/.test(s);
+  const activeHit = /\b(active|open|pending|in\s*progress|ongoing|incomplete|not\s+completed|overdue|delayed|delay|late|breach|breached)\b/.test(s);
+  if (!activeHit) return false;
+  // Mixed-status questions ("delayed vs completed", "pending and closed",
+  // "list open and done tasks") must not silently drop terminal rows.
+  const terminalHit = /\b(complete[d]?|completion|done|closed|finished|resolved|delivered|dispatched|handover|handed\s+over|cancel(l)?ed)\b/.test(s);
+  if (terminalHit) return false;
+  return true;
 }
 
 type Intent =
@@ -191,7 +197,8 @@ function detectIntent(q: string): Intent {
   const s = q.toLowerCase();
   if (/\b(how\s+many|count|number\s+of|total\s+number)\b/.test(s)) return { kind: "count" };
   const numHint = /(amount|total|value|cost|price|qty|quantity|days|delay|score|balance|paid|revenue|budget)/i.exec(s)?.[1] ?? null;
-  if (/\b(distribution|breakdown|by\s+\w+|group(ed)?\s+by|per\s+\w+)\b/.test(s)) {
+  if (/\b(distribution|breakdown|group(ed)?\s+by|per\s+\w+)\b/.test(s)
+    || /\bby\s+(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department|month|quarter|year|week|day|weekday|assignee|customer|client)\b/.test(s)) {
     const groupHint = /(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department)/i.exec(s)?.[1] ?? null;
     return { kind: "distribution", hint: groupHint };
   }
