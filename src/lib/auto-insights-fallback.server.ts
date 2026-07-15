@@ -57,6 +57,13 @@ function valueCounts(rows: Record<string, unknown>[], column: string) {
     .sort((a, b) => b.count - a.count);
 }
 
+// Name patterns that almost always indicate non-categorical columns
+// (identifiers, monetary/quantitative measures, timestamps, free text).
+const ID_NAME_RE = /(^|[\s_\-])(id|no|num|number|code|ref|serial|sr|s\.no|sno|uid|uuid|guid|pan|gstin|tin|mobile|phone|contact|email|pin|pincode|zip|account|acct)([\s_\-]|$)/i;
+const MEASURE_NAME_RE = /(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|units|weight|volume|kw|mw|kwh|mwh|capacity|percent|percentage|%|score|days|duration|age|tat|distance|length|width|height|area|gross|net|paid|due|outstanding)/i;
+const FREETEXT_NAME_RE = /(remark|comment|note|description|desc|address|reason|summary)/i;
+const DATE_NAME_RE = /(date|time|timestamp|created|updated|start|end|deadline|due)/i;
+
 function isMostlyNumeric(rows: Record<string, unknown>[], column: string) {
   let total = 0;
   let numeric = 0;
@@ -69,14 +76,56 @@ function isMostlyNumeric(rows: Record<string, unknown>[], column: string) {
   return total >= 3 && numeric / total >= 0.7;
 }
 
+// Score a column's suitability as a categorical bucket. Higher = better.
+// Returns null when the column should be rejected outright.
+function scoreCategorical(rows: Record<string, unknown>[], column: string): number | null {
+  // Name-based rejection: IDs, measures, free text, dates are never categorical.
+  if (ID_NAME_RE.test(column) || MEASURE_NAME_RE.test(column) || FREETEXT_NAME_RE.test(column) || DATE_NAME_RE.test(column)) {
+    // Allow "status/stage/type/etc." even if the name also matches (handled by preferred pass).
+    if (!/status|stage|state|priority|severity|progress|type|category|class|group|region|zone|department|dept/i.test(column)) {
+      return null;
+    }
+  }
+  if (isMostlyNumeric(rows, column)) return null;
+
+  const values = rows.map((r) => cellText(r[column])).filter(Boolean);
+  if (values.length < 3) return null;
+  const distinct = new Set(values);
+  const distinctCount = distinct.size;
+  if (distinctCount < 2) return null;
+
+  // Cardinality ratio: prefer low-cardinality columns (few repeated buckets).
+  const ratio = distinctCount / values.length;
+  if (ratio > 0.5) return null; // too many unique values → looks like an identifier / free text
+  if (distinctCount > 50) return null; // too many buckets to be a useful "Top" chart
+
+  // Reject columns where sampled values look like codes/IDs (long alphanumerics, mostly digits).
+  const sample = Array.from(distinct).slice(0, 20);
+  const codeLike = sample.filter((v) => /^[A-Z0-9][A-Z0-9\-_/]{6,}$/i.test(v) || /^\d{4,}$/.test(v)).length;
+  if (codeLike / sample.length >= 0.6) return null;
+
+  // Reject long free-text (avg length > 40 chars).
+  const avgLen = values.reduce((a, v) => a + v.length, 0) / values.length;
+  if (avgLen > 40) return null;
+
+  // Score: reward low cardinality ratio, penalize very-high or very-low distinct counts.
+  const idealDistinct = Math.min(12, Math.max(3, Math.round(Math.sqrt(values.length))));
+  const distinctPenalty = Math.abs(distinctCount - idealDistinct) / idealDistinct;
+  return (1 - ratio) * 10 - distinctPenalty;
+}
+
 function chooseCategoricalColumn(rows: Record<string, unknown>[], columns: string[]) {
-  const eligible = columns.filter((c) => !isMostlyNumeric(rows, c));
-  const preferred = eligible.find((c) => /status|stage|state|priority|severity|progress|owner|project|activity|task|type/i.test(c));
-  if (preferred) return preferred;
-  return eligible.find((c) => {
-    const distinct = new Set(rows.map((r) => cellText(r[c])).filter(Boolean)).size;
-    return distinct >= 2 && distinct <= Math.max(20, Math.ceil(rows.length * 0.35));
-  });
+  const scored = columns
+    .map((c) => ({ column: c, score: scoreCategorical(rows, c) }))
+    .filter((c): c is { column: string; score: number } => c.score != null);
+  if (scored.length === 0) return undefined;
+
+  // Prefer explicit status/stage/type columns when present.
+  const preferred = scored.find((c) => /status|stage|state|priority|severity|progress|type|category|class|group/i.test(c.column));
+  if (preferred) return preferred.column;
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0].column;
 }
 
 function chooseNumericColumn(rows: Record<string, unknown>[], columns: string[]) {
