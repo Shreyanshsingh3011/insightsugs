@@ -59,7 +59,7 @@ export const Route = createFileRoute("/_authenticated/copilot")({
   component: CopilotPage,
 });
 
-type Source = { id: string; name: string; type: string; rowsUsed: number; truncated: boolean };
+type Source = { id: string; name: string; type: string; rowsUsed: number; rowsTotal?: number; truncated: boolean };
 type CachedSourceList<T> = { rows: T[]; cachedAt: string };
 type ChartSpec = {
   sheetId: string;
@@ -112,6 +112,7 @@ type RetrievalDiagnostic = {
   rowsScanned: number;
   rowsMatched: number;
   columnsSearched?: string[];
+  reason?: string;
 };
 
 function ThinkingElapsed({ startedAt }: { startedAt: number }) {
@@ -371,6 +372,7 @@ function GroundingDiagnostics({ diagnostics }: { diagnostics?: RetrievalDiagnost
               </div>
               <div className="mt-1 text-muted-foreground">
                 scanned {d.rowsScanned.toLocaleString()} · matched {d.rowsMatched.toLocaleString()}
+                {d.reason && <> · {d.reason}</>}
                 {d.columnsSearched && d.columnsSearched.length > 0 && (
                   <> · columns: {d.columnsSearched.slice(0, 8).join(", ")}{d.columnsSearched.length > 8 ? "…" : ""}</>
                 )}
@@ -459,6 +461,20 @@ function CopilotPage() {
   useEffect(() => {
     writeCachedSourceList(COPILOT_DOCUMENTS_CACHE_KEY, liveDocuments);
   }, [liveDocuments]);
+
+  useEffect(() => {
+    if (visibleSheets.length === 0 && visibleDocuments.length === 0) return;
+    const sheetIds = new Set(visibleSheets.map((s: any) => s.id));
+    const documentIds = new Set(visibleDocuments.map((d: any) => d.id));
+    setSelected((current) => {
+      const next = new Set([...current].filter((id) => sheetIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+    setSelectedDocs((current) => {
+      const next = new Set([...current].filter((id) => documentIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleSheets, visibleDocuments]);
 
   const [strictMatch, setStrictMatch] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -1297,8 +1313,9 @@ function CopilotPage() {
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {t.sources.map((s) => (
                           <Badge key={s.id} variant="outline" className="text-xs">
-                            {s.name} ({s.rowsUsed}
-                            {s.truncated ? "+" : ""} rows)
+                            {s.name} ({s.rowsUsed > 0
+                              ? `${s.rowsUsed}${s.truncated ? "+" : ""} matched rows`
+                              : `${(s.rowsTotal ?? 0).toLocaleString()} scoped rows · 0 matched`})
                           </Badge>
                         ))}
                       </div>

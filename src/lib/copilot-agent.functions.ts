@@ -61,6 +61,7 @@ type RetrievalDiagnostic = {
   rowsScanned: number;
   rowsMatched: number;
   columnsSearched?: string[];
+  reason?: string;
 };
 
 // -------------------- main server function --------------------
@@ -773,6 +774,13 @@ export async function runCopilotAgent(
       const scored: Array<{ key: string; score: number; parseRate: number }> = [];
       const measureName = /(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|unit|units|stock|jmc|cons|grn|mrn|transfer|loan|paid|outstanding|percent|percentage|score|weight|volume|capacity)/i;
       const idName = /(^|[\s_.-])(id|no|num|number|code|ref|serial|sr|s\.?no|sno|po|mrn|grn|invoice|bill)([\s_.-]|$)/i;
+      const explicitDateName = /(date|due|deadline|expir|expires|expiry|expiration|renewal|valid|validity|valid\s+up\s*to|valid\s+till|valid\s+through|period\s+to|contract\s+end|eta|target|planned|actual|completion|closed|opened|created|updated|receipt|dispatch|delivery|schedule|milestone)/i;
+      const sampleRows = rows.length <= 1200
+        ? rows
+        : [
+            ...rows.slice(0, 200),
+            ...rows.filter((_, index) => index >= 200 && index % Math.max(1, Math.floor(rows.length / 1000)) === 0).slice(0, 1000),
+          ];
       const hasDateShape = (value: unknown) => {
         const s = String(value ?? "").trim();
         if (!s) return false;
@@ -784,17 +792,22 @@ export async function runCopilotAgent(
       for (const k of keys) {
         const kl = k.toLowerCase();
         const nameHit = DATE_COL_HINTS.some((h) => kl.includes(h));
-        const safeNameHit = nameHit && !measureName.test(k) && !idName.test(k);
+        const explicitDateHit = explicitDateName.test(k);
+        // Do not let numeric inventory/finance names become fake dates, but
+        // never block genuine mixed names like "Transfer Date", "GRN Date",
+        // "Validity Date", or "Contract End Date" just because they also
+        // contain transfer/GRN/contract keywords.
+        const safeNameHit = nameHit && (explicitDateHit || (!measureName.test(k) && !idName.test(k)));
         const hintText = hint?.toLowerCase() ?? "";
         const hintHit = hintText
           ? hintText.startsWith("expir")
-            ? /expir|expiry|expires|renewal|end\s*date/i.test(k)
+            ? /expir|expiry|expires|renewal|valid|validity|valid\s+up\s*to|valid\s+till|valid\s+through|period\s+to|contract\s+end|end\s*date/i.test(k)
             : kl.includes(hintText)
           : false;
         let parsed = 0;
         let non_empty = 0;
         let shaped = 0;
-        for (const r of rows.slice(0, 150)) {
+        for (const r of sampleRows) {
           const v = r.data[k];
           if (v == null || v === "") continue;
           non_empty++;
@@ -873,9 +886,9 @@ export async function runCopilotAgent(
             }
             if (!dateCol) {
               const availableColumns = rowColumns(rows).slice(0, 60);
+              const explicitDateColumnName = /(date|due|deadline|expir|expires|expiry|expiration|renewal|valid|validity|valid\s+up\s*to|valid\s+till|valid\s+through|period\s+to|contract\s+end|eta|target|planned|actual|completion|closed|opened|created|updated|receipt|dispatch|delivery|schedule|milestone)/i;
               const dateLikeColumns = availableColumns.filter((k) =>
-                /date|due|deadline|expir|expiration|renewal|end|target|planned|delivery|dispatch|receipt|eta|valid|period|milestone|schedule/i.test(k) &&
-                !/(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|unit|units|stock|jmc|cons|grn|mrn|transfer|loan|paid|outstanding|percent|percentage|score|weight|volume|capacity)/i.test(k),
+                explicitDateColumnName.test(k),
               ).slice(0, 20);
               pushRetrievalDiagnostic({
                 sourceId: sheet_id,
@@ -885,6 +898,9 @@ export async function runCopilotAgent(
                 rowsScanned: rows.length,
                 rowsMatched: 0,
                 columnsSearched: dateLikeColumns,
+                reason: dateLikeColumns.length > 0
+                  ? "Columns with date/expiry-like names were present but their cells did not parse as dates."
+                  : "No date, expiry, renewal, validity, due, ETA, delivery, dispatch, receipt, schedule, or milestone column exists in the selected sheet.",
               });
               return {
                 error:
@@ -2399,7 +2415,7 @@ export async function runCopilotAgent(
             const columnNote = columns?.length ? `; available columns include ${columns.slice(0, 8).join(", ")}` : "";
             return `${sheet} (${dateNote}${columnNote})`;
           }).join("; ");
-          return `The selected sheet does not contain contract-expiry data, so I cannot identify contracts expiring in the next ${expiryWindowDays ?? "requested"} days from it. I checked ${sheetSummaries}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
+          return `The selected sheet is scoped correctly, but it does not contain contract-expiry fields, so there are no contract-expiry rows I can return for the next ${expiryWindowDays ?? "requested"} days. I checked ${sheetSummaries}. Select a contracts/NIT sheet with an expiry, validity, renewal, or end-date column for this question. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
         }
         return `I could not answer the date-window query because no usable date column was detected in the selected sheet${preflightErrorSheets.length === 1 ? "" : "s"}: ${preflightErrorSheets.map(({ sheet }) => sheet).join(", ")}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
       }
