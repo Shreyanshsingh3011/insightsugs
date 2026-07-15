@@ -148,6 +148,41 @@ export function matchesAllPhrases(hay: string, phrases: string[]): boolean {
   return true;
 }
 
+function isCodeLikeToken(token: string): boolean {
+  if (/\d/.test(token)) return true;
+  if (token.length <= 3) return true;
+  // Acronyms often arrive lower-cased by normalization (NBPDCL -> nbpdcl).
+  // They should be matched as row-level tokens, not as part of one long
+  // contiguous natural-language phrase.
+  return token.length >= 4 && !/[aeiou]/.test(token);
+}
+
+function phraseCanMatchAcrossColumns(phrase: string): boolean {
+  const parts = phrase.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  return parts.some(isCodeLikeToken);
+}
+
+/**
+ * Strict but sheet-friendly matching. Natural names still require a contiguous
+ * phrase ("Kunti Devi" never becomes surname-only matching), while code-like
+ * lookups such as "NBPDCL NIT 48 Samastipur" may match when every requested
+ * token appears anywhere in the row, even if values are split across columns.
+ */
+export function matchesExactTarget(hay: string, phrases: string[], tokens: string[]): boolean {
+  if (phrases.length === 0) return tokens.length > 0 && tokens.every((t) => phraseHit(hay, t));
+  if (matchesAllPhrases(hay, phrases)) return true;
+  if (tokens.length === 0) return false;
+  if (!phrases.every(phraseCanMatchAcrossColumns)) return false;
+  return tokens.every((t) => phraseHit(hay, t));
+}
+
+export function exactTargetScore(hay: string, phrases: string[], tokens: string[]): number {
+  if (phrases.length > 0 && matchesAllPhrases(hay, phrases)) return 20 + tokens.length;
+  if (matchesExactTarget(hay, phrases, tokens)) return 10 + tokens.length;
+  return 0;
+}
+
 /** Count how many strict phrases hit — for graceful "partial match" fallback. */
 export function countPhraseHits(hay: string, phrases: string[]): number {
   let n = 0;

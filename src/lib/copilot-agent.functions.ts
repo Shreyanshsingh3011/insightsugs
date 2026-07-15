@@ -264,7 +264,7 @@ export async function runCopilotAgent(
           const idx = await getSheetIndexCached(sheet_id);
           const rows = idx.rows;
           const byIndex = idx.byIndex;
-          const { strictPhrases, normalizeHaystack, matchesAllPhrases, countPhraseHits, contentTokens, extractRequestedColumns } =
+            const { strictPhrases, normalizeHaystack, matchesAllPhrases, matchesExactTarget, exactTargetScore, countPhraseHits, contentTokens, extractRequestedColumns } =
             await import("./query-match");
           const columns = idx.columns;
           const requestedColumns = extractRequestedColumns(query, columns);
@@ -328,8 +328,7 @@ export async function runCopilotAgent(
                 ? (idx.haystackByIndex.get(r.row_index) ?? "")
                 : normalizeHaystack(requestedColumns.map((col) => r.data[col]));
               if (phrases.length > 0) {
-                if (!matchesAllPhrases(hay, phrases)) return { row_index: r.row_index, similarity: 0 };
-                return { row_index: r.row_index, similarity: 10 + tokens.length };
+                return { row_index: r.row_index, similarity: exactTargetScore(hay, phrases, tokens) };
               }
               if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) {
                 return { row_index: r.row_index, similarity: 0 };
@@ -352,7 +351,7 @@ export async function runCopilotAgent(
                   const hay = normalizeHaystack(values);
                   return {
                     row_index: r.row_index,
-                    similarity: matchesAllPhrasesFuzzy(hay, phrases, fuzzyNameInText) ? 5 : 0,
+                    similarity: matchesExactTarget(hay, phrases, tokens) || matchesAllPhrasesFuzzy(hay, phrases, fuzzyNameInText) ? 5 : 0,
                   };
                 })
                 .filter((s) => s.similarity > 0)
@@ -1257,7 +1256,7 @@ export async function runCopilotAgent(
       }),
       execute: async ({ query, k_per_sheet }) =>
         withTrace("find_across_sheets", { query, k_per_sheet }, async () => {
-          const { strictPhrases, normalizeHaystack, matchesAllPhrases, contentTokens } =
+          const { strictPhrases, normalizeHaystack, exactTargetScore, contentTokens } =
             await import("./query-match");
           const phrases = strictPhrases(query);
           const tokens = contentTokens(query);
@@ -1269,7 +1268,7 @@ export async function runCopilotAgent(
               const hay = normalizeHaystack(Object.values(row.data));
               let score = 0;
               if (phrases.length > 0) {
-                if (matchesAllPhrases(hay, phrases)) score = 10 + tokens.length;
+                score = exactTargetScore(hay, phrases, tokens);
               } else if (tokens.length > 0 && tokens.every((t) => hay.includes(t))) {
                 score = tokens.length;
               }
