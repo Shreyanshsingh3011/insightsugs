@@ -315,7 +315,7 @@ export async function runCopilotAgent(
               // The index is an accelerator only. If exact token postings miss
               // because the sheet stores a substring/compound value, fall back
               // to the original haystack scan instead of returning 0 rows.
-              if (candidateIds.length === 0) candidateIds = null;
+              if (candidateIds && candidateIds.length === 0) candidateIds = null;
             }
             const candidateRows =
               candidateIds === null
