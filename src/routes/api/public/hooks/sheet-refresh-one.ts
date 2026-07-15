@@ -28,11 +28,24 @@ export const Route = createFileRoute("/api/public/hooks/sheet-refresh-one")({
 
         const { data: reg, error: regErr } = await supabaseAdmin
           .from("sheet_registry")
-          .select("id, user_id, display_name")
+          .select("id, user_id, display_name, source_url, apps_script_url")
           .eq("id", id)
           .maybeSingle();
         if (regErr) return Response.json({ ok: false, error: regErr.message }, { status: 500 });
         if (!reg) return Response.json({ ok: false, error: "sheet not found" }, { status: 404 });
+
+        // Uploaded XLSX sources have no live URL to re-fetch. Skip cleanly so
+        // the scheduled coordinator does not spin on 500s forever.
+        const src = String((reg as any).source_url ?? (reg as any).apps_script_url ?? "");
+        if (!src || src.startsWith("upload://")) {
+          return Response.json({
+            ok: true,
+            id: reg.id,
+            name: reg.display_name,
+            skipped: true,
+            reason: "static upload — no live source to refresh",
+          });
+        }
 
         const t0 = Date.now();
         try {
