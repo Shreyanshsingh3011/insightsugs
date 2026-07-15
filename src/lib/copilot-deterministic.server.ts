@@ -186,7 +186,7 @@ export async function deterministicAnswer(params: {
   strictMatch?: boolean;
 }): Promise<{ answer: string; citations: string[]; matched: boolean }> {
   const { supabase, question, regs, docs } = params;
-  const cap = params.maxRowsPerSheet ?? 8000;
+  const cap = params.maxRowsPerSheet ?? 200000;
   const strict = params.strictMatch === true;
   const intent = detectIntent(question);
   const activeOnly = wantsActiveOnlyRows(question);
@@ -334,8 +334,10 @@ export async function deterministicAnswer(params: {
       const count = hasCriteria ? matched.length : searchRows.length;
       const denominatorLabel = activeOnly ? "active" : "total";
       const columnNote = requestedColumns.length ? ` in column(s): ${requestedColumns.map((c) => `\`${c}\``).join(", ")}` : "";
+      const sheetMarker = `[sheet:${reg.display_name}]`;
+      cites.push(sheetMarker);
       parts.push(
-        `**${reg.display_name}** — ${fmt(count)} matching rows${columnNote}${hasCriteria ? ` (of ${fmt(searchRows.length)} ${denominatorLabel})` : ""}.`,
+        `**${reg.display_name}** — ${fmt(count)} matching rows${columnNote}${hasCriteria ? ` (of ${fmt(searchRows.length)} ${denominatorLabel})` : ""}. ${sheetMarker}`,
       );
       for (const r of universe.slice(0, 3)) parts.push(emitRow(r));
       continue;
