@@ -312,6 +312,10 @@ export async function runCopilotAgent(
             let candidateIds: number[] | null = null;
             if (useIndexHaystack && tokens.length > 0) {
               candidateIds = candidatesForTokens(idx, tokens);
+              // The index is an accelerator only. If exact token postings miss
+              // because the sheet stores a substring/compound value, fall back
+              // to the original haystack scan instead of returning 0 rows.
+              if (candidateIds.length === 0) candidateIds = null;
             }
             const candidateRows =
               candidateIds === null
@@ -430,6 +434,10 @@ export async function runCopilotAgent(
           if (!reg) return { error: "Unknown sheet_id" };
           const idx = await getSheetIndexCached(sheet_id);
           const rows = idx.rows;
+          const resolvedColumn = resolveColumn(column, idx.columns);
+          if (!resolvedColumn) {
+            return { error: `Unknown column ${JSON.stringify(column)} in ${reg.display_name}` };
+          }
           const num = typeof value === "number" ? value : Number(value);
           const numeric = ["gt", "gte", "lt", "lte"].includes(op);
           const s = String(value).toLowerCase().trim();
@@ -437,7 +445,7 @@ export async function runCopilotAgent(
 
           // Fast path: eq via valuePostings (O(1) lookup instead of full scan).
           if (op === "eq") {
-            const colMap = idx.valuePostings.get(column);
+            const colMap = idx.valuePostings.get(resolvedColumn);
             const hits = colMap?.get(s) ?? [];
             for (const ri of hits) {
               matches.push({ row_index: ri, data: idx.byIndex.get(ri) ?? {} });
@@ -445,7 +453,7 @@ export async function runCopilotAgent(
             }
           } else if (numeric) {
             // Fast path: binary-search the sorted numeric list.
-            const nums = idx.numericByColumn.get(column) ?? [];
+            const nums = idx.numericByColumn.get(resolvedColumn) ?? [];
             if (Number.isFinite(num) && nums.length > 0) {
               for (const { n, row_index } of nums) {
                 let hit = false;
@@ -462,7 +470,7 @@ export async function runCopilotAgent(
           } else {
             // neq / contains — must visit every row in that column
             for (const r of rows) {
-              const v = r.data[column];
+              const v = r.data[resolvedColumn];
               if (v == null) continue;
               const sv = String(v).toLowerCase();
               let hit = false;
@@ -484,9 +492,10 @@ export async function runCopilotAgent(
             });
           }
           return {
-            _summary: `${matches.length} rows match ${column} ${op} ${JSON.stringify(value)}`,
+            _summary: `${matches.length} rows match ${resolvedColumn} ${op} ${JSON.stringify(value)}`,
             _resultForModel: {
               sheet: reg.display_name,
+              column: resolvedColumn,
               total_scanned: rows.length,
               rows: matches.map((r) => ({
                 row_index: r.row_index,
