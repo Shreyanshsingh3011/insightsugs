@@ -962,6 +962,16 @@ export async function runCopilotAgent(
               });
             }
 
+            pushRetrievalDiagnostic({
+              sourceId: sheet_id,
+              sourceName: reg.display_name,
+              sourceType: "sheet",
+              matcherPath: `date_query_rows:${op}`,
+              rowsScanned: rows.length,
+              rowsMatched: picked.length,
+              columnsSearched: [dateCol, statusKey, tatKey].filter((value): value is string => Boolean(value)),
+            });
+
             return {
               _summary: `${picked.length} rows — ${explain} in "${reg.display_name}"`,
               _resultForModel: {
@@ -1014,6 +1024,7 @@ export async function runCopilotAgent(
             });
             if (error) throw new Error(error.message);
             matches = (vectorMatches ?? []) as any[];
+            if (matches.length === 0) throw new Error("No vector matches");
             rowsScanned = matches.length;
           } catch {
             mode = "keyword";
