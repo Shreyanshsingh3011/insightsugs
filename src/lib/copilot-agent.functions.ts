@@ -733,7 +733,9 @@ export async function runCopilotAgent(
     const DATE_COL_HINTS = [
       "date", "due", "deadline", "start", "end", "eta", "target",
       "planned", "actual", "completion", "closed", "opened", "created",
-      "updated", "expires", "expiry", "receipt", "dispatch", "delivery",
+      "updated", "expires", "expiry", "expiration", "renewal", "valid",
+      "validity", "valid upto", "valid up to", "valid till", "valid through",
+      "period to", "contract end", "receipt", "dispatch", "delivery",
       "schedule", "milestone",
     ];
 
@@ -870,6 +872,11 @@ export async function runCopilotAgent(
               dateCol = candidates[0] ?? null;
             }
             if (!dateCol) {
+              const availableColumns = rowColumns(rows).slice(0, 60);
+              const dateLikeColumns = availableColumns.filter((k) =>
+                /date|due|deadline|expir|expiration|renewal|end|target|planned|delivery|dispatch|receipt|eta|valid|period|milestone|schedule/i.test(k) &&
+                !/(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|unit|units|stock|jmc|cons|grn|mrn|transfer|loan|paid|outstanding|percent|percentage|score|weight|volume|capacity)/i.test(k),
+              ).slice(0, 20);
               pushRetrievalDiagnostic({
                 sourceId: sheet_id,
                 sourceName: reg.display_name,
@@ -877,11 +884,13 @@ export async function runCopilotAgent(
                 matcherPath: `date_query_rows:${op}:no_date_column`,
                 rowsScanned: rows.length,
                 rowsMatched: 0,
-                columnsSearched: Object.keys(rows[0]?.data ?? {}).filter((k) => /date|due|deadline|expir|renewal|end|target|planned|delivery|dispatch|receipt|transfer/i.test(k)).slice(0, 20),
+                columnsSearched: dateLikeColumns,
               });
               return {
                 error:
                   "No usable date/expiry column was detected in this selected sheet.",
+                available_columns: availableColumns,
+                date_like_columns: dateLikeColumns,
               };
             }
 
@@ -2278,7 +2287,7 @@ export async function runCopilotAgent(
     const preflightBlocks: string[] = [];
     const preflightCites: string[] = [];
     const preflightNoMatchSheets: string[] = [];
-    const preflightErrorSheets: Array<{ sheet: string; error: string }> = [];
+    const preflightErrorSheets: Array<{ sheet: string; error: string; columns?: string[]; dateLikeColumns?: string[] }> = [];
     let preflightDateColumn: string | null = null;
     if (temporalOp && regs.length > 0) {
       for (const r of regs) {
@@ -2306,7 +2315,12 @@ export async function runCopilotAgent(
             );
           } else if (res?.error) {
             preflightBlocks.push(`Sheet "${r.display_name}" — ${res.error}`);
-            preflightErrorSheets.push({ sheet: r.display_name, error: String(res.error) });
+            preflightErrorSheets.push({
+              sheet: r.display_name,
+              error: String(res.error),
+              columns: Array.isArray(res.available_columns) ? res.available_columns : undefined,
+              dateLikeColumns: Array.isArray(res.date_like_columns) ? res.date_like_columns : undefined,
+            });
           } else {
             preflightBlocks.push(`Sheet "${r.display_name}" — 0 rows matched op=${temporalOp}.`);
             preflightNoMatchSheets.push(r.display_name);
@@ -2377,7 +2391,17 @@ export async function runCopilotAgent(
 
       if (preflightErrorSheets.length > 0) {
         const cites = preflightErrorSheets.map(({ sheet }) => `[sheet:${sheet}]`);
-        return `I could not find expiry results because no usable date/expiry column was detected in the selected sheet${preflightErrorSheets.length === 1 ? "" : "s"}: ${preflightErrorSheets.map(({ sheet }) => sheet).join(", ")}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
+        if (temporalOp === "due_within" && columnHint === "expir") {
+          const sheetSummaries = preflightErrorSheets.map(({ sheet, columns, dateLikeColumns }) => {
+            const dateNote = dateLikeColumns?.length
+              ? `date-like columns checked: ${dateLikeColumns.join(", ")}`
+              : `no expiry/renewal/date columns were present`;
+            const columnNote = columns?.length ? `; available columns include ${columns.slice(0, 8).join(", ")}` : "";
+            return `${sheet} (${dateNote}${columnNote})`;
+          }).join("; ");
+          return `The selected sheet does not contain contract-expiry data, so I cannot identify contracts expiring in the next ${expiryWindowDays ?? "requested"} days from it. I checked ${sheetSummaries}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
+        }
+        return `I could not answer the date-window query because no usable date column was detected in the selected sheet${preflightErrorSheets.length === 1 ? "" : "s"}: ${preflightErrorSheets.map(({ sheet }) => sheet).join(", ")}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
       }
 
       return null;
