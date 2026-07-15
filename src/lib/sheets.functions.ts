@@ -1243,9 +1243,6 @@ export const askCopilot = createServerFn({ method: "POST" })
           .max(20)
           .default([]),
       })
-      .refine((v) => v.sheetIds.length + v.documentIds.length > 0, {
-        message: "Select at least one sheet or document.",
-      })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -1264,8 +1261,13 @@ export const askCopilot = createServerFn({ method: "POST" })
           sheet_type: sheet.sheet_type as string | null,
           row_count: sheet.row_count as number | null,
           normalized: normalizeCopilotScopeText(sheet.display_name as string),
+          tokens: normalizeCopilotScopeText(sheet.display_name as string).split(" ").filter((token) => token.length >= 3),
         }))
-        .filter((sheet) => sheet.normalized.length >= 3 && normalizedQuestion.includes(sheet.normalized))
+        .filter((sheet) =>
+          sheet.normalized.length >= 3 &&
+          (normalizedQuestion.includes(sheet.normalized) ||
+            (sheet.tokens.length >= 2 && sheet.tokens.every((token) => normalizedQuestion.includes(token))))
+        )
         .sort((a, b) => b.normalized.length - a.normalized.length)[0];
       if (mentionedSheet) {
         scopedData = {
@@ -1276,6 +1278,42 @@ export const askCopilot = createServerFn({ method: "POST" })
           documentIds: [],
         };
       }
+    }
+    if (scopedData.sheetIds.length === 0 && scopedData.documentIds.length === 0) {
+      const { data: candidateDocs, error: docError } = await context.supabase
+        .from("documents")
+        .select("id, name")
+        .limit(200);
+      if (docError) throw new Error(docError.message);
+      const mentionedDoc = (candidateDocs ?? [])
+        .map((doc: any) => ({
+          id: doc.id as string,
+          name: doc.name as string,
+          normalized: normalizeCopilotScopeText(doc.name as string),
+          tokens: normalizeCopilotScopeText(doc.name as string).split(" ").filter((token) => token.length >= 3),
+        }))
+        .filter((doc) =>
+          doc.normalized.length >= 3 &&
+          (normalizedQuestion.includes(doc.normalized) ||
+            (doc.tokens.length >= 2 && doc.tokens.every((token) => normalizedQuestion.includes(token))))
+        )
+        .sort((a, b) => b.normalized.length - a.normalized.length)[0];
+      if (mentionedDoc) {
+        scopedData = { ...data, sheetIds: [], documentIds: [mentionedDoc.id] };
+      }
+    }
+    if (scopedData.sheetIds.length + scopedData.documentIds.length === 0) {
+      return {
+        answer:
+          "Select a sheet or document, or mention the exact sheet/document name in your question. I only answer from selected Copilot sources.",
+        sources: [],
+        suggestions: [],
+        toolTrace: [],
+        retrievalDiagnostics: [],
+        retrievalLedger: [],
+        citationOk: true,
+        unverifiedCitations: [],
+      };
     }
     const looksLikePlainSheetCount =
       scopedData.sheetIds.length > 0 &&

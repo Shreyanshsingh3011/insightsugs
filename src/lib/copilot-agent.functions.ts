@@ -112,7 +112,7 @@ export async function runCopilotAgent(
     // Lazy-load heavy AI SDK + gateway to keep SSR bundle slim.
     const [{ generateText, stepCountIs, tool }, gatewayModule] = await Promise.all([
       import("ai"),
-      key ? import("@/lib/ai-gateway") : Promise.resolve(null),
+      key ? import("@/lib/ai-gateway.server") : Promise.resolve(null),
     ]);
 
     const withServerTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
@@ -185,9 +185,12 @@ export async function runCopilotAgent(
     // records the user can access, refuse immediately. Never fall back to
     // dashboard aggregates, cached rows, or any other data source.
     if (regs.length === 0 && docs.length === 0) {
+      const hadRequestedScope = data.sheetIds.length + data.documentIds.length > 0;
       return {
         answer:
-          "No sheet or document is selected for this turn. Select a sheet or document and ask again — I only read from what you explicitly select, never from dashboard-level cached data.",
+          hadRequestedScope
+            ? "The selected sheet/document is no longer available to this account, so I did not answer from stale or inaccessible data. Select the source again, or mention the exact sheet/document name in your question."
+            : "No sheet or document is selected for this turn. Select a sheet or document and ask again — I only read from selected Copilot sources, never from dashboard-level cached data.",
         sources: [],
         suggestions: [],
         toolTrace: [],
@@ -2485,6 +2488,61 @@ export async function runCopilotAgent(
       return { text: det.answer, matched: true };
     }
 
+    function extractSourceMarkers(text: string): string[] {
+      const markers: string[] = [];
+      const re = /\[(sheet:[^\]\n]+|doc:[^\]\n]+)\]/gi;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(text)) !== null) markers.push(match[0]);
+      return Array.from(new Set(markers));
+    }
+
+    function extractNumericTokens(text: string): string[] {
+      const matches = text.match(/[-+]?\d[\d,]*(?:\.\d+)?%?/g) ?? [];
+      return Array.from(new Set(matches.map((value) => value.replace(/,/g, ""))));
+    }
+
+    function polishedAnswerIsSafe(original: string, polished: string): boolean {
+      if (!polished.trim()) return false;
+      const polishedNorm = polished.replace(/,/g, "");
+      for (const marker of extractSourceMarkers(original)) {
+        if (!polished.includes(marker)) return false;
+      }
+      for (const num of extractNumericTokens(original)) {
+        if (!polishedNorm.includes(num)) return false;
+      }
+      return /(^|\n)\s*sources\s*:/i.test(polished);
+    }
+
+    async function polishSelectedSourceAnswer(factualAnswer: string): Promise<string> {
+      if (!factualAnswer.trim()) return factualAnswer;
+      if (/\b(no exact match|i don't have|i don’t have|could not answer|select a sheet|does not contain contract-expiry fields)\b/i.test(factualAnswer)) {
+        return factualAnswer;
+      }
+      const system =
+        "You are a copy editor for a grounded data copilot. Rewrite the draft so it sounds like a concise, fluent LLM answer, but preserve the facts exactly. " +
+        "Never add, remove, round, infer, or change any number, date, name, ID, column name, or bracketed citation. Keep the Sources section and every [sheet:...] / [doc:...] marker verbatim. Output only the rewritten answer.";
+      const prompt = `User question: ${data.question}\n\nDraft answer to polish without changing facts:\n\n${factualAnswer}`;
+      if (key && gatewayModule) {
+        try {
+          const gateway = gatewayModule.createLovableAiGatewayProvider(key);
+          const polished = await withServerTimeout(
+            generateText({
+              model: gateway("openai/gpt-5.5"),
+              system,
+              prompt,
+            }),
+            8_000,
+            "Copilot answer polish",
+          );
+          const text = (polished.text ?? "").trim();
+          if (polishedAnswerIsSafe(factualAnswer, text)) return text;
+        } catch {
+          // Fall through to direct Gemini polish if configured.
+        }
+      }
+      return polishWithGemini(factualAnswer);
+    }
+
     async function polishWithGemini(factualAnswer: string): Promise<string> {
       // Take a factually correct deterministic answer and ask Gemini to rewrite it
       // as clean prose while preserving every number, name, ID, and [citation]
@@ -2508,7 +2566,7 @@ export async function runCopilotAgent(
           "Gemini polish",
         );
         const polished = (polish.text ?? "").trim();
-        return polished.length > 20 ? polished : factualAnswer;
+        return polishedAnswerIsSafe(factualAnswer, polished) ? polished : factualAnswer;
       } catch {
         return factualAnswer;
       }
@@ -2532,17 +2590,16 @@ export async function runCopilotAgent(
       return { text: polished };
     }
 
-    let result: { text?: string } | null = temporalOp
-      ? (() => {
-          const answer = synthesizeTemporalPreflightAnswer();
-          return answer ? { text: answer } : null;
-        })()
-      : null;
+    let result: { text?: string } | null = null;
+    if (temporalOp) {
+      const answer = synthesizeTemporalPreflightAnswer();
+      if (answer) result = { text: await polishSelectedSourceAnswer(answer) };
+    }
     const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
     if (!actionQuestion && !result) {
       const deterministicFirst = await runDeterministic("selected_source_fast_path");
       if (deterministicFirst.matched) {
-        result = { text: deterministicFirst.text };
+        result = { text: await polishSelectedSourceAnswer(deterministicFirst.text ?? "") };
       }
     }
     if (!result && !key) {
@@ -2550,7 +2607,7 @@ export async function runCopilotAgent(
     } else if (!result && key) {
       try {
         const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
-        const model = gateway("google/gemini-3-flash-preview");
+        const model = gateway("openai/gpt-5.5");
         result = await withServerTimeout(
           generateText({
             model,
@@ -2588,105 +2645,109 @@ export async function runCopilotAgent(
 
     const rawAnswer = (result?.text ?? "").trim();
 
-    // 6) Structural citation validator against the ledger.
-    const inlineRe = /\[([^\]\n]{2,}?)\]/g;
-    const seen = new Set<string>();
-    const verified = new Set<string>();
-    const unverified: string[] = [];
-    let inlineCount = 0;
-    let m: RegExpExecArray | null;
-    while ((m = inlineRe.exec(rawAnswer)) !== null) {
-      // Skip markdown links [text](url)
-      if (rawAnswer[m.index + m[0].length] === "(") continue;
-      const marker = m[0];
-      const body = m[1].trim();
-      // Only sheet:/doc: markers are ledger-verifiable. Legacy `flags[...]`
-      // markers are ignored entirely (not counted, not auto-verified) so they
-      // cannot bypass the grounding guard.
-      if (!/^(sheet:|doc:)/i.test(body)) continue;
-      if (seen.has(marker)) continue;
-      seen.add(marker);
-      inlineCount++;
+    // 6) Structural citation validator against the actual ledger. Re-run this
+    // after every answer rewrite; regex shape alone is not enough.
+    const verifyAnswerCitations = (answer: string) => {
+      const inlineRe = /\[([^\]\n]{2,}?)\]/g;
+      const seen = new Set<string>();
+      const verified = new Set<string>();
+      const unverified: string[] = [];
+      let inlineCount = 0;
+      let m: RegExpExecArray | null;
+      while ((m = inlineRe.exec(answer)) !== null) {
+        // Skip markdown links [text](url)
+        if (answer[m.index + m[0].length] === "(") continue;
+        const marker = m[0];
+        const body = m[1].trim();
+        // Only sheet:/doc: markers are ledger-verifiable. Legacy `flags[...]`
+        // markers are ignored entirely (not counted, not auto-verified) so they
+        // cannot bypass the grounding guard.
+        if (!/^(sheet:|doc:)/i.test(body)) continue;
+        if (seen.has(marker)) continue;
+        seen.add(marker);
+        inlineCount++;
 
-      // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
-      // [sheet:<name> row 3, 9], [sheet:<name> row <n> col <column>], and
-      // sheet-level [sheet:<name>].
-      const sheetRowColMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s+col\s+(.+?)\s*$/i.exec(body);
-      const sheetRowMatch = !sheetRowColMatch
-        ? /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body)
-        : null;
-      const sheetOnlyMatch =
-        !sheetRowColMatch && !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
-      if (sheetRowColMatch) {
-        const label = normalizeCitationLabel(sheetRowColMatch[1]);
-        const reg = sheetByLabel.get(label);
-        if (!reg) {
-          unverified.push(marker);
-          continue;
-        }
-        const rowN = Number(sheetRowColMatch[2]);
-        const inLedger = ledger.some(
-          (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
-        );
-        if (inLedger) verified.add(marker);
-        else unverified.push(marker);
-        continue;
-      }
-      if (sheetRowMatch || sheetOnlyMatch) {
-        const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
-        const reg = sheetByLabel.get(label);
-        if (!reg) {
-          unverified.push(marker);
-          continue;
-        }
-        if (!sheetRowMatch) {
-          verified.add(marker);
-          continue;
-        }
-        const rows = parseCitationRowSpec(sheetRowMatch[2]);
-        if (!rows) {
-          unverified.push(marker);
-          continue;
-        }
-        const allInLedger = rows.every((rowN) =>
-          ledger.some(
+        // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
+        // [sheet:<name> row 3, 9], [sheet:<name> row <n> col <column>], and
+        // sheet-level [sheet:<name>].
+        const sheetRowColMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s+col\s+(.+?)\s*$/i.exec(body);
+        const sheetRowMatch = !sheetRowColMatch
+          ? /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body)
+          : null;
+        const sheetOnlyMatch =
+          !sheetRowColMatch && !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+        if (sheetRowColMatch) {
+          const label = normalizeCitationLabel(sheetRowColMatch[1]);
+          const reg = sheetByLabel.get(label);
+          if (!reg) {
+            unverified.push(marker);
+            continue;
+          }
+          const rowN = Number(sheetRowColMatch[2]);
+          const inLedger = ledger.some(
             (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
-          ),
-        );
-        if (allInLedger) verified.add(marker);
-        else unverified.push(marker);
-        continue;
-      }
-      // [doc:<name> p.<n>] and document-level [doc:<name>].
-      const docPageMatch = /^doc:\s*(.+?)\s+p\.?\s*(\d+)\s*$/i.exec(body);
-      const docOnlyMatch = !docPageMatch ? /^doc:\s*(.+?)\s*$/i.exec(body) : null;
-      if (docPageMatch || docOnlyMatch) {
-        const label = normalizeCitationLabel(docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "");
-        const doc = docByLabel.get(label);
-        if (!doc) {
-          unverified.push(marker);
+          );
+          if (inLedger) verified.add(marker);
+          else unverified.push(marker);
           continue;
         }
-        if (!docPageMatch) {
-          verified.add(marker);
+        if (sheetRowMatch || sheetOnlyMatch) {
+          const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
+          const reg = sheetByLabel.get(label);
+          if (!reg) {
+            unverified.push(marker);
+            continue;
+          }
+          if (!sheetRowMatch) {
+            verified.add(marker);
+            continue;
+          }
+          const rows = parseCitationRowSpec(sheetRowMatch[2]);
+          if (!rows) {
+            unverified.push(marker);
+            continue;
+          }
+          const allInLedger = rows.every((rowN) =>
+            ledger.some(
+              (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
+            ),
+          );
+          if (allInLedger) verified.add(marker);
+          else unverified.push(marker);
           continue;
         }
-        const page = Number(docPageMatch[2]);
-        const inLedger = ledger.some(
-          (l) => l.kind === "doc_chunk" && l.documentId === doc.id && l.pageNo === page,
-        );
-        if (inLedger) verified.add(marker);
-        else unverified.push(marker);
-        continue;
+        // [doc:<name> p.<n>] and document-level [doc:<name>].
+        const docPageMatch = /^doc:\s*(.+?)\s+p\.?\s*(\d+)\s*$/i.exec(body);
+        const docOnlyMatch = !docPageMatch ? /^doc:\s*(.+?)\s*$/i.exec(body) : null;
+        if (docPageMatch || docOnlyMatch) {
+          const label = normalizeCitationLabel(docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "");
+          const doc = docByLabel.get(label);
+          if (!doc) {
+            unverified.push(marker);
+            continue;
+          }
+          if (!docPageMatch) {
+            verified.add(marker);
+            continue;
+          }
+          const page = Number(docPageMatch[2]);
+          const inLedger = ledger.some(
+            (l) => l.kind === "doc_chunk" && l.documentId === doc.id && l.pageNo === page,
+          );
+          if (inLedger) verified.add(marker);
+          else unverified.push(marker);
+          continue;
+        }
+        // Legacy `flags[...]` markers are no longer auto-verified — they were a
+        // hallucination bypass since nothing ties them to the ledger.
       }
-      // Legacy `flags[...]` markers are no longer auto-verified — they were a
-      // hallucination bypass since nothing ties them to the ledger.
+      const isFallback = /^i don'?t have that in the current dashboard data\b/i.test(answer);
+      const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(answer);
+      return { verified, unverified, inlineCount, isFallback, hasSourcesSection };
+    };
 
-    }
-
-    const isFallback =
-      /^i don'?t have that in the current dashboard data\b/i.test(rawAnswer);
-    const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(rawAnswer);
+    const rawCitationCheck = verifyAnswerCitations(rawAnswer);
+    const { verified, unverified, inlineCount, isFallback, hasSourcesSection } = rawCitationCheck;
     let finalAnswer = rawAnswer;
     if (!opts.skipCitationEnforcement && !isFallback && !hasSourcesSection && verified.size > 0) {
       finalAnswer = `${rawAnswer}\n\nSources:\n${Array.from(verified).map((marker) => `- ${marker}`).join("\n")}`;
@@ -2781,25 +2842,21 @@ export async function runCopilotAgent(
         finalAnswer = det.answer;
       }
     }
-
-
-
-    const finalMarkers = new Set<string>();
-    const finalInlineRe = /\[([^\]\n]{2,}?)\]/g;
-    let finalMarkerMatch: RegExpExecArray | null;
-    while ((finalMarkerMatch = finalInlineRe.exec(finalAnswer)) !== null) {
-      if (finalAnswer[finalMarkerMatch.index + finalMarkerMatch[0].length] === "(") continue;
-      const body = finalMarkerMatch[1].trim();
-      if (/^(sheet:|doc:)/i.test(body)) finalMarkers.add(finalMarkerMatch[0]);
-    }
+    const finalCitationCheck = verifyAnswerCitations(finalAnswer);
     const isGroundedTemporalNoDateResult =
       temporalOp != null &&
       /no usable date\/expiry column was detected/i.test(finalAnswer) &&
-      retrievalDiagnostics.some((d) => d.matcherPath.includes("no_date_column") && d.rowsScanned > 0);
+      retrievalDiagnostics.some((d) => d.matcherPath.includes("no_date_column") && d.rowsScanned > 0) &&
+      finalCitationCheck.verified.size > 0 &&
+      finalCitationCheck.unverified.length === 0 &&
+      finalCitationCheck.hasSourcesSection;
     const finalCitationOk =
-      /^i don'?t have that in the current dashboard data\b/i.test(finalAnswer.trim()) ||
+      finalCitationCheck.isFallback ||
       isGroundedTemporalNoDateResult ||
-      (finalMarkers.size > 0 && /(^|\n)\s*sources\s*:/i.test(finalAnswer));
+      (finalCitationCheck.inlineCount > 0 &&
+        finalCitationCheck.verified.size > 0 &&
+        finalCitationCheck.unverified.length === 0 &&
+        finalCitationCheck.hasSourcesSection);
 
     // 8) Shape sources for the existing UI (id, name, type, rowsUsed, truncated).
     const rowsUsedBySheet = new Map<string, number>();
@@ -2855,7 +2912,7 @@ export async function runCopilotAgent(
         const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
         suggestionModel = createGoogleGenerativeAI({ apiKey: directGeminiKey })("gemini-2.5-flash");
       } else if (key && gatewayModule) {
-        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("google/gemini-3-flash-preview");
+        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("openai/gpt-5.5");
       }
       if (!suggestionModel) throw new Error("No suggestion model available");
       const sug = await withServerTimeout(
@@ -2896,7 +2953,7 @@ export async function runCopilotAgent(
             },
       ),
       citationOk: finalCitationOk,
-      unverifiedCitations: finalCitationOk ? [] : unverified,
+      unverifiedCitations: finalCitationOk ? [] : finalCitationCheck.unverified,
     };
   }
 
