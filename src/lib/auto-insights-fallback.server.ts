@@ -57,10 +57,23 @@ function valueCounts(rows: Record<string, unknown>[], column: string) {
     .sort((a, b) => b.count - a.count);
 }
 
+function isMostlyNumeric(rows: Record<string, unknown>[], column: string) {
+  let total = 0;
+  let numeric = 0;
+  for (const r of rows) {
+    const s = cellText(r[column]);
+    if (!s) continue;
+    total++;
+    if (parseNumber(r[column]) != null) numeric++;
+  }
+  return total >= 3 && numeric / total >= 0.7;
+}
+
 function chooseCategoricalColumn(rows: Record<string, unknown>[], columns: string[]) {
-  const preferred = columns.find((c) => /status|stage|state|priority|severity|progress|owner|project|activity|task|type/i.test(c));
+  const eligible = columns.filter((c) => !isMostlyNumeric(rows, c));
+  const preferred = eligible.find((c) => /status|stage|state|priority|severity|progress|owner|project|activity|task|type/i.test(c));
   if (preferred) return preferred;
-  return columns.find((c) => {
+  return eligible.find((c) => {
     const distinct = new Set(rows.map((r) => cellText(r[c])).filter(Boolean)).size;
     return distinct >= 2 && distinct <= Math.max(20, Math.ceil(rows.length * 0.35));
   });
@@ -215,7 +228,7 @@ export function buildSheetAutoInsights(sheetName: string, storedRows: StoredShee
   }
 
   // Owner / assignee workload if such a column exists.
-  const ownerColumn = columns.find((c) => /owner|assignee|responsible|assigned|person|engineer|contractor|vendor/i.test(c));
+  const ownerColumn = columns.find((c) => /owner|assignee|responsible|assigned|person|engineer|contractor|vendor/i.test(c) && !isMostlyNumeric(activeRows, c));
   if (ownerColumn && activeRows.length > 0) {
     const counts = valueCounts(activeRows, ownerColumn).filter((v) => v.value !== "(blank)").slice(0, 3);
     if (counts.length > 0 && counts[0].count > 0) {
