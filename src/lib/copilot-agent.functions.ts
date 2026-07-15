@@ -16,6 +16,7 @@ import {
   fetchAllRows,
 } from "./copilot-helpers.server";
 import { ensureSheetEmbeddings } from "./copilot-embeddings.server";
+import { getSheetIndex, candidatesForTokens, type SheetIndex } from "./copilot-index.server";
 
 // Re-export so existing importers (e.g. the embed-backfill hook) keep working.
 export { ensureSheetEmbeddings };
