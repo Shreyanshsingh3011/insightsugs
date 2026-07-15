@@ -185,9 +185,12 @@ export async function runCopilotAgent(
     // records the user can access, refuse immediately. Never fall back to
     // dashboard aggregates, cached rows, or any other data source.
     if (regs.length === 0 && docs.length === 0) {
+      const hadRequestedScope = data.sheetIds.length + data.documentIds.length > 0;
       return {
         answer:
-          "No sheet or document is selected for this turn. Select a sheet or document and ask again — I only read from what you explicitly select, never from dashboard-level cached data.",
+          hadRequestedScope
+            ? "The selected sheet/document is no longer available to this account, so I did not answer from stale or inaccessible data. Select the source again, or mention the exact sheet/document name in your question."
+            : "No sheet or document is selected for this turn. Select a sheet or document and ask again — I only read from selected Copilot sources, never from dashboard-level cached data.",
         sources: [],
         suggestions: [],
         toolTrace: [],
