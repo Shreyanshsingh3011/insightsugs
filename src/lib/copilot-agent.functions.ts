@@ -2645,105 +2645,109 @@ export async function runCopilotAgent(
 
     const rawAnswer = (result?.text ?? "").trim();
 
-    // 6) Structural citation validator against the ledger.
-    const inlineRe = /\[([^\]\n]{2,}?)\]/g;
-    const seen = new Set<string>();
-    const verified = new Set<string>();
-    const unverified: string[] = [];
-    let inlineCount = 0;
-    let m: RegExpExecArray | null;
-    while ((m = inlineRe.exec(rawAnswer)) !== null) {
-      // Skip markdown links [text](url)
-      if (rawAnswer[m.index + m[0].length] === "(") continue;
-      const marker = m[0];
-      const body = m[1].trim();
-      // Only sheet:/doc: markers are ledger-verifiable. Legacy `flags[...]`
-      // markers are ignored entirely (not counted, not auto-verified) so they
-      // cannot bypass the grounding guard.
-      if (!/^(sheet:|doc:)/i.test(body)) continue;
-      if (seen.has(marker)) continue;
-      seen.add(marker);
-      inlineCount++;
+    // 6) Structural citation validator against the actual ledger. Re-run this
+    // after every answer rewrite; regex shape alone is not enough.
+    const verifyAnswerCitations = (answer: string) => {
+      const inlineRe = /\[([^\]\n]{2,}?)\]/g;
+      const seen = new Set<string>();
+      const verified = new Set<string>();
+      const unverified: string[] = [];
+      let inlineCount = 0;
+      let m: RegExpExecArray | null;
+      while ((m = inlineRe.exec(answer)) !== null) {
+        // Skip markdown links [text](url)
+        if (answer[m.index + m[0].length] === "(") continue;
+        const marker = m[0];
+        const body = m[1].trim();
+        // Only sheet:/doc: markers are ledger-verifiable. Legacy `flags[...]`
+        // markers are ignored entirely (not counted, not auto-verified) so they
+        // cannot bypass the grounding guard.
+        if (!/^(sheet:|doc:)/i.test(body)) continue;
+        if (seen.has(marker)) continue;
+        seen.add(marker);
+        inlineCount++;
 
-      // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
-      // [sheet:<name> row 3, 9], [sheet:<name> row <n> col <column>], and
-      // sheet-level [sheet:<name>].
-      const sheetRowColMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s+col\s+(.+?)\s*$/i.exec(body);
-      const sheetRowMatch = !sheetRowColMatch
-        ? /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body)
-        : null;
-      const sheetOnlyMatch =
-        !sheetRowColMatch && !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
-      if (sheetRowColMatch) {
-        const label = normalizeCitationLabel(sheetRowColMatch[1]);
-        const reg = sheetByLabel.get(label);
-        if (!reg) {
-          unverified.push(marker);
-          continue;
-        }
-        const rowN = Number(sheetRowColMatch[2]);
-        const inLedger = ledger.some(
-          (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
-        );
-        if (inLedger) verified.add(marker);
-        else unverified.push(marker);
-        continue;
-      }
-      if (sheetRowMatch || sheetOnlyMatch) {
-        const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
-        const reg = sheetByLabel.get(label);
-        if (!reg) {
-          unverified.push(marker);
-          continue;
-        }
-        if (!sheetRowMatch) {
-          verified.add(marker);
-          continue;
-        }
-        const rows = parseCitationRowSpec(sheetRowMatch[2]);
-        if (!rows) {
-          unverified.push(marker);
-          continue;
-        }
-        const allInLedger = rows.every((rowN) =>
-          ledger.some(
+        // [sheet:<name> row <n>] plus compact forms [sheet:<name> row 1-14],
+        // [sheet:<name> row 3, 9], [sheet:<name> row <n> col <column>], and
+        // sheet-level [sheet:<name>].
+        const sheetRowColMatch = /^sheet:\s*(.+?)\s+row\s+(\d+)\s+col\s+(.+?)\s*$/i.exec(body);
+        const sheetRowMatch = !sheetRowColMatch
+          ? /^sheet:\s*(.+?)\s+row\s+(.+?)\s*$/i.exec(body)
+          : null;
+        const sheetOnlyMatch =
+          !sheetRowColMatch && !sheetRowMatch ? /^sheet:\s*(.+?)\s*$/i.exec(body) : null;
+        if (sheetRowColMatch) {
+          const label = normalizeCitationLabel(sheetRowColMatch[1]);
+          const reg = sheetByLabel.get(label);
+          if (!reg) {
+            unverified.push(marker);
+            continue;
+          }
+          const rowN = Number(sheetRowColMatch[2]);
+          const inLedger = ledger.some(
             (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
-          ),
-        );
-        if (allInLedger) verified.add(marker);
-        else unverified.push(marker);
-        continue;
-      }
-      // [doc:<name> p.<n>] and document-level [doc:<name>].
-      const docPageMatch = /^doc:\s*(.+?)\s+p\.?\s*(\d+)\s*$/i.exec(body);
-      const docOnlyMatch = !docPageMatch ? /^doc:\s*(.+?)\s*$/i.exec(body) : null;
-      if (docPageMatch || docOnlyMatch) {
-        const label = normalizeCitationLabel(docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "");
-        const doc = docByLabel.get(label);
-        if (!doc) {
-          unverified.push(marker);
+          );
+          if (inLedger) verified.add(marker);
+          else unverified.push(marker);
           continue;
         }
-        if (!docPageMatch) {
-          verified.add(marker);
+        if (sheetRowMatch || sheetOnlyMatch) {
+          const label = normalizeCitationLabel(sheetRowMatch?.[1] ?? sheetOnlyMatch?.[1] ?? "");
+          const reg = sheetByLabel.get(label);
+          if (!reg) {
+            unverified.push(marker);
+            continue;
+          }
+          if (!sheetRowMatch) {
+            verified.add(marker);
+            continue;
+          }
+          const rows = parseCitationRowSpec(sheetRowMatch[2]);
+          if (!rows) {
+            unverified.push(marker);
+            continue;
+          }
+          const allInLedger = rows.every((rowN) =>
+            ledger.some(
+              (l) => l.kind === "sheet_row" && l.registryId === reg.id && l.rowIndex === rowN - 1,
+            ),
+          );
+          if (allInLedger) verified.add(marker);
+          else unverified.push(marker);
           continue;
         }
-        const page = Number(docPageMatch[2]);
-        const inLedger = ledger.some(
-          (l) => l.kind === "doc_chunk" && l.documentId === doc.id && l.pageNo === page,
-        );
-        if (inLedger) verified.add(marker);
-        else unverified.push(marker);
-        continue;
+        // [doc:<name> p.<n>] and document-level [doc:<name>].
+        const docPageMatch = /^doc:\s*(.+?)\s+p\.?\s*(\d+)\s*$/i.exec(body);
+        const docOnlyMatch = !docPageMatch ? /^doc:\s*(.+?)\s*$/i.exec(body) : null;
+        if (docPageMatch || docOnlyMatch) {
+          const label = normalizeCitationLabel(docPageMatch?.[1] ?? docOnlyMatch?.[1] ?? "");
+          const doc = docByLabel.get(label);
+          if (!doc) {
+            unverified.push(marker);
+            continue;
+          }
+          if (!docPageMatch) {
+            verified.add(marker);
+            continue;
+          }
+          const page = Number(docPageMatch[2]);
+          const inLedger = ledger.some(
+            (l) => l.kind === "doc_chunk" && l.documentId === doc.id && l.pageNo === page,
+          );
+          if (inLedger) verified.add(marker);
+          else unverified.push(marker);
+          continue;
+        }
+        // Legacy `flags[...]` markers are no longer auto-verified — they were a
+        // hallucination bypass since nothing ties them to the ledger.
       }
-      // Legacy `flags[...]` markers are no longer auto-verified — they were a
-      // hallucination bypass since nothing ties them to the ledger.
+      const isFallback = /^i don'?t have that in the current dashboard data\b/i.test(answer);
+      const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(answer);
+      return { verified, unverified, inlineCount, isFallback, hasSourcesSection };
+    };
 
-    }
-
-    const isFallback =
-      /^i don'?t have that in the current dashboard data\b/i.test(rawAnswer);
-    const hasSourcesSection = /(^|\n)\s*sources\s*:/i.test(rawAnswer);
+    const rawCitationCheck = verifyAnswerCitations(rawAnswer);
+    const { verified, unverified, inlineCount, isFallback, hasSourcesSection } = rawCitationCheck;
     let finalAnswer = rawAnswer;
     if (!opts.skipCitationEnforcement && !isFallback && !hasSourcesSection && verified.size > 0) {
       finalAnswer = `${rawAnswer}\n\nSources:\n${Array.from(verified).map((marker) => `- ${marker}`).join("\n")}`;
