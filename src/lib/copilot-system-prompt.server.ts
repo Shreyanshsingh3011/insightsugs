@@ -166,7 +166,7 @@ export function buildCopilotSystemPrompt(input: CopilotSystemPromptInput): strin
     "    TAT breached / SLA missed          → op='tat_breached'",
     "- Pass `column_hint` = the user's date-noun ('start','due','delivery','receipt','dispatch','ETA') so the auto-detector picks the right column.",
     "- If the sheet has a status column, the tool auto-excludes rows whose status is done/closed/completed/dispatched/received.",
-    "- If date_query_rows errors with 'No date-like column detected', call get_sheet_schema, then re-run with an explicit `column`.",
+    "- If date_query_rows reports no usable date/expiry column, answer plainly that the selected sheet has no usable date/expiry column and cite the sheet-level source; do not expose tool names or retry instructions.",
     "- After the call, answer with exact dates and cite each row as [sheet:<display_name> row <n> col <date_column>].",
     "",
     "- Prefer short, precise answers with numbers and names.",
