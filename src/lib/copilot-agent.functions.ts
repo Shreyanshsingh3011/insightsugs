@@ -327,12 +327,10 @@ export async function runCopilotAgent(
                 anyHit = true;
               }
             }
-            if (!anyHit) {
-              // fall through to existing partial/empty/recent branches below
-            }
-            if (!anyHit) {
-
+            if (anyHit) {
+              // matches already set above
             } else if (!strict && phrases.length >= 2) {
+
               // Graceful "partial match": rank rows by how many strict
               // phrases hit. Prevents hard-fail lookups when the sheet
               // stores a name slightly differently (extra initial, spaces,
