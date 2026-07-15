@@ -2218,7 +2218,7 @@ export async function runCopilotAgent(
       const det = await deterministicAnswer({
         supabase,
         question: data.question,
-        regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+        regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
         docs: docs.map((d) => ({ id: d.id, name: d.name })),
         ledgerSink: ledger as any,
         strictMatch: data.strictMatch === true,
@@ -2523,7 +2523,7 @@ export async function runCopilotAgent(
         const det = await deterministicAnswer({
           supabase,
           question: data.question,
-          regs: regs.map((r) => ({ id: r.id, display_name: r.display_name })),
+          regs: regs.map((r) => ({ id: r.id, display_name: r.display_name, row_count: r.row_count })),
           docs: docs.map((d) => ({ id: d.id, name: d.name })),
           ledgerSink: ledger as any,
           strictMatch: data.strictMatch === true,
