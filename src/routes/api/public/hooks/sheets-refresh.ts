@@ -1,55 +1,66 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isHookAuthorized, unauthorizedResponse } from "@/lib/hook-auth.server";
 
-// Server-side scheduled sheet refresh. pg_cron hits this every 5 minutes;
-// iterates every registered sheet and re-pulls rows from the source so the
-// agent dashboard reflects changes without needing anyone to have the sheet
-// detail page open.
+// Coordinator: pg_cron hits this every ~5 minutes. Instead of syncing every
+// sheet inline (which OOMed the Worker at ~128 MB per invocation), we fan
+// out one HTTP call per sheet to /api/public/hooks/sheet-refresh-one.
+// Each per-sheet call runs in its own Worker isolate with a fresh memory
+// budget, and this coordinator stays tiny.
 export const Route = createFileRoute("/api/public/hooks/sheets-refresh")({
   server: {
     handlers: {
       POST: async ({ request }) => {
         if (!isHookAuthorized(request)) return unauthorizedResponse();
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { syncRowsInternal } = await import("@/lib/sheets.functions");
 
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data: regs, error } = await supabaseAdmin
           .from("sheet_registry")
-          .select("id, user_id, display_name");
+          .select("id, display_name");
         if (error) {
           return Response.json({ ok: false, error: error.message }, { status: 500 });
         }
 
-        const results: {
-          id: string;
-          name: string;
-          ok: boolean;
-          error?: string;
-          ms: number;
-        }[] = [];
+        // Reuse the caller's secret to authorize the fan-out; falls back to
+        // CRON_HOOK_SECRET (which is what pg_cron sends anyway).
+        const authHeader =
+          request.headers.get("authorization") ||
+          (process.env.CRON_HOOK_SECRET ? `Bearer ${process.env.CRON_HOOK_SECRET}` : "");
 
+        const origin = new URL(request.url).origin;
+        const target = `${origin}/api/public/hooks/sheet-refresh-one`;
+
+        // Fire-and-forget. We deliberately do NOT await the responses — the
+        // whole point is to release this Worker before any per-sheet sync
+        // starts allocating. Each sub-request gets its own isolate.
+        // waitUntil isn't reachable from this handler shape, so we detach
+        // the promises and swallow rejections so they don't crash the isolate.
+        const dispatched: string[] = [];
         for (const r of regs ?? []) {
-          const t0 = Date.now();
           try {
-            await (syncRowsInternal as any)(supabaseAdmin, r.user_id, r.id);
-            results.push({ id: r.id, name: r.display_name, ok: true, ms: Date.now() - t0 });
-          } catch (e: any) {
-            results.push({
-              id: r.id,
-              name: r.display_name,
-              ok: false,
-              error: String(e?.message ?? e).slice(0, 300),
-              ms: Date.now() - t0,
+            const p = fetch(target, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                ...(authHeader ? { authorization: authHeader } : {}),
+              },
+              body: JSON.stringify({ id: r.id }),
+              // keepalive lets the request survive the parent Worker returning.
+              keepalive: true,
             });
+            p.catch(() => {
+              /* individual sheet errors are logged in the sub-route */
+            });
+            dispatched.push(r.id);
+          } catch {
+            // network setup errors shouldn't sink the coordinator
           }
         }
 
         return Response.json({
           ok: true,
-          synced: results.filter((r) => r.ok).length,
-          failed: results.filter((r) => !r.ok).length,
-          total: results.length,
-          results,
+          strategy: "fanout",
+          dispatched: dispatched.length,
+          total: regs?.length ?? 0,
         });
       },
     },

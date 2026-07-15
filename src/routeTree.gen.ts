@@ -67,6 +67,7 @@ import { Route as ApiPublicHooksWeeklyBriefingRouteImport } from './routes/api/p
 import { Route as ApiPublicHooksStaleCriticalWatcherRouteImport } from './routes/api/public/hooks/stale-critical-watcher'
 import { Route as ApiPublicHooksSmartAlertsScanRouteImport } from './routes/api/public/hooks/smart-alerts-scan'
 import { Route as ApiPublicHooksSheetsRefreshRouteImport } from './routes/api/public/hooks/sheets-refresh'
+import { Route as ApiPublicHooksSheetRefreshOneRouteImport } from './routes/api/public/hooks/sheet-refresh-one'
 import { Route as ApiPublicHooksModelHealthRouteImport } from './routes/api/public/hooks/model-health'
 import { Route as ApiPublicHooksInfraDigestRouteImport } from './routes/api/public/hooks/infra-digest'
 import { Route as ApiPublicHooksEscalateRouteImport } from './routes/api/public/hooks/escalate'
@@ -401,6 +402,12 @@ const ApiPublicHooksSheetsRefreshRoute =
     path: '/api/public/hooks/sheets-refresh',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksSheetRefreshOneRoute =
+  ApiPublicHooksSheetRefreshOneRouteImport.update({
+    id: '/api/public/hooks/sheet-refresh-one',
+    path: '/api/public/hooks/sheet-refresh-one',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksModelHealthRoute =
   ApiPublicHooksModelHealthRouteImport.update({
     id: '/api/public/hooks/model-health',
@@ -567,6 +574,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/infra-digest': typeof ApiPublicHooksInfraDigestRoute
   '/api/public/hooks/model-health': typeof ApiPublicHooksModelHealthRoute
+  '/api/public/hooks/sheet-refresh-one': typeof ApiPublicHooksSheetRefreshOneRoute
   '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -640,6 +648,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/infra-digest': typeof ApiPublicHooksInfraDigestRoute
   '/api/public/hooks/model-health': typeof ApiPublicHooksModelHealthRoute
+  '/api/public/hooks/sheet-refresh-one': typeof ApiPublicHooksSheetRefreshOneRoute
   '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -718,6 +727,7 @@ export interface FileRoutesById {
   '/api/public/hooks/escalate': typeof ApiPublicHooksEscalateRoute
   '/api/public/hooks/infra-digest': typeof ApiPublicHooksInfraDigestRoute
   '/api/public/hooks/model-health': typeof ApiPublicHooksModelHealthRoute
+  '/api/public/hooks/sheet-refresh-one': typeof ApiPublicHooksSheetRefreshOneRoute
   '/api/public/hooks/sheets-refresh': typeof ApiPublicHooksSheetsRefreshRoute
   '/api/public/hooks/smart-alerts-scan': typeof ApiPublicHooksSmartAlertsScanRoute
   '/api/public/hooks/stale-critical-watcher': typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -796,6 +806,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/infra-digest'
     | '/api/public/hooks/model-health'
+    | '/api/public/hooks/sheet-refresh-one'
     | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -869,6 +880,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/infra-digest'
     | '/api/public/hooks/model-health'
+    | '/api/public/hooks/sheet-refresh-one'
     | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -946,6 +958,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/escalate'
     | '/api/public/hooks/infra-digest'
     | '/api/public/hooks/model-health'
+    | '/api/public/hooks/sheet-refresh-one'
     | '/api/public/hooks/sheets-refresh'
     | '/api/public/hooks/smart-alerts-scan'
     | '/api/public/hooks/stale-critical-watcher'
@@ -979,6 +992,7 @@ export interface RootRouteChildren {
   ApiPublicHooksEscalateRoute: typeof ApiPublicHooksEscalateRoute
   ApiPublicHooksInfraDigestRoute: typeof ApiPublicHooksInfraDigestRoute
   ApiPublicHooksModelHealthRoute: typeof ApiPublicHooksModelHealthRoute
+  ApiPublicHooksSheetRefreshOneRoute: typeof ApiPublicHooksSheetRefreshOneRoute
   ApiPublicHooksSheetsRefreshRoute: typeof ApiPublicHooksSheetsRefreshRoute
   ApiPublicHooksSmartAlertsScanRoute: typeof ApiPublicHooksSmartAlertsScanRoute
   ApiPublicHooksStaleCriticalWatcherRoute: typeof ApiPublicHooksStaleCriticalWatcherRoute
@@ -1398,6 +1412,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksSheetsRefreshRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/sheet-refresh-one': {
+      id: '/api/public/hooks/sheet-refresh-one'
+      path: '/api/public/hooks/sheet-refresh-one'
+      fullPath: '/api/public/hooks/sheet-refresh-one'
+      preLoaderRoute: typeof ApiPublicHooksSheetRefreshOneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/model-health': {
       id: '/api/public/hooks/model-health'
       path: '/api/public/hooks/model-health'
@@ -1670,6 +1691,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksEscalateRoute: ApiPublicHooksEscalateRoute,
   ApiPublicHooksInfraDigestRoute: ApiPublicHooksInfraDigestRoute,
   ApiPublicHooksModelHealthRoute: ApiPublicHooksModelHealthRoute,
+  ApiPublicHooksSheetRefreshOneRoute: ApiPublicHooksSheetRefreshOneRoute,
   ApiPublicHooksSheetsRefreshRoute: ApiPublicHooksSheetsRefreshRoute,
   ApiPublicHooksSmartAlertsScanRoute: ApiPublicHooksSmartAlertsScanRoute,
   ApiPublicHooksStaleCriticalWatcherRoute:
