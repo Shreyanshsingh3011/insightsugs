@@ -2288,7 +2288,7 @@ export async function runCopilotAgent(
       return { text: polished };
     }
 
-    let result: { text?: string };
+    let result: { text?: string } | null = null;
     const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
     if (!actionQuestion) {
       const deterministicFirst = await runDeterministic("selected_source_fast_path");
@@ -2296,9 +2296,9 @@ export async function runCopilotAgent(
         result = { text: deterministicFirst.text };
       }
     }
-    if (!result! && !key) {
+    if (!result && !key) {
       result = await runWithGeminiFallback();
-    } else if (!result!) {
+    } else if (!result && key) {
       try {
         const gateway = gatewayModule!.createLovableAiGatewayProvider(key);
         const model = gateway("google/gemini-3-flash-preview");
@@ -2337,7 +2337,7 @@ export async function runCopilotAgent(
     }
 
 
-    const rawAnswer = (result.text ?? "").trim();
+    const rawAnswer = (result?.text ?? "").trim();
 
     // 6) Structural citation validator against the ledger.
     const inlineRe = /\[([^\]\n]{2,}?)\]/g;
