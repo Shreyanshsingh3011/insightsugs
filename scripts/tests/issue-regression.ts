@@ -16,6 +16,7 @@ import {
   describeSearchedColumns,
   hasStrictTarget,
   contentTokens,
+  candidateMatchesRequestedTarget,
 } from "../../src/lib/query-match";
 import { deterministicAnswer } from "../../src/lib/copilot-deterministic.server";
 import {
@@ -77,6 +78,16 @@ test("#5b", "Cross-column tender identifiers match without contiguous row text",
   assert(phrases.includes("nbpdcl nit 48 samastipur"), "full code-like phrase is required");
   assert(!matchesAllPhrases(hay, phrases), "non-adjacent columns are not a contiguous phrase hit");
   assert(matchesExactTarget(hay, phrases, tokens), "code-like tokens may match across columns");
+});
+
+test("#5c", "Punctuation variants of the same identifier are exact matches", () => {
+  const query = "nbpdcl nit 48 samastipur";
+  const phrases = strictPhrases(query);
+  const tokens = contentTokens(query);
+  assert(
+    candidateMatchesRequestedTarget("NBPDCL-NIT-48_Samastipur", phrases, tokens),
+    "hyphen/underscore candidate is the same exact identifier",
+  );
 });
 
 /* ── Status derivation: Issues #6, #8, #9 ── */

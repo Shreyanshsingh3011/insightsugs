@@ -97,6 +97,7 @@ import {
   normalizeHaystack,
   matchesExactTarget,
   exactTargetScore,
+  candidateMatchesRequestedTarget,
   contentTokens as qmContentTokens,
   extractRequestedColumns,
 } from "./query-match";
@@ -554,6 +555,9 @@ export async function deterministicAnswer(params: {
       const suggestions: string[] = [];
       const suggestCites: string[] = [];
       const seen = new Set<string>();
+      const seenSuggestionLabels = new Set<string>();
+      const exactRescueLines: string[] = [];
+      const exactRescueCites: string[] = [];
       for (const { reg, rows } of sheetRows) {
         const cols = allColumns(rows);
         const statusCol = statusColumn(cols);
@@ -594,8 +598,22 @@ export async function deterministicAnswer(params: {
           if (seen.has(key)) continue;
           seen.add(key);
           const marker = `[sheet:${reg.display_name} row ${r.row_index + 1}]`;
-          suggestions.push(`\`${label.slice(0, 80)}\` ${marker}`);
-          suggestCites.push(marker);
+          const preview = Object.entries(r.data)
+            .filter(([, v]) => cellText(v) !== "")
+            .slice(0, 6)
+            .map(([k, v]) => `${k}: ${cellText(v).slice(0, 80)}`)
+            .join(" · ");
+          if (candidateMatchesRequestedTarget(label, targetPhrases, tokens)) {
+            exactRescueLines.push(`- ${preview || label} ${marker}`);
+            exactRescueCites.push(marker);
+          } else {
+            const labelKey = normalizeHaystack([label]);
+            if (!seenSuggestionLabels.has(labelKey)) {
+              seenSuggestionLabels.add(labelKey);
+              suggestions.push(`\`${label.slice(0, 80)}\` ${marker}`);
+              suggestCites.push(marker);
+            }
+          }
           params.ledgerSink?.push({
             kind: "sheet_row",
             registryId: reg.id,
@@ -606,6 +624,17 @@ export async function deterministicAnswer(params: {
         }
       }
       const asked = targetPhrases[0] ?? tokens.join(" ");
+      if (exactRescueLines.length > 0) {
+        const uniqExactCites = Array.from(new Set(exactRescueCites));
+        return {
+          answer:
+            `Found exact separator-normalized match for "${asked}" in the selected sources:\n\n` +
+            exactRescueLines.slice(0, 10).join("\n") +
+            `\n\nSources:\n${uniqExactCites.map((m) => `- ${m}`).join("\n")}`,
+          citations: uniqExactCites,
+          matched: true,
+        };
+      }
       if (suggestions.length > 0) {
         const answer =
           `**No exact match for "${asked}"** in the selected sources.\n\n` +

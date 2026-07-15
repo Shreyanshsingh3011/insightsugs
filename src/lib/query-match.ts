@@ -186,6 +186,19 @@ export function exactTargetScore(hay: string, phrases: string[], tokens: string[
   return 0;
 }
 
+/**
+ * True when a displayed candidate label is the same requested target after the
+ * same punctuation/spacing normalization used for row search. This prevents
+ * self-contradictory clarifications like refusing `nbpdcl nit 48 samastipur`
+ * while suggesting `NBPDCL-NIT-48_Samastipur` — those are the same identifier
+ * separated with punctuation instead of spaces.
+ */
+export function candidateMatchesRequestedTarget(candidate: string, phrases: string[], tokens: string[]): boolean {
+  const hay = normalizeHaystack([candidate]);
+  if (phrases.length > 0) return matchesExactTarget(hay, phrases, tokens);
+  return tokens.length > 0 && tokens.every((t) => phraseHit(hay, t));
+}
+
 /** Count how many strict phrases hit — for graceful "partial match" fallback. */
 export function countPhraseHits(hay: string, phrases: string[]): number {
   let n = 0;
