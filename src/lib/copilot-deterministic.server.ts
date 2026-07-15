@@ -470,22 +470,30 @@ export async function deterministicAnswer(params: {
     // Auto-Insights or generic refusal — surface closest candidates and
     // ask a clarifying question. This prevents returning IT77 when the
     // user asked for IT76, or Ram Devi when they asked for Kunti Devi.
-    const hadSpecificTarget = basePhrases.length > 0;
+    // Drop phrases that merely name a column of a selected sheet — they are
+    // meta-references ("Store Name", "TAT"), not value lookups. Without this
+    // the guardrail treats questions ABOUT a column as a failed value search.
+    const allSheetColumnNorms = new Set<string>();
+    for (const { rows } of sheetRows) {
+      for (const c of allColumns(rows)) {
+        allSheetColumnNorms.add(c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
+      }
+    }
+    const targetPhrases = basePhrases.filter(
+      (p) => !allSheetColumnNorms.has(p.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()),
+    );
+    const hadSpecificTarget = targetPhrases.length > 0;
     if (hadSpecificTarget) {
       const suggestions: string[] = [];
       const suggestCites: string[] = [];
       const seen = new Set<string>();
-      // Rank rows by how many phrase-tokens they contain (partial hits).
-      const phraseTokens = Array.from(
-        new Set(basePhrases.flatMap((p) => p.split(" ").filter((t) => t.length >= 2))),
-      );
       for (const { reg, rows } of sheetRows) {
         const cols = allColumns(rows);
         const statusCol = statusColumn(cols);
         const searchRows = activeOnly ? rows.filter((r) => !isTerminal(r, statusCol)) : rows;
         const requestedColumns = extractRequestedColumns(question, cols);
         const requestedColumnNorms = new Set(requestedColumns.map((c) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
-        const scoredPhrases = basePhrases.filter((p) => !requestedColumnNorms.has(p));
+        const scoredPhrases = targetPhrases.filter((p) => !requestedColumnNorms.has(p));
         const scored = searchRows
           .map((r) => {
             const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
@@ -498,10 +506,15 @@ export async function deterministicAnswer(params: {
           .sort((a, b) => b.s - a.s)
           .slice(0, 3);
         for (const { r } of scored) {
-          // Pick a short label: first non-empty text cell.
-          const label = Object.values(r.data)
-            .map((v) => cellText(v))
-            .find((v) => v && v.length > 0) ?? `row ${r.row_index + 1}`;
+          // Pick a short label: prefer a text-like cell (letters present,
+          // not just a number/id-less numeric like "0" or "877") so
+          // suggestions read as names, not row-indexes.
+          const texts = Object.values(r.data).map((v) => cellText(v)).filter((v) => v.length > 0);
+          const label =
+            texts.find((v) => /[a-zA-Z]/.test(v) && v.length >= 3) ??
+            texts.find((v) => v.length >= 3) ??
+            texts[0] ??
+            `row ${r.row_index + 1}`;
           const key = `${reg.id}#${r.row_index}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -517,7 +530,7 @@ export async function deterministicAnswer(params: {
           });
         }
       }
-      const asked = basePhrases[0] ?? tokens.join(" ");
+      const asked = targetPhrases[0] ?? tokens.join(" ");
       if (suggestions.length > 0) {
         const answer =
           `**No exact match for "${asked}"** in the selected sources.\n\n` +
