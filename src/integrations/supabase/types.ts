@@ -1745,6 +1745,7 @@ export type Database = {
           degraded_until: string | null
           display_name: string
           id: string
+          last_content_hash: string | null
           last_error: string | null
           last_refreshed_at: string | null
           last_row_hash_sample: string | null
@@ -1761,6 +1762,7 @@ export type Database = {
           degraded_until?: string | null
           display_name: string
           id?: string
+          last_content_hash?: string | null
           last_error?: string | null
           last_refreshed_at?: string | null
           last_row_hash_sample?: string | null
@@ -1777,6 +1779,7 @@ export type Database = {
           degraded_until?: string | null
           display_name?: string
           id?: string
+          last_content_hash?: string | null
           last_error?: string | null
           last_refreshed_at?: string | null
           last_row_hash_sample?: string | null

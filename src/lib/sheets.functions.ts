@@ -620,10 +620,20 @@ export const registerAndSyncSheet = createServerFn({ method: "POST" })
   });
 
 
+async function computePayloadHash(payload: unknown): Promise<string> {
+  const text = JSON.stringify(payload);
+  const buf = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (const b of bytes) hex += b.toString(16).padStart(2, "0");
+  return hex;
+}
+
 export async function syncRowsInternal(supabase: any, userId: string, registryId: string) {
   const { data: reg, error: regErr } = await supabase
     .from("sheet_registry")
-    .select("apps_script_url, user_id")
+    .select("apps_script_url, user_id, last_content_hash")
     .eq("id", registryId)
     .maybeSingle();
   if (regErr) throw new Error(regErr.message);
@@ -658,6 +668,22 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
     };
   });
 
+  // Content-hash short-circuit: if the freshly fetched payload matches the
+  // last snapshot, skip the DELETE+INSERT churn entirely. This is the single
+  // biggest DB-time saver — most 2-minute refreshes see no data change but
+  // previously rewrote every row and blew up WAL + HNSW maintenance cost.
+  const nextHash = await computePayloadHash({
+    h: headers,
+    r: toInsert.map((t) => [t.row_index, t.canonical, t.extras]),
+  });
+  if (nextHash === (reg.last_content_hash ?? null)) {
+    await supabase
+      .from("sheet_registry")
+      .update({ last_refreshed_at: new Date().toISOString() })
+      .eq("id", registryId);
+    return;
+  }
+
   const { error: delErr } = await supabase
     .from("sheet_rows")
     .delete()
@@ -678,9 +704,11 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
     .update({
       last_refreshed_at: new Date().toISOString(),
       row_count: toInsert.length,
+      last_content_hash: nextHash,
     })
     .eq("id", registryId);
 }
+
 
 export const refreshSheet = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
