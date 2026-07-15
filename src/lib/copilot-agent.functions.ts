@@ -998,6 +998,7 @@ export async function runCopilotAgent(
           if (!doc) return { error: "Unknown document_id" };
           let matches: any[] = [];
           let mode: "vector" | "keyword" = "vector";
+          let rowsScanned = 0;
           try {
             // Doc chunks are stored at 768d (google/gemini-embedding-001 via
             // documents.server.embedTexts). Must query with the SAME model or
@@ -1013,14 +1014,11 @@ export async function runCopilotAgent(
             });
             if (error) throw new Error(error.message);
             matches = (vectorMatches ?? []) as any[];
+            rowsScanned = matches.length;
           } catch {
             mode = "keyword";
-            const { data: chunks, error } = await supabase
-              .from("document_chunks")
-              .select("document_id, content, page_no")
-              .eq("document_id", document_id)
-              .limit(300);
-            if (error) return { error: error.message };
+            const chunks = await fetchAllDocumentChunks(supabase, [document_id]);
+            rowsScanned = chunks.length;
             const tokens = query
               .toLowerCase()
               .split(/[^a-z0-9]+/i)
@@ -1056,7 +1054,7 @@ export async function runCopilotAgent(
             sourceName: doc.name,
             sourceType: "document",
             matcherPath: `search_doc_chunks:${mode}`,
-            rowsScanned: mode === "keyword" ? Math.max(results.length, matches.length) : matches.length,
+            rowsScanned,
             rowsMatched: results.length,
           });
           return {
