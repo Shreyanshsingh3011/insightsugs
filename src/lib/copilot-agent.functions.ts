@@ -775,6 +775,12 @@ export async function runCopilotAgent(
       const measureName = /(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|unit|units|stock|jmc|cons|grn|mrn|transfer|loan|paid|outstanding|percent|percentage|score|weight|volume|capacity)/i;
       const idName = /(^|[\s_.-])(id|no|num|number|code|ref|serial|sr|s\.?no|sno|po|mrn|grn|invoice|bill)([\s_.-]|$)/i;
       const explicitDateName = /(date|due|deadline|expir|expires|expiry|expiration|renewal|valid|validity|valid\s+up\s*to|valid\s+till|valid\s+through|period\s+to|contract\s+end|eta|target|planned|actual|completion|closed|opened|created|updated|receipt|dispatch|delivery|schedule|milestone)/i;
+      const sampleRows = rows.length <= 1200
+        ? rows
+        : [
+            ...rows.slice(0, 200),
+            ...rows.filter((_, index) => index >= 200 && index % Math.max(1, Math.floor(rows.length / 1000)) === 0).slice(0, 1000),
+          ];
       const hasDateShape = (value: unknown) => {
         const s = String(value ?? "").trim();
         if (!s) return false;
@@ -801,7 +807,7 @@ export async function runCopilotAgent(
         let parsed = 0;
         let non_empty = 0;
         let shaped = 0;
-        for (const r of rows.slice(0, 150)) {
+        for (const r of sampleRows) {
           const v = r.data[k];
           if (v == null || v === "") continue;
           non_empty++;
@@ -880,9 +886,9 @@ export async function runCopilotAgent(
             }
             if (!dateCol) {
               const availableColumns = rowColumns(rows).slice(0, 60);
+              const explicitDateColumnName = /(date|due|deadline|expir|expires|expiry|expiration|renewal|valid|validity|valid\s+up\s*to|valid\s+till|valid\s+through|period\s+to|contract\s+end|eta|target|planned|actual|completion|closed|opened|created|updated|receipt|dispatch|delivery|schedule|milestone)/i;
               const dateLikeColumns = availableColumns.filter((k) =>
-                /date|due|deadline|expir|expiration|renewal|end|target|planned|delivery|dispatch|receipt|eta|valid|period|milestone|schedule/i.test(k) &&
-                !/(amount|amt|balance|value|total|sum|cost|price|rate|qty|quantity|unit|units|stock|jmc|cons|grn|mrn|transfer|loan|paid|outstanding|percent|percentage|score|weight|volume|capacity)/i.test(k),
+                explicitDateColumnName.test(k),
               ).slice(0, 20);
               pushRetrievalDiagnostic({
                 sourceId: sheet_id,
