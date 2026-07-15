@@ -38,6 +38,7 @@ import { ChatGroundingHint } from "@/components/ChatGroundingHint";
 import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
 import { renderWithCitations } from "@/components/copilot/CitationLink";
 import { PrimarySourceLink, stripCitations } from "@/components/copilot/PrimarySourceLink";
+import { useSession } from "@/hooks/useSession";
 import {
   ResponsiveContainer,
   BarChart,
@@ -73,6 +74,20 @@ type ChartSpec = {
 
 const COPILOT_SHEETS_CACHE_KEY = "copilot:lastGoodSheets";
 const COPILOT_DOCUMENTS_CACHE_KEY = "copilot:lastGoodDocuments";
+
+function scopedCopilotKey(base: string, userId: string | null) {
+  return `${base}:${userId ?? "signed-out"}`;
+}
+
+function readSessionJson<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function readCachedSourceList<T>(key: string): CachedSourceList<T> {
   if (typeof window === "undefined") return { rows: [], cachedAt: "" };
@@ -391,6 +406,7 @@ type Insight = { title: string; detail: string; severity: "info" | "warning" | "
 const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
 
 function CopilotPage() {
+  const { userId } = useSession();
   const fetchList = useServerFn(listSheets);
   const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
@@ -423,38 +439,31 @@ function CopilotPage() {
 
   const [question, setQuestion] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = window.sessionStorage.getItem("copilot:selected");
-      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-    } catch { return new Set(); }
+    return new Set(readSessionJson<string[]>(scopedCopilotKey("copilot:selected", userId), []));
   });
   const [selectedDocs, setSelectedDocs] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = window.sessionStorage.getItem("copilot:selectedDocs");
-      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-    } catch { return new Set(); }
+    return new Set(readSessionJson<string[]>(scopedCopilotKey("copilot:selectedDocs", userId), []));
   });
   const [history, setHistory] = useState<Turn[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.sessionStorage.getItem("copilot:history");
-      return raw ? (JSON.parse(raw) as Turn[]) : [];
-    } catch { return []; }
+    return readSessionJson<Turn[]>(scopedCopilotKey("copilot:history", userId), []);
   });
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.sessionStorage.setItem("copilot:history", JSON.stringify(history.slice(-50))); } catch { /* ignore */ }
-  }, [history]);
+    setSelected(new Set(readSessionJson<string[]>(scopedCopilotKey("copilot:selected", userId), [])));
+    setSelectedDocs(new Set(readSessionJson<string[]>(scopedCopilotKey("copilot:selectedDocs", userId), [])));
+    setHistory(readSessionJson<Turn[]>(scopedCopilotKey("copilot:history", userId), []));
+  }, [userId]);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try { window.sessionStorage.setItem("copilot:selected", JSON.stringify([...selected])); } catch { /* ignore */ }
-  }, [selected]);
+    try { window.sessionStorage.setItem(scopedCopilotKey("copilot:history", userId), JSON.stringify(history.slice(-50))); } catch { /* ignore */ }
+  }, [history, userId]);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try { window.sessionStorage.setItem("copilot:selectedDocs", JSON.stringify([...selectedDocs])); } catch { /* ignore */ }
-  }, [selectedDocs]);
+    try { window.sessionStorage.setItem(scopedCopilotKey("copilot:selected", userId), JSON.stringify([...selected])); } catch { /* ignore */ }
+  }, [selected, userId]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.sessionStorage.setItem(scopedCopilotKey("copilot:selectedDocs", userId), JSON.stringify([...selectedDocs])); } catch { /* ignore */ }
+  }, [selectedDocs, userId]);
   useEffect(() => {
     writeCachedSourceList(COPILOT_SHEETS_CACHE_KEY, liveSheets);
   }, [liveSheets]);
@@ -500,8 +509,14 @@ function CopilotPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const sendAsk = (q: string) => {
+    const liveSheetIds = new Set(liveSheets.map((s: any) => s.id));
+    const liveDocumentIds = new Set(liveDocuments.map((d: any) => d.id));
+    const scopedSheetIds = Array.from(selected).filter((id) => liveSheets.length > 0 && liveSheetIds.has(id));
+    const scopedDocumentIds = Array.from(selectedDocs).filter((id) => liveDocuments.length > 0 && liveDocumentIds.has(id));
     askMut.mutate({
       question: q,
+      sheetIds: scopedSheetIds,
+      documentIds: scopedDocumentIds,
       history: history.flatMap((t) => [
         { role: "user" as const, content: t.question },
         { role: "assistant" as const, content: t.answer },
@@ -512,6 +527,8 @@ function CopilotPage() {
   const askMut = useMutation({
     mutationFn: (vars: {
       question: string;
+      sheetIds: string[];
+      documentIds: string[];
       history: { role: "user" | "assistant"; content: string }[];
       retryForCitations?: boolean;
       originalQuestion?: string;
@@ -528,8 +545,8 @@ function CopilotPage() {
         ask({
           data: {
             question: q,
-            sheetIds: Array.from(selected),
-            documentIds: Array.from(selectedDocs),
+            sheetIds: vars.sheetIds,
+            documentIds: vars.documentIds,
             history: vars.history,
             strictMatch,
           },
@@ -548,6 +565,8 @@ function CopilotPage() {
         toast.info("Answer rejected — missing citations. Retrying…");
         askMut.mutate({
           question: displayedQuestion,
+          sheetIds: vars.sheetIds,
+          documentIds: vars.documentIds,
           history: vars.history,
           retryForCitations: true,
           originalQuestion: displayedQuestion,
