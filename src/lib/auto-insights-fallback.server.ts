@@ -64,6 +64,31 @@ const MEASURE_NAME_RE = /(amount|amt|balance|value|total|sum|cost|price|rate|qty
 const FREETEXT_NAME_RE = /(remark|comment|note|description|desc|address|reason|summary)/i;
 const DATE_NAME_RE = /(date|time|timestamp|created|updated|start|end|deadline|due)/i;
 
+function looksDateLike(value: unknown): boolean {
+  const s = cellText(value);
+  if (!s) return false;
+  return (
+    /\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/.test(s) ||
+    /\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}/.test(s) ||
+    /[a-z]{3,}\s+\d{1,2},?\s+\d{4}/i.test(s)
+  );
+}
+
+function columnHasDateValues(rows: Record<string, unknown>[], column: string): boolean {
+  let total = 0;
+  let shaped = 0;
+  let parsed = 0;
+  for (const row of rows.slice(0, 200)) {
+    const value = row[column];
+    if (!cellText(value)) continue;
+    total += 1;
+    if (looksDateLike(value)) shaped += 1;
+    if (parseDateMs(value) != null) parsed += 1;
+  }
+  if (total < 3) return false;
+  return shaped / total >= 0.3 && parsed / total >= 0.3;
+}
+
 function isMostlyNumeric(rows: Record<string, unknown>[], column: string) {
   let total = 0;
   let numeric = 0;
@@ -452,7 +477,7 @@ export function detectSheetShape(columns: string[]): SheetShape {
   if (/attendance|check[- ]?in|check[- ]?out|shift|leave|absent|present|hours worked|payroll/.test(cols)) return "hr_attendance";
   if (/email|phone|mobile|contact|address|city|pincode|zip/.test(cols) && !/status|stage|progress/.test(cols)) return "contacts";
   if (/stock|inventory|sku|units in|on hand|qty on|reorder|warehouse/.test(cols)) return "inventory";
-  if (/contract|agreement|expiry|expires|renewal|clause|nda|mou/.test(cols)) return "contracts";
+  if (/\bcontract\b|agreement|expiry|expires|renewal|clause|nda|mou/.test(cols)) return "contracts";
   if (/milestone|phase|planned|actual|baseline|start date|end date|target date|completion/.test(cols)) return "timeline";
   if (/lead|opportunity|deal|pipeline|prospect|conversion|revenue|customer/.test(cols)) return "sales_crm";
   if (/ticket|complaint|issue|resolution|sla|priority|reported/.test(cols)) return "tickets";
@@ -612,7 +637,7 @@ function templateContracts({ sheetName, allRows, activeRows, columns, insights, 
   const partyCol = findCol(columns, /party|counterparty|vendor|client|customer/i);
   const valueCol = findCol(columns, /value|amount|worth/i);
 
-  if (expiryCol) {
+  if (expiryCol && columnHasDateValues(allRows, expiryCol)) {
     const today = Date.now();
     let expired = 0;
     let soon = 0;
@@ -633,7 +658,9 @@ function templateContracts({ sheetName, allRows, activeRows, columns, insights, 
     const { sum, count } = sumCol(allRows, valueCol);
     if (count > 0) addInsight(insights, `Contract portfolio ${valueCol}`, `${fmt(sum)} across ${fmt(count)} contracts.`);
   }
-  questions.push(`Which contracts expire in the next 30 days in ${sheetName}?`);
+  if (expiryCol && columnHasDateValues(allRows, expiryCol)) {
+    questions.push(`Which contracts expire in the next 30 days in ${sheetName}?`);
+  }
 }
 
 function templateTimeline({ sheetName, activeRows, columns, insights, questions }: TemplateCtx) {
