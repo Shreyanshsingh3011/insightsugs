@@ -2193,15 +2193,27 @@ export async function runCopilotAgent(
     // grounded in the selected sheet even when the model skips the tool
     // (e.g. Gemini fallback under 402 pressure).
     const qLower = data.question.toLowerCase();
-    // Detect "expire in next N days" / "expiring/renewal within N days" as an
-    // overdue-style forward-window query on the expiry column.
-    const expiryWindowMatch = /\b(expir\w*|renewal)\b[^.?!]*?\b(in|within|next)\b\s*(\d{1,4})\s*(day|days|week|weeks|month|months)?/.exec(qLower);
-    let expiryWindowDays: number | null = null;
-    if (expiryWindowMatch) {
-      const n = Number(expiryWindowMatch[3]);
-      const unit = (expiryWindowMatch[4] ?? "day").toLowerCase();
-      expiryWindowDays = unit.startsWith("week") ? n * 7 : unit.startsWith("month") ? n * 30 : n;
-    }
+    // Detect "expire in the next 30 days", "expiring within 2 weeks",
+    // "next 30 days expiry", etc. The older regex missed the very common
+    // "in the next N days" wording and let the query fall through to generic
+    // Auto-Insights.
+    const parseTemporalWindowDays = (q: string): number | null => {
+      const patterns = [
+        /\b(?:expir\w*|renewal|due)\b[^.?!]{0,100}?\b(?:in|within|during|over)\s+(?:the\s+)?(?:next\s+)?(\d{1,4})\s*(days?|weeks?|months?)?\b/i,
+        /\b(?:expir\w*|renewal|due)\b[^.?!]{0,100}?\bnext\s+(\d{1,4})\s*(days?|weeks?|months?)?\b/i,
+        /\b(?:next|within(?:\s+the)?\s+next)\s+(\d{1,4})\s*(days?|weeks?|months?)?\b[^.?!]{0,100}?\b(?:expir\w*|renewal|due)\b/i,
+      ];
+      for (const pattern of patterns) {
+        const match = pattern.exec(q);
+        if (!match) continue;
+        const n = Number(match[1]);
+        if (!Number.isFinite(n)) continue;
+        const unit = (match[2] ?? "day").toLowerCase();
+        return unit.startsWith("week") ? n * 7 : unit.startsWith("month") ? n * 30 : n;
+      }
+      return null;
+    };
+    const expiryWindowDays = parseTemporalWindowDays(qLower);
     const temporalOp: "earliest" | "latest" | "overdue" | "tat_breached" | "due_within" | null =
       expiryWindowDays != null
         ? "due_within"
@@ -2213,7 +2225,7 @@ export async function runCopilotAgent(
             ? "overdue"
             : /\btat\b.*\b(breach|missed|exceed|over)|sla\s+(missed|breach)/.test(qLower)
               ? "tat_breached"
-              : /\b(due|expir\w*|renewal)\b\s*(in|within|next)\s*\d+/.test(qLower)
+              : /\b(due|expir\w*|renewal)\b[^.?!]{0,100}?\b(?:in|within|during|over)?\s*(?:the\s+)?(?:next\s+)?\d+\s*(?:days?|weeks?|months?)?\b/.test(qLower)
                 ? "due_within"
                 : null;
     const columnHint = expiryWindowDays != null || /\bexpir|renewal/.test(qLower)
@@ -2234,6 +2246,8 @@ export async function runCopilotAgent(
 
     const preflightBlocks: string[] = [];
     const preflightCites: string[] = [];
+    const preflightNoMatchSheets: string[] = [];
+    const preflightErrorSheets: Array<{ sheet: string; error: string }> = [];
     let preflightDateColumn: string | null = null;
     if (temporalOp && regs.length > 0) {
       for (const r of regs) {
@@ -2261,8 +2275,10 @@ export async function runCopilotAgent(
             );
           } else if (res?.error) {
             preflightBlocks.push(`Sheet "${r.display_name}" — ${res.error}`);
+            preflightErrorSheets.push({ sheet: r.display_name, error: String(res.error) });
           } else {
             preflightBlocks.push(`Sheet "${r.display_name}" — 0 rows matched op=${temporalOp}.`);
+            preflightNoMatchSheets.push(r.display_name);
           }
         } catch (e) {
           preflightBlocks.push(`Sheet "${r.display_name}" — preflight failed: ${(e as Error)?.message ?? "error"}`);
@@ -2274,6 +2290,67 @@ export async function runCopilotAgent(
         "\n\nPRE-FLIGHT RESULTS (already executed against the selected sheet(s) — DO NOT call date_query_rows again for the same question; answer directly from these rows and cite each one using the `cite` marker from the row):\n\n" +
         preflightBlocks.join("\n\n")
       : system;
+
+    const synthesizeTemporalPreflightAnswer = (): string | null => {
+      if (!temporalOp || preflightBlocks.length === 0) return null;
+      const preflightRows = ledger.filter(
+        (l): l is Extract<LedgerEntry, { kind: "sheet_row" }> => l.kind === "sheet_row",
+      );
+      const opLabel =
+        temporalOp === "due_within" && columnHint === "expir"
+          ? `expiring in the next ${expiryWindowDays ?? "requested"} days`
+          : temporalOp === "due_within"
+            ? `due in the next ${expiryWindowDays ?? "requested"} days`
+            : temporalOp === "overdue"
+              ? "overdue"
+              : temporalOp === "tat_breached"
+                ? "TAT-breached"
+                : temporalOp;
+
+      if (preflightRows.length > 0) {
+        const bySheet = new Map<string, typeof preflightRows>();
+        for (const row of preflightRows) {
+          const list = bySheet.get(row.registryId) ?? [];
+          list.push(row);
+          bySheet.set(row.registryId, list);
+        }
+        const lines: string[] = [];
+        const cites: string[] = [];
+        for (const [regId, rows] of bySheet) {
+          const reg = sheetById.get(regId);
+          if (!reg) continue;
+          lines.push(
+            `**${reg.display_name}** — showing ${Math.min(10, rows.length)} of ${rows.length} ${opLabel} row${rows.length === 1 ? "" : "s"}${preflightDateColumn ? ` by \`${preflightDateColumn}\`` : ""}:`,
+          );
+          for (const row of rows.slice(0, 10)) {
+            const marker =
+              preflightCites.find((cite) => cite.includes(`sheet:${reg.display_name} row ${row.rowIndex + 1} `)) ??
+              `[sheet:${reg.display_name} row ${row.rowIndex + 1}]`;
+            const preview = Object.entries(row.data)
+              .filter(([, value]) => value != null && String(value).trim() !== "")
+              .slice(0, 6)
+              .map(([key, value]) => `${key}: ${String(value).slice(0, 70)}`)
+              .join(" · ");
+            lines.push(`- ${preview} ${marker}`);
+            cites.push(marker);
+          }
+        }
+        const uniqueCites = Array.from(new Set(cites));
+        return `I answered this as a date-window query from the selected sheet, not as Auto-Insights.\n\n${lines.join("\n")}\n\nSources:\n${uniqueCites.map((cite) => `- ${cite}`).join("\n")}`;
+      }
+
+      if (preflightNoMatchSheets.length > 0) {
+        const cites = preflightNoMatchSheets.map((sheet) => `[sheet:${sheet}]`);
+        return `I found 0 ${opLabel} rows in the selected sheet${preflightNoMatchSheets.length === 1 ? "" : "s"}: ${preflightNoMatchSheets.join(", ")}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
+      }
+
+      if (preflightErrorSheets.length > 0) {
+        const cites = preflightErrorSheets.map(({ sheet }) => `[sheet:${sheet}]`);
+        return `I could not run the date-window lookup because no usable date/expiry column was detected in the selected sheet${preflightErrorSheets.length === 1 ? "" : "s"}. ${preflightErrorSheets.map(({ sheet, error }) => `${sheet}: ${error}`).join("; ")} ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
+      }
+
+      return null;
+    };
 
 
     const toolset = {
@@ -2384,7 +2461,12 @@ export async function runCopilotAgent(
       return { text: polished };
     }
 
-    let result: { text?: string } | null = null;
+    let result: { text?: string } | null = temporalOp
+      ? (() => {
+          const answer = synthesizeTemporalPreflightAnswer();
+          return answer ? { text: answer } : null;
+        })()
+      : null;
     const actionQuestion = /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(data.question);
     if (!actionQuestion) {
       const deterministicFirst = await runDeterministic("selected_source_fast_path");
