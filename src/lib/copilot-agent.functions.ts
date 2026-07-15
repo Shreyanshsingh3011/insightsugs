@@ -2377,7 +2377,7 @@ export async function runCopilotAgent(
 
       if (preflightErrorSheets.length > 0) {
         const cites = preflightErrorSheets.map(({ sheet }) => `[sheet:${sheet}]`);
-        return `I could not run the date-window lookup because no usable date/expiry column was detected in the selected sheet${preflightErrorSheets.length === 1 ? "" : "s"}. ${preflightErrorSheets.map(({ sheet, error }) => `${sheet}: ${error}`).join("; ")} ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
+        return `I could not find expiry results because no usable date/expiry column was detected in the selected sheet${preflightErrorSheets.length === 1 ? "" : "s"}: ${preflightErrorSheets.map(({ sheet }) => sheet).join(", ")}. ${cites.join(" ")}\n\nSources:\n${cites.map((cite) => `- ${cite}`).join("\n")}`;
       }
 
       return null;
