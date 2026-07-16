@@ -1,3 +1,4 @@
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 // System prompt builder for the Copilot agent. Extracted from
 // copilot-agent.functions.ts so the monolith no longer inlines the ~150-line
 // grounding contract. Pure function — no I/O, no closures over runtime state.
@@ -189,9 +190,9 @@ export function buildCopilotSystemPrompt(input: CopilotSystemPromptInput): strin
     "- Never take an action based on your own inference. Only act on an explicit user request in the current turn.",
     "",
     "SHEET AUTO-INSIGHTS (already computed for the selected sheet(s) — treat these as trusted context, use them to interpret the user's question, and cite them as [sheet:<display_name>] when the answer restates one):",
-    JSON.stringify(sheetInsightSnapshot).slice(0, 6000),
+    truncateJsonForPrompt(sheetInsightSnapshot, 6000),
     "",
     "AVAILABLE DATA CATALOG (these are the ONLY sources you may use; each sheet has `detected_shape` and `columns` — filter and search using those column names, not guesses):",
-    JSON.stringify(catalog).slice(0, 8000),
+    truncateJsonForPrompt(catalog, 8000),
   ].join("\n");
 }

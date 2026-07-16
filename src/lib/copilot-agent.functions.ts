@@ -2341,9 +2341,19 @@ export async function runCopilotAgent(
             for (const row of res._resultForModel.rows) {
               if (typeof row?.cite === "string") preflightCites.push(row.cite);
             }
+            // Truncate by row count, not bytes: slicing a JSON string mid-object
+            // hands the model malformed JSON and silently corrupts grounding.
+            const allRows = res._resultForModel.rows as unknown[];
+            const MAX_ROWS = 40;
+            const shown = allRows.slice(0, MAX_ROWS);
+            const suffix =
+              allRows.length > MAX_ROWS
+                ? `\n(showing first ${MAX_ROWS} of ${allRows.length} rows)`
+                : "";
             preflightBlocks.push(
               `Sheet "${r.display_name}" — op=${temporalOp}${columnHint ? `, hint=${columnHint}` : ""}, date_column=${res._resultForModel.date_column}:\n` +
-                JSON.stringify(res._resultForModel.rows).slice(0, 3500),
+                JSON.stringify(shown) +
+                suffix,
             );
           } else if (res?.error) {
             preflightBlocks.push(`Sheet "${r.display_name}" — ${res.error}`);

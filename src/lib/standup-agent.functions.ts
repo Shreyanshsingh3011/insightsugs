@@ -8,6 +8,7 @@
 //
 // Callable from the UI (server fn) and from /api/public/hooks/daily-standup (cron).
 
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
@@ -104,7 +105,7 @@ async function aiSummary(project: string, items: ProjectDelayItem[]): Promise<Pr
 `Write today's standup for project "${project}". Return STRICT JSON:
 {"summary": string (2 sentences), "blockers": string[] (max 5 concrete blockers with numbers), "asks": string[] (max 5 short follow-up questions to owners, address by first name)}
 Data:
-${JSON.stringify(compact).slice(0, 8000)}` },
+${truncateJsonForPrompt(compact, 8000)}` },
         ],
         response_format: { type: "json_object" },
       }),

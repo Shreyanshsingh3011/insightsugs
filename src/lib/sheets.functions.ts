@@ -3,6 +3,7 @@ import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { callEmergent } from "@/lib/emergent-client";
 import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 import { isTransientDataApiError } from "@/lib/transient-errors";
@@ -1707,7 +1708,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       const ranks = buildHeuristicRanks(grp);
       if (ranks.length > 0) {
         operationBlocks.push(
-          `Sheet "${grp.label}" — heuristic ranks (FULL DATASET):\n${JSON.stringify(ranks).slice(0, 6000)}`,
+          `Sheet "${grp.label}" — heuristic ranks (FULL DATASET):\n${truncateJsonForPrompt(ranks, 6000)}`,
         );
       }
     }
@@ -1726,7 +1727,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
         "Decide which operations answer the user's question over the given sheets. Use ONLY column names listed.\n" +
         "Schema: {\"operations\":[{\"sheet\":\"<label>\",\"op\":\"top_n|bottom_n|group_by|filter_sort|aggregate|distribution|none\",\"measure\":\"<col>|null\",\"agg\":\"sum|avg|count|min|max|null\",\"dimension\":\"<col>|null\",\"filter\":[{\"column\":\"<col>\",\"op\":\"eq|contains|gt|gte|lt|lte\",\"value\":<any>}],\"sort_by\":\"<col>|null\",\"sort_dir\":\"asc|desc\",\"n\":<int>}]}\n" +
         "If question is not analytical, return {\"operations\":[]}. Pick one or two operations max.";
-      const plannerUser = `QUESTION: ${data.question}\n\nSHEETS:\n${JSON.stringify(catalog).slice(0, 18000)}`;
+      const plannerUser = `QUESTION: ${data.question}\n\nSHEETS:\n${truncateJsonForPrompt(catalog, 18000)}`;
 
       try {
         let planText = "";
@@ -1758,7 +1759,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
             const out = executeOperation(spec, target);
             if (out) {
               operationBlocks.push(
-                `Sheet "${target.label}" — planned op:\n${JSON.stringify({ spec: out.spec, resolved: out.resolved, result: out.result }).slice(0, 12000)}`,
+                `Sheet "${target.label}" — planned op:\n${truncateJsonForPrompt({ spec: out.spec, resolved: out.resolved, result: out.result }, 12000)}`,
               );
             }
           }
@@ -1813,9 +1814,9 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       const filteredFactsText = filteredFactsBlocks.length ? filteredFactsBlocks.join("\n\n") : "";
       const relevantRowsText = relevantRowBlocks.length ? relevantRowBlocks.join("\n\n").slice(0, 90000) : "";
       const rowsBlock = sampleRows.length
-        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
+        ? truncateJsonForPrompt(sampleRows.slice(0, 400), 80000)
         : "(no sheet rows in scope)";
-      const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
+      const aggBlock = aggregates ? truncateJsonForPrompt(aggregates, 8000) : "";
       const opsText = operationBlocks.length ? operationBlocks.join("\n\n").slice(0, 30000) : "";
       const chunksBlock = docChunkBlocks.length
         ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
