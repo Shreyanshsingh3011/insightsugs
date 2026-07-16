@@ -197,9 +197,9 @@ function detectIntent(q: string): Intent {
   const s = q.toLowerCase();
   if (/\b(how\s+many|count|number\s+of|total\s+number)\b/.test(s)) return { kind: "count" };
   const numHint = /(amount|total|value|cost|price|qty|quantity|days|delay|score|balance|paid|revenue|budget)/i.exec(s)?.[1] ?? null;
-  if (/\b(distribution|breakdown|group(ed)?\s+by|per\s+\w+)\b/.test(s)
-    || /\bby\s+(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department|month|quarter|year|week|day|weekday|assignee|customer|client)\b/.test(s)) {
-    const groupHint = /(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department)/i.exec(s)?.[1] ?? null;
+  if (/\b(distribution|breakdown|break[\s-]?down|break[\s-]?up|split|grouping|group(ed)?\s+by|per\s+\w+|by\s+column)\b/.test(s)
+    || /\bby\s+(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department|month|quarter|year|week|day|weekday|assignee|customer|client|uom|unit|store|location|branch|item|sku|product|material)\b/.test(s)) {
+    const groupHint = /(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department|uom|unit|store|location|branch|item|sku|product|material)/i.exec(s)?.[1] ?? null;
     return { kind: "distribution", hint: groupHint };
   }
   if (/\b(sum|total)\b/.test(s) && !/\bnumber\b/.test(s)) return { kind: "sum", hint: numHint };
@@ -989,7 +989,26 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
     }
 
     if (intent.kind === "distribution") {
+      // Try to resolve the group-by column directly from the user's query
+      // words against real sheet columns. This handles "break down stock uom",
+      // "breakdown by store name", "distribution of UOM", etc. — where the
+      // group column is named in the question but not matched by generic hints.
+      const normCol = (c: string) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const qnorm = question.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const qTokens = new Set(qnorm.split(/\s+/).filter((t) => t.length >= 2));
+      const colFromQuery = cols
+        .map((c) => {
+          const n = normCol(c);
+          if (!n) return { c, score: 0 };
+          if (qnorm.includes(n) && n.length >= 3) return { c, score: 100 + n.length };
+          const parts = n.split(/\s+/).filter((p) => p.length >= 2);
+          const hits = parts.filter((p) => qTokens.has(p)).length;
+          return { c, score: parts.length > 0 && hits === parts.length ? 50 + hits : hits };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)[0]?.c;
       const groupCol =
+        colFromQuery ||
         (intent.hint && cols.find((c) => new RegExp(intent.hint!, "i").test(c))) ||
         statusCol ||
         pickColumn(cols, [/type/i, /category/i, /priority/i, /owner/i, /project/i, /vendor/i, /activity/i]);
@@ -997,8 +1016,12 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
         parts.push(`**${reg.display_name}** — no group-by column detected.`);
         continue;
       }
+      // For a group-by, the "universe" is the whole sheet (or activeRows) —
+      // do NOT filter by phrase matches when the phrase is the group column.
+      const distUniverse = universe.length > 0 ? universe : searchRows;
+
       const counts = new Map<string, StoredRow[]>();
-      for (const r of universe) {
+      for (const r of distUniverse) {
         const key = cellText(r.data[groupCol]) || "(blank)";
         if (!counts.has(key)) counts.set(key, []);
         counts.get(key)!.push(r);
