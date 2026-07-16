@@ -686,6 +686,48 @@ export type Database = {
         }
         Relationships: []
       }
+      copilot_clarify_sessions: {
+        Row: {
+          created_at: string
+          document_ids: string[]
+          id: string
+          options: Json
+          question: string | null
+          reasons: Json
+          resolved_scope: Json | null
+          sheet_ids: string[]
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          document_ids?: string[]
+          id?: string
+          options?: Json
+          question?: string | null
+          reasons?: Json
+          resolved_scope?: Json | null
+          sheet_ids?: string[]
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          document_ids?: string[]
+          id?: string
+          options?: Json
+          question?: string | null
+          reasons?: Json
+          resolved_scope?: Json | null
+          sheet_ids?: string[]
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       copilot_messages: {
         Row: {
           citations: Json
