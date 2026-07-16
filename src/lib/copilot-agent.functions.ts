@@ -2655,6 +2655,7 @@ export async function runCopilotAgent(
       strategy: string;
       steps: string[];
       expectedShape: string;
+      ambiguity: { isAmbiguous: boolean; reasons: string[]; options: string[] };
     } => {
       const q = data.question || "";
       const qLower = q.toLowerCase();
@@ -2729,11 +2730,57 @@ export async function runCopilotAgent(
         strategy = "targeted_row_lookup_with_exact_match_guardrail";
       }
 
-      // 6. Step plan.
+      // 6. Ambiguity detection — trigger CLARIFY-FIRST when the query is
+      // under-specified. Concrete signals only; keep options grounded in
+      // the actual catalog / snapshot the user selected for this turn.
+      const ambiguityReasons: string[] = [];
+      const ambiguityOptions: string[] = [];
+      const sheetsForTurn = sheetInsightSnapshot;
+      const namedSheet = sheetsForTurn.some(
+        (s) => s.name && qLower.includes(s.name.toLowerCase()),
+      );
+      const vagueScopeVerb = /\b(summariz|summary|analy[sz]e|breakdown|break\s+down|overview|status|report|update|insight|insights)\b/i.test(q);
+      if (
+        vagueScopeVerb &&
+        sheetsForTurn.length > 1 &&
+        !namedSheet &&
+        entities.length === 0 &&
+        filters.length === 0
+      ) {
+        ambiguityReasons.push(
+          `Verb "${(q.match(/\b(summariz\w*|analy[sz]e|breakdown|break\s+down|overview|status|report|update|insights?)\b/i) || ["?"])[0]}" has no scope; ${sheetsForTurn.length} sheets selected and none named.`,
+        );
+        for (const s of sheetsForTurn.slice(0, 4)) ambiguityOptions.push(`Sheet: ${s.name}`);
+      }
+      const vagueTime = /\b(recent|lately|soon|nowadays|these\s+days|current(ly)?)\b/i.test(q);
+      if (vagueTime && !/\b(day|week|month|year|quarter|\d{4}|\d+\s*(d|w|m|y))\b/i.test(qLower)) {
+        ambiguityReasons.push(`Time expression is vague — no explicit window given.`);
+        ambiguityOptions.push("Last 7 days", "Last 30 days", "Last 90 days", "Since start of year");
+      }
+      const pronounOnly = /^\s*(what about|and|how about)?\s*(this|that|these|those|it|them|they)\b/i.test(q);
+      if (pronounOnly) {
+        ambiguityReasons.push(`Pronoun with no clear antecedent in the current turn.`);
+      }
+      if (
+        canonical === "generic" &&
+        entities.length === 0 &&
+        filters.length === 0 &&
+        columns.length === 0 &&
+        sheetsForTurn.length > 1
+      ) {
+        ambiguityReasons.push(`Generic query with no entity/column/filter across multiple selected sheets.`);
+        for (const s of sheetsForTurn.slice(0, 4)) ambiguityOptions.push(`Sheet: ${s.name}`);
+      }
+      const isAmbiguous = ambiguityReasons.length > 0;
+
+      // 7. Step plan.
       const steps: string[] = [];
       steps.push(`Classify intent → ${intent}${detection.matchedPhrase ? ` (via "${detection.matchedPhrase}")` : ""}`);
       if (verbIntentSynonyms.length) {
         steps.push(`Apply user-taught verb synonyms: ${verbIntentSynonyms.map((s) => `"${s.term}" → ${s.intent}`).join(", ")}`);
+      }
+      if (isAmbiguous) {
+        steps.unshift(`AMBIGUOUS — ask ONE clarifying question with concrete options before answering.`);
       }
       if (entities.length) steps.push(`Anchor on entities: ${entities.slice(0, 5).join(", ")}`);
       if (filters.length) steps.push(`Apply filters: ${filters.join("; ")}`);
@@ -2742,7 +2789,20 @@ export async function runCopilotAgent(
       steps.push("Ground every claim in a [sheet:...] or [doc:...] citation from the ledger");
       steps.push("If no rows match the specific filter, refuse honestly instead of returning sheet-wide insights");
 
-      return { intent, entities, filters, columns, strategy, steps, expectedShape };
+      return {
+        intent,
+        entities,
+        filters,
+        columns,
+        strategy,
+        steps,
+        expectedShape,
+        ambiguity: {
+          isAmbiguous,
+          reasons: ambiguityReasons,
+          options: Array.from(new Set(ambiguityOptions)).slice(0, 4),
+        },
+      };
     };
 
     function actionRegexTest(q: string): boolean {
@@ -2802,6 +2862,16 @@ export async function runCopilotAgent(
                   .join(", ")}`,
             )
             .join("\n")}\nTreat these mappings as authoritative.\n`
+        : "") +
+      (reasoningPlan.ambiguity.isAmbiguous
+        ? `\n## CLARIFY FIRST — DO NOT ANSWER YET\n` +
+          `The question is ambiguous:\n` +
+          reasoningPlan.ambiguity.reasons.map((r) => `  • ${r}`).join("\n") + "\n" +
+          `You MUST reply using ONLY the CLARIFY-FIRST format from the system prompt: one short question, then a numbered "Options:" list (2–4 concrete options drawn from the catalog), then a final "Something else" option. No citations. No Sources list. No tool calls. No answer.\n` +
+          (reasoningPlan.ambiguity.options.length
+            ? `Suggested options (use these verbatim, add/replace with real catalog values as needed):\n${reasoningPlan.ambiguity.options.map((o, i) => `  ${i + 1}) ${o}`).join("\n")}\n`
+            : "") +
+          `\n`
         : "") +
       `\nThink through the steps internally. Verify each claim against tool output before writing it. If a specific filter yields zero rows, say so — never substitute sheet-wide auto-insights.\n`;
 
