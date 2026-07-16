@@ -2592,6 +2592,120 @@ export async function runCopilotAgent(
       return { text: polished };
     }
 
+    // ============================================================
+    // REASONING PLANNER — build an explicit chain-of-thought plan
+    // before answering. Pushes to toolTrace (shown in UI) AND is
+    // prepended to the system prompt so the LLM answers deliberately.
+    // ============================================================
+    const buildReasoningPlan = (): {
+      intent: string;
+      entities: string[];
+      filters: string[];
+      columns: string[];
+      strategy: string;
+      steps: string[];
+      expectedShape: string;
+    } => {
+      const q = data.question || "";
+      const qLower = q.toLowerCase();
+
+      // Intent classification
+      let intent = "informational_lookup";
+      if (/\b(why|reason|explain|cause|because|due to)\b/i.test(q)) intent = "causal_explanation";
+      else if (/\b(how many|count|number of|total)\b/i.test(q)) intent = "count_aggregate";
+      else if (/\b(sum|average|avg|mean|median|max|min|highest|lowest|top|bottom)\b/i.test(q)) intent = "statistical_aggregate";
+      else if (/\b(compare|vs|versus|difference|between)\b/i.test(q)) intent = "comparison";
+      else if (/\b(trend|forecast|predict|projection|over time)\b/i.test(q)) intent = "trend_forecast";
+      else if (/\b(overdue|due|expiring|expire|within|next|last|past)\s+\d*\s*(day|week|month|year)/i.test(q)) intent = "temporal_window";
+      else if (/\b(summar|highlight|overview|brief)\b/i.test(q)) intent = "row_or_sheet_summary";
+      else if (/\b(list|show|which|what|find|get)\b/i.test(q)) intent = "list_lookup";
+      else if (actionRegexTest(q)) intent = "action_request";
+
+      // Entity extraction — IDs, ALLCAPS tokens, quoted strings, numbers
+      const entities: string[] = [];
+      const idMatches = q.match(/\b[A-Z][A-Z0-9_\-]{2,}\b/g) ?? [];
+      const quoted = q.match(/["']([^"']+)["']/g) ?? [];
+      const nums = q.match(/\b\d[\d,]*(?:\.\d+)?\b/g) ?? [];
+      entities.push(...idMatches, ...quoted.map((s) => s.replace(/["']/g, "")), ...nums);
+
+      // Filter phrases — "<column> is/=/equals <value>", "where <col> <val>"
+      const filters: string[] = [];
+      const filterRe = /\b([a-z_][a-z0-9_ ]{1,30}?)\s*(?:=|is|equals?|of)\s*([a-z0-9_.\-]+)/gi;
+      let fm: RegExpExecArray | null;
+      while ((fm = filterRe.exec(qLower)) !== null) {
+        filters.push(`${fm[1].trim()} = ${fm[2].trim()}`);
+        if (filters.length >= 5) break;
+      }
+
+      // Column hints
+      const columns: string[] = [];
+      const colHints = ["status", "balance", "amount", "date", "qty", "quantity", "uom", "ac", "planned", "consumed", "expiry", "due", "assigned", "owner", "region", "district", "project"];
+      for (const c of colHints) if (qLower.includes(c)) columns.push(c);
+
+      // Strategy selection
+      let strategy = "deterministic_row_search";
+      if (intent === "action_request") strategy = "llm_tool_call";
+      else if (intent === "temporal_window") strategy = "temporal_preflight_then_date_query";
+      else if (intent === "causal_explanation") strategy = "filter_conditioned_lookup_then_auto_insights";
+      else if (intent === "statistical_aggregate" || intent === "count_aggregate") strategy = "aggregate_column_then_verify";
+      else if (intent === "comparison") strategy = "compare_groups_tool";
+      else if (intent === "trend_forecast") strategy = "trend_analyze_or_forecast_completion";
+      else if (entities.length > 0) strategy = "targeted_row_lookup_with_exact_match_guardrail";
+
+      // Step plan
+      const steps: string[] = [];
+      steps.push(`Classify intent → ${intent}`);
+      if (entities.length) steps.push(`Anchor on entities: ${entities.slice(0, 5).join(", ")}`);
+      if (filters.length) steps.push(`Apply filters: ${filters.join("; ")}`);
+      if (columns.length) steps.push(`Focus columns: ${columns.join(", ")}`);
+      steps.push(`Route via strategy: ${strategy}`);
+      steps.push("Ground every claim in a [sheet:...] or [doc:...] citation from the ledger");
+      steps.push("If no rows match the specific filter, refuse honestly instead of returning sheet-wide insights");
+
+      // Expected answer shape
+      let expectedShape = "concise prose with inline citations and a Sources section";
+      if (intent === "count_aggregate" || intent === "statistical_aggregate") expectedShape = "single number + brief context + citations";
+      else if (intent === "list_lookup") expectedShape = "bulleted list of matching rows with per-row citations";
+      else if (intent === "causal_explanation") expectedShape = "filtered rows + observed pattern across numeric fields + honest limitations";
+      else if (intent === "temporal_window") expectedShape = "list of rows within the date window with date column named";
+
+      return { intent, entities, filters, columns, strategy, steps, expectedShape };
+    };
+
+    function actionRegexTest(q: string): boolean {
+      return /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(q);
+    }
+
+    const reasoningPlan = buildReasoningPlan();
+    toolTrace.push({
+      name: "reasoning",
+      args: {
+        intent: reasoningPlan.intent,
+        entities: reasoningPlan.entities,
+        filters: reasoningPlan.filters,
+        columns: reasoningPlan.columns,
+        strategy: reasoningPlan.strategy,
+        steps: reasoningPlan.steps,
+        expected_shape: reasoningPlan.expectedShape,
+      },
+      ok: true,
+      ms: 0,
+      summary: `Plan: ${reasoningPlan.intent} → ${reasoningPlan.strategy}${reasoningPlan.entities.length ? ` (entities: ${reasoningPlan.entities.slice(0, 3).join(", ")})` : ""}`,
+    });
+
+    const reasoningPreamble =
+      `\n\n## REASONING PLAN (follow this before answering)\n` +
+      `Intent: ${reasoningPlan.intent}\n` +
+      `Strategy: ${reasoningPlan.strategy}\n` +
+      (reasoningPlan.entities.length ? `Entities to anchor: ${reasoningPlan.entities.join(", ")}\n` : "") +
+      (reasoningPlan.filters.length ? `Filters to apply: ${reasoningPlan.filters.join("; ")}\n` : "") +
+      (reasoningPlan.columns.length ? `Columns of interest: ${reasoningPlan.columns.join(", ")}\n` : "") +
+      `Steps:\n${reasoningPlan.steps.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}\n` +
+      `Expected answer shape: ${reasoningPlan.expectedShape}\n` +
+      `\nThink through the steps internally. Verify each claim against tool output before writing it. If a specific filter yields zero rows, say so — never substitute sheet-wide auto-insights.\n`;
+
+    const systemWithReasoning = systemWithPreflight + reasoningPreamble;
+
     let result: { text?: string } | null = null;
     if (temporalOp) {
       const answer = synthesizeTemporalPreflightAnswer();
@@ -2613,7 +2727,7 @@ export async function runCopilotAgent(
         result = await withServerTimeout(
           generateText({
             model,
-            system: systemWithPreflight,
+            system: systemWithReasoning,
             messages: messages as any,
             tools: toolset,
             stopWhen: stepCountIs(50),
