@@ -202,7 +202,7 @@ function detectIntent(q: string): Intent {
   // Delegate to the verb lexicon (single source of truth). Falls back to the
   // legacy regexes only for the numeric-hint extraction and top-N number.
   const det = detectVerbIntent(q);
-  const has = (i: string) => det.allMatches.some((m) => m.intent === i);
+  const has = (i: string) => det.allMatches.some((m: { intent: string }) => m.intent === i);
 
   if (has("count")) return { kind: "count" };
   if (has("distribution")) {
