@@ -102,7 +102,9 @@ import {
   extractRequestedColumns,
   extractSerialNumber,
   rowSerialNumber,
+  resolveColumnReference,
 } from "./query-match";
+import { detectIntent as detectVerbIntent } from "./copilot-verb-lexicon";
 
 function tokenize(q: string): string[] {
   // Kept for callers that want quick content tokens; delegates to query-match
@@ -195,22 +197,33 @@ type Intent =
 
 function detectIntent(q: string): Intent {
   const s = q.toLowerCase();
-  if (/\b(how\s+many|count|number\s+of|total\s+number)\b/.test(s)) return { kind: "count" };
   const numHint = /(amount|total|value|cost|price|qty|quantity|days|delay|score|balance|paid|revenue|budget)/i.exec(s)?.[1] ?? null;
-  if (/\b(distribution|breakdown|break[\s-]?down|break[\s-]?up|split|grouping|group(ed)?\s+by|per\s+\w+|by\s+column)\b/.test(s)
-    || /\bby\s+(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department|month|quarter|year|week|day|weekday|assignee|customer|client|uom|unit|store|location|branch|item|sku|product|material)\b/.test(s)) {
+
+  // Delegate to the verb lexicon (single source of truth). Falls back to the
+  // legacy regexes only for the numeric-hint extraction and top-N number.
+  const det = detectVerbIntent(q);
+  const has = (i: string) => det.allMatches.some((m: { intent: string }) => m.intent === i);
+
+  if (has("count")) return { kind: "count" };
+  if (has("distribution")) {
     const groupHint = /(status|stage|state|owner|type|priority|category|project|vendor|activity|region|department|uom|unit|store|location|branch|item|sku|product|material)/i.exec(s)?.[1] ?? null;
     return { kind: "distribution", hint: groupHint };
   }
-  if (/\b(sum|total)\b/.test(s) && !/\bnumber\b/.test(s)) return { kind: "sum", hint: numHint };
-  if (/\b(average|avg|mean)\b/.test(s)) return { kind: "avg", hint: numHint };
-  if (/\b(minimum|min|lowest\s+value|smallest)\b/.test(s)) return { kind: "min", hint: numHint };
-  if (/\b(maximum|max|largest|highest\s+value)\b/.test(s)) return { kind: "max", hint: numHint };
-  const topMatch = /\b(top|highest|largest|biggest)\s+(\d+)?/.exec(s);
-  if (topMatch) return { kind: "top", direction: "highest", hint: numHint, n: Number(topMatch[2] ?? 5) };
-  const botMatch = /\b(bottom|lowest|smallest)\s+(\d+)?/.exec(s);
-  if (botMatch) return { kind: "top", direction: "lowest", hint: numHint, n: Number(botMatch[2] ?? 5) };
-  if (/\b(list|show|display|which|what\s+are|find|give\s+me)\b/.test(s)) return { kind: "list" };
+  if (has("aggregate")) {
+    if (/\b(average|avg|mean|median)\b/.test(s)) return { kind: "avg", hint: numHint };
+    if (/\b(min|minimum|smallest|lowest\s+value)\b/.test(s)) return { kind: "min", hint: numHint };
+    if (/\b(max|maximum|largest|highest\s+value)\b/.test(s)) return { kind: "max", hint: numHint };
+    return { kind: "sum", hint: numHint };
+  }
+  if (has("top")) {
+    const n = /\btop\s+(\d+)/.exec(s)?.[1];
+    return { kind: "top", direction: "highest", hint: numHint, n: Number(n ?? 5) };
+  }
+  if (has("bottom")) {
+    const n = /\bbottom\s+(\d+)/.exec(s)?.[1];
+    return { kind: "top", direction: "lowest", hint: numHint, n: Number(n ?? 5) };
+  }
+  if (has("list") || has("lookup")) return { kind: "list" };
   return { kind: "generic" };
 }
 
@@ -989,26 +1002,17 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
     }
 
     if (intent.kind === "distribution") {
-      // Try to resolve the group-by column directly from the user's query
-      // words against real sheet columns. This handles "break down stock uom",
-      // "breakdown by store name", "distribution of UOM", etc. — where the
-      // group column is named in the question but not matched by generic hints.
-      const normCol = (c: string) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-      const qnorm = question.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-      const qTokens = new Set(qnorm.split(/\s+/).filter((t) => t.length >= 2));
-      const colFromQuery = cols
-        .map((c) => {
-          const n = normCol(c);
-          if (!n) return { c, score: 0 };
-          if (qnorm.includes(n) && n.length >= 3) return { c, score: 100 + n.length };
-          const parts = n.split(/\s+/).filter((p) => p.length >= 2);
-          const hits = parts.filter((p) => qTokens.has(p)).length;
-          return { c, score: parts.length > 0 && hits === parts.length ? 50 + hits : hits };
-        })
-        .filter((x) => x.score > 0)
-        .sort((a, b) => b.score - a.score)[0]?.c;
+      // Resolve the group-by column via the shared resolver. It scores
+      // exact > normalized > token-subset > fuzzy against real sheet
+      // columns, so "break down stock uom", "breakdown by store name",
+      // "distribution of UOM", "split by stok uom" (typo) all land on the
+      // right column. Fall back to intent hint / status / generic categorical.
+      const verbDet = detectVerbIntent(question);
+      const residual = verbDet.residual || question;
+      const resolved = resolveColumnReference(residual, cols)
+        ?? resolveColumnReference(question, cols);
       const groupCol =
-        colFromQuery ||
+        resolved?.column ||
         (intent.hint && cols.find((c) => new RegExp(intent.hint!, "i").test(c))) ||
         statusCol ||
         pickColumn(cols, [/type/i, /category/i, /priority/i, /owner/i, /project/i, /vendor/i, /activity/i]);
