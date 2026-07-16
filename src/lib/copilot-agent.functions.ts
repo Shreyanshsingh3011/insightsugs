@@ -2867,9 +2867,9 @@ export async function runCopilotAgent(
         ? `\n## CLARIFY FIRST — DO NOT ANSWER YET\n` +
           `The question is ambiguous:\n` +
           reasoningPlan.ambiguity.reasons.map((r) => `  • ${r}`).join("\n") + "\n" +
-          `You MUST reply using ONLY the CLARIFY-FIRST format from the system prompt: one short question, then a numbered "Options:" list (2–4 concrete options drawn from the catalog), then a final "Something else" option. No citations. No Sources list. No tool calls. No answer.\n` +
+          `Reply the way Claude would: one short, natural clarifying question in plain prose that names 2–4 concrete choices inline (drawn from the actual catalog) and invites the user to say something else. No numbered "Options:" template, no citations, no Sources list, no tool calls, no partial answer.\n` +
           (reasoningPlan.ambiguity.options.length
-            ? `Suggested options (use these verbatim, add/replace with real catalog values as needed):\n${reasoningPlan.ambiguity.options.map((o, i) => `  ${i + 1}) ${o}`).join("\n")}\n`
+            ? `Concrete choices you can weave into the sentence (use the real names verbatim): ${reasoningPlan.ambiguity.options.join(" · ")}\n`
             : "") +
           `\n`
         : "") +
