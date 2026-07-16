@@ -1727,7 +1727,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
         "Decide which operations answer the user's question over the given sheets. Use ONLY column names listed.\n" +
         "Schema: {\"operations\":[{\"sheet\":\"<label>\",\"op\":\"top_n|bottom_n|group_by|filter_sort|aggregate|distribution|none\",\"measure\":\"<col>|null\",\"agg\":\"sum|avg|count|min|max|null\",\"dimension\":\"<col>|null\",\"filter\":[{\"column\":\"<col>\",\"op\":\"eq|contains|gt|gte|lt|lte\",\"value\":<any>}],\"sort_by\":\"<col>|null\",\"sort_dir\":\"asc|desc\",\"n\":<int>}]}\n" +
         "If question is not analytical, return {\"operations\":[]}. Pick one or two operations max.";
-      const plannerUser = `QUESTION: ${data.question}\n\nSHEETS:\n${JSON.stringify(catalog).slice(0, 18000)}`;
+      const plannerUser = `QUESTION: ${data.question}\n\nSHEETS:\n${truncateJsonForPrompt(catalog, 18000)}`;
 
       try {
         let planText = "";
