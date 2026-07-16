@@ -3232,6 +3232,13 @@ export async function runCopilotAgent(
       ),
       citationOk: finalCitationOk,
       unverifiedCitations: finalCitationOk ? [] : finalCitationCheck.unverified,
+      unmatchedTerms: unmatchedTermsOut,
+      appliedSynonyms: appliedSynonyms.map((s) => ({
+        term: s.term,
+        sheet_id: s.sheet_id,
+        column_name: s.column_name,
+        value: s.value,
+      })),
     };
   }
 
