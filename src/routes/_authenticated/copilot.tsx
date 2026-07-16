@@ -610,7 +610,9 @@ function CopilotPage() {
           toolTrace: (res as any).toolTrace ?? [],
           retrievalDiagnostics: (res as any).retrievalDiagnostics ?? [],
           citationOk: (res as any).citationOk ?? validation.ok,
+          unmatchedTerms: (res as any).unmatchedTerms ?? [],
         },
+
       ]);
       if (!validation.ok && vars.retryForCitations) {
         toast.warning("Copilot still didn't cite sources — flagged inline.");
