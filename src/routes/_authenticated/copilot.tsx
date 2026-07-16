@@ -454,6 +454,8 @@ function CopilotPage() {
   );
 
 
+  const [teachOpen, setTeachOpen] = useState(false);
+  const [teachTerms, setTeachTerms] = useState<string[]>([]);
 
   const [question, setQuestion] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => {
