@@ -989,7 +989,26 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
     }
 
     if (intent.kind === "distribution") {
+      // Try to resolve the group-by column directly from the user's query
+      // words against real sheet columns. This handles "break down stock uom",
+      // "breakdown by store name", "distribution of UOM", etc. — where the
+      // group column is named in the question but not matched by generic hints.
+      const normCol = (c: string) => c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const qnorm = question.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const qTokens = new Set(qnorm.split(/\s+/).filter((t) => t.length >= 2));
+      const colFromQuery = cols
+        .map((c) => {
+          const n = normCol(c);
+          if (!n) return { c, score: 0 };
+          if (qnorm.includes(n) && n.length >= 3) return { c, score: 100 + n.length };
+          const parts = n.split(/\s+/).filter((p) => p.length >= 2);
+          const hits = parts.filter((p) => qTokens.has(p)).length;
+          return { c, score: parts.length > 0 && hits === parts.length ? 50 + hits : hits };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)[0]?.c;
       const groupCol =
+        colFromQuery ||
         (intent.hint && cols.find((c) => new RegExp(intent.hint!, "i").test(c))) ||
         statusCol ||
         pickColumn(cols, [/type/i, /category/i, /priority/i, /owner/i, /project/i, /vendor/i, /activity/i]);
@@ -997,6 +1016,10 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
         parts.push(`**${reg.display_name}** — no group-by column detected.`);
         continue;
       }
+      // For a group-by, the "universe" is the whole sheet (or activeRows) —
+      // do NOT filter by phrase matches when the phrase is the group column.
+      const distUniverse = universe.length > 0 ? universe : searchRows;
+
       const counts = new Map<string, StoredRow[]>();
       for (const r of universe) {
         const key = cellText(r.data[groupCol]) || "(blank)";
