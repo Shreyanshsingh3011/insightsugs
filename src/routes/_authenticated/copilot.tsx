@@ -38,6 +38,7 @@ import { ChatGroundingHint } from "@/components/ChatGroundingHint";
 import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
 import { renderWithCitations } from "@/components/copilot/CitationLink";
 import { PrimarySourceLink, stripCitations } from "@/components/copilot/PrimarySourceLink";
+import { TeachCopilotDialog } from "@/components/copilot/TeachCopilotDialog";
 import { useSession } from "@/hooks/useSession";
 import {
   ResponsiveContainer,
