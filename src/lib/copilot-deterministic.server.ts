@@ -386,6 +386,8 @@ function parseTolerance(q: string): NumericTolerance | undefined {
   if (abs) return { abs: Number(abs[1]), rel: 0 };
   return undefined;
 }
+
+function compactRowFields(row: StoredRow, maxFields = 12): string {
   const entries = Object.entries(row.data)
     .map(([key, value]) => [key, cellText(value)] as const)
     .filter(([, value]) => value !== "");
