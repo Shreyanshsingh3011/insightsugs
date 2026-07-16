@@ -1297,7 +1297,7 @@ function CopilotPage() {
                       <GroundingDiagnostics diagnostics={t.retrievalDiagnostics} />
                     )}
 
-                    {t.toolTrace && t.toolTrace.length > 0 && (
+                    {isAdmin && t.toolTrace && t.toolTrace.length > 0 && (
                       <ToolCallTrace trace={t.toolTrace} />
                     )}
 
