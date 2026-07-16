@@ -39,7 +39,7 @@ import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
 import { renderWithCitations } from "@/components/copilot/CitationLink";
 import { PrimarySourceLink, stripCitations } from "@/components/copilot/PrimarySourceLink";
 import { TeachCopilotDialog } from "@/components/copilot/TeachCopilotDialog";
-import { useSession } from "@/hooks/useSession";
+import { useSession, useIsAdmin } from "@/hooks/useSession";
 import {
   ResponsiveContainer,
   BarChart,
@@ -426,6 +426,7 @@ const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#
 
 function CopilotPage() {
   const { userId } = useSession();
+  const isAdmin = useIsAdmin();
   const fetchList = useServerFn(listSheets);
   const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
@@ -1296,7 +1297,7 @@ function CopilotPage() {
                       <GroundingDiagnostics diagnostics={t.retrievalDiagnostics} />
                     )}
 
-                    {t.toolTrace && t.toolTrace.length > 0 && (
+                    {isAdmin && t.toolTrace && t.toolTrace.length > 0 && (
                       <ToolCallTrace trace={t.toolTrace} />
                     )}
 
