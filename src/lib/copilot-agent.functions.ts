@@ -3067,6 +3067,7 @@ export async function runCopilotAgent(
 
     // 10) Follow-up suggestions — TARGETED based on resolved rows + unmatched terms.
     let suggestions: string[] = [];
+    let unmatchedTermsOut: string[] = [];
     try {
       // (a) Summarise what was actually resolved from the ledger.
       const resolvedRows = ledger.filter((l) => l.kind === "sheet_row") as Array<
