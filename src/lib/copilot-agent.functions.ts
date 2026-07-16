@@ -2746,10 +2746,11 @@ export async function runCopilotAgent(
       }
 
       // 6. Ambiguity detection — trigger CLARIFY-FIRST when the query is
-      // under-specified. Concrete signals only; keep options grounded in
-      // the actual catalog / snapshot the user selected for this turn.
+      // under-specified. Concrete signals only; options come from a ranker
+      // that scores catalog entries by semantic similarity to the question
+      // + popularity (row count / column occurrence).
       const ambiguityReasons: string[] = [];
-      const ambiguityOptions: string[] = [];
+      const ambiguityKinds: AmbiguityKind[] = [];
       const sheetsForTurn = sheetInsightSnapshot;
       const namedSheet = sheetsForTurn.some(
         (s) => s.name && qLower.includes(s.name.toLowerCase()),
@@ -2765,12 +2766,12 @@ export async function runCopilotAgent(
         ambiguityReasons.push(
           `Verb "${(q.match(/\b(summariz\w*|analy[sz]e|breakdown|break\s+down|overview|status|report|update|insights?)\b/i) || ["?"])[0]}" has no scope; ${sheetsForTurn.length} sheets selected and none named.`,
         );
-        for (const s of sheetsForTurn.slice(0, 4)) ambiguityOptions.push(`Sheet: ${s.name}`);
+        ambiguityKinds.push("sheet_unspecified");
       }
       const vagueTime = /\b(recent|lately|soon|nowadays|these\s+days|current(ly)?)\b/i.test(q);
       if (vagueTime && !/\b(day|week|month|year|quarter|\d{4}|\d+\s*(d|w|m|y))\b/i.test(qLower)) {
         ambiguityReasons.push(`Time expression is vague — no explicit window given.`);
-        ambiguityOptions.push("Last 7 days", "Last 30 days", "Last 90 days", "Since start of year");
+        ambiguityKinds.push("time_unspecified");
       }
       const pronounOnly = /^\s*(what about|and|how about)?\s*(this|that|these|those|it|them|they)\b/i.test(q);
       if (pronounOnly) {
@@ -2784,9 +2785,31 @@ export async function runCopilotAgent(
         sheetsForTurn.length > 1
       ) {
         ambiguityReasons.push(`Generic query with no entity/column/filter across multiple selected sheets.`);
-        for (const s of sheetsForTurn.slice(0, 4)) ambiguityOptions.push(`Sheet: ${s.name}`);
+        ambiguityKinds.push("generic");
       }
       const isAmbiguous = ambiguityReasons.length > 0;
+
+      // Rank options from the actual catalog when we're going to ask.
+      const rankedOptions: RankableOption[] = isAmbiguous
+        ? buildRankedOptions({
+            question: q,
+            ambiguityKinds,
+            catalog: {
+              sheets: catalog.sheets.map((s) => ({
+                id: s.id,
+                name: s.name,
+                rows: s.rows,
+                columns: s.columns,
+              })),
+              documents: catalog.documents.map((d) => ({
+                id: d.id,
+                name: d.name,
+                pages: d.pages,
+              })),
+            },
+          })
+        : [];
+      const ambiguityOptions = rankedOptions.map((o) => o.label);
 
       // 7. Step plan.
       const steps: string[] = [];
