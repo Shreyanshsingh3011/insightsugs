@@ -232,7 +232,7 @@ function scopeMentionRegex(scopeName: string): RegExp | null {
 // short-circuit to the same Auto-Insights output the sheet header shows,
 // so the Copilot answers from the *computed insights* — not from row-name
 // token matching.
-function isInsightShapedQuery(q: string): boolean {
+export function isInsightShapedQuery(q: string): boolean {
   const s = q.toLowerCase().trim();
   // Row/record/entity-specific asks are NOT insight-mode even when they
   // contain "summarize" / "highlights" / "snapshot" / "findings". These are
