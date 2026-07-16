@@ -357,6 +357,26 @@ function extractColumnValuePairs(
   return out;
 }
 
+/** Pull out concrete filter-like terms from a question: numbers with
+ *  context, quoted phrases, and identifier-ish tokens (mix of letters and
+ *  digits, or ALLCAPS). Used by the relevance guard to decide whether an
+ *  Auto-Insights dump would actually address the question. */
+function extractSpecificTerms(q: string): string[] {
+  const out = new Set<string>();
+  const stop = /^(the|a|an|is|are|was|were|of|for|with|to|in|on|by|and|or|why|what|which|reason|explain|between|from|than|this|that|it|its|all|any|row|rows|value|values|field|fields|number|numeric|zero|null|missing|blank|empty|next|last|past|days?|weeks?|months?|years?|top|only)$/i;
+  const re = /['"`]([^'"`]{2,})['"`]|(\d[\d,.\-/]*)|([A-Z]{2,}[A-Za-z0-9_-]*)|([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q)) !== null) {
+    const t = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").trim();
+    if (!t || t.length < 2 || stop.test(t)) continue;
+    out.add(t);
+  }
+  return Array.from(out);
+}
+
+
+
+
 /** Configurable numeric equality. Two numbers are "equal" when they are within
  *  `absTol` OR within `relTol` (fraction) of the larger magnitude. Handles
  *  rounding, currency-symbol stripping, thousands separators, and trailing
@@ -506,14 +526,18 @@ export async function deterministicAnswer(params: {
   // "within X" / "tolerance X" / "±X" in the question overrides the default.
   const tol: NumericTolerance =
     parseTolerance(question) ?? params.numericTolerance ?? DEFAULT_NUMERIC_TOLERANCE;
-  if (!insightMode) {
+  // Universal filter-conditioned lookup — runs for EVERY query (insight or
+  // not). If the question mentions any real column with a value, filter to
+  // matching rows and answer from those. This is the choke-point that kills
+  // the recurring "meaningless Auto-Insights dump" problem.
+  {
     const allColsUnion = Array.from(new Set(sheetRows.flatMap(({ rows }) => allColumns(rows))));
     const pairs = extractColumnValuePairs(question, allColsUnion);
     if (pairs.length >= 1) {
       const filterCites: string[] = [];
       const filterParts: string[] = [];
       let totalMatched = 0;
-      let totalNear = 0; // matched via tolerance (non-zero delta)
+      let totalNear = 0;
       const compareCell = (
         cellRaw: unknown,
         wantRaw: string,
@@ -522,68 +546,60 @@ export async function deterministicAnswer(params: {
         const wantNum = parseNum(wantRaw);
         if (cellNum !== null && wantNum !== null) {
           const cmp = numericClose(cellNum, wantNum, tol);
-          return {
-            ok: cmp.match,
-            near: cmp.match && cmp.absDelta > 0,
-            absDelta: cmp.absDelta,
-            relDelta: cmp.relDelta,
-            cellNum,
-          };
+          return { ok: cmp.match, near: cmp.match && cmp.absDelta > 0, absDelta: cmp.absDelta, relDelta: cmp.relDelta, cellNum };
         }
-        return {
-          ok: cellText(cellRaw).toLowerCase() === wantRaw.toLowerCase(),
-          near: false,
-          absDelta: 0,
-          relDelta: 0,
-          cellNum: null,
-        };
+        return { ok: cellText(cellRaw).toLowerCase() === wantRaw.toLowerCase(), near: false, absDelta: 0, relDelta: 0, cellNum: null };
       };
       for (const { reg, rows } of sheetRows) {
         if (rows.length === 0) continue;
         const cols = allColumns(rows);
         const applicable = pairs.filter((p) => cols.includes(p.resolved));
         if (applicable.length === 0) continue;
-        const matches = rows.filter((r) =>
-          applicable.every((p) => compareCell(r.data[p.resolved], p.value).ok),
-        );
+        const matches = rows.filter((r) => applicable.every((p) => compareCell(r.data[p.resolved], p.value).ok));
         if (matches.length === 0) continue;
         totalMatched += matches.length;
+        const numericCols = cols.filter((c) => rows.slice(0, 200).some((r) => parseNum(r.data[c]) !== null));
         const conds = applicable.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+        const shown = matches.slice(0, 10);
         filterParts.push(
-          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds} (tolerance ±${tol.abs}${tol.rel > 0 ? ` / ${(tol.rel * 100).toFixed(3).replace(/\.?0+$/, "")}%` : ""}):`,
+          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds}:`,
         );
-        for (const row of matches.slice(0, 5)) {
+        for (const row of shown) {
           const marker = `[sheet:${reg.display_name} row ${row.row_index}]`;
           filterCites.push(marker);
-          // Per-column delta annotation so the caller can see exactly which
-          // fields matched exactly vs. within tolerance.
           const deltaNotes: string[] = [];
           for (const p of applicable) {
             const cmp = compareCell(row.data[p.resolved], p.value);
             if (cmp.cellNum !== null && cmp.absDelta > 0) {
               totalNear += 1;
-              deltaNotes.push(
-                `\`${p.resolved}\`: cell=${fmt(cmp.cellNum)} vs asked=${p.value} (Δ ${cmp.absDelta.toFixed(4)}, ${(cmp.relDelta * 100).toFixed(4)}%)`,
-              );
+              deltaNotes.push(`\`${p.resolved}\`: cell=${fmt(cmp.cellNum)} vs asked=${p.value} (Δ ${cmp.absDelta.toFixed(4)})`);
             }
           }
-          const note = deltaNotes.length ? ` — near-match: ${deltaNotes.join("; ")}` : " — exact match";
-          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 12)}${note} ${marker}`);
-          params.ledgerSink?.push({
-            kind: "sheet_row",
-            registryId: reg.id,
-            sheetLabel: reg.display_name,
-            rowIndex: row.row_index,
-            data: row.data,
+          const zeroCols = numericCols.filter((c) => parseNum(row.data[c]) === 0);
+          const nonZeroCols = numericCols.filter((c) => {
+            const n = parseNum(row.data[c]);
+            return n !== null && n !== 0;
           });
+          const zeroNote = zeroCols.length > 0 ? ` Zero-valued: ${zeroCols.slice(0, 6).map((c) => `\`${c}\``).join(", ")}.` : "";
+          const nonZeroNote = nonZeroCols.length > 0 ? ` Non-zero: ${nonZeroCols.slice(0, 6).map((c) => `\`${c}\`=${fmt(parseNum(row.data[c])!)}`).join(", ")}.` : "";
+          const dNote = deltaNotes.length ? ` — near-match: ${deltaNotes.join("; ")}` : "";
+          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 10)}.${zeroNote}${nonZeroNote}${dNote} ${marker}`);
+          params.ledgerSink?.push({
+            kind: "sheet_row", registryId: reg.id, sheetLabel: reg.display_name, rowIndex: row.row_index, data: row.data,
+          });
+        }
+        if (matches.length > shown.length) {
+          filterParts.push(`- …and ${fmt(matches.length - shown.length)} more matching row${matches.length - shown.length === 1 ? "" : "s"}.`);
         }
       }
       if (totalMatched > 0) {
         const uniq = Array.from(new Set(filterCites));
         const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
-        const verdict = totalNear === 0
-          ? `Exactly justified — all matched cells equal the asked values.`
-          : `Justified within tolerance ±${tol.abs}${tol.rel > 0 ? ` / ${(tol.rel * 100).toFixed(3).replace(/\.?0+$/, "")}%` : ""} — ${totalNear} field${totalNear === 1 ? "" : "s"} match via rounding/formatting tolerance (deltas shown).`;
+        const verdict = insightMode
+          ? `The dashboard sheets don't store a separate "reason" column for these values, so the ground truth is the matched rows themselves and which of their numeric fields are zero vs non-zero.`
+          : (totalNear === 0
+              ? `Exactly justified — all matched cells equal the asked values.`
+              : `Justified within tolerance ±${tol.abs} — ${totalNear} field${totalNear === 1 ? "" : "s"} match via rounding tolerance.`);
         return {
           answer:
             `Filtered the selected sheet(s) to rows where ${summary}. ${verdict}\n\n` +
@@ -593,21 +609,21 @@ export async function deterministicAnswer(params: {
           matched: true,
         };
       }
-      // Pairs extracted but no row matches — report explicitly (still faster
-      // and more honest than the model loop timing out).
-      if (pairs.length >= 2) {
-        const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
-        const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
-        return {
-          answer:
-            `No rows in the selected sheet(s) satisfy ${summary}. The value cannot be verified because no matching row exists.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
-          citations: scopeMarkers,
-          matched: true,
-        };
-      }
-      // Single unresolved pair → fall through to normal search.
+      // Pairs extracted but no row matches. For 2+ pairs (precise
+      // verification) return early. For a single pair, still honest-refuse
+      // rather than let the query slide into a sheet-wide Auto-Insights dump.
+      const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
+      const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+      return {
+        answer:
+          `No rows in the selected sheet(s) satisfy ${summary}. ` +
+          `I did not fall back to sheet-wide Auto-Insights because your question is scoped to a specific filter — the honest answer is that the condition doesn't match any row.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
+        citations: scopeMarkers,
+        matched: true,
+      };
     }
   }
+
 
   // Targeted row/record asks must never fall through to sheet-wide
   // Auto-Insights. This handles prompts generated by Auto-Insights itself,
@@ -779,104 +795,26 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
   // emit those exact rows. Only fall back to Auto-Insights when no filter
   // is present or the filter matches nothing.
   if (insightMode) {
-    // Try structured `col op val` first, then fall back to the permissive
-    // pair extractor resolved against real headers so phrasings like
-    // "for uom 0", "reason ... uom 0", "row uom 972" also route here.
-    const explicit = extractColumnValueFilter(question);
-    const allColsUnion = Array.from(new Set(sheetRows.flatMap(({ rows }) => allColumns(rows))));
-    const pairs = extractColumnValuePairs(question, allColsUnion);
-    type Filter = { column: string; value: string; resolved?: string };
-    const filters: Filter[] = [];
-    if (explicit) filters.push(explicit);
-    for (const p of pairs) {
-      if (filters.some((f) => (f.resolved ?? f.column).toLowerCase() === p.resolved.toLowerCase())) continue;
-      filters.push({ column: p.column, value: p.value, resolved: p.resolved });
-    }
-    if (filters.length > 0) {
-      const filterCites: string[] = [];
-      const filterParts: string[] = [];
-      let totalMatched = 0;
-      for (const { reg, rows } of sheetRows) {
-        if (rows.length === 0) continue;
-        const cols = allColumns(rows);
-        const applicable = filters
-          .map((f) => ({ f, col: f.resolved && cols.includes(f.resolved) ? f.resolved : resolveColumnName(cols, f.column) }))
-          .filter((x): x is { f: Filter; col: string } => !!x.col);
-        if (applicable.length === 0) continue;
-        const matches = rows.filter((r) =>
-          applicable.every(({ f, col }) => {
-            const cell = cellText(r.data[col]);
-            const cellNum = parseNum(r.data[col]);
-            const wantNum = parseNum(f.value);
-            if (cellNum !== null && wantNum !== null) return cellNum === wantNum;
-            return cell.toLowerCase() === f.value.toLowerCase();
-          }),
-        );
-        if (matches.length === 0) continue;
-        totalMatched += matches.length;
-        const numericCols = cols.filter((c) =>
-          rows.slice(0, 200).some((r) => parseNum(r.data[c]) !== null),
-        );
-        const shown = matches.slice(0, 10);
-        const conds = applicable.map(({ f, col }) => `\`${col}\` = ${f.value}`).join(" AND ");
-        filterParts.push(
-          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds}:`,
-        );
-        for (const row of shown) {
-          const marker = `[sheet:${reg.display_name} row ${row.row_index}]`;
-          filterCites.push(marker);
-          const zeroCols = numericCols.filter((c) => parseNum(row.data[c]) === 0);
-          const nonZeroCols = numericCols.filter((c) => {
-            const n = parseNum(row.data[c]);
-            return n !== null && n !== 0;
-          });
-          const zeroNote = zeroCols.length > 0
-            ? ` Zero-valued numeric fields: ${zeroCols.map((c) => `\`${c}\``).join(", ")}.`
-            : "";
-          const nonZeroNote = nonZeroCols.length > 0
-            ? ` Non-zero: ${nonZeroCols.slice(0, 6).map((c) => `\`${c}\`=${fmt(parseNum(row.data[c])!)}`).join(", ")}.`
-            : "";
-          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 8)}.${zeroNote}${nonZeroNote} ${marker}`);
-          params.ledgerSink?.push({
-            kind: "sheet_row",
-            registryId: reg.id,
-            sheetLabel: reg.display_name,
-            rowIndex: row.row_index,
-            data: row.data,
-          });
-        }
-        if (matches.length > shown.length) {
-          filterParts.push(`- …and ${fmt(matches.length - shown.length)} more matching row${matches.length - shown.length === 1 ? "" : "s"}.`);
-        }
-      }
-      if (totalMatched > 0) {
-        const uniqCites = Array.from(new Set(filterCites));
-        const condsLabel = filters.map((f) => `\`${f.resolved ?? f.column}\` = ${f.value}`).join(" AND ");
-        return {
-          answer:
-            `Filtered the selected sheet(s) to rows where ${condsLabel}. ` +
-            `The dashboard sheets don't record a separate "reason" column for zero-valued numeric fields, so the answer below shows the matching rows and which numeric fields are zero vs. non-zero — that's the ground truth I can derive from the data.\n\n` +
-            filterParts.join("\n") +
-            `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}`,
-          citations: uniqCites,
-          matched: true,
-        };
-      }
-      // Filter matched nothing → tell the user explicitly instead of pivoting to sheet-wide insights.
+    // (Universal filter-conditioned lookup already ran above and returned
+    // early on any resolvable `<col> <value>` — we only get here for
+    // genuinely sheet-wide explain/why questions like "why so many overdue?".)
+
+    // Answer Relevance Guard: if the question contains specific concrete
+    // tokens (numbers, IDs) that Auto-Insights won't reference, refuse
+    // honestly instead of dumping a generic insight block.
+    const specificTerms = extractSpecificTerms(question);
+    if (specificTerms.length > 0) {
       const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
-      const condsLabel = filters.map((f) => `\`${f.resolved ?? f.column}\` = ${f.value}`).join(" AND ");
       return {
         answer:
-          `No rows in the selected sheet(s) have ${condsLabel}. ` +
-          `I didn't fall back to sheet-wide Auto-Insights because your question is about a specific filter condition — the honest answer is that the condition doesn't match any row.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
+          `Your question mentions specific terms (${specificTerms.slice(0, 6).map((t) => `\`${t}\``).join(", ")}) that I could not resolve against any column or value in the selected sheet(s). ` +
+          `I'm not returning sheet-wide Auto-Insights because those wouldn't address your specific filter. ` +
+          `Please check the term spelling, or ask a broader "why / overview" question if you want the computed insights.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
         citations: scopeMarkers,
         matched: true,
       };
     }
 
-
-    // No filter condition → fall through to Auto-Insights for genuinely
-    // sheet-wide explain/why questions ("why so many overdue?").
     for (const { reg, rows } of sheetRows) emitInsightBlock(reg, rows);
     if (parts.length > 0) {
       const uniqCites = Array.from(new Set(cites));
@@ -890,6 +828,7 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
       };
     }
   }
+
 
   // In strict mode, if the query has no explicit phrase, treat the full
   // content-token phrase as required — so a single-word query still needs
