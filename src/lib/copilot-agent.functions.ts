@@ -3105,6 +3105,8 @@ export async function runCopilotAgent(
       const unmatchedTerms = reasoningPlan.entities.filter(
         (term) => term.length >= 2 && !resolvedText.includes(term.toLowerCase()),
       );
+      unmatchedTermsOut = unmatchedTerms;
+
 
       // (c) Diagnostics that hit dead ends — helpful pivot chips.
       const deadEndDiagnostics = retrievalDiagnostics.filter(
