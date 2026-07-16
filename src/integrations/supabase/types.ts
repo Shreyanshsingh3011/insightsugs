@@ -716,6 +716,45 @@ export type Database = {
         }
         Relationships: []
       }
+      copilot_synonyms: {
+        Row: {
+          column_name: string | null
+          created_at: string
+          id: string
+          note: string | null
+          sheet_id: string | null
+          term: string
+          term_normalized: string
+          updated_at: string
+          user_id: string
+          value: string | null
+        }
+        Insert: {
+          column_name?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          sheet_id?: string | null
+          term: string
+          term_normalized: string
+          updated_at?: string
+          user_id: string
+          value?: string | null
+        }
+        Update: {
+          column_name?: string | null
+          created_at?: string
+          id?: string
+          note?: string | null
+          sheet_id?: string | null
+          term?: string
+          term_normalized?: string
+          updated_at?: string
+          user_id?: string
+          value?: string | null
+        }
+        Relationships: []
+      }
       custom_agents: {
         Row: {
           active: boolean
