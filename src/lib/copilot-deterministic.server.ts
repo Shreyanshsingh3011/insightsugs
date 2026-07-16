@@ -357,6 +357,36 @@ function extractColumnValuePairs(
   return out;
 }
 
+/** Configurable numeric equality. Two numbers are "equal" when they are within
+ *  `absTol` OR within `relTol` (fraction) of the larger magnitude. Handles
+ *  rounding, currency-symbol stripping, thousands separators, and trailing
+ *  zeros. Returns match + absolute/relative delta for reporting. */
+export type NumericTolerance = { abs: number; rel: number };
+export const DEFAULT_NUMERIC_TOLERANCE: NumericTolerance = { abs: 0.01, rel: 0.0005 };
+
+export function numericClose(
+  a: number,
+  b: number,
+  tol: NumericTolerance = DEFAULT_NUMERIC_TOLERANCE,
+): { match: boolean; absDelta: number; relDelta: number } {
+  const absDelta = Math.abs(a - b);
+  const scale = Math.max(Math.abs(a), Math.abs(b));
+  const relDelta = scale === 0 ? 0 : absDelta / scale;
+  const match = absDelta <= tol.abs || relDelta <= tol.rel;
+  return { match, absDelta, relDelta };
+}
+
+/** Parse a user-supplied tolerance from the query: "within 0.5", "±1",
+ *  "tolerance 0.1", "tol=2%". Percent → relative tolerance; bare number →
+ *  absolute. Returns undefined when the query specifies none. */
+function parseTolerance(q: string): NumericTolerance | undefined {
+  const pct = /(?:within|tolerance|tol|±|\+\/-|\+-)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*%/i.exec(q);
+  if (pct) return { abs: 0, rel: Number(pct[1]) / 100 };
+  const abs = /(?:within|tolerance|tol|±|\+\/-|\+-)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\b/i.exec(q);
+  if (abs) return { abs: Number(abs[1]), rel: 0 };
+  return undefined;
+}
+
 function compactRowFields(row: StoredRow, maxFields = 12): string {
   const entries = Object.entries(row.data)
     .map(([key, value]) => [key, cellText(value)] as const)
@@ -379,6 +409,10 @@ export async function deterministicAnswer(params: {
   /** When true: only contiguous full-phrase matches are returned. No token
    * AND fallback, no "recent rows" fallback, no surname-only leakage. */
   strictMatch?: boolean;
+  /** Absolute + relative tolerance for numeric verification comparisons.
+   *  Defaults to ±0.01 absolute / 0.05% relative. Overridden by any
+   *  "within X" / "tolerance X" / "±X" phrase found in the question. */
+  numericTolerance?: NumericTolerance;
 }): Promise<{ answer: string; citations: string[]; matched: boolean }> {
   const { supabase, question, regs, docs } = params;
   const cap = params.maxRowsPerSheet ?? 200000;
@@ -467,6 +501,11 @@ export async function deterministicAnswer(params: {
   // in row <col2> <n2> justified?" and similar precise lookups the AI would
   // otherwise loop on until the model timeout fires. Only runs when the query
   // is NOT insight-shaped (explain/why routes to the insight gate below).
+  // Uses configurable numeric tolerance (default ±0.01 abs / 0.05% rel) so
+  // rounding and formatting differences still justify near-equal values;
+  // "within X" / "tolerance X" / "±X" in the question overrides the default.
+  const tol: NumericTolerance =
+    parseTolerance(question) ?? params.numericTolerance ?? DEFAULT_NUMERIC_TOLERANCE;
   if (!insightMode) {
     const allColsUnion = Array.from(new Set(sheetRows.flatMap(({ rows }) => allColumns(rows))));
     const pairs = extractColumnValuePairs(question, allColsUnion);
@@ -474,29 +513,62 @@ export async function deterministicAnswer(params: {
       const filterCites: string[] = [];
       const filterParts: string[] = [];
       let totalMatched = 0;
+      let totalNear = 0; // matched via tolerance (non-zero delta)
+      const compareCell = (
+        cellRaw: unknown,
+        wantRaw: string,
+      ): { ok: boolean; near: boolean; absDelta: number; relDelta: number; cellNum: number | null } => {
+        const cellNum = parseNum(cellRaw);
+        const wantNum = parseNum(wantRaw);
+        if (cellNum !== null && wantNum !== null) {
+          const cmp = numericClose(cellNum, wantNum, tol);
+          return {
+            ok: cmp.match,
+            near: cmp.match && cmp.absDelta > 0,
+            absDelta: cmp.absDelta,
+            relDelta: cmp.relDelta,
+            cellNum,
+          };
+        }
+        return {
+          ok: cellText(cellRaw).toLowerCase() === wantRaw.toLowerCase(),
+          near: false,
+          absDelta: 0,
+          relDelta: 0,
+          cellNum: null,
+        };
+      };
       for (const { reg, rows } of sheetRows) {
         if (rows.length === 0) continue;
         const cols = allColumns(rows);
         const applicable = pairs.filter((p) => cols.includes(p.resolved));
         if (applicable.length === 0) continue;
         const matches = rows.filter((r) =>
-          applicable.every((p) => {
-            const cellNum = parseNum(r.data[p.resolved]);
-            const wantNum = parseNum(p.value);
-            if (cellNum !== null && wantNum !== null) return Math.abs(cellNum - wantNum) < 1e-6;
-            return cellText(r.data[p.resolved]).toLowerCase() === p.value.toLowerCase();
-          }),
+          applicable.every((p) => compareCell(r.data[p.resolved], p.value).ok),
         );
         if (matches.length === 0) continue;
         totalMatched += matches.length;
         const conds = applicable.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
         filterParts.push(
-          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds}:`,
+          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds} (tolerance ±${tol.abs}${tol.rel > 0 ? ` / ${(tol.rel * 100).toFixed(3).replace(/\.?0+$/, "")}%` : ""}):`,
         );
         for (const row of matches.slice(0, 5)) {
           const marker = `[sheet:${reg.display_name} row ${row.row_index}]`;
           filterCites.push(marker);
-          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 12)} ${marker}`);
+          // Per-column delta annotation so the caller can see exactly which
+          // fields matched exactly vs. within tolerance.
+          const deltaNotes: string[] = [];
+          for (const p of applicable) {
+            const cmp = compareCell(row.data[p.resolved], p.value);
+            if (cmp.cellNum !== null && cmp.absDelta > 0) {
+              totalNear += 1;
+              deltaNotes.push(
+                `\`${p.resolved}\`: cell=${fmt(cmp.cellNum)} vs asked=${p.value} (Δ ${cmp.absDelta.toFixed(4)}, ${(cmp.relDelta * 100).toFixed(4)}%)`,
+              );
+            }
+          }
+          const note = deltaNotes.length ? ` — near-match: ${deltaNotes.join("; ")}` : " — exact match";
+          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 12)}${note} ${marker}`);
           params.ledgerSink?.push({
             kind: "sheet_row",
             registryId: reg.id,
@@ -509,9 +581,12 @@ export async function deterministicAnswer(params: {
       if (totalMatched > 0) {
         const uniq = Array.from(new Set(filterCites));
         const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+        const verdict = totalNear === 0
+          ? `Exactly justified — all matched cells equal the asked values.`
+          : `Justified within tolerance ±${tol.abs}${tol.rel > 0 ? ` / ${(tol.rel * 100).toFixed(3).replace(/\.?0+$/, "")}%` : ""} — ${totalNear} field${totalNear === 1 ? "" : "s"} match via rounding/formatting tolerance (deltas shown).`;
         return {
           answer:
-            `Filtered the selected sheet(s) to rows where ${summary}. Ground truth from the sheet — I did not call the model because the values are directly verifiable from the row data:\n\n` +
+            `Filtered the selected sheet(s) to rows where ${summary}. ${verdict}\n\n` +
             filterParts.join("\n") +
             `\n\nSources:\n${uniq.map((m) => `- ${m}`).join("\n")}`,
           citations: uniq,
