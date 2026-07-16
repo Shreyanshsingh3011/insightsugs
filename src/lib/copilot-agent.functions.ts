@@ -2727,7 +2727,7 @@ export async function runCopilotAgent(
         result = await withServerTimeout(
           generateText({
             model,
-            system: systemWithPreflight,
+            system: systemWithReasoning,
             messages: messages as any,
             tools: toolset,
             stopWhen: stepCountIs(50),
