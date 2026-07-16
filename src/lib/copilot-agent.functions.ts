@@ -3003,13 +3003,21 @@ export async function runCopilotAgent(
             )
             .join("\n")}\nTreat these mappings as authoritative.\n`
         : "") +
+      (resolvedClarifyScope
+        ? `\n## APPLIED CLARIFICATION (from a recent user choice)\n` +
+          `The user's earlier reply resolved the ambiguity. Treat this as the authoritative scope for this turn and any close follow-ups — do NOT ask again:\n` +
+          Object.entries(resolvedClarifyScope)
+            .filter(([, v]) => v !== undefined && v !== null && (!Array.isArray(v) || v.length > 0))
+            .map(([k, v]) => `  • ${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+            .join("\n") + "\n"
+        : "") +
       (reasoningPlan.ambiguity.isAmbiguous
         ? `\n## CLARIFY FIRST — DO NOT ANSWER YET\n` +
           `The question is ambiguous:\n` +
           reasoningPlan.ambiguity.reasons.map((r) => `  • ${r}`).join("\n") + "\n" +
           `Reply the way Claude would: one short, natural clarifying question in plain prose that names 2–4 concrete choices inline (drawn from the actual catalog) and invites the user to say something else. No numbered "Options:" template, no citations, no Sources list, no tool calls, no partial answer.\n` +
           (reasoningPlan.ambiguity.options.length
-            ? `Concrete choices you can weave into the sentence (use the real names verbatim): ${reasoningPlan.ambiguity.options.join(" · ")}\n`
+            ? `Concrete choices you can weave into the sentence (use the real names verbatim, ranked best-first): ${reasoningPlan.ambiguity.options.join(" · ")}\n`
             : "") +
           `\n`
         : "") +
