@@ -409,6 +409,10 @@ export async function deterministicAnswer(params: {
   /** When true: only contiguous full-phrase matches are returned. No token
    * AND fallback, no "recent rows" fallback, no surname-only leakage. */
   strictMatch?: boolean;
+  /** Absolute + relative tolerance for numeric verification comparisons.
+   *  Defaults to ±0.01 absolute / 0.05% relative. Overridden by any
+   *  "within X" / "tolerance X" / "±X" phrase found in the question. */
+  numericTolerance?: NumericTolerance;
 }): Promise<{ answer: string; citations: string[]; matched: boolean }> {
   const { supabase, question, regs, docs } = params;
   const cap = params.maxRowsPerSheet ?? 200000;
