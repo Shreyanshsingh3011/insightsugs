@@ -1019,9 +1019,6 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
       if (!groupCol) {
         parts.push(`**${reg.display_name}** — no group-by column detected.`);
         continue;
-      if (!groupCol) {
-        parts.push(`**${reg.display_name}** — no group-by column detected.`);
-        continue;
       }
       // For a group-by, the "universe" is the whole sheet (or activeRows) —
       // do NOT filter by phrase matches when the phrase is the group column.
