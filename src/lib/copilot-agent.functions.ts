@@ -2655,6 +2655,7 @@ export async function runCopilotAgent(
       strategy: string;
       steps: string[];
       expectedShape: string;
+      ambiguity: { isAmbiguous: boolean; reasons: string[]; options: string[] };
     } => {
       const q = data.question || "";
       const qLower = q.toLowerCase();
