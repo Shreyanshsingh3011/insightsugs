@@ -1,3 +1,4 @@
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 // System prompt builder for the Copilot agent. Extracted from
 // copilot-agent.functions.ts so the monolith no longer inlines the ~150-line
 // grounding contract. Pure function — no I/O, no closures over runtime state.
