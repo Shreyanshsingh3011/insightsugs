@@ -80,7 +80,7 @@ export const Route = createFileRoute("/api/agent/plan")({
         });
 
         const contextBlock = body.context
-          ? `\n\nPROJECT CONTEXT (JSON):\n${JSON.stringify(body.context).slice(0, 6000)}`
+          ? `\n\nPROJECT CONTEXT (JSON):\n${truncateJsonForPrompt(body.context, 6000)}`
           : "\n\nNo project context provided.";
 
         try {

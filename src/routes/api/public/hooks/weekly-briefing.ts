@@ -19,7 +19,7 @@ Return STRICT JSON only, no prose, matching:
 {"sections":[{"title": string, "summary": string, "bullets": string[]}]}
 Include one section per non-empty area from: "Projects & activities", "Sheets", "Documents", "Alerts & concerns".
 Keep it factual, terse (max 3 sentences summary, max 5 bullets per section). Data:
-${JSON.stringify(rawData).slice(0, 12000)}`;
+${truncateJsonForPrompt(rawData, 12000)}`;
   try {
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",

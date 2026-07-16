@@ -77,7 +77,7 @@ Stage: ${input.stage}
 Delay: ${input.delay} days
 Recorded reason on sheet: ${input.recordedReason || "(none)"}
 
-Current row: ${JSON.stringify(input.currentRow).slice(0, 2000)}
+Current row: ${truncateJsonForPrompt(input.currentRow, 2000)}
 
 Sibling rows in same project/stage (${input.siblings.length}):
 ${JSON.stringify(input.siblings.slice(0, 8)).slice(0, 3000)}
