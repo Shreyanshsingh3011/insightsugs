@@ -20,6 +20,7 @@ const cases: Case[] = [
   { q: "Reconcile planned_qty against consumed_qty", expect: true, note: "reconcile" },
   { q: "Root cause of variance in stock summary sheet", expect: true, note: "root cause + sheet" },
   { q: "Difference between amount_claimed and amount_paid", expect: true, note: "difference between X and Y" },
+  { q: "What is the reason for the row with 'balance=10' having all zero values across its numerical fields?", expect: true, note: "reason + filter phrased as row" },
 
   // Broad summary asks — insight-mode.
   { q: "Summarize this sheet", expect: true, note: "sheet-wide summary" },
