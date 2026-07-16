@@ -506,14 +506,18 @@ export async function deterministicAnswer(params: {
   // "within X" / "tolerance X" / "±X" in the question overrides the default.
   const tol: NumericTolerance =
     parseTolerance(question) ?? params.numericTolerance ?? DEFAULT_NUMERIC_TOLERANCE;
-  if (!insightMode) {
+  // Universal filter-conditioned lookup — runs for EVERY query (insight or
+  // not). If the question mentions any real column with a value, filter to
+  // matching rows and answer from those. This is the choke-point that kills
+  // the recurring "meaningless Auto-Insights dump" problem.
+  {
     const allColsUnion = Array.from(new Set(sheetRows.flatMap(({ rows }) => allColumns(rows))));
     const pairs = extractColumnValuePairs(question, allColsUnion);
     if (pairs.length >= 1) {
       const filterCites: string[] = [];
       const filterParts: string[] = [];
       let totalMatched = 0;
-      let totalNear = 0; // matched via tolerance (non-zero delta)
+      let totalNear = 0;
       const compareCell = (
         cellRaw: unknown,
         wantRaw: string,
@@ -522,68 +526,60 @@ export async function deterministicAnswer(params: {
         const wantNum = parseNum(wantRaw);
         if (cellNum !== null && wantNum !== null) {
           const cmp = numericClose(cellNum, wantNum, tol);
-          return {
-            ok: cmp.match,
-            near: cmp.match && cmp.absDelta > 0,
-            absDelta: cmp.absDelta,
-            relDelta: cmp.relDelta,
-            cellNum,
-          };
+          return { ok: cmp.match, near: cmp.match && cmp.absDelta > 0, absDelta: cmp.absDelta, relDelta: cmp.relDelta, cellNum };
         }
-        return {
-          ok: cellText(cellRaw).toLowerCase() === wantRaw.toLowerCase(),
-          near: false,
-          absDelta: 0,
-          relDelta: 0,
-          cellNum: null,
-        };
+        return { ok: cellText(cellRaw).toLowerCase() === wantRaw.toLowerCase(), near: false, absDelta: 0, relDelta: 0, cellNum: null };
       };
       for (const { reg, rows } of sheetRows) {
         if (rows.length === 0) continue;
         const cols = allColumns(rows);
         const applicable = pairs.filter((p) => cols.includes(p.resolved));
         if (applicable.length === 0) continue;
-        const matches = rows.filter((r) =>
-          applicable.every((p) => compareCell(r.data[p.resolved], p.value).ok),
-        );
+        const matches = rows.filter((r) => applicable.every((p) => compareCell(r.data[p.resolved], p.value).ok));
         if (matches.length === 0) continue;
         totalMatched += matches.length;
+        const numericCols = cols.filter((c) => rows.slice(0, 200).some((r) => parseNum(r.data[c]) !== null));
         const conds = applicable.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+        const shown = matches.slice(0, 10);
         filterParts.push(
-          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds} (tolerance ±${tol.abs}${tol.rel > 0 ? ` / ${(tol.rel * 100).toFixed(3).replace(/\.?0+$/, "")}%` : ""}):`,
+          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds}:`,
         );
-        for (const row of matches.slice(0, 5)) {
+        for (const row of shown) {
           const marker = `[sheet:${reg.display_name} row ${row.row_index}]`;
           filterCites.push(marker);
-          // Per-column delta annotation so the caller can see exactly which
-          // fields matched exactly vs. within tolerance.
           const deltaNotes: string[] = [];
           for (const p of applicable) {
             const cmp = compareCell(row.data[p.resolved], p.value);
             if (cmp.cellNum !== null && cmp.absDelta > 0) {
               totalNear += 1;
-              deltaNotes.push(
-                `\`${p.resolved}\`: cell=${fmt(cmp.cellNum)} vs asked=${p.value} (Δ ${cmp.absDelta.toFixed(4)}, ${(cmp.relDelta * 100).toFixed(4)}%)`,
-              );
+              deltaNotes.push(`\`${p.resolved}\`: cell=${fmt(cmp.cellNum)} vs asked=${p.value} (Δ ${cmp.absDelta.toFixed(4)})`);
             }
           }
-          const note = deltaNotes.length ? ` — near-match: ${deltaNotes.join("; ")}` : " — exact match";
-          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 12)}${note} ${marker}`);
-          params.ledgerSink?.push({
-            kind: "sheet_row",
-            registryId: reg.id,
-            sheetLabel: reg.display_name,
-            rowIndex: row.row_index,
-            data: row.data,
+          const zeroCols = numericCols.filter((c) => parseNum(row.data[c]) === 0);
+          const nonZeroCols = numericCols.filter((c) => {
+            const n = parseNum(row.data[c]);
+            return n !== null && n !== 0;
           });
+          const zeroNote = zeroCols.length > 0 ? ` Zero-valued: ${zeroCols.slice(0, 6).map((c) => `\`${c}\``).join(", ")}.` : "";
+          const nonZeroNote = nonZeroCols.length > 0 ? ` Non-zero: ${nonZeroCols.slice(0, 6).map((c) => `\`${c}\`=${fmt(parseNum(row.data[c])!)}`).join(", ")}.` : "";
+          const dNote = deltaNotes.length ? ` — near-match: ${deltaNotes.join("; ")}` : "";
+          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 10)}.${zeroNote}${nonZeroNote}${dNote} ${marker}`);
+          params.ledgerSink?.push({
+            kind: "sheet_row", registryId: reg.id, sheetLabel: reg.display_name, rowIndex: row.row_index, data: row.data,
+          });
+        }
+        if (matches.length > shown.length) {
+          filterParts.push(`- …and ${fmt(matches.length - shown.length)} more matching row${matches.length - shown.length === 1 ? "" : "s"}.`);
         }
       }
       if (totalMatched > 0) {
         const uniq = Array.from(new Set(filterCites));
         const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
-        const verdict = totalNear === 0
-          ? `Exactly justified — all matched cells equal the asked values.`
-          : `Justified within tolerance ±${tol.abs}${tol.rel > 0 ? ` / ${(tol.rel * 100).toFixed(3).replace(/\.?0+$/, "")}%` : ""} — ${totalNear} field${totalNear === 1 ? "" : "s"} match via rounding/formatting tolerance (deltas shown).`;
+        const verdict = insightMode
+          ? `The dashboard sheets don't store a separate "reason" column for these values, so the ground truth is the matched rows themselves and which of their numeric fields are zero vs non-zero.`
+          : (totalNear === 0
+              ? `Exactly justified — all matched cells equal the asked values.`
+              : `Justified within tolerance ±${tol.abs} — ${totalNear} field${totalNear === 1 ? "" : "s"} match via rounding tolerance.`);
         return {
           answer:
             `Filtered the selected sheet(s) to rows where ${summary}. ${verdict}\n\n` +
@@ -593,21 +589,21 @@ export async function deterministicAnswer(params: {
           matched: true,
         };
       }
-      // Pairs extracted but no row matches — report explicitly (still faster
-      // and more honest than the model loop timing out).
-      if (pairs.length >= 2) {
-        const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
-        const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
-        return {
-          answer:
-            `No rows in the selected sheet(s) satisfy ${summary}. The value cannot be verified because no matching row exists.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
-          citations: scopeMarkers,
-          matched: true,
-        };
-      }
-      // Single unresolved pair → fall through to normal search.
+      // Pairs extracted but no row matches. For 2+ pairs (precise
+      // verification) return early. For a single pair, still honest-refuse
+      // rather than let the query slide into a sheet-wide Auto-Insights dump.
+      const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
+      const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+      return {
+        answer:
+          `No rows in the selected sheet(s) satisfy ${summary}. ` +
+          `I did not fall back to sheet-wide Auto-Insights because your question is scoped to a specific filter — the honest answer is that the condition doesn't match any row.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
+        citations: scopeMarkers,
+        matched: true,
+      };
     }
   }
+
 
   // Targeted row/record asks must never fall through to sheet-wide
   // Auto-Insights. This handles prompts generated by Auto-Insights itself,
