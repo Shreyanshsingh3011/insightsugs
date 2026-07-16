@@ -45,8 +45,26 @@ export const Route = createFileRoute("/api/public/hooks/sheet-refresh-one")({
           });
         }
 
+        // Prevent overlapping refreshes of the same sheet. Derive a stable
+        // bigint key from the uuid so concurrent invocations share the lock.
+        // Signed int64 range → take 15 hex chars (60 bits).
+        const lockKey = BigInt(
+          "0x" + String(reg.id).replace(/-/g, "").slice(0, 15),
+        ).toString();
+        const { data: gotLock } = await (supabaseAdmin as any).rpc("try_run_lock", {
+          _key: lockKey,
+        });
+        if (!gotLock) {
+          return Response.json({
+            ok: true,
+            id: reg.id,
+            name: reg.display_name,
+            skipped: true,
+            reason: "another refresh already in flight",
+          });
+        }
+
         const t0 = Date.now();
-        // Best-effort audit write; never let audit failures fail the sync.
         const writeAudit = async (row: Record<string, any>) => {
           try {
             await (supabaseAdmin.from("sheet_sync_audit") as any).insert(row);
@@ -54,7 +72,6 @@ export const Route = createFileRoute("/api/public/hooks/sheet-refresh-one")({
             console.warn("[sheet-refresh-one] audit insert failed", (e as Error).message);
           }
         };
-
 
         try {
           const stats = await (syncRowsInternal as any)(supabaseAdmin, reg.user_id, reg.id);
@@ -98,7 +115,12 @@ export const Route = createFileRoute("/api/public/hooks/sheet-refresh-one")({
             },
             { status: 500 },
           );
+        } finally {
+          try {
+            await (supabaseAdmin as any).rpc("release_run_lock", { _key: lockKey });
+          } catch { /* best-effort */ }
         }
+
       },
     },
   },
