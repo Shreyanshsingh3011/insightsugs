@@ -234,18 +234,22 @@ function scopeMentionRegex(scopeName: string): RegExp | null {
 // token matching.
 export function isInsightShapedQuery(q: string): boolean {
   const s = q.toLowerCase().trim();
-  // Row/record/entity-specific asks are NOT insight-mode even when they
-  // contain "summarize" / "highlights" / "snapshot" / "findings".
-  if (/\b(row|record|entry|item|entity|profile)\b/.test(s)) return false;
 
   // Explain / why / discrepancy / variance / difference-between shapes are
   // computed-analysis asks — typically the Auto-Insights suggested questions
   // ("Explain the discrepancy between consumed_qty and planned_qty", "Why
-  // is balance 2 or 3?"). These win over the prep-tail escape so embedded
-  // column names / numbers aren't misparsed as row identifiers.
-  if (/\b(explain|why|reason|cause|driver|drivers|root\s*cause)\b/.test(s)) return true;
-  if (/\b(discrepan|variance|mismatch|reconcil|gap\s+between|delta\s+between|difference\s+between)/.test(s)) return true;
-  if (/\bbetween\s+[\p{L}\p{N}_]+.{0,40}\band\s+[\p{L}\p{N}_]+/u.test(s)) return true;
+  // is balance 2 or 3?", "What is the reason for the row with balance=10…").
+  // These win over the row/record exclusion below so questions that phrase a
+  // *filter condition* as "the row with X" still route to insight mode.
+  const isExplainShape =
+    /\b(explain|why|reason|cause|driver|drivers|root\s*cause)\b/.test(s)
+    || /\b(discrepan|variance|mismatch|reconcil|gap\s+between|delta\s+between|difference\s+between)/.test(s)
+    || /\bbetween\s+[\p{L}\p{N}_]+.{0,40}\band\s+[\p{L}\p{N}_]+/u.test(s);
+  if (isExplainShape) return true;
+
+  // Row/record/entity-specific asks are NOT insight-mode even when they
+  // contain "summarize" / "highlights" / "snapshot" / "findings".
+  if (/\b(row|record|entry|item|entity|profile)\b/.test(s)) return false;
 
   // Broad summary / overview / insights of sheet-wide nouns → insight mode.
   const broadInsightVerb = /\b(insight|insights|overview|highlights?|findings?|snapshot|health\s+check|what'?s\s+(in|inside|on)|what\s+(should|do)\s+i\s+know|anything\s+(interesting|notable|important)|key\s+(points?|takeaways?))\b/.test(s);
