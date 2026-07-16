@@ -117,7 +117,9 @@ type Turn = {
   toolTrace?: import("@/components/copilot/ToolCallTrace").ToolCall[];
   retrievalDiagnostics?: RetrievalDiagnostic[];
   citationOk?: boolean;
+  unmatchedTerms?: string[];
 };
+
 
 type RetrievalDiagnostic = {
   sourceId: string;
