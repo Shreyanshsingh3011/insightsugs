@@ -2676,7 +2676,37 @@ export async function runCopilotAgent(
       return /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(q);
     }
 
+    // Load user's saved synonym mappings and apply them to the reasoning
+    // plan so previously-clarified terms auto-resolve to the right
+    // sheet/column/value on future queries.
+    type SynRow = { id: string; term: string; sheet_id: string | null; column_name: string | null; value: string | null };
+    let userSynonyms: SynRow[] = [];
+    try {
+      const { data: syns } = await context.supabase
+        .from("copilot_synonyms")
+        .select("id, term, sheet_id, column_name, value")
+        .eq("user_id", userId);
+      userSynonyms = (syns ?? []) as SynRow[];
+    } catch { /* ignore */ }
+    const qLowerForSyn = (data.question || "").toLowerCase();
+    const appliedSynonyms = userSynonyms.filter(
+      (s) => s.term && qLowerForSyn.includes(s.term.toLowerCase()),
+    );
+
     const reasoningPlan = buildReasoningPlan();
+    // Augment plan with resolutions from saved synonyms.
+    for (const s of appliedSynonyms) {
+      if (s.value && !reasoningPlan.entities.includes(s.value)) {
+        reasoningPlan.entities.push(s.value);
+      }
+      if (s.column_name && s.value) {
+        reasoningPlan.filters.push(`${s.column_name} = ${s.value}`);
+      }
+      if (s.column_name && !reasoningPlan.columns.includes(s.column_name)) {
+        reasoningPlan.columns.push(s.column_name);
+      }
+    }
+
     toolTrace.push({
       name: "reasoning",
       args: {
