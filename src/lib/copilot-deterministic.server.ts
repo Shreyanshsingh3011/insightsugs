@@ -102,7 +102,9 @@ import {
   extractRequestedColumns,
   extractSerialNumber,
   rowSerialNumber,
+  resolveColumnReference,
 } from "./query-match";
+import { detectIntent as detectVerbIntent } from "./copilot-verb-lexicon";
 
 function tokenize(q: string): string[] {
   // Kept for callers that want quick content tokens; delegates to query-match
