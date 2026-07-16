@@ -3067,7 +3067,18 @@ export async function runCopilotAgent(
 
       // (d) Build deterministic chip candidates from the above signals.
       const chipCandidates: string[] = [];
+      // Clarification chip ALWAYS comes first when we have unmatched terms —
+      // Copilot couldn't map these to any column name or cell value, so ask
+      // the user which sheet/column they refer to before guessing.
       if (unmatchedTerms.length > 0) {
+        const quoted = unmatchedTerms.slice(0, 3).map((t) => `"${t}"`).join(", ");
+        const scopeHint =
+          topSheets.length > 0
+            ? ` (searched ${topSheets.map((s) => s.label).slice(0, 2).join(", ")})`
+            : "";
+        chipCandidates.push(
+          `Clarify: I couldn't match ${quoted} to any column or value${scopeHint} — which sheet or column should I look in?`,
+        );
         chipCandidates.push(
           `Search for "${unmatchedTerms[0]}" across all selected sources`,
         );
