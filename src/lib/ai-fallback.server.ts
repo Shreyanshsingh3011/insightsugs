@@ -63,7 +63,7 @@ function mapGeminiModel(model: unknown): string | undefined {
   if (typeof model !== "string") return undefined;
   const normalized = model.startsWith("google/") ? model.slice("google/".length) : model;
   if (
-    normalized === "gemini-3-flash-preview" ||
+    normalized === "gemini-2.5-flash" ||
     normalized === "gemini-3.1-flash-lite" ||
     normalized === "gemini-3.5-flash" ||
     normalized === "gemini-3.1-pro-preview"

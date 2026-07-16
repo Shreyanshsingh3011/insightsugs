@@ -48,7 +48,7 @@ ${chunkText}`;
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: "You extract contractual obligations from documents. Return JSON only. Do not invent dates or clauses." },
           { role: "user", content: prompt },

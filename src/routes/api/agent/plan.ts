@@ -70,7 +70,7 @@ export const Route = createFileRoute("/api/agent/plan")({
         ]);
 
         const gateway = createLovableAiGatewayProvider(key);
-        const model = gateway("google/gemini-3-flash-preview");
+        const model = gateway("google/gemini-2.5-flash");
 
         const run = await startAgentRun({
           agent: "planner",

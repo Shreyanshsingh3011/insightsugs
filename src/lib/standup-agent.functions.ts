@@ -97,7 +97,7 @@ async function aiSummary(project: string, items: ProjectDelayItem[]): Promise<Pr
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: "You write terse construction-project standups. Return JSON only." },
           { role: "user", content:

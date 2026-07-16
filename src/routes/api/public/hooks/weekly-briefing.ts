@@ -25,7 +25,7 @@ ${JSON.stringify(rawData).slice(0, 12000)}`;
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: "You write concise weekly operations briefings and return JSON only." },
           { role: "user", content: prompt },

@@ -21,7 +21,7 @@ async function aiSummarize(system: string, user: string): Promise<string> {
     ]);
     const gateway = createLovableAiGatewayProvider(key);
     const { text } = await generateText({
-      model: gateway("google/gemini-3-flash-preview"),
+      model: gateway("google/gemini-2.5-flash"),
       system,
       prompt: user,
     });
