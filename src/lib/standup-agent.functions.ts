@@ -8,6 +8,7 @@
 //
 // Callable from the UI (server fn) and from /api/public/hooks/daily-standup (cron).
 
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";

@@ -2,6 +2,7 @@
 // LLM using AI SDK streamObject. The plan is proposal-only — nothing is
 // executed here. The frontend calls approvePlan() (server function) with the
 // finalized plan to bulk-queue pending_actions in a single approval step.
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { startAgentRun, finishAgentRun } from "@/lib/agent-runs.server";

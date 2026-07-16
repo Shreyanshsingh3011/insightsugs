@@ -1,3 +1,4 @@
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createFileRoute } from "@tanstack/react-router";
 import { isHookAuthorized } from "@/lib/hook-auth.server";
 import { createClient } from "@supabase/supabase-js";

@@ -8,6 +8,7 @@
 // draft.payload.diagnosis and, for alerts, to alerts.root_cause plus an
 // alert_messages entry.
 
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
