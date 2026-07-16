@@ -316,3 +316,123 @@ export function extractRequestedColumns(query: string, availableColumns: string[
   return hits;
 }
 
+
+// ---------------------------------------------------------------------------
+// Column reference resolver
+// ---------------------------------------------------------------------------
+// Given a natural-language fragment (typically the "residual" from the verb
+// lexicon) and a list of real sheet column names, score each column and
+// return the best match with confidence + how we matched it. Used by the
+// deterministic engine to resolve group-by / filter / aggregate columns
+// without hardcoded hint lists.
+
+export type ColumnMatchVia = "exact" | "normalized" | "token-subset" | "fuzzy" | "synonym";
+
+export interface ColumnResolution {
+  column: string;
+  confidence: number; // 0..100
+  matchedVia: ColumnMatchVia;
+}
+
+function normCol(c: string): string {
+  return c.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Simple Damerau-Levenshtein (capped) — cheap enough for column counts. */
+function editDistance(a: string, b: string, cap = 3): number {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > cap) return cap + 1;
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let rowMin = Infinity;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + 1);
+      }
+      if (dp[i][j] < rowMin) rowMin = dp[i][j];
+    }
+    if (rowMin > cap) return cap + 1;
+  }
+  return dp[a.length][b.length];
+}
+
+/**
+ * Resolve the most likely column referenced in `fragment` from `availableColumns`.
+ * Optional `synonyms` map (user's teach-copilot entries) shortcuts to a
+ * pre-mapped column with high confidence.
+ */
+export function resolveColumnReference(
+  fragment: string,
+  availableColumns: string[],
+  synonyms?: Record<string, string>,
+): ColumnResolution | null {
+  const frag = normCol(fragment);
+  if (!frag) return null;
+
+  // 1. synonym shortcut
+  if (synonyms) {
+    for (const [term, col] of Object.entries(synonyms)) {
+      const n = normCol(term);
+      if (n && frag.includes(n) && availableColumns.includes(col)) {
+        return { column: col, confidence: 98, matchedVia: "synonym" };
+      }
+    }
+  }
+
+  const fragTokens = frag.split(/\s+/).filter((t) => t.length >= 2);
+  if (fragTokens.length === 0) return null;
+  const fragTokenSet = new Set(fragTokens);
+
+  let best: ColumnResolution | null = null;
+  const bump = (r: ColumnResolution) => {
+    if (!best || r.confidence > best.confidence) best = r;
+  };
+
+  for (const col of availableColumns) {
+    const n = normCol(col);
+    if (!n) continue;
+
+    // 2. exact
+    if (n === frag) { bump({ column: col, confidence: 100, matchedVia: "exact" }); continue; }
+
+    // 3. normalized full-phrase containment (both directions)
+    if (n.length >= 3 && frag.includes(n)) {
+      bump({ column: col, confidence: 90 + Math.min(n.length, 8), matchedVia: "normalized" });
+      continue;
+    }
+    if (frag.length >= 3 && n.includes(frag)) {
+      bump({ column: col, confidence: 82 + Math.min(frag.length, 8), matchedVia: "normalized" });
+      continue;
+    }
+
+    // 4. token-subset — every token of the column present in the fragment
+    const colTokens = n.split(/\s+/).filter((t) => t.length >= 2);
+    if (colTokens.length > 0) {
+      const hits = colTokens.filter((t) => fragTokenSet.has(t)).length;
+      if (hits === colTokens.length) {
+        bump({ column: col, confidence: 70 + hits * 3, matchedVia: "token-subset" });
+        continue;
+      }
+      // 5. fuzzy per-token (Levenshtein ≤ 2)
+      let fuzzyHits = 0;
+      for (const ct of colTokens) {
+        if (fragTokenSet.has(ct)) { fuzzyHits++; continue; }
+        for (const ft of fragTokens) {
+          if (Math.abs(ft.length - ct.length) <= 2 && editDistance(ft, ct, 2) <= 2) {
+            fuzzyHits++;
+            break;
+          }
+        }
+      }
+      if (fuzzyHits === colTokens.length && colTokens.length >= 1) {
+        bump({ column: col, confidence: 55 + fuzzyHits * 2, matchedVia: "fuzzy" });
+      }
+    }
+  }
+
+  return best;
+}
