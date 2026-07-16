@@ -426,6 +426,7 @@ const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#
 
 function CopilotPage() {
   const { userId } = useSession();
+  const isAdmin = useIsAdmin();
   const fetchList = useServerFn(listSheets);
   const fetchDocs = useServerFn(listDocuments);
   const ask = useServerFn(askCopilot);
