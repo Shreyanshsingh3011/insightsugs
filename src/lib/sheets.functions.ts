@@ -1708,7 +1708,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       const ranks = buildHeuristicRanks(grp);
       if (ranks.length > 0) {
         operationBlocks.push(
-          `Sheet "${grp.label}" — heuristic ranks (FULL DATASET):\n${JSON.stringify(ranks).slice(0, 6000)}`,
+          `Sheet "${grp.label}" — heuristic ranks (FULL DATASET):\n${truncateJsonForPrompt(ranks, 6000)}`,
         );
       }
     }
