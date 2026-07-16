@@ -1376,8 +1376,22 @@ function CopilotPage() {
                     )}
                     {isLast && t.suggestions.length > 0 && !askMut.isPending && (
                       <div className="mt-3 border-t pt-3">
-                        <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                          Suggested follow-ups
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            Suggested follow-ups
+                          </div>
+                          {(t.unmatchedTerms?.length ?? 0) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTeachTerms(t.unmatchedTerms ?? []);
+                                setTeachOpen(true);
+                              }}
+                              className="rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+                            >
+                              Teach Copilot ({(t.unmatchedTerms ?? []).length})
+                            </button>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {t.suggestions.map((sug, j) => (
@@ -1392,6 +1406,7 @@ function CopilotPage() {
                         </div>
                       </div>
                     )}
+
                   </Card>
                 </div>
               );
