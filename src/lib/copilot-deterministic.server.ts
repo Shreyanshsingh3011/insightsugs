@@ -245,6 +245,14 @@ function isInsightShapedQuery(q: string): boolean {
   // "findings about Punjab_Kharar_Store", "key takeaways for project Y",
   // "anything notable about X", etc.
   if (/\b(?:for|of|about|on|regarding|around|re)\s+["'`]?[\p{L}\p{N}][\p{L}\p{N}_\-./ ]{1,}["'`]?\s*[?.!]*$/u.test(s)) return false;
+  // Explain / why / discrepancy / variance / difference-between shapes are
+  // computed-analysis asks — typically the Auto-Insights suggested questions
+  // ("Explain the discrepancy between consumed_qty and planned_qty", "Why
+  // is balance negative?"). Route to Auto-Insights so we don't misread
+  // embedded numbers or column names as row-identifier filter tokens.
+  if (/\b(explain|why|reason|cause|driver|drivers|root\s*cause)\b/.test(s)) return true;
+  if (/\b(discrepan|variance|mismatch|reconcil|gap\s+between|delta\s+between|difference\s+between)/.test(s)) return true;
+  if (/\bbetween\s+[\p{L}\p{N}_]+.{0,40}\band\s+[\p{L}\p{N}_]+/u.test(s)) return true;
   // Broad-scope insight/overview asks only — and only when they explicitly
   // reference the sheet/data/table/source as a whole (no specific entity).
   const broadInsightVerb = /\b(insight|insights|overview|highlights?|findings?|snapshot|health\s+check|what'?s\s+(in|inside|on)|what\s+(should|do)\s+i\s+know|anything\s+(interesting|notable|important)|key\s+(points?|takeaways?))\b/.test(s);
