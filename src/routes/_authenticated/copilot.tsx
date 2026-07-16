@@ -436,11 +436,28 @@ function CopilotPage() {
 
 
 
-  const sheets = useQuery({ queryKey: ["sheets-list"], queryFn: () => fetchList() });
+  // staleTime 5min + no window-focus refetch: sheet/document lists change on
+  // the order of minutes at most (background cron refreshes them). Aggressive
+  // refetching here dominated Data API load on the Copilot page.
+  const sheets = useQuery({
+    queryKey: ["sheets-list"],
+    queryFn: () => fetchList(),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+  });
   const documents = useQuery({
     queryKey: ["copilot-documents"],
     queryFn: () => fetchDocs({ data: {} }),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
   });
+
   const cachedSheets = useMemo(() => readCachedSourceList<any>(COPILOT_SHEETS_CACHE_KEY), []);
   const cachedDocuments = useMemo(() => readCachedSourceList<any>(COPILOT_DOCUMENTS_CACHE_KEY), []);
   const liveSheets = sheets.data?.sheets ?? [];
