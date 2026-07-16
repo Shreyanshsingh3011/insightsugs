@@ -3020,32 +3020,135 @@ export async function runCopilotAgent(
       },
     ]);
 
-    // 10) Follow-up suggestions (best-effort, non-blocking).
+    // 10) Follow-up suggestions — TARGETED based on resolved rows + unmatched terms.
     let suggestions: string[] = [];
     try {
-      let suggestionModel: any;
-      if (directGeminiKey) {
-        const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-        suggestionModel = createGoogleGenerativeAI({ apiKey: directGeminiKey })("gemini-2.5-flash");
-      } else if (key && gatewayModule) {
-        suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("openai/gpt-5.5");
+      // (a) Summarise what was actually resolved from the ledger.
+      const resolvedRows = ledger.filter((l) => l.kind === "sheet_row") as Array<
+        Extract<(typeof ledger)[number], { kind: "sheet_row" }>
+      >;
+      const sheetHitCounts = new Map<string, { label: string; rows: number }>();
+      const columnHitCounts = new Map<string, number>();
+      for (const row of resolvedRows) {
+        const cur = sheetHitCounts.get(row.registryId) ?? { label: row.sheetLabel, rows: 0 };
+        cur.rows += 1;
+        sheetHitCounts.set(row.registryId, cur);
+        for (const col of Object.keys(row.data ?? {})) {
+          const val = (row.data as any)?.[col];
+          if (val == null || String(val).trim() === "") continue;
+          columnHitCounts.set(col, (columnHitCounts.get(col) ?? 0) + 1);
+        }
       }
-      if (!suggestionModel) throw new Error("No suggestion model available");
-      const sug = await withServerTimeout(
-        generateText({
-          model: suggestionModel,
-          system:
-            "Produce exactly 3 short follow-up questions the user might ask next. Output ONLY a JSON array of 3 strings.",
-          prompt: `QUESTION: ${data.question}\nANSWER: ${finalAnswer.slice(0, 2000)}`,
-        }),
-        4_000,
-        "Copilot suggestions",
+      const topSheets = Array.from(sheetHitCounts.values()).sort((a, b) => b.rows - a.rows).slice(0, 2);
+      const topColumns = Array.from(columnHitCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([col]) => col)
+        .filter((col) => !/^(id|created_at|updated_at|row_index)$/i.test(col))
+        .slice(0, 4);
+
+      // (b) Unmatched terms — entities from the reasoning plan that never appear
+      // in the final answer or in any resolved row's cell values.
+      const resolvedText = (
+        finalAnswer +
+        " " +
+        resolvedRows
+          .slice(0, 50)
+          .map((r) => Object.values(r.data ?? {}).join(" "))
+          .join(" ")
+      ).toLowerCase();
+      const unmatchedTerms = reasoningPlan.entities.filter(
+        (term) => term.length >= 2 && !resolvedText.includes(term.toLowerCase()),
       );
-      const parsed = JSON.parse(sug.text.trim().replace(/^```(?:json)?\n?|\n?```$/g, ""));
-      if (Array.isArray(parsed)) suggestions = parsed.filter((s) => typeof s === "string").slice(0, 3);
+
+      // (c) Diagnostics that hit dead ends — helpful pivot chips.
+      const deadEndDiagnostics = retrievalDiagnostics.filter(
+        (d) => d.rowsMatched === 0 && d.rowsScanned > 0,
+      );
+
+      // (d) Build deterministic chip candidates from the above signals.
+      const chipCandidates: string[] = [];
+      if (unmatchedTerms.length > 0) {
+        chipCandidates.push(
+          `Search for "${unmatchedTerms[0]}" across all selected sources`,
+        );
+        if (unmatchedTerms.length > 1) {
+          chipCandidates.push(`Show rows that mention ${unmatchedTerms.slice(0, 2).join(" or ")}`);
+        }
+      }
+      if (topSheets.length > 0 && topColumns.length > 0) {
+        chipCandidates.push(
+          `Break down ${topSheets[0].label} by ${topColumns[0]}`,
+        );
+        if (topColumns.length > 1) {
+          chipCandidates.push(
+            `Compare ${topColumns[0]} vs ${topColumns[1]} in ${topSheets[0].label}`,
+          );
+        }
+      }
+      if (topSheets.length > 1) {
+        chipCandidates.push(`Reconcile ${topSheets[0].label} with ${topSheets[1].label}`);
+      }
+      if (resolvedRows.length > 0 && reasoningPlan.intent !== "causal_explanation") {
+        chipCandidates.push(`Why do these ${resolvedRows.length} rows look this way?`);
+      }
+      if (deadEndDiagnostics.length > 0 && chipCandidates.length < 3) {
+        const dd = deadEndDiagnostics[0];
+        chipCandidates.push(`Try the same question on ${dd.sourceName} with a different filter`);
+      }
+      if (reasoningPlan.intent === "temporal_window") {
+        chipCandidates.push("Widen the date window to the next 90 days");
+      }
+
+      // De-dupe and cap at 3.
+      const deterministicSuggestions = Array.from(new Set(chipCandidates)).slice(0, 3);
+
+      // (e) Optionally polish with the LLM — but only if the deterministic set
+      // is thin. Keep facts (sheet names, columns, terms) verbatim.
+      if (deterministicSuggestions.length >= 2) {
+        suggestions = deterministicSuggestions;
+      } else {
+        let suggestionModel: any;
+        if (directGeminiKey) {
+          const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+          suggestionModel = createGoogleGenerativeAI({ apiKey: directGeminiKey })("gemini-2.5-flash");
+        } else if (key && gatewayModule) {
+          suggestionModel = gatewayModule.createLovableAiGatewayProvider(key)("openai/gpt-5.5");
+        }
+        if (suggestionModel) {
+          const sug = await withServerTimeout(
+            generateText({
+              model: suggestionModel,
+              system:
+                "Produce 2-3 short, TARGETED follow-up questions grounded in the resolved data. " +
+                "Prefer questions that reference specific sheets, columns, or unmatched terms provided. " +
+                "Output ONLY a JSON array of strings.",
+              prompt:
+                `QUESTION: ${data.question}\n` +
+                `ANSWER: ${finalAnswer.slice(0, 1500)}\n` +
+                `RESOLVED SHEETS: ${topSheets.map((s) => `${s.label} (${s.rows} rows)`).join(", ") || "none"}\n` +
+                `KEY COLUMNS: ${topColumns.join(", ") || "none"}\n` +
+                `UNMATCHED TERMS: ${unmatchedTerms.join(", ") || "none"}\n` +
+                `SEED CHIPS: ${deterministicSuggestions.join(" | ") || "none"}`,
+            }),
+            4_000,
+            "Copilot suggestions",
+          );
+          const parsed = JSON.parse(sug.text.trim().replace(/^```(?:json)?\n?|\n?```$/g, ""));
+          if (Array.isArray(parsed)) {
+            suggestions = Array.from(
+              new Set([...deterministicSuggestions, ...parsed.filter((s) => typeof s === "string")]),
+            ).slice(0, 3);
+          } else {
+            suggestions = deterministicSuggestions;
+          }
+        } else {
+          suggestions = deterministicSuggestions;
+        }
+      }
     } catch {
       /* ignore */
     }
+
 
     return {
       answer: finalAnswer,
