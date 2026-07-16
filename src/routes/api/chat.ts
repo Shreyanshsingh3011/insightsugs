@@ -836,7 +836,7 @@ export const Route = createFileRoute("/api/chat")({
           import("@/lib/ai-gateway.server"),
         ]);
         const gateway = createLovableAiGatewayProvider(key, runIdIncoming);
-        const model = gateway("google/gemini-3-flash-preview");
+        const model = gateway("google/gemini-2.5-flash");
 
 
         const lastUser = messages[messages.length - 1];

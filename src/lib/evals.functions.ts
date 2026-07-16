@@ -98,7 +98,7 @@ export const runEvalSuite = createServerFn({ method: "POST" })
       import("@/lib/ai-gateway.server"),
     ]);
     const gateway = createLovableAiGatewayProvider(key);
-    const model = gateway("google/gemini-3-flash-preview");
+    const model = gateway("google/gemini-2.5-flash");
 
     const stubTools = [
       "getDashboardSummary",
