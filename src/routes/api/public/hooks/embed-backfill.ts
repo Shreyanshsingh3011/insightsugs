@@ -37,11 +37,26 @@ async function run(request: Request) {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
+  // Global run-lock: skip if a previous invocation is still running. Fixed key
+  // shared across all embed-backfill invocations.
+  const BACKFILL_LOCK_KEY = "7700000000000042";
+  const { data: gotLock } = await (admin as any).rpc("try_run_lock", {
+    _key: BACKFILL_LOCK_KEY,
+  });
+  if (!gotLock) {
+    return json({ ok: true, skipped: true, reason: "another backfill already running" });
+  }
+
+  try {
   // Pull all sheet registry ids.
   const { data: sheets, error: regErr } = await admin
     .from("sheet_registry")
     .select("id, display_name");
-  if (regErr) return json({ error: regErr.message }, 500);
+  if (regErr) {
+    await (admin as any).rpc("release_run_lock", { _key: BACKFILL_LOCK_KEY });
+    return json({ error: regErr.message }, 500);
+  }
+
 
   // Compute (rows, embedded) for each sheet and rank by missing count desc.
   const ranked: Array<{
