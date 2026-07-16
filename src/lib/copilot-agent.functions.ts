@@ -2599,6 +2599,54 @@ export async function runCopilotAgent(
     // before answering. Pushes to toolTrace (shown in UI) AND is
     // prepended to the system prompt so the LLM answers deliberately.
     // ============================================================
+    // Load user's saved synonym mappings first — the reasoning planner
+    // consumes them for both column resolution and verb-phrase intent overrides.
+    type SynRow = {
+      id: string;
+      term: string;
+      sheet_id: string | null;
+      column_name: string | null;
+      value: string | null;
+      intent: string | null;
+    };
+    let userSynonyms: SynRow[] = [];
+    try {
+      const { data: syns } = await context.supabase
+        .from("copilot_synonyms")
+        .select("id, term, sheet_id, column_name, value, intent")
+        .eq("user_id", userId);
+      userSynonyms = (syns ?? []) as SynRow[];
+    } catch { /* ignore */ }
+    const qLowerForSyn = (data.question || "").toLowerCase();
+    const appliedSynonyms = userSynonyms.filter(
+      (s) => s.term && qLowerForSyn.includes(s.term.toLowerCase()),
+    );
+    // Term → canonical column map for resolveColumnReference shortcuts.
+    const columnSynonymMap: Record<string, string> = {};
+    for (const s of userSynonyms) {
+      if (s.term && s.column_name) columnSynonymMap[s.term] = s.column_name;
+    }
+    // Term → canonical intent overrides (verb-phrase teachings).
+    const verbIntentSynonyms = appliedSynonyms.filter(
+      (s): s is SynRow & { intent: string } => Boolean(s.intent),
+    );
+
+    // Available column universe from the snapshot (used for fuzzy column resolution).
+    const availableColumns = Array.from(
+      new Set(
+        sheetInsightSnapshot.flatMap((s) => s.columns || []),
+      ),
+    );
+
+    // ============================================================
+    // REASONING PLANNER — build an explicit chain-of-thought plan
+    // before answering. Pushes to toolTrace (shown in UI) AND is
+    // prepended to the system prompt so the LLM answers deliberately.
+    //
+    // Uses the shared verb lexicon (detectVerbIntent) for intent and the
+    // shared column resolver (resolveColumnReference) for column phrases,
+    // so routing agrees with copilot-deterministic.server.ts.
+    // ============================================================
     const buildReasoningPlan = (): {
       intent: string;
       entities: string[];
@@ -2611,26 +2659,45 @@ export async function runCopilotAgent(
       const q = data.question || "";
       const qLower = q.toLowerCase();
 
-      // Intent classification
-      let intent = "informational_lookup";
-      if (/\b(why|reason|explain|cause|because|due to)\b/i.test(q)) intent = "causal_explanation";
-      else if (/\b(how many|count|number of|total)\b/i.test(q)) intent = "count_aggregate";
-      else if (/\b(sum|average|avg|mean|median|max|min|highest|lowest|top|bottom)\b/i.test(q)) intent = "statistical_aggregate";
-      else if (/\b(compare|vs|versus|difference|between)\b/i.test(q)) intent = "comparison";
-      else if (/\b(trend|forecast|predict|projection|over time)\b/i.test(q)) intent = "trend_forecast";
-      else if (/\b(overdue|due|expiring|expire|within|next|last|past)\s+\d*\s*(day|week|month|year)/i.test(q)) intent = "temporal_window";
-      else if (/\b(summar|highlight|overview|brief)\b/i.test(q)) intent = "row_or_sheet_summary";
-      else if (/\b(list|show|which|what|find|get)\b/i.test(q)) intent = "list_lookup";
-      else if (actionRegexTest(q)) intent = "action_request";
+      // 1. Verb-lexicon based intent detection (shared with deterministic router).
+      const detection = detectVerbIntent(q);
+      let canonical: CanonicalIntent = detection.intent;
+      // Apply user-taught verb-phrase overrides (e.g. "crunch" → distribution).
+      for (const s of verbIntentSynonyms) {
+        canonical = s.intent as CanonicalIntent;
+      }
 
-      // Entity extraction — IDs, ALLCAPS tokens, quoted strings, numbers
+      // Map canonical intent → legacy label + strategy used downstream.
+      const intentMap: Record<CanonicalIntent, { intent: string; strategy: string; shape: string }> = {
+        distribution:  { intent: "distribution_breakdown",   strategy: "group_by_column",                                  shape: "grouped counts / percentages per bucket with citations" },
+        causal:        { intent: "causal_explanation",        strategy: "filter_conditioned_lookup_then_auto_insights",     shape: "filtered rows + observed pattern across numeric fields + honest limitations" },
+        compare:       { intent: "comparison",                strategy: "compare_groups_tool",                              shape: "side-by-side numbers per group with citations" },
+        trend:         { intent: "trend_forecast",            strategy: "trend_analyze_or_forecast_completion",             shape: "series over time with direction summary" },
+        top:           { intent: "statistical_aggregate",     strategy: "aggregate_column_then_verify",                     shape: "ranked list of top rows with the ranking column named" },
+        bottom:        { intent: "statistical_aggregate",     strategy: "aggregate_column_then_verify",                     shape: "ranked list of bottom rows with the ranking column named" },
+        aggregate:     { intent: "statistical_aggregate",     strategy: "aggregate_column_then_verify",                     shape: "single number + brief context + citations" },
+        count:         { intent: "count_aggregate",           strategy: "aggregate_column_then_verify",                     shape: "single count + brief context + citations" },
+        temporal:      { intent: "temporal_window",           strategy: "temporal_preflight_then_date_query",               shape: "list of rows within the date window with date column named" },
+        predict:       { intent: "trend_forecast",            strategy: "trend_analyze_or_forecast_completion",             shape: "projected value/date + assumptions" },
+        summarize:     { intent: "row_or_sheet_summary",      strategy: "targeted_row_lookup_with_exact_match_guardrail",    shape: "compact per-row summary with per-field citations" },
+        filter:        { intent: "list_lookup",               strategy: "deterministic_row_search",                          shape: "bulleted list of matching rows with per-row citations" },
+        lookup:        { intent: "informational_lookup",      strategy: "deterministic_row_search",                          shape: "concise prose with inline citations and a Sources section" },
+        list:          { intent: "list_lookup",               strategy: "deterministic_row_search",                          shape: "bulleted list of matching rows with per-row citations" },
+        generic:       { intent: "informational_lookup",      strategy: "deterministic_row_search",                          shape: "concise prose with inline citations and a Sources section" },
+      };
+      let { intent, strategy, shape: expectedShape } = intentMap[canonical];
+
+      // Action-request override (create/draft/send/...) always takes precedence.
+      if (actionRegexTest(q)) { intent = "action_request"; strategy = "llm_tool_call"; }
+
+      // 2. Entity extraction — IDs, ALLCAPS tokens, quoted strings, numbers.
       const entities: string[] = [];
       const idMatches = q.match(/\b[A-Z][A-Z0-9_\-]{2,}\b/g) ?? [];
       const quoted = q.match(/["']([^"']+)["']/g) ?? [];
       const nums = q.match(/\b\d[\d,]*(?:\.\d+)?\b/g) ?? [];
       entities.push(...idMatches, ...quoted.map((s) => s.replace(/["']/g, "")), ...nums);
 
-      // Filter phrases — "<column> is/=/equals <value>", "where <col> <val>"
+      // 3. Filter phrases — "<column> is/=/equals <value>".
       const filters: string[] = [];
       const filterRe = /\b([a-z_][a-z0-9_ ]{1,30}?)\s*(?:=|is|equals?|of)\s*([a-z0-9_.\-]+)/gi;
       let fm: RegExpExecArray | null;
@@ -2639,37 +2706,41 @@ export async function runCopilotAgent(
         if (filters.length >= 5) break;
       }
 
-      // Column hints
+      // 4. Column resolution — feed the verb-stripped residual and each
+      // n-gram window into resolveColumnReference against the real columns.
       const columns: string[] = [];
-      const colHints = ["status", "balance", "amount", "date", "qty", "quantity", "uom", "ac", "planned", "consumed", "expiry", "due", "assigned", "owner", "region", "district", "project"];
-      for (const c of colHints) if (qLower.includes(c)) columns.push(c);
+      const seenCols = new Set<string>();
+      const addCol = (c: string) => { if (!seenCols.has(c)) { seenCols.add(c); columns.push(c); } };
+      if (availableColumns.length > 0) {
+        const residual = detection.residual || q;
+        const tokens = residual.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2);
+        const fragments = new Set<string>([residual]);
+        for (let n = Math.min(3, tokens.length); n >= 1; n--) {
+          for (let i = 0; i + n <= tokens.length; i++) fragments.add(tokens.slice(i, i + n).join(" "));
+        }
+        for (const frag of fragments) {
+          const r = resolveColumnReference(frag, availableColumns, columnSynonymMap);
+          if (r && r.confidence >= 70) addCol(r.column);
+        }
+      }
 
-      // Strategy selection
-      let strategy = "deterministic_row_search";
-      if (intent === "action_request") strategy = "llm_tool_call";
-      else if (intent === "temporal_window") strategy = "temporal_preflight_then_date_query";
-      else if (intent === "causal_explanation") strategy = "filter_conditioned_lookup_then_auto_insights";
-      else if (intent === "statistical_aggregate" || intent === "count_aggregate") strategy = "aggregate_column_then_verify";
-      else if (intent === "comparison") strategy = "compare_groups_tool";
-      else if (intent === "trend_forecast") strategy = "trend_analyze_or_forecast_completion";
-      else if (entities.length > 0) strategy = "targeted_row_lookup_with_exact_match_guardrail";
+      // 5. Strategy overrides based on evidence.
+      if (intent === "informational_lookup" && entities.length > 0) {
+        strategy = "targeted_row_lookup_with_exact_match_guardrail";
+      }
 
-      // Step plan
+      // 6. Step plan.
       const steps: string[] = [];
-      steps.push(`Classify intent → ${intent}`);
+      steps.push(`Classify intent → ${intent}${detection.matchedPhrase ? ` (via "${detection.matchedPhrase}")` : ""}`);
+      if (verbIntentSynonyms.length) {
+        steps.push(`Apply user-taught verb synonyms: ${verbIntentSynonyms.map((s) => `"${s.term}" → ${s.intent}`).join(", ")}`);
+      }
       if (entities.length) steps.push(`Anchor on entities: ${entities.slice(0, 5).join(", ")}`);
       if (filters.length) steps.push(`Apply filters: ${filters.join("; ")}`);
-      if (columns.length) steps.push(`Focus columns: ${columns.join(", ")}`);
+      if (columns.length) steps.push(`Focus columns (resolved from question): ${columns.join(", ")}`);
       steps.push(`Route via strategy: ${strategy}`);
       steps.push("Ground every claim in a [sheet:...] or [doc:...] citation from the ledger");
       steps.push("If no rows match the specific filter, refuse honestly instead of returning sheet-wide insights");
-
-      // Expected answer shape
-      let expectedShape = "concise prose with inline citations and a Sources section";
-      if (intent === "count_aggregate" || intent === "statistical_aggregate") expectedShape = "single number + brief context + citations";
-      else if (intent === "list_lookup") expectedShape = "bulleted list of matching rows with per-row citations";
-      else if (intent === "causal_explanation") expectedShape = "filtered rows + observed pattern across numeric fields + honest limitations";
-      else if (intent === "temporal_window") expectedShape = "list of rows within the date window with date column named";
 
       return { intent, entities, filters, columns, strategy, steps, expectedShape };
     };
@@ -2678,25 +2749,8 @@ export async function runCopilotAgent(
       return /\b(create|draft|send|email|escalat|remind|schedule|remember|forget|approve|dismiss|assign|update)\b/i.test(q);
     }
 
-    // Load user's saved synonym mappings and apply them to the reasoning
-    // plan so previously-clarified terms auto-resolve to the right
-    // sheet/column/value on future queries.
-    type SynRow = { id: string; term: string; sheet_id: string | null; column_name: string | null; value: string | null };
-    let userSynonyms: SynRow[] = [];
-    try {
-      const { data: syns } = await context.supabase
-        .from("copilot_synonyms")
-        .select("id, term, sheet_id, column_name, value")
-        .eq("user_id", userId);
-      userSynonyms = (syns ?? []) as SynRow[];
-    } catch { /* ignore */ }
-    const qLowerForSyn = (data.question || "").toLowerCase();
-    const appliedSynonyms = userSynonyms.filter(
-      (s) => s.term && qLowerForSyn.includes(s.term.toLowerCase()),
-    );
-
     const reasoningPlan = buildReasoningPlan();
-    // Augment plan with resolutions from saved synonyms.
+    // Augment plan with resolutions from saved column/value synonyms.
     for (const s of appliedSynonyms) {
       if (s.value && !reasoningPlan.entities.includes(s.value)) {
         reasoningPlan.entities.push(s.value);
@@ -2708,6 +2762,7 @@ export async function runCopilotAgent(
         reasoningPlan.columns.push(s.column_name);
       }
     }
+
 
     toolTrace.push({
       name: "reasoning",
