@@ -327,6 +327,36 @@ function resolveColumnName(cols: string[], token: string): string | null {
   return contains ?? null;
 }
 
+/** Extract every `<column-token> <numeric-value>` pair from the query and
+ *  resolve tokens against real sheet headers. Handles:
+ *    "AC value of 440134.548"    → { column: AC, value: 440134.548 }
+ *    "row uom 972"               → { column: uom, value: 972 }
+ *    "balance = 10", "qty is 25" → { column: balance/qty, value: … }
+ *  Used to catch precise verification/lookup asks the AI would otherwise
+ *  loop on ("Is the AC value of X in row uom Y justified?"). */
+function extractColumnValuePairs(
+  q: string,
+  cols: string[],
+): Array<{ column: string; resolved: string; value: string }> {
+  const out: Array<{ column: string; resolved: string; value: string }> = [];
+  const seen = new Set<string>();
+  const stop = /^(is|are|be|the|a|an|of|for|with|in|on|by|and|or|to|row|rows|record|value|values|number|no|nos|nit|next|last|past|top|only|any|all|has|have|had|was|were|does|do|did|justified|correct|right|accurate|reasonable|valid|match|verify|check|explain|why|reason|it|its|this|that|these|those|between|from|than|then|about|around|regarding|column|field|cell)$/i;
+  const re = /\b([A-Za-z][A-Za-z0-9_]{0,30})\b(?:\s+(?:value|values|of|is|equals?|=|:))?\s+['"`]?([-+]?\d[\d,]*(?:\.\d+)?)['"`]?/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q)) !== null) {
+    const tok = m[1];
+    if (stop.test(tok)) continue;
+    const resolved = resolveColumnName(cols, tok);
+    if (!resolved) continue;
+    const value = m[2].replace(/,/g, "");
+    const key = `${resolved}=${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ column: tok, resolved, value });
+  }
+  return out;
+}
+
 function compactRowFields(row: StoredRow, maxFields = 12): string {
   const entries = Object.entries(row.data)
     .map(([key, value]) => [key, cellText(value)] as const)
@@ -433,6 +463,76 @@ export async function deterministicAnswer(params: {
       return { reg: r, rows };
     }),
   );
+  // Multi-pair value verification gate — catches "Is the <col> value of <n>
+  // in row <col2> <n2> justified?" and similar precise lookups the AI would
+  // otherwise loop on until the model timeout fires. Only runs when the query
+  // is NOT insight-shaped (explain/why routes to the insight gate below).
+  if (!insightMode) {
+    const allColsUnion = Array.from(new Set(sheetRows.flatMap(({ rows }) => allColumns(rows))));
+    const pairs = extractColumnValuePairs(question, allColsUnion);
+    if (pairs.length >= 1) {
+      const filterCites: string[] = [];
+      const filterParts: string[] = [];
+      let totalMatched = 0;
+      for (const { reg, rows } of sheetRows) {
+        if (rows.length === 0) continue;
+        const cols = allColumns(rows);
+        const applicable = pairs.filter((p) => cols.includes(p.resolved));
+        if (applicable.length === 0) continue;
+        const matches = rows.filter((r) =>
+          applicable.every((p) => {
+            const cellNum = parseNum(r.data[p.resolved]);
+            const wantNum = parseNum(p.value);
+            if (cellNum !== null && wantNum !== null) return Math.abs(cellNum - wantNum) < 1e-6;
+            return cellText(r.data[p.resolved]).toLowerCase() === p.value.toLowerCase();
+          }),
+        );
+        if (matches.length === 0) continue;
+        totalMatched += matches.length;
+        const conds = applicable.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+        filterParts.push(
+          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where ${conds}:`,
+        );
+        for (const row of matches.slice(0, 5)) {
+          const marker = `[sheet:${reg.display_name} row ${row.row_index}]`;
+          filterCites.push(marker);
+          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 12)} ${marker}`);
+          params.ledgerSink?.push({
+            kind: "sheet_row",
+            registryId: reg.id,
+            sheetLabel: reg.display_name,
+            rowIndex: row.row_index,
+            data: row.data,
+          });
+        }
+      }
+      if (totalMatched > 0) {
+        const uniq = Array.from(new Set(filterCites));
+        const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+        return {
+          answer:
+            `Filtered the selected sheet(s) to rows where ${summary}. Ground truth from the sheet — I did not call the model because the values are directly verifiable from the row data:\n\n` +
+            filterParts.join("\n") +
+            `\n\nSources:\n${uniq.map((m) => `- ${m}`).join("\n")}`,
+          citations: uniq,
+          matched: true,
+        };
+      }
+      // Pairs extracted but no row matches — report explicitly (still faster
+      // and more honest than the model loop timing out).
+      if (pairs.length >= 2) {
+        const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
+        const summary = pairs.map((p) => `\`${p.resolved}\` = ${p.value}`).join(" AND ");
+        return {
+          answer:
+            `No rows in the selected sheet(s) satisfy ${summary}. The value cannot be verified because no matching row exists.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
+          citations: scopeMarkers,
+          matched: true,
+        };
+      }
+      // Single unresolved pair → fall through to normal search.
+    }
+  }
 
   // Targeted row/record asks must never fall through to sheet-wide
   // Auto-Insights. This handles prompts generated by Auto-Insights itself,
