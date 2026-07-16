@@ -20,6 +20,15 @@ import { ensureSheetEmbeddings } from "./copilot-embeddings.server";
 import { getSheetIndex, candidatesForTokens, candidatesForAnyToken, type SheetIndex } from "./copilot-index.server";
 import { detectIntent as detectVerbIntent, type CanonicalIntent } from "./copilot-verb-lexicon";
 import { resolveColumnReference } from "./query-match";
+import {
+  buildRankedOptions,
+  loadRecentClarifySession,
+  matchReplyToOption,
+  markClarifySessionResolved,
+  savePendingClarifySession,
+  type AmbiguityKind,
+  type RankableOption,
+} from "./copilot-clarify.server";
 
 // Re-export so existing importers (e.g. the embed-backfill hook) keep working.
 export { ensureSheetEmbeddings };
@@ -2655,7 +2664,13 @@ export async function runCopilotAgent(
       strategy: string;
       steps: string[];
       expectedShape: string;
-      ambiguity: { isAmbiguous: boolean; reasons: string[]; options: string[] };
+      ambiguity: {
+        isAmbiguous: boolean;
+        reasons: string[];
+        options: string[];
+        kinds: AmbiguityKind[];
+        rankedOptions: RankableOption[];
+      };
     } => {
       const q = data.question || "";
       const qLower = q.toLowerCase();
@@ -2731,10 +2746,11 @@ export async function runCopilotAgent(
       }
 
       // 6. Ambiguity detection — trigger CLARIFY-FIRST when the query is
-      // under-specified. Concrete signals only; keep options grounded in
-      // the actual catalog / snapshot the user selected for this turn.
+      // under-specified. Concrete signals only; options come from a ranker
+      // that scores catalog entries by semantic similarity to the question
+      // + popularity (row count / column occurrence).
       const ambiguityReasons: string[] = [];
-      const ambiguityOptions: string[] = [];
+      const ambiguityKinds: AmbiguityKind[] = [];
       const sheetsForTurn = sheetInsightSnapshot;
       const namedSheet = sheetsForTurn.some(
         (s) => s.name && qLower.includes(s.name.toLowerCase()),
@@ -2750,12 +2766,12 @@ export async function runCopilotAgent(
         ambiguityReasons.push(
           `Verb "${(q.match(/\b(summariz\w*|analy[sz]e|breakdown|break\s+down|overview|status|report|update|insights?)\b/i) || ["?"])[0]}" has no scope; ${sheetsForTurn.length} sheets selected and none named.`,
         );
-        for (const s of sheetsForTurn.slice(0, 4)) ambiguityOptions.push(`Sheet: ${s.name}`);
+        ambiguityKinds.push("sheet_unspecified");
       }
       const vagueTime = /\b(recent|lately|soon|nowadays|these\s+days|current(ly)?)\b/i.test(q);
       if (vagueTime && !/\b(day|week|month|year|quarter|\d{4}|\d+\s*(d|w|m|y))\b/i.test(qLower)) {
         ambiguityReasons.push(`Time expression is vague — no explicit window given.`);
-        ambiguityOptions.push("Last 7 days", "Last 30 days", "Last 90 days", "Since start of year");
+        ambiguityKinds.push("time_unspecified");
       }
       const pronounOnly = /^\s*(what about|and|how about)?\s*(this|that|these|those|it|them|they)\b/i.test(q);
       if (pronounOnly) {
@@ -2769,9 +2785,31 @@ export async function runCopilotAgent(
         sheetsForTurn.length > 1
       ) {
         ambiguityReasons.push(`Generic query with no entity/column/filter across multiple selected sheets.`);
-        for (const s of sheetsForTurn.slice(0, 4)) ambiguityOptions.push(`Sheet: ${s.name}`);
+        ambiguityKinds.push("generic");
       }
       const isAmbiguous = ambiguityReasons.length > 0;
+
+      // Rank options from the actual catalog when we're going to ask.
+      const rankedOptions: RankableOption[] = isAmbiguous
+        ? buildRankedOptions({
+            question: q,
+            ambiguityKinds,
+            catalog: {
+              sheets: catalog.sheets.map((s) => ({
+                id: s.id,
+                name: s.name,
+                rows: s.rows,
+                columns: s.columns,
+              })),
+              documents: catalog.documents.map((d) => ({
+                id: d.id,
+                name: d.name,
+                pages: d.pages,
+              })),
+            },
+          })
+        : [];
+      const ambiguityOptions = rankedOptions.map((o) => o.label);
 
       // 7. Step plan.
       const steps: string[] = [];
@@ -2801,6 +2839,8 @@ export async function runCopilotAgent(
           isAmbiguous,
           reasons: ambiguityReasons,
           options: Array.from(new Set(ambiguityOptions)).slice(0, 4),
+          kinds: ambiguityKinds,
+          rankedOptions,
         },
       };
     };
@@ -2822,6 +2862,106 @@ export async function runCopilotAgent(
         reasoningPlan.columns.push(s.column_name);
       }
     }
+
+    // Load recent Copilot clarification session for this user + selected
+    // sources so we can (a) match the current question against options we
+    // asked last turn and (b) reuse a resolved scope on follow-ups without
+    // re-asking. Errors are non-fatal — clarify state is opportunistic.
+    const clarifyScopeSheetIds = regs.map((r) => r.id);
+    const clarifyScopeDocIds = docs.map((d) => d.id);
+    let resolvedClarifyScope: null | {
+      intent?: string;
+      sheetIds?: string[];
+      documentIds?: string[];
+      columns?: string[];
+      entities?: string[];
+      time_window?: string;
+      picked_label?: string;
+    } = null;
+    let clarifyReplyMatched = false;
+    try {
+      const session = await loadRecentClarifySession(
+        supabase,
+        userId,
+        clarifyScopeSheetIds,
+        clarifyScopeDocIds,
+      );
+      // 1. If we have a pending clarify question, try to match the user's
+      // current reply to one of the options we offered.
+      if (session.pending) {
+        const match = matchReplyToOption(
+          data.question || "",
+          session.pending.options,
+        );
+        if (match) {
+          const scope: Record<string, unknown> = {
+            picked_label: match.option.label,
+            confidence: match.confidence,
+          };
+          if (match.option.kind === "sheet" && match.option.id) {
+            scope.sheetIds = [match.option.id];
+          } else if (match.option.kind === "document" && match.option.id) {
+            scope.documentIds = [match.option.id];
+          } else if (match.option.kind === "column") {
+            const colName = match.option.label.replace(/^Column:\s*/i, "");
+            scope.columns = [colName];
+          } else if (match.option.kind === "time_window") {
+            scope.time_window = match.option.label;
+          } else if (match.option.kind === "entity") {
+            scope.entities = [match.option.label];
+          }
+          resolvedClarifyScope = scope;
+          clarifyReplyMatched = true;
+          // Fire-and-forget; failure to persist should not block the answer.
+          markClarifySessionResolved(supabase, session.pending.id, scope).catch(
+            () => {},
+          );
+        }
+      }
+      // 2. Otherwise, reuse the most recent resolved scope as a hint.
+      if (!resolvedClarifyScope && session.resolved) {
+        resolvedClarifyScope = session.resolved.scope;
+      }
+    } catch {
+      // ignore — clarification memory is best-effort
+    }
+
+    // Apply the resolved scope back into the plan so downstream steps
+    // (tool calls, deterministic router, follow-up chips) treat it as
+    // authoritative for this turn.
+    if (resolvedClarifyScope) {
+      if (resolvedClarifyScope.columns) {
+        for (const c of resolvedClarifyScope.columns) {
+          if (!reasoningPlan.columns.includes(c)) reasoningPlan.columns.push(c);
+        }
+      }
+      if (resolvedClarifyScope.entities) {
+        for (const e of resolvedClarifyScope.entities) {
+          if (!reasoningPlan.entities.includes(e)) reasoningPlan.entities.push(e);
+        }
+      }
+      // A matched reply resolves the ambiguity — do not re-ask this turn.
+      if (clarifyReplyMatched) {
+        reasoningPlan.ambiguity.isAmbiguous = false;
+        reasoningPlan.ambiguity.reasons = [];
+        reasoningPlan.ambiguity.options = [];
+        reasoningPlan.ambiguity.rankedOptions = [];
+      }
+    }
+
+    // If the plan is still ambiguous, persist the offered options so the
+    // NEXT user turn can be matched back. Fire-and-forget.
+    if (reasoningPlan.ambiguity.isAmbiguous && reasoningPlan.ambiguity.rankedOptions.length) {
+      savePendingClarifySession(supabase, userId, {
+        sheetIds: clarifyScopeSheetIds,
+        documentIds: clarifyScopeDocIds,
+        reasons: reasoningPlan.ambiguity.reasons,
+        options: reasoningPlan.ambiguity.rankedOptions,
+        question: data.question || "",
+      }).catch(() => {});
+    }
+
+
 
 
     toolTrace.push({
@@ -2863,13 +3003,21 @@ export async function runCopilotAgent(
             )
             .join("\n")}\nTreat these mappings as authoritative.\n`
         : "") +
+      (resolvedClarifyScope
+        ? `\n## APPLIED CLARIFICATION (from a recent user choice)\n` +
+          `The user's earlier reply resolved the ambiguity. Treat this as the authoritative scope for this turn and any close follow-ups — do NOT ask again:\n` +
+          Object.entries(resolvedClarifyScope)
+            .filter(([, v]) => v !== undefined && v !== null && (!Array.isArray(v) || v.length > 0))
+            .map(([k, v]) => `  • ${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+            .join("\n") + "\n"
+        : "") +
       (reasoningPlan.ambiguity.isAmbiguous
         ? `\n## CLARIFY FIRST — DO NOT ANSWER YET\n` +
           `The question is ambiguous:\n` +
           reasoningPlan.ambiguity.reasons.map((r) => `  • ${r}`).join("\n") + "\n" +
           `Reply the way Claude would: one short, natural clarifying question in plain prose that names 2–4 concrete choices inline (drawn from the actual catalog) and invites the user to say something else. No numbered "Options:" template, no citations, no Sources list, no tool calls, no partial answer.\n` +
           (reasoningPlan.ambiguity.options.length
-            ? `Concrete choices you can weave into the sentence (use the real names verbatim): ${reasoningPlan.ambiguity.options.join(" · ")}\n`
+            ? `Concrete choices you can weave into the sentence (use the real names verbatim, ranked best-first): ${reasoningPlan.ambiguity.options.join(" · ")}\n`
             : "") +
           `\n`
         : "") +
