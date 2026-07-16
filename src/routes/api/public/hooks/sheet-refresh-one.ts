@@ -47,13 +47,14 @@ export const Route = createFileRoute("/api/public/hooks/sheet-refresh-one")({
 
         const t0 = Date.now();
         // Best-effort audit write; never let audit failures fail the sync.
-        const writeAudit = async (row: Record<string, unknown>) => {
+        const writeAudit = async (row: Record<string, any>) => {
           try {
-            await supabaseAdmin.from("sheet_sync_audit").insert(row);
+            await (supabaseAdmin.from("sheet_sync_audit") as any).insert(row);
           } catch (e) {
             console.warn("[sheet-refresh-one] audit insert failed", (e as Error).message);
           }
         };
+
 
         try {
           const stats = await (syncRowsInternal as any)(supabaseAdmin, reg.user_id, reg.id);
