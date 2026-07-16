@@ -291,18 +291,17 @@ function extractTargetedRowTarget(q: string): string | null {
     // Guard against catching common stopword tails like "for me", "about it".
     if (cleaned.length >= 2 && !/^(me|it|us|them|this|that|these|those|now|today|yesterday|tomorrow)$/i.test(cleaned)) {
       return cleaned;
+    }
+  }
+  return null;
 }
 
-/** Extract `col=value`, `col is value`, `col of value`, `where col = value` — the
- *  filter condition inside explain/why questions. Returns { column, value }
- *  as raw strings; column is resolved to a real header by resolveColumnName. */
+/** Extract `col=value`, `col is value`, `where col = value` — the filter
+ *  condition inside explain/why questions. */
 function extractColumnValueFilter(q: string): { column: string; value: string } | null {
   const patterns: RegExp[] = [
-    // 'balance=10', "balance = 10", balance:10
     /['"`]?([A-Za-z][A-Za-z0-9_ ]{0,40}?)['"`]?\s*[=:]\s*['"`]?([A-Za-z0-9_.\-/]+)['"`]?/,
-    // "where balance is 10", "with balance is 10"
     /\b(?:where|with|for)\s+([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s+(?:is|equals?|=)\s+['"`]?([A-Za-z0-9_.\-/]+)['"`]?/i,
-    // "row with balance 10" / "rows where balance 10"
     /\brow[s]?\s+(?:with|where|having)\s+([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s+([0-9][A-Za-z0-9_.\-/]*)/i,
   ];
   for (const re of patterns) {
@@ -311,7 +310,6 @@ function extractColumnValueFilter(q: string): { column: string; value: string } 
     const column = m[1].trim().replace(/\s+/g, " ");
     const value = m[2].trim();
     if (column.length < 2 || value.length === 0) continue;
-    // Guard against catching stopwords or verbs as column names.
     if (/^(the|a|an|is|are|was|were|has|have|had|of|for|with|to|in|on|by|and|or|reason|why|what|which)$/i.test(column)) continue;
     return { column, value };
   }
@@ -327,8 +325,6 @@ function resolveColumnName(cols: string[], token: string): string | null {
   if (exact) return exact;
   const contains = cols.find((c) => norm(c).includes(t) || t.includes(norm(c)));
   return contains ?? null;
-  }
-  return null;
 }
 
 function compactRowFields(row: StoredRow, maxFields = 12): string {
