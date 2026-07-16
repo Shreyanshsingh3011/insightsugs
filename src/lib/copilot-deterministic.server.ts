@@ -372,6 +372,9 @@ function extractSpecificTerms(q: string): string[] {
     out.add(t);
   }
   return Array.from(out);
+}
+
+
 
 
 /** Configurable numeric equality. Two numbers are "equal" when they are within
