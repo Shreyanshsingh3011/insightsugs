@@ -296,6 +296,37 @@ function extractTargetedRowTarget(q: string): string | null {
   return null;
 }
 
+/** Extract `col=value`, `col is value`, `where col = value` — the filter
+ *  condition inside explain/why questions. */
+function extractColumnValueFilter(q: string): { column: string; value: string } | null {
+  const patterns: RegExp[] = [
+    /['"`]?([A-Za-z][A-Za-z0-9_ ]{0,40}?)['"`]?\s*[=:]\s*['"`]?([A-Za-z0-9_.\-/]+)['"`]?/,
+    /\b(?:where|with|for)\s+([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s+(?:is|equals?|=)\s+['"`]?([A-Za-z0-9_.\-/]+)['"`]?/i,
+    /\brow[s]?\s+(?:with|where|having)\s+([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s+([0-9][A-Za-z0-9_.\-/]*)/i,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(q);
+    if (!m) continue;
+    const column = m[1].trim().replace(/\s+/g, " ");
+    const value = m[2].trim();
+    if (column.length < 2 || value.length === 0) continue;
+    if (/^(the|a|an|is|are|was|were|has|have|had|of|for|with|to|in|on|by|and|or|reason|why|what|which)$/i.test(column)) continue;
+    return { column, value };
+  }
+  return null;
+}
+
+/** Find the actual column header that best matches a free-text token. */
+function resolveColumnName(cols: string[], token: string): string | null {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const t = norm(token);
+  if (!t) return null;
+  const exact = cols.find((c) => norm(c) === t);
+  if (exact) return exact;
+  const contains = cols.find((c) => norm(c).includes(t) || t.includes(norm(c)));
+  return contains ?? null;
+}
+
 function compactRowFields(row: StoredRow, maxFields = 12): string {
   const entries = Object.entries(row.data)
     .map(([key, value]) => [key, cellText(value)] as const)
@@ -565,10 +596,92 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
     }
   };
 
-  // Insight-shaped questions → emit the Auto-Insights output directly and
-  // stop. This is what the user asked for: Copilot answers from computed
-  // insights, not row-name token matching.
+  // Insight-shaped questions → try filter-conditioned lookup FIRST
+  // ("reason for the row with balance=10 having zero values" is not a
+  // request for sheet-wide auto-insights; it wants the rows where
+  // balance=10 and an explanation of their zero fields). If we can extract
+  // a `<col> <op> <val>` filter, resolve it against the sheet columns and
+  // emit those exact rows. Only fall back to Auto-Insights when no filter
+  // is present or the filter matches nothing.
   if (insightMode) {
+    const filter = extractColumnValueFilter(question);
+    if (filter) {
+      const filterCites: string[] = [];
+      const filterParts: string[] = [];
+      let totalMatched = 0;
+      for (const { reg, rows } of sheetRows) {
+        if (rows.length === 0) continue;
+        const cols = allColumns(rows);
+        const colMatch = resolveColumnName(cols, filter.column);
+        if (!colMatch) continue;
+        const matches = rows.filter((r) => {
+          const cell = cellText(r.data[colMatch]);
+          const cellNum = parseNum(r.data[colMatch]);
+          const wantNum = parseNum(filter.value);
+          if (cellNum !== null && wantNum !== null) return cellNum === wantNum;
+          return cell.toLowerCase() === filter.value.toLowerCase();
+        });
+        if (matches.length === 0) continue;
+        totalMatched += matches.length;
+        const numericCols = cols.filter((c) =>
+          rows.slice(0, 200).some((r) => parseNum(r.data[c]) !== null),
+        );
+        const shown = matches.slice(0, 10);
+        filterParts.push(
+          `**${reg.display_name}** — ${fmt(matches.length)} row${matches.length === 1 ? "" : "s"} where \`${colMatch}\` = ${filter.value}:`,
+        );
+        for (const row of shown) {
+          const marker = `[sheet:${reg.display_name} row ${row.row_index}]`;
+          filterCites.push(marker);
+          const zeroCols = numericCols.filter((c) => parseNum(row.data[c]) === 0);
+          const nonZeroCols = numericCols.filter((c) => {
+            const n = parseNum(row.data[c]);
+            return n !== null && n !== 0;
+          });
+          const zeroNote = zeroCols.length > 0
+            ? ` Zero-valued numeric fields: ${zeroCols.map((c) => `\`${c}\``).join(", ")}.`
+            : "";
+          const nonZeroNote = nonZeroCols.length > 0
+            ? ` Non-zero: ${nonZeroCols.slice(0, 6).map((c) => `\`${c}\`=${fmt(parseNum(row.data[c])!)}`).join(", ")}.`
+            : "";
+          filterParts.push(`- Row ${row.row_index}: ${compactRowFields(row, 8)}.${zeroNote}${nonZeroNote} ${marker}`);
+          params.ledgerSink?.push({
+            kind: "sheet_row",
+            registryId: reg.id,
+            sheetLabel: reg.display_name,
+            rowIndex: row.row_index,
+            data: row.data,
+          });
+        }
+        if (matches.length > shown.length) {
+          filterParts.push(`- …and ${fmt(matches.length - shown.length)} more matching row${matches.length - shown.length === 1 ? "" : "s"}.`);
+        }
+      }
+      if (totalMatched > 0) {
+        const uniqCites = Array.from(new Set(filterCites));
+        return {
+          answer:
+            `Filtered the selected sheet(s) to rows where \`${filter.column}\` = ${filter.value}. ` +
+            `The dashboard sheets don't record a separate "reason" column for zero-valued numeric fields, so the answer below shows the matching rows and which numeric fields are zero vs. non-zero — that's the ground truth I can derive from the data.\n\n` +
+            filterParts.join("\n") +
+            `\n\nSources:\n${uniqCites.map((m) => `- ${m}`).join("\n")}`,
+          citations: uniqCites,
+          matched: true,
+        };
+      }
+      // Filter matched nothing → tell the user explicitly instead of pivoting to sheet-wide insights.
+      const scopeMarkers = regs.map((r) => `[sheet:${r.display_name}]`);
+      return {
+        answer:
+          `No rows in the selected sheet(s) have \`${filter.column}\` = ${filter.value}. ` +
+          `I didn't fall back to sheet-wide Auto-Insights because your question is about a specific filter condition — the honest answer is that the condition doesn't match any row.\n\nSources:\n${scopeMarkers.map((m) => `- ${m}`).join("\n")}`,
+        citations: scopeMarkers,
+        matched: true,
+      };
+    }
+
+    // No filter condition → fall through to Auto-Insights for genuinely
+    // sheet-wide explain/why questions ("why so many overdue?").
     for (const { reg, rows } of sheetRows) emitInsightBlock(reg, rows);
     if (parts.length > 0) {
       const uniqCites = Array.from(new Set(cites));
