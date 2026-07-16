@@ -2863,6 +2863,16 @@ export async function runCopilotAgent(
             )
             .join("\n")}\nTreat these mappings as authoritative.\n`
         : "") +
+      (reasoningPlan.ambiguity.isAmbiguous
+        ? `\n## CLARIFY FIRST — DO NOT ANSWER YET\n` +
+          `The question is ambiguous:\n` +
+          reasoningPlan.ambiguity.reasons.map((r) => `  • ${r}`).join("\n") + "\n" +
+          `You MUST reply using ONLY the CLARIFY-FIRST format from the system prompt: one short question, then a numbered "Options:" list (2–4 concrete options drawn from the catalog), then a final "Something else" option. No citations. No Sources list. No tool calls. No answer.\n` +
+          (reasoningPlan.ambiguity.options.length
+            ? `Suggested options (use these verbatim, add/replace with real catalog values as needed):\n${reasoningPlan.ambiguity.options.map((o, i) => `  ${i + 1}) ${o}`).join("\n")}\n`
+            : "") +
+          `\n`
+        : "") +
       `\nThink through the steps internally. Verify each claim against tool output before writing it. If a specific filter yields zero rows, say so — never substitute sheet-wide auto-insights.\n`;
 
 
