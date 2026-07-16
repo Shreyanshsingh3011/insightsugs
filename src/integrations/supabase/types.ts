@@ -2596,6 +2596,7 @@ export type Database = {
         Args: { _reason: string; _request_id: string }
         Returns: undefined
       }
+      release_run_lock: { Args: { _key: number }; Returns: boolean }
       resend_signup_verification: {
         Args: { _note?: string; _request_id: string }
         Returns: undefined
@@ -2612,6 +2613,7 @@ export type Database = {
         Args: { _keys: string[]; _labels: string[] }
         Returns: undefined
       }
+      try_run_lock: { Args: { _key: number }; Returns: boolean }
       verify_signup_from_allowlist: {
         Args: never
         Returns: {
