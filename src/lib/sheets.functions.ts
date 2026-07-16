@@ -1759,7 +1759,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
             const out = executeOperation(spec, target);
             if (out) {
               operationBlocks.push(
-                `Sheet "${target.label}" — planned op:\n${JSON.stringify({ spec: out.spec, resolved: out.resolved, result: out.result }).slice(0, 12000)}`,
+                `Sheet "${target.label}" — planned op:\n${truncateJsonForPrompt({ spec: out.spec, resolved: out.resolved, result: out.result }, 12000)}`,
               );
             }
           }
