@@ -132,7 +132,15 @@ function AdminIndex() {
       icon: <Activity className="h-5 w-5" />,
       requires: "admin",
     },
+    {
+      to: "/admin/sync-perf",
+      label: "Sync performance",
+      description: "Cron run duration, rows changed, and embed-backfill throughput.",
+      icon: <Activity className="h-5 w-5" />,
+      requires: "admin",
+    },
   ];
+
 
   const hasAccess = (e: Entry) => (e.requires === "super_admin" ? isSuper : isAdmin);
 
