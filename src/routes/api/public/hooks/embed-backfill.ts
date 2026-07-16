@@ -88,14 +88,31 @@ async function run(request: Request) {
     if (touched >= maxSheetsPerRun) break;
     if (s.missing <= 0) break; // nothing left to embed anywhere
     touched++;
+    const t0 = Date.now();
     try {
       const r = await ensureSheetEmbeddings(admin, s.id, { batchCap: perSheetCap });
+      const embedMs = Date.now() - t0;
       results.push({
         sheet_id: s.id,
         display_name: s.display_name,
         ...r,
       });
+      try {
+        await (admin.from("sheet_sync_audit") as any).insert({
+          project_id: s.id,
+          project_label: s.display_name,
+          sheet_url: `embed-backfill://${s.id}`,
+          embed_ms: embedMs,
+          embed_embedded: r.embedded ?? 0,
+          embed_refreshed: (r as any).refreshed ?? 0,
+          embed_remaining: r.remaining ?? 0,
+          trigger_kind: "auto",
+        });
+      } catch (e) {
+        console.warn("[embed-backfill] audit insert failed", (e as Error).message);
+      }
     } catch (e: any) {
+      const embedMs = Date.now() - t0;
       results.push({
         sheet_id: s.id,
         display_name: s.display_name,
@@ -104,8 +121,22 @@ async function run(request: Request) {
         remaining: s.missing,
         error: String(e?.message ?? e).slice(0, 300),
       });
+      try {
+        await (admin.from("sheet_sync_audit") as any).insert({
+          project_id: s.id,
+          project_label: s.display_name,
+          sheet_url: `embed-backfill://${s.id}`,
+          embed_ms: embedMs,
+          embed_remaining: s.missing,
+          trigger_kind: "auto",
+          error: String(e?.message ?? e).slice(0, 2000),
+        });
+      } catch (err) {
+        console.warn("[embed-backfill] audit insert failed", (err as Error).message);
+      }
     }
   }
+
 
   const totalRemaining = ranked.reduce((acc, r) => acc + r.missing, 0);
   return json({
