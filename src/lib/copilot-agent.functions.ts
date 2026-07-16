@@ -20,6 +20,15 @@ import { ensureSheetEmbeddings } from "./copilot-embeddings.server";
 import { getSheetIndex, candidatesForTokens, candidatesForAnyToken, type SheetIndex } from "./copilot-index.server";
 import { detectIntent as detectVerbIntent, type CanonicalIntent } from "./copilot-verb-lexicon";
 import { resolveColumnReference } from "./query-match";
+import {
+  buildRankedOptions,
+  loadRecentClarifySession,
+  matchReplyToOption,
+  markClarifySessionResolved,
+  savePendingClarifySession,
+  type AmbiguityKind,
+  type RankableOption,
+} from "./copilot-clarify.server";
 
 // Re-export so existing importers (e.g. the embed-backfill hook) keep working.
 export { ensureSheetEmbeddings };
