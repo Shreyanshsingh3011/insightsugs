@@ -357,6 +357,23 @@ function extractColumnValuePairs(
   return out;
 }
 
+/** Pull out concrete filter-like terms from a question: numbers with
+ *  context, quoted phrases, and identifier-ish tokens (mix of letters and
+ *  digits, or ALLCAPS). Used by the relevance guard to decide whether an
+ *  Auto-Insights dump would actually address the question. */
+function extractSpecificTerms(q: string): string[] {
+  const out = new Set<string>();
+  const stop = /^(the|a|an|is|are|was|were|of|for|with|to|in|on|by|and|or|why|what|which|reason|explain|between|from|than|this|that|it|its|all|any|row|rows|value|values|field|fields|number|numeric|zero|null|missing|blank|empty|next|last|past|days?|weeks?|months?|years?|top|only)$/i;
+  const re = /['"`]([^'"`]{2,})['"`]|(\d[\d,.\-/]*)|([A-Z]{2,}[A-Za-z0-9_-]*)|([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q)) !== null) {
+    const t = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").trim();
+    if (!t || t.length < 2 || stop.test(t)) continue;
+    out.add(t);
+  }
+  return Array.from(out);
+
+
 /** Configurable numeric equality. Two numbers are "equal" when they are within
  *  `absTol` OR within `relTol` (fraction) of the larger magnitude. Handles
  *  rounding, currency-symbol stripping, thousands separators, and trailing
