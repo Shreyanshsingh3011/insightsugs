@@ -1,0 +1,1 @@
+ALTER TABLE public.copilot_synonyms ADD COLUMN IF NOT EXISTS intent text; CREATE INDEX IF NOT EXISTS copilot_synonyms_intent_idx ON public.copilot_synonyms (user_id, intent) WHERE intent IS NOT NULL;

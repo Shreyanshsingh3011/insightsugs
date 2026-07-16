@@ -721,6 +721,7 @@ export type Database = {
           column_name: string | null
           created_at: string
           id: string
+          intent: string | null
           note: string | null
           sheet_id: string | null
           term: string
@@ -733,6 +734,7 @@ export type Database = {
           column_name?: string | null
           created_at?: string
           id?: string
+          intent?: string | null
           note?: string | null
           sheet_id?: string | null
           term: string
@@ -745,6 +747,7 @@ export type Database = {
           column_name?: string | null
           created_at?: string
           id?: string
+          intent?: string | null
           note?: string | null
           sheet_id?: string | null
           term?: string
