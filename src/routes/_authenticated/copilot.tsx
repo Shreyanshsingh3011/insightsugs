@@ -38,6 +38,7 @@ import { ChatGroundingHint } from "@/components/ChatGroundingHint";
 import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
 import { renderWithCitations } from "@/components/copilot/CitationLink";
 import { PrimarySourceLink, stripCitations } from "@/components/copilot/PrimarySourceLink";
+import { TeachCopilotDialog } from "@/components/copilot/TeachCopilotDialog";
 import { useSession } from "@/hooks/useSession";
 import {
   ResponsiveContainer,
@@ -117,7 +118,9 @@ type Turn = {
   toolTrace?: import("@/components/copilot/ToolCallTrace").ToolCall[];
   retrievalDiagnostics?: RetrievalDiagnostic[];
   citationOk?: boolean;
+  unmatchedTerms?: string[];
 };
+
 
 type RetrievalDiagnostic = {
   sourceId: string;
@@ -452,6 +455,8 @@ function CopilotPage() {
   );
 
 
+  const [teachOpen, setTeachOpen] = useState(false);
+  const [teachTerms, setTeachTerms] = useState<string[]>([]);
 
   const [question, setQuestion] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => {
@@ -608,7 +613,9 @@ function CopilotPage() {
           toolTrace: (res as any).toolTrace ?? [],
           retrievalDiagnostics: (res as any).retrievalDiagnostics ?? [],
           citationOk: (res as any).citationOk ?? validation.ok,
+          unmatchedTerms: (res as any).unmatchedTerms ?? [],
         },
+
       ]);
       if (!validation.ok && vars.retryForCitations) {
         toast.warning("Copilot still didn't cite sources — flagged inline.");
@@ -1369,8 +1376,22 @@ function CopilotPage() {
                     )}
                     {isLast && t.suggestions.length > 0 && !askMut.isPending && (
                       <div className="mt-3 border-t pt-3">
-                        <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                          Suggested follow-ups
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            Suggested follow-ups
+                          </div>
+                          {(t.unmatchedTerms?.length ?? 0) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTeachTerms(t.unmatchedTerms ?? []);
+                                setTeachOpen(true);
+                              }}
+                              className="rounded-full border border-primary/40 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+                            >
+                              Teach Copilot ({(t.unmatchedTerms ?? []).length})
+                            </button>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {t.suggestions.map((sug, j) => (
@@ -1385,6 +1406,7 @@ function CopilotPage() {
                         </div>
                       </div>
                     )}
+
                   </Card>
                 </div>
               );
@@ -1441,6 +1463,15 @@ function CopilotPage() {
           </div>
         </Card>
       </section>
+      <TeachCopilotDialog
+        open={teachOpen}
+        onOpenChange={setTeachOpen}
+        unmatchedTerms={teachTerms}
+        sheets={visibleSheets.map((s: any) => ({
+          id: s.id,
+          label: s.title || s.name || s.id,
+        }))}
+      />
     </div>
   );
 }
