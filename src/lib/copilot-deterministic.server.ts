@@ -1021,7 +1021,7 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
       const distUniverse = universe.length > 0 ? universe : searchRows;
 
       const counts = new Map<string, StoredRow[]>();
-      for (const r of universe) {
+      for (const r of distUniverse) {
         const key = cellText(r.data[groupCol]) || "(blank)";
         if (!counts.has(key)) counts.set(key, []);
         counts.get(key)!.push(r);
