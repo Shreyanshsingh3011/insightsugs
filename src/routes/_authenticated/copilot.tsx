@@ -1463,6 +1463,15 @@ function CopilotPage() {
           </div>
         </Card>
       </section>
+      <TeachCopilotDialog
+        open={teachOpen}
+        onOpenChange={setTeachOpen}
+        unmatchedTerms={teachTerms}
+        sheets={visibleSheets.map((s: any) => ({
+          id: s.id,
+          label: s.title || s.name || s.id,
+        }))}
+      />
     </div>
   );
 }
