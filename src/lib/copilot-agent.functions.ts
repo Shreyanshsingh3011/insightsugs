@@ -2839,6 +2839,8 @@ export async function runCopilotAgent(
           isAmbiguous,
           reasons: ambiguityReasons,
           options: Array.from(new Set(ambiguityOptions)).slice(0, 4),
+          kinds: ambiguityKinds,
+          rankedOptions,
         },
       };
     };
