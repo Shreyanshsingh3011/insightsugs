@@ -1814,9 +1814,9 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       const filteredFactsText = filteredFactsBlocks.length ? filteredFactsBlocks.join("\n\n") : "";
       const relevantRowsText = relevantRowBlocks.length ? relevantRowBlocks.join("\n\n").slice(0, 90000) : "";
       const rowsBlock = sampleRows.length
-        ? JSON.stringify(sampleRows.slice(0, 400)).slice(0, 80000)
+        ? truncateJsonForPrompt(sampleRows.slice(0, 400), 80000)
         : "(no sheet rows in scope)";
-      const aggBlock = aggregates ? JSON.stringify(aggregates).slice(0, 8000) : "";
+      const aggBlock = aggregates ? truncateJsonForPrompt(aggregates, 8000) : "";
       const opsText = operationBlocks.length ? operationBlocks.join("\n\n").slice(0, 30000) : "";
       const chunksBlock = docChunkBlocks.length
         ? docChunkBlocks.join("\n\n---\n\n").slice(0, 80000)
