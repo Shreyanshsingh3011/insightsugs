@@ -357,7 +357,35 @@ function extractColumnValuePairs(
   return out;
 }
 
-function compactRowFields(row: StoredRow, maxFields = 12): string {
+/** Configurable numeric equality. Two numbers are "equal" when they are within
+ *  `absTol` OR within `relTol` (fraction) of the larger magnitude. Handles
+ *  rounding, currency-symbol stripping, thousands separators, and trailing
+ *  zeros. Returns match + absolute/relative delta for reporting. */
+export type NumericTolerance = { abs: number; rel: number };
+export const DEFAULT_NUMERIC_TOLERANCE: NumericTolerance = { abs: 0.01, rel: 0.0005 };
+
+export function numericClose(
+  a: number,
+  b: number,
+  tol: NumericTolerance = DEFAULT_NUMERIC_TOLERANCE,
+): { match: boolean; absDelta: number; relDelta: number } {
+  const absDelta = Math.abs(a - b);
+  const scale = Math.max(Math.abs(a), Math.abs(b));
+  const relDelta = scale === 0 ? 0 : absDelta / scale;
+  const match = absDelta <= tol.abs || relDelta <= tol.rel;
+  return { match, absDelta, relDelta };
+}
+
+/** Parse a user-supplied tolerance from the query: "within 0.5", "±1",
+ *  "tolerance 0.1", "tol=2%". Percent → relative tolerance; bare number →
+ *  absolute. Returns undefined when the query specifies none. */
+function parseTolerance(q: string): NumericTolerance | undefined {
+  const pct = /(?:within|tolerance|tol|±|\+\/-|\+-)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*%/i.exec(q);
+  if (pct) return { abs: 0, rel: Number(pct[1]) / 100 };
+  const abs = /(?:within|tolerance|tol|±|\+\/-|\+-)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\b/i.exec(q);
+  if (abs) return { abs: Number(abs[1]), rel: 0 };
+  return undefined;
+}
   const entries = Object.entries(row.data)
     .map(([key, value]) => [key, cellText(value)] as const)
     .filter(([, value]) => value !== "");
