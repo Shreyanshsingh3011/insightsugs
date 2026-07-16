@@ -160,7 +160,13 @@ async function run(request: Request) {
     total_remaining_before_run: totalRemaining,
     results,
   });
+  } finally {
+    try {
+      await (admin as any).rpc("release_run_lock", { _key: BACKFILL_LOCK_KEY });
+    } catch { /* best-effort */ }
+  }
 }
+
 
 export const Route = createFileRoute("/api/public/hooks/embed-backfill")({
   server: {
