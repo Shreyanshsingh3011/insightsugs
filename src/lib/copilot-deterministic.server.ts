@@ -291,7 +291,42 @@ function extractTargetedRowTarget(q: string): string | null {
     // Guard against catching common stopword tails like "for me", "about it".
     if (cleaned.length >= 2 && !/^(me|it|us|them|this|that|these|those|now|today|yesterday|tomorrow)$/i.test(cleaned)) {
       return cleaned;
-    }
+}
+
+/** Extract `col=value`, `col is value`, `col of value`, `where col = value` — the
+ *  filter condition inside explain/why questions. Returns { column, value }
+ *  as raw strings; column is resolved to a real header by resolveColumnName. */
+function extractColumnValueFilter(q: string): { column: string; value: string } | null {
+  const patterns: RegExp[] = [
+    // 'balance=10', "balance = 10", balance:10
+    /['"`]?([A-Za-z][A-Za-z0-9_ ]{0,40}?)['"`]?\s*[=:]\s*['"`]?([A-Za-z0-9_.\-/]+)['"`]?/,
+    // "where balance is 10", "with balance is 10"
+    /\b(?:where|with|for)\s+([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s+(?:is|equals?|=)\s+['"`]?([A-Za-z0-9_.\-/]+)['"`]?/i,
+    // "row with balance 10" / "rows where balance 10"
+    /\brow[s]?\s+(?:with|where|having)\s+([A-Za-z][A-Za-z0-9_ ]{0,40}?)\s+([0-9][A-Za-z0-9_.\-/]*)/i,
+  ];
+  for (const re of patterns) {
+    const m = re.exec(q);
+    if (!m) continue;
+    const column = m[1].trim().replace(/\s+/g, " ");
+    const value = m[2].trim();
+    if (column.length < 2 || value.length === 0) continue;
+    // Guard against catching stopwords or verbs as column names.
+    if (/^(the|a|an|is|are|was|were|has|have|had|of|for|with|to|in|on|by|and|or|reason|why|what|which)$/i.test(column)) continue;
+    return { column, value };
+  }
+  return null;
+}
+
+/** Find the actual column header that best matches a free-text token. */
+function resolveColumnName(cols: string[], token: string): string | null {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const t = norm(token);
+  if (!t) return null;
+  const exact = cols.find((c) => norm(c) === t);
+  if (exact) return exact;
+  const contains = cols.find((c) => norm(c).includes(t) || t.includes(norm(c)));
+  return contains ?? null;
   }
   return null;
 }
