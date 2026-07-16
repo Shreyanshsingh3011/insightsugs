@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_agent_run_events_run_id_created_at ON public.agent_run_events (run_id, created_at DESC);
