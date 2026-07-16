@@ -327,6 +327,36 @@ function resolveColumnName(cols: string[], token: string): string | null {
   return contains ?? null;
 }
 
+/** Extract every `<column-token> <numeric-value>` pair from the query and
+ *  resolve tokens against real sheet headers. Handles:
+ *    "AC value of 440134.548"    → { column: AC, value: 440134.548 }
+ *    "row uom 972"               → { column: uom, value: 972 }
+ *    "balance = 10", "qty is 25" → { column: balance/qty, value: … }
+ *  Used to catch precise verification/lookup asks the AI would otherwise
+ *  loop on ("Is the AC value of X in row uom Y justified?"). */
+function extractColumnValuePairs(
+  q: string,
+  cols: string[],
+): Array<{ column: string; resolved: string; value: string }> {
+  const out: Array<{ column: string; resolved: string; value: string }> = [];
+  const seen = new Set<string>();
+  const stop = /^(is|are|be|the|a|an|of|for|with|in|on|by|and|or|to|row|rows|record|value|values|number|no|nos|nit|next|last|past|top|only|any|all|has|have|had|was|were|does|do|did|justified|correct|right|accurate|reasonable|valid|match|verify|check|explain|why|reason|it|its|this|that|these|those|between|from|than|then|about|around|regarding|column|field|cell)$/i;
+  const re = /\b([A-Za-z][A-Za-z0-9_]{0,30})\b(?:\s+(?:value|values|of|is|equals?|=|:))?\s+['"`]?([-+]?\d[\d,]*(?:\.\d+)?)['"`]?/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(q)) !== null) {
+    const tok = m[1];
+    if (stop.test(tok)) continue;
+    const resolved = resolveColumnName(cols, tok);
+    if (!resolved) continue;
+    const value = m[2].replace(/,/g, "");
+    const key = `${resolved}=${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ column: tok, resolved, value });
+  }
+  return out;
+}
+
 function compactRowFields(row: StoredRow, maxFields = 12): string {
   const entries = Object.entries(row.data)
     .map(([key, value]) => [key, cellText(value)] as const)
