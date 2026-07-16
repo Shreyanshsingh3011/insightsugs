@@ -2863,6 +2863,106 @@ export async function runCopilotAgent(
       }
     }
 
+    // Load recent Copilot clarification session for this user + selected
+    // sources so we can (a) match the current question against options we
+    // asked last turn and (b) reuse a resolved scope on follow-ups without
+    // re-asking. Errors are non-fatal — clarify state is opportunistic.
+    const clarifyScopeSheetIds = regs.map((r) => r.id);
+    const clarifyScopeDocIds = docs.map((d) => d.id);
+    let resolvedClarifyScope: null | {
+      intent?: string;
+      sheetIds?: string[];
+      documentIds?: string[];
+      columns?: string[];
+      entities?: string[];
+      time_window?: string;
+      picked_label?: string;
+    } = null;
+    let clarifyReplyMatched = false;
+    try {
+      const session = await loadRecentClarifySession(
+        supabase,
+        userId,
+        clarifyScopeSheetIds,
+        clarifyScopeDocIds,
+      );
+      // 1. If we have a pending clarify question, try to match the user's
+      // current reply to one of the options we offered.
+      if (session.pending) {
+        const match = matchReplyToOption(
+          data.question || "",
+          session.pending.options,
+        );
+        if (match) {
+          const scope: Record<string, unknown> = {
+            picked_label: match.option.label,
+            confidence: match.confidence,
+          };
+          if (match.option.kind === "sheet" && match.option.id) {
+            scope.sheetIds = [match.option.id];
+          } else if (match.option.kind === "document" && match.option.id) {
+            scope.documentIds = [match.option.id];
+          } else if (match.option.kind === "column") {
+            const colName = match.option.label.replace(/^Column:\s*/i, "");
+            scope.columns = [colName];
+          } else if (match.option.kind === "time_window") {
+            scope.time_window = match.option.label;
+          } else if (match.option.kind === "entity") {
+            scope.entities = [match.option.label];
+          }
+          resolvedClarifyScope = scope;
+          clarifyReplyMatched = true;
+          // Fire-and-forget; failure to persist should not block the answer.
+          markClarifySessionResolved(supabase, session.pending.id, scope).catch(
+            () => {},
+          );
+        }
+      }
+      // 2. Otherwise, reuse the most recent resolved scope as a hint.
+      if (!resolvedClarifyScope && session.resolved) {
+        resolvedClarifyScope = session.resolved.scope;
+      }
+    } catch {
+      // ignore — clarification memory is best-effort
+    }
+
+    // Apply the resolved scope back into the plan so downstream steps
+    // (tool calls, deterministic router, follow-up chips) treat it as
+    // authoritative for this turn.
+    if (resolvedClarifyScope) {
+      if (resolvedClarifyScope.columns) {
+        for (const c of resolvedClarifyScope.columns) {
+          if (!reasoningPlan.columns.includes(c)) reasoningPlan.columns.push(c);
+        }
+      }
+      if (resolvedClarifyScope.entities) {
+        for (const e of resolvedClarifyScope.entities) {
+          if (!reasoningPlan.entities.includes(e)) reasoningPlan.entities.push(e);
+        }
+      }
+      // A matched reply resolves the ambiguity — do not re-ask this turn.
+      if (clarifyReplyMatched) {
+        reasoningPlan.ambiguity.isAmbiguous = false;
+        reasoningPlan.ambiguity.reasons = [];
+        reasoningPlan.ambiguity.options = [];
+        reasoningPlan.ambiguity.rankedOptions = [];
+      }
+    }
+
+    // If the plan is still ambiguous, persist the offered options so the
+    // NEXT user turn can be matched back. Fire-and-forget.
+    if (reasoningPlan.ambiguity.isAmbiguous && reasoningPlan.ambiguity.rankedOptions.length) {
+      savePendingClarifySession(supabase, userId, {
+        sheetIds: clarifyScopeSheetIds,
+        documentIds: clarifyScopeDocIds,
+        reasons: reasoningPlan.ambiguity.reasons,
+        options: reasoningPlan.ambiguity.rankedOptions,
+        question: data.question || "",
+      }).catch(() => {});
+    }
+
+
+
 
     toolTrace.push({
       name: "reasoning",
