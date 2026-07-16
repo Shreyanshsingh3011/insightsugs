@@ -3,6 +3,7 @@ import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { CANONICAL_FIELDS, type SheetType } from "@/lib/sheets-schemas";
+import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { callEmergent } from "@/lib/emergent-client";
 import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 import { isTransientDataApiError } from "@/lib/transient-errors";
