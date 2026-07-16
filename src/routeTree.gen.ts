@@ -51,6 +51,7 @@ import { Route as AuthenticatedAgentApprovalsRouteImport } from './routes/_authe
 import { Route as AuthenticatedAgentActivityRouteImport } from './routes/_authenticated/agent.activity'
 import { Route as AuthenticatedAdminVerifyRoleRouteImport } from './routes/_authenticated/admin.verify-role'
 import { Route as AuthenticatedAdminUsersRouteImport } from './routes/_authenticated/admin.users'
+import { Route as AuthenticatedAdminSyncPerfRouteImport } from './routes/_authenticated/admin.sync-perf'
 import { Route as AuthenticatedAdminSourcesHealthRouteImport } from './routes/_authenticated/admin.sources-health'
 import { Route as AuthenticatedAdminSmartAlertsRouteImport } from './routes/_authenticated/admin.smart-alerts'
 import { Route as AuthenticatedAdminHealthRouteImport } from './routes/_authenticated/admin.health'
@@ -309,6 +310,12 @@ const AuthenticatedAdminUsersRoute = AuthenticatedAdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAdminSyncPerfRoute =
+  AuthenticatedAdminSyncPerfRouteImport.update({
+    id: '/admin/sync-perf',
+    path: '/admin/sync-perf',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedAdminSourcesHealthRoute =
   AuthenticatedAdminSourcesHealthRouteImport.update({
     id: '/admin/sources-health',
@@ -545,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/admin/health': typeof AuthenticatedAdminHealthRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/sources-health': typeof AuthenticatedAdminSourcesHealthRoute
+  '/admin/sync-perf': typeof AuthenticatedAdminSyncPerfRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
@@ -620,6 +628,7 @@ export interface FileRoutesByTo {
   '/admin/health': typeof AuthenticatedAdminHealthRoute
   '/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/admin/sources-health': typeof AuthenticatedAdminSourcesHealthRoute
+  '/admin/sync-perf': typeof AuthenticatedAdminSyncPerfRoute
   '/admin/users': typeof AuthenticatedAdminUsersRoute
   '/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/agent/activity': typeof AuthenticatedAgentActivityRoute
@@ -700,6 +709,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/health': typeof AuthenticatedAdminHealthRoute
   '/_authenticated/admin/smart-alerts': typeof AuthenticatedAdminSmartAlertsRoute
   '/_authenticated/admin/sources-health': typeof AuthenticatedAdminSourcesHealthRoute
+  '/_authenticated/admin/sync-perf': typeof AuthenticatedAdminSyncPerfRoute
   '/_authenticated/admin/users': typeof AuthenticatedAdminUsersRoute
   '/_authenticated/admin/verify-role': typeof AuthenticatedAdminVerifyRoleRoute
   '/_authenticated/agent/activity': typeof AuthenticatedAgentActivityRoute
@@ -780,6 +790,7 @@ export interface FileRouteTypes {
     | '/admin/health'
     | '/admin/smart-alerts'
     | '/admin/sources-health'
+    | '/admin/sync-perf'
     | '/admin/users'
     | '/admin/verify-role'
     | '/agent/activity'
@@ -855,6 +866,7 @@ export interface FileRouteTypes {
     | '/admin/health'
     | '/admin/smart-alerts'
     | '/admin/sources-health'
+    | '/admin/sync-perf'
     | '/admin/users'
     | '/admin/verify-role'
     | '/agent/activity'
@@ -934,6 +946,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/health'
     | '/_authenticated/admin/smart-alerts'
     | '/_authenticated/admin/sources-health'
+    | '/_authenticated/admin/sync-perf'
     | '/_authenticated/admin/users'
     | '/_authenticated/admin/verify-role'
     | '/_authenticated/agent/activity'
@@ -1313,6 +1326,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminUsersRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/admin/sync-perf': {
+      id: '/_authenticated/admin/sync-perf'
+      path: '/admin/sync-perf'
+      fullPath: '/admin/sync-perf'
+      preLoaderRoute: typeof AuthenticatedAdminSyncPerfRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin/sources-health': {
       id: '/_authenticated/admin/sources-health'
       path: '/admin/sources-health'
@@ -1652,6 +1672,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAdminHealthRoute: typeof AuthenticatedAdminHealthRoute
   AuthenticatedAdminSmartAlertsRoute: typeof AuthenticatedAdminSmartAlertsRoute
   AuthenticatedAdminSourcesHealthRoute: typeof AuthenticatedAdminSourcesHealthRoute
+  AuthenticatedAdminSyncPerfRoute: typeof AuthenticatedAdminSyncPerfRoute
   AuthenticatedAdminUsersRoute: typeof AuthenticatedAdminUsersRoute
   AuthenticatedAdminVerifyRoleRoute: typeof AuthenticatedAdminVerifyRoleRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
@@ -1682,6 +1703,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminHealthRoute: AuthenticatedAdminHealthRoute,
   AuthenticatedAdminSmartAlertsRoute: AuthenticatedAdminSmartAlertsRoute,
   AuthenticatedAdminSourcesHealthRoute: AuthenticatedAdminSourcesHealthRoute,
+  AuthenticatedAdminSyncPerfRoute: AuthenticatedAdminSyncPerfRoute,
   AuthenticatedAdminUsersRoute: AuthenticatedAdminUsersRoute,
   AuthenticatedAdminVerifyRoleRoute: AuthenticatedAdminVerifyRoleRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,

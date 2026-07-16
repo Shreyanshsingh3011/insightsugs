@@ -636,7 +636,18 @@ async function computePayloadHash(payload: unknown): Promise<string> {
   return hex;
 }
 
-export async function syncRowsInternal(supabase: any, userId: string, registryId: string) {
+export interface SyncStats {
+  unchanged: boolean;
+  rowsTotal: number;
+  rowsAdded: number;
+  rowsChanged: number;
+  rowsRemoved: number;
+  fetchMs: number;
+  totalMs: number;
+}
+
+export async function syncRowsInternal(supabase: any, userId: string, registryId: string): Promise<SyncStats> {
+  const t0 = Date.now();
   const { data: reg, error: regErr } = await supabase
     .from("sheet_registry")
     .select("apps_script_url, user_id, last_content_hash")
@@ -654,7 +665,9 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
   const mapping: Record<string, string | null> = {};
   for (const m of maps ?? []) mapping[m.source_header] = m.canonical_field;
 
+  const fetchStart = Date.now();
   const { headers, rows } = await fetchAppsScript(reg.apps_script_url);
+  const fetchMs = Date.now() - fetchStart;
 
   const toInsert = rows.map((row, idx) => {
     const canonical: Record<string, string> = {};
@@ -687,7 +700,15 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
       .from("sheet_registry")
       .update({ last_refreshed_at: new Date().toISOString() })
       .eq("id", registryId);
-    return;
+    return {
+      unchanged: true,
+      rowsTotal: toInsert.length,
+      rowsAdded: 0,
+      rowsChanged: 0,
+      rowsRemoved: 0,
+      fetchMs,
+      totalMs: Date.now() - t0,
+    };
   }
 
   // Row-level diff: fetch current snapshot, upsert only rows whose
@@ -720,10 +741,19 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
 
   const toUpsert: typeof toInsert = [];
   const newIndices = new Set<number>();
+  let rowsAdded = 0;
+  let rowsChanged = 0;
   for (const row of toInsert) {
     newIndices.add(row.row_index);
     const sig = JSON.stringify([row.canonical, row.extras]);
-    if (existingByIndex.get(row.row_index) !== sig) toUpsert.push(row);
+    const prior = existingByIndex.get(row.row_index);
+    if (prior === undefined) {
+      toUpsert.push(row);
+      rowsAdded++;
+    } else if (prior !== sig) {
+      toUpsert.push(row);
+      rowsChanged++;
+    }
   }
 
   const toDeleteIndices: number[] = [];
@@ -764,7 +794,18 @@ export async function syncRowsInternal(supabase: any, userId: string, registryId
       last_content_hash: nextHash,
     })
     .eq("id", registryId);
+
+  return {
+    unchanged: false,
+    rowsTotal: toInsert.length,
+    rowsAdded,
+    rowsChanged,
+    rowsRemoved: toDeleteIndices.length,
+    fetchMs,
+    totalMs: Date.now() - t0,
+  };
 }
+
 
 
 export const refreshSheet = createServerFn({ method: "POST" })
