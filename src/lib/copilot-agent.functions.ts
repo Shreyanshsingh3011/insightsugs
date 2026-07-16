@@ -2732,7 +2732,22 @@ export async function runCopilotAgent(
       (reasoningPlan.columns.length ? `Columns of interest: ${reasoningPlan.columns.join(", ")}\n` : "") +
       `Steps:\n${reasoningPlan.steps.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}\n` +
       `Expected answer shape: ${reasoningPlan.expectedShape}\n` +
+      (appliedSynonyms.length
+        ? `\nUser-saved synonyms applied to this query:\n${appliedSynonyms
+            .map(
+              (s) =>
+                `  • "${s.term}" → ${[
+                  s.sheet_id ? `sheet ${s.sheet_id}` : null,
+                  s.column_name ? `column "${s.column_name}"` : null,
+                  s.value ? `value "${s.value}"` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}`,
+            )
+            .join("\n")}\nTreat these mappings as authoritative.\n`
+        : "") +
       `\nThink through the steps internally. Verify each claim against tool output before writing it. If a specific filter yields zero rows, say so — never substitute sheet-wide auto-insights.\n`;
+
 
     const systemWithReasoning = systemWithPreflight + reasoningPreamble;
 
