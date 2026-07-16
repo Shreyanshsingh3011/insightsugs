@@ -128,6 +128,8 @@ type RetrievalDiagnostic = {
   rowsMatched: number;
   columnsSearched?: string[];
   reason?: string;
+  missingColumns?: string[];
+  derivedFields?: string[];
 };
 
 function ThinkingElapsed({ startedAt }: { startedAt: number }) {
@@ -392,6 +394,20 @@ function GroundingDiagnostics({ diagnostics }: { diagnostics?: RetrievalDiagnost
                   <> · columns: {d.columnsSearched.slice(0, 8).join(", ")}{d.columnsSearched.length > 8 ? "…" : ""}</>
                 )}
               </div>
+              {(d.missingColumns?.length || d.derivedFields?.length) ? (
+                <div className="mt-1 space-y-1 text-[11px]">
+                  {d.missingColumns && d.missingColumns.length > 0 && (
+                    <div className="rounded border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-amber-900 dark:text-amber-200">
+                      <strong>Missing columns:</strong> {d.missingColumns.join(", ")} — answer could not be fully computed from current data.
+                    </div>
+                  )}
+                  {d.derivedFields && d.derivedFields.length > 0 && (
+                    <div className="rounded border border-border/60 bg-background/60 px-2 py-1 text-muted-foreground">
+                      <strong>Derived fields used:</strong> {d.derivedFields.join(" · ")}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

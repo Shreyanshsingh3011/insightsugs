@@ -62,6 +62,8 @@ type RetrievalDiagnostic = {
   rowsMatched: number;
   columnsSearched?: string[];
   reason?: string;
+  missingColumns?: string[];
+  derivedFields?: string[];
 };
 
 // -------------------- main server function --------------------

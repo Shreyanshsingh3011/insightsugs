@@ -232,37 +232,35 @@ function scopeMentionRegex(scopeName: string): RegExp | null {
 // short-circuit to the same Auto-Insights output the sheet header shows,
 // so the Copilot answers from the *computed insights* — not from row-name
 // token matching.
-function isInsightShapedQuery(q: string): boolean {
+export function isInsightShapedQuery(q: string): boolean {
   const s = q.toLowerCase().trim();
   // Row/record/entity-specific asks are NOT insight-mode even when they
-  // contain "summarize" / "highlights" / "snapshot" / "findings". These are
-  // targeted lookups — Copilot must find that specific row, not dump
-  // sheet-wide Auto-Insights.
+  // contain "summarize" / "highlights" / "snapshot" / "findings".
   if (/\b(row|record|entry|item|entity|profile)\b/.test(s)) return false;
-  // Any trailing "<preposition> <specific identifier>" is a targeted ask,
-  // whether the preposition is for/of/about/on/regarding/around/re. This
-  // catches "highlights of samastipur", "snapshot of NIT-48",
-  // "findings about Punjab_Kharar_Store", "key takeaways for project Y",
-  // "anything notable about X", etc.
-  if (/\b(?:for|of|about|on|regarding|around|re)\s+["'`]?[\p{L}\p{N}][\p{L}\p{N}_\-./ ]{1,}["'`]?\s*[?.!]*$/u.test(s)) return false;
+
   // Explain / why / discrepancy / variance / difference-between shapes are
   // computed-analysis asks — typically the Auto-Insights suggested questions
   // ("Explain the discrepancy between consumed_qty and planned_qty", "Why
-  // is balance negative?"). Route to Auto-Insights so we don't misread
-  // embedded numbers or column names as row-identifier filter tokens.
+  // is balance 2 or 3?"). These win over the prep-tail escape so embedded
+  // column names / numbers aren't misparsed as row identifiers.
   if (/\b(explain|why|reason|cause|driver|drivers|root\s*cause)\b/.test(s)) return true;
   if (/\b(discrepan|variance|mismatch|reconcil|gap\s+between|delta\s+between|difference\s+between)/.test(s)) return true;
   if (/\bbetween\s+[\p{L}\p{N}_]+.{0,40}\band\s+[\p{L}\p{N}_]+/u.test(s)) return true;
-  // Broad-scope insight/overview asks only — and only when they explicitly
-  // reference the sheet/data/table/source as a whole (no specific entity).
+
+  // Broad summary / overview / insights of sheet-wide nouns → insight mode.
   const broadInsightVerb = /\b(insight|insights|overview|highlights?|findings?|snapshot|health\s+check|what'?s\s+(in|inside|on)|what\s+(should|do)\s+i\s+know|anything\s+(interesting|notable|important)|key\s+(points?|takeaways?))\b/.test(s);
-  const summarizeSheetWide = /\b(summary|summari[sz]e|tell\s+me\s+about)\s+(this|the|these|that|selected|all|entire|whole)?\s*(sheet|data|dataset|table|source|sources|selection)\b/.test(s);
+  const sheetWideNoun = /\b(sheet|data|dataset|table|source|sources|selection|selected|everything|all)\b/.test(s);
+  const summarizeSheetWide = /\b(summary|summari[sz]e|tell\s+me\s+about|give\s+me\s+(an?\s+)?(overview|summary))\s+(of\s+)?(this|the|these|that|selected|all|entire|whole)?\s*(sheet|data|dataset|table|source|sources|selection)\b/.test(s);
   if (summarizeSheetWide) return true;
-  if (!broadInsightVerb) return false;
-  // Broad insight verbs only qualify as insight-mode if they name the
-  // sheet/data as the subject; otherwise assume the user targeted a
-  // specific entity that just wasn't caught above.
-  return /\b(sheet|data|dataset|table|source|sources|selection|selected|everything|all)\b/.test(s);
+  if (broadInsightVerb && sheetWideNoun) return true;
+
+  // Trailing "<preposition> <specific identifier>" is a targeted ask —
+  // "highlights of samastipur", "snapshot of NIT-48", "details for X".
+  // Only apply this escape when the tail is NOT a sheet-wide noun.
+  if (/\b(?:for|of|about|on|regarding|around|re)\s+["'`]?[\p{L}\p{N}][\p{L}\p{N}_\-./ ]{1,}["'`]?\s*[?.!]*$/u.test(s)
+      && !sheetWideNoun) return false;
+
+  return false;
 }
 
 function extractTargetedRowTarget(q: string): string | null {
