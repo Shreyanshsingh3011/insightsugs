@@ -103,7 +103,7 @@ function ruleSeeds(
 ): DraftSeed[] {
   const seeds: DraftSeed[] = [];
   const status = rowStatusText(row) || pick(row, "Status Category", "Status as on Date");
-  if (isTerminalRow(row) || isCompleted(status)) return seeds;
+  if (isRowEffectivelyDone(row) || isCompleted(status)) return seeds;
 
   const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
   const stage    = pick(row, "Stages", "Stages of Process") || "—";
