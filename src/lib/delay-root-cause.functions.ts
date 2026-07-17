@@ -188,7 +188,8 @@ async function investigateCore(opts: {
   } catch { /* no search / no docs */ }
 
   const diagnosis = await aiDiagnose({
-    project, activity, stage, delay: delay || num(currentRow["Delay in Days"]),
+    project, activity, stage,
+    delay: sanitizeDuration(delay || num(currentRow["Delay in Days"])),
     currentRow, siblings, docs, recordedReason,
   });
 
