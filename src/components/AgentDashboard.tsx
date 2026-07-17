@@ -2101,8 +2101,42 @@ export default function AgentDashboard() {
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={formatEtaDays(d.projectedDaysToFinish)} sub="to finish" />
           </div>
+
+          {/* ETA DEBUG PANEL — transparent view of which fields drove the projection */}
+          <details className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+            <summary className="cursor-pointer select-none font-mono uppercase tracking-widest text-[10px] text-muted-foreground">
+              ETA debug · displayed {formatEtaDays(d.projectedDaysToFinish)} · {d.etaDebug.tatClamped + d.etaDebug.takenClamped} field(s) clamped
+            </summary>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              <div className="rounded border border-border/40 bg-background/60 p-2">
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Formula inputs</div>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono">
+                  <dt className="text-muted-foreground">remaining</dt><dd>{d.etaDebug.inputs.remaining}</dd>
+                  <dt className="text-muted-foreground">persons</dt><dd>{d.etaDebug.inputs.persons}</dd>
+                  <dt className="text-muted-foreground">avgTat raw</dt><dd>{d.etaDebug.inputs.avgTatRaw.toFixed(1)}d</dd>
+                  <dt className="text-muted-foreground">avgTat used</dt><dd>{d.etaDebug.inputs.avgTat.toFixed(1)}d{d.etaDebug.inputs.avgTatRaw !== d.etaDebug.inputs.avgTat && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                  <dt className="text-muted-foreground">pace raw</dt><dd>{d.etaDebug.inputs.paceRatioRaw}%</dd>
+                  <dt className="text-muted-foreground">pace used</dt><dd>{d.etaDebug.inputs.paceRatio}%{d.etaDebug.inputs.paceRatioRaw !== d.etaDebug.inputs.paceRatio && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                  <dt className="text-muted-foreground">raw projection</dt><dd>{d.etaDebug.inputs.rawProjection}d</dd>
+                  <dt className="text-muted-foreground">final (≤365d)</dt><dd>{d.etaDebug.inputs.final}d</dd>
+                </dl>
+              </div>
+              <div className="rounded border border-border/40 bg-background/60 p-2">
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Rejected rows ({d.etaDebug.tatClamped} TAT · {d.etaDebug.takenClamped} Days Taken)</div>
+                {d.etaDebug.samples.length === 0 ? (
+                  <div className="text-muted-foreground italic">No bad values detected.</div>
+                ) : (
+                  <ul className="space-y-0.5 font-mono">
+                    {d.etaDebug.samples.map((s, i) => (
+                      <li key={i} className="truncate"><span className="text-amber-500">{s.field}</span> {s.raw} → {s.used} · <span className="text-muted-foreground">{s.activity}</span></li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </details>
 
           {/* NEXT BEST ACTIONS */}
           <Card className="overflow-hidden">
