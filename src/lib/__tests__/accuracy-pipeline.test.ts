@@ -52,8 +52,9 @@ const FEED: ExtraEntry[] = [
   { id: "BAD-1", person: "C", department: "Civil", activity: "Foundation", reason: "Vendor",   overdue_days: 3,  status: "Delayed",   tat: 45963, days_taken: 12 },
   // Serial leaked into Days Taken
   { id: "BAD-2", person: "D", department: "Elec",  activity: "Testing",    reason: "Access",   overdue_days: 7,  status: "Delayed",   tat: 20,    days_taken: 46028 },
-  // Impossible multi-year duration (bug seed for "ETA 1159d")
-  { id: "BAD-3", person: "E", department: "Ops",   activity: "Handover",   reason: "Approval", overdue_days: 12, status: "Delayed",   tat: 1159,  days_taken: 1200 },
+  // Impossible multi-year duration (bug seed for "ETA 1159d"). Both fields
+  // must exceed the 3650-day guard to be rejected end-to-end.
+  { id: "BAD-3", person: "E", department: "Ops",   activity: "Handover",   reason: "Approval", overdue_days: 12, status: "Delayed",   tat: 5000,  days_taken: 6000 },
   // Negative TAT
   { id: "BAD-4", person: "F", department: "Civil", activity: "Backfill",   reason: "Rework",   overdue_days: 0,  status: "In Progress", tat: -5,  days_taken: 3 },
 ];
