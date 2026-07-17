@@ -382,7 +382,21 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
   // TERMINAL — the row is completed. Label reflects timely vs late per numbers,
   // never the raw sheet text (which is where "TAT=45 Taken=31 → Timely" errors
   // and "TAT=30 Taken=31 → Completed" errors originate).
-  if (terminal && !explicitlyActive) {
+  //
+  // We also treat two dashboard-parity signals as terminal even when the sheet
+  // Status text still says "In Progress":
+  //   1. finishedWithinTat — taken>0 & tat>0 & taken<=tat with no active delay
+  //   2. date-serial leaked into Delay/Days Taken column (46028/46029) — the
+  //      sheet formula stamped a completion date into a duration column.
+  // Matches AgentDashboard's `effectivelyDone` so entity pages (Project Health,
+  // KPI drill-downs, Person/Stage/Row views) never contradict the dashboard.
+  const isSerialLeak = (n: number) => n >= 30000 && n <= 70000;
+  const rawDelayNum = toNum(row["Delay in Days"]);
+  const rawTakenNum = toNum(row["Days Taken"]);
+  const finishedWithinTat = tat > 0 && taken > 0 && taken <= tat && !explicitlyDelayed;
+  const serialLeakSaysDone = !explicitlyDelayed && (isSerialLeak(rawDelayNum) || isSerialLeak(rawTakenNum));
+
+  if ((terminal && !explicitlyActive) || finishedWithinTat || serialLeakSaysDone) {
     if (tat > 0 && taken > 0) {
       if (taken > tat) {
         return { bucket: "Completed", label: "Late Completed", isDone: true, isDelayed: false, tat, taken, delay: taken - tat };
@@ -391,6 +405,7 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
     }
     return { bucket: "Completed", label: "Completed", isDone: true, isDelayed: false, tat, taken, delay: 0 };
   }
+
 
   // ACTIVE — never leak into Completed. If TAT is breached OR status text says
   // delayed, bucket as Delayed. Otherwise honor the explicit active label.
