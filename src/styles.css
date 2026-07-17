@@ -74,12 +74,15 @@
   --radius: 0.75rem;
   --background: oklch(0.975 0.004 85);       /* #f5f3ee paper */
   --foreground: oklch(0.22 0.005 60);        /* near-black ink */
+  --background: oklch(0.975 0.004 85);       /* #f5f3ee paper */
+  --foreground: oklch(0.22 0.005 60);        /* near-black ink */
   --card: oklch(0.995 0.002 85);             /* crisp white card */
   --card-foreground: oklch(0.22 0.005 60);
+  --brand: oklch(0.68 0.16 45);              /* situation-board orange #E67E22 */
+  --brand-foreground: oklch(0.99 0.003 85);
+  --surface-invert: oklch(0.18 0.004 60);    /* dark health card #1A1918 */
+  --surface-invert-foreground: oklch(0.97 0.003 85);
   --popover: oklch(0.995 0.002 85);
-  --popover-foreground: oklch(0.22 0.005 60);
-  --primary: oklch(0.18 0.004 60);           /* deep ink #0d0d0d */
-  --primary-foreground: oklch(0.98 0.003 85);
   --secondary: oklch(0.945 0.005 85);        /* soft paper surface */
   --secondary-foreground: oklch(0.22 0.005 60);
   --muted: oklch(0.945 0.005 85);
