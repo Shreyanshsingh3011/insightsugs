@@ -418,6 +418,7 @@ function derive(payload: Payload | undefined) {
   return {
     n, status, critAgg, persons, personsByBurden, topPerformers, stages, processes, overdue, anomalies,
     completionRate, delayRate, healthScore, avgDelay, paceRatio, onTimeRate, projectedDaysToFinish,
+    etaDebug,
     totals: { total: n, completed: completedCount, delayed: delayedCount, overdue: overdueCount, notStarted },
     actions,
   };
