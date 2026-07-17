@@ -116,10 +116,10 @@ function RowPage() {
   const email = personEmail(row);
   const stage = stageName(row) || "—";
   const status = statusText(row) || "—";
-  const tat = num(row["TAT"]);
-  const taken = num(row["Days Taken"]);
-  const terminal = isTerminalRow(row);
-  const rawDelay = num(row["Delay in Days"]) || Math.max(0, taken - tat);
+  const tat = sanitizeDuration(num(row["TAT"]));
+  const taken = sanitizeDuration(num(row["Days Taken"]));
+  const terminal = isRowEffectivelyDone(row);
+  const rawDelay = sanitizeDuration(num(row["Delay in Days"])) || Math.max(0, taken - tat);
   const delay = terminal ? 0 : rawDelay;
   const criticality = String(row["Criticality"] ?? "—");
   const startDate = String(row["Start Date"] ?? row["Planned Start"] ?? "—");
