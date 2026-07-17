@@ -12,6 +12,7 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isRowEffectivelyDone, sanitizeDuration } from "@/lib/status-utils";
 
 type Row = Record<string, unknown>;
 
@@ -158,7 +159,7 @@ async function investigateCore(opts: {
         else {
           const rTokens = new Set(keywordTokens(rActivity + " " + pick(r, "Stages", "Stages of Process")));
           const overlap = Array.from(tokens).filter(t => rTokens.has(t)).length;
-          if (overlap >= 2 && num(r["Delay in Days"]) > 0) siblings.push(r);
+          if (overlap >= 2 && sanitizeDuration(num(r["Delay in Days"])) > 0 && !isRowEffectivelyDone(r)) siblings.push(r);
         }
       }
       siblings = siblings.slice(0, 12);
@@ -187,7 +188,8 @@ async function investigateCore(opts: {
   } catch { /* no search / no docs */ }
 
   const diagnosis = await aiDiagnose({
-    project, activity, stage, delay: delay || num(currentRow["Delay in Days"]),
+    project, activity, stage,
+    delay: sanitizeDuration(delay || num(currentRow["Delay in Days"])),
     currentRow, siblings, docs, recordedReason,
   });
 

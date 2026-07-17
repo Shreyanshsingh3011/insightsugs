@@ -12,7 +12,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
+import { isRowEffectivelyDone, rowStatusText, sanitizeDuration } from "@/lib/status-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ function ruleSeeds(
 ): DraftSeed[] {
   const seeds: DraftSeed[] = [];
   const status = rowStatusText(row) || pick(row, "Status Category", "Status as on Date");
-  if (isTerminalRow(row) || isCompleted(status)) return seeds;
+  if (isRowEffectivelyDone(row) || isCompleted(status)) return seeds;
 
   const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
   const stage    = pick(row, "Stages", "Stages of Process") || "—";
@@ -113,9 +113,9 @@ function ruleSeeds(
   const person   = resolved.displayName || "the responsible person";
   const email    = (resolved.email || pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase()) || null;
   const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
-  const delay    = num(row["Delay in Days"]);
-  const tat      = num(row["TAT"]);
-  const taken    = num(row["Days Taken"]);
+  const delay    = sanitizeDuration(num(row["Delay in Days"]));
+  const tat      = sanitizeDuration(num(row["TAT"]));
+  const taken    = sanitizeDuration(num(row["Days Taken"]));
   const crit     = pick(row, "Criticality").toLowerCase();
   const reason   = pick(row, "Delay Reason", "Reason for Delay");
 
@@ -285,7 +285,7 @@ async function runWatchersCore(
       // Detect completed rows up-front and collect their source_key so we can
       // auto-dismiss any prior drafts that are still pending/snoozed.
       const status = rowStatusText(row) || pick(row, "Status Category", "Status as on Date");
-      if (isTerminalRow(row) || isCompleted(status)) {
+      if (isRowEffectivelyDone(row) || isCompleted(status)) {
         const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
         const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
         completedKeys.push(`${proj.label}::${srNo || activity}`.slice(0, 400));

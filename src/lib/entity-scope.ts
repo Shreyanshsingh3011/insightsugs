@@ -1,7 +1,7 @@
 // Shared row-scoping helpers used by the entity detail pages
 // (person/stage/project). Reuses the same field aliases as AgentDashboard.
 
-import { computeRowStatus, isTerminalRow, rowStatusText } from "@/lib/status-utils";
+import { computeRowStatus, isRowEffectivelyDone, rowStatusText } from "@/lib/status-utils";
 
 export type Row = Record<string, unknown>;
 
@@ -80,7 +80,7 @@ export function summarize(scoped: ScopedRow[]) {
   const n = scoped.length;
   let done = 0, delayed = 0, delayDaysSum = 0, tatSum = 0, takenSum = 0, tatCount = 0;
   for (const r of scoped) {
-    const terminal = isTerminalRow(r.row);
+    const terminal = isRowEffectivelyDone(r.row);
     if (terminal) done++;
     if (r.delay > 0 && !terminal) { delayed++; delayDaysSum += r.delay; }
     if (r.tat > 0) { tatSum += r.tat; takenSum += r.taken; tatCount++; }
