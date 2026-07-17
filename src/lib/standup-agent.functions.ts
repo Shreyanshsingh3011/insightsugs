@@ -12,7 +12,7 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
+import { isRowEffectivelyDone, rowStatusText, sanitizeDuration } from "@/lib/status-utils";
 
 type Row = Record<string, unknown>;
 type ProjectDelayItem = {
