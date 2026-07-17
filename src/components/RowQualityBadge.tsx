@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ROW_QUALITY_LABEL, type RowQualityIssue } from "@/lib/row-quality";
+import { RowQualityFixButton } from "@/components/RowQualityFixButton";
 
 /**
  * Inline pill for a single row. Renders nothing when the row is clean, so it
