@@ -12,6 +12,7 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { isRowEffectivelyDone, sanitizeDuration } from "@/lib/status-utils";
 
 type Row = Record<string, unknown>;
 
