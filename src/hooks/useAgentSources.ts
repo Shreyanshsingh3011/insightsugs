@@ -23,7 +23,9 @@ import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow } from "@/lib/person-resolver";
 import type { Row } from "@/lib/entity-scope";
 
-const AUTO_REFRESH_MS = 5 * 60_000;
+// Match AgentDashboard.AUTO_REFRESH_MS exactly so entity pages share the
+// dashboard's query cache (same queryKey) and refresh on the same cadence.
+const AUTO_REFRESH_MS = 2 * 60_000;
 
 type SourcePayload = { connector?: string; department?: string; data?: Row[]; generated_at?: string };
 
@@ -75,10 +77,11 @@ export function useAgentSources() {
         const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
         return { project: p, payload: (res as { payload?: SourcePayload }).payload };
       },
-      staleTime: AUTO_REFRESH_MS,
+      staleTime: 0,
       refetchInterval: AUTO_REFRESH_MS,
       refetchIntervalInBackground: true,
-      refetchOnWindowFocus: true,
+      refetchOnMount: "always" as const,
+      refetchOnWindowFocus: "always" as const,
       placeholderData: keepPreviousData,
       retry: 2,
       enabled: !!p.url,
