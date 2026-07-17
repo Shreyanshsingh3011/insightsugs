@@ -80,7 +80,7 @@ export function summarize(scoped: ScopedRow[]) {
   const n = scoped.length;
   let done = 0, delayed = 0, delayDaysSum = 0, tatSum = 0, takenSum = 0, tatCount = 0;
   for (const r of scoped) {
-    const terminal = isTerminalRow(r.row);
+    const terminal = isRowEffectivelyDone(r.row);
     if (terminal) done++;
     if (r.delay > 0 && !terminal) { delayed++; delayDaysSum += r.delay; }
     if (r.tat > 0) { tatSum += r.tat; takenSum += r.taken; tatCount++; }
