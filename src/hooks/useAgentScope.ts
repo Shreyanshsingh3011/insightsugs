@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useRoles, useSession } from "./useSession";
+import { isBootstrapSuperAdminEmail, isBootstrapSuperAdminUserId } from "@/lib/bootstrap-super-admins";
 import { listMyAssignments, type Assignment } from "@/lib/user-assignments.functions";
 import { isRecoverableDataReadError } from "@/lib/transient-errors";
 
