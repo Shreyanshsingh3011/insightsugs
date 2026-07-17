@@ -16,7 +16,8 @@
     "test:openrouter": "bun run scripts/tests/openrouter-tools.ts",
     "test:issues": "bun run scripts/tests/issue-regression.ts",
     "test": "vitest run",
-    "test:accuracy": "vitest run src/lib/__tests__/accuracy-pipeline.test.ts src/lib/__tests__/eta-format.test.ts"
+    "test:accuracy": "vitest run src/lib/__tests__/accuracy-pipeline.test.ts src/lib/__tests__/eta-format.test.ts",
+    "test:accuracy:nightly": "vitest run src/lib/__tests__/accuracy-pipeline.nightly.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.10",
