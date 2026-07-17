@@ -177,8 +177,8 @@ describe("End-to-end accuracy pipeline (mocked feed → dashboard surfaces)", ()
 
   // ── Delayed totals are not inflated by poisoned rows ───────────────────
   it("merged totals still count delays, but poisoned rows never enter TAT KPI", () => {
-    // 5 of 6 extras are delayed (>0 overdue_days OR status=delayed).
-    expect(merged.totals.delayed).toBe(5);
+    // 4 of 6 extras are "delayed" per mergeData (status=delayed OR overdue>0).
+    expect(merged.totals.delayed).toBe(4);
     // Only 2 rows in the TAT KPI feed (the two clean numeric pairs).
     expect(merged.tat_performance.rows).toHaveLength(2);
     // Completed is 1 (OK-1).
