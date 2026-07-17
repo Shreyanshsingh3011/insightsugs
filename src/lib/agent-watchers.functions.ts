@@ -285,7 +285,7 @@ async function runWatchersCore(
       // Detect completed rows up-front and collect their source_key so we can
       // auto-dismiss any prior drafts that are still pending/snoozed.
       const status = rowStatusText(row) || pick(row, "Status Category", "Status as on Date");
-      if (isTerminalRow(row) || isCompleted(status)) {
+      if (isRowEffectivelyDone(row) || isCompleted(status)) {
         const activity = pick(row, "Activity List", "Process Descriptions", "Process") || "(unnamed activity)";
         const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
         completedKeys.push(`${proj.label}::${srNo || activity}`.slice(0, 400));
