@@ -12,7 +12,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
+import { isRowEffectivelyDone, rowStatusText, sanitizeDuration } from "@/lib/status-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
