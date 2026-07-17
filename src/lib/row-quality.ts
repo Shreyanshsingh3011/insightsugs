@@ -184,3 +184,147 @@ export function buildRowQualityReport(rows: Array<Record<string, unknown>>): Row
     counts,
   };
 }
+
+// ── Auto-fix suggestions ────────────────────────────────────────────────────
+// Given a row's issues, propose concrete remediations the user can apply
+// (either manually in the source sheet or via a future one-click patch).
+//
+//   "clear"     — wipe the offending cell; downstream metrics will recompute
+//                 from the remaining signals (dates, status text, etc.).
+//   "recompute" — derive the value from other columns already on the row
+//                 (e.g. Days Taken = Completion Date − Start Date).
+//   "set"       — write a specific literal value.
+//   "leave"     — safe to leave blank on this row (usually terminal rows).
+
+export type RowFixAction = "clear" | "recompute" | "set" | "leave";
+
+export type RowFixSuggestion = {
+  column: string;
+  action: RowFixAction;
+  value?: string;
+  rationale: string;
+  formula?: string;
+};
+
+const START_ALIASES = ["Start Date", "start_date", "Actual Start", "Planned Start"];
+const COMPLETION_ALIASES_LOCAL = [
+  "Completion Date", "Completed Date", "Actual Completion Date",
+  "Actual End", "Finish Date", "completion_date", "actual_end", "finish_date",
+];
+
+function firstPresentKey(row: Record<string, unknown>, aliases: string[]): string | null {
+  for (const a of aliases) {
+    const v = row[a];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return a;
+  }
+  return null;
+}
+
+export function suggestAutoFixes(
+  row: Record<string, unknown>,
+  issues: RowQualityIssue[],
+): RowFixSuggestion[] {
+  const out: RowFixSuggestion[] = [];
+  const startKey = firstPresentKey(row, START_ALIASES);
+  const doneKey = firstPresentKey(row, COMPLETION_ALIASES_LOCAL);
+  const terminal = isTerminalRow(row);
+
+  for (const issue of issues) {
+    switch (issue.kind) {
+      case "date_serial_in_tat":
+        out.push({
+          column: issue.column,
+          action: "clear",
+          rationale:
+            `"${issue.rawValue}" is a date serial, not a duration. Clear the cell and re-enter the TAT as a plain integer (days). The sheet cell is likely formatted as Date — switch it to Number.`,
+        });
+        break;
+      case "date_serial_in_days_taken":
+        if (startKey && doneKey) {
+          out.push({
+            column: issue.column,
+            action: "recompute",
+            formula: `= ${doneKey} − ${startKey}`,
+            rationale:
+              `Days Taken can be recomputed from the dates already on this row (${startKey} → ${doneKey}). The current value "${issue.rawValue}" is a date serial leaking in.`,
+          });
+        } else {
+          out.push({
+            column: issue.column,
+            action: "clear",
+            rationale:
+              `"${issue.rawValue}" is a date serial. Clear the cell — downstream metrics will fall back to the status text and completion columns.`,
+          });
+        }
+        break;
+      case "date_serial_in_delay":
+        out.push({
+          column: issue.column,
+          action: terminal ? "set" : "clear",
+          value: terminal ? "0" : undefined,
+          rationale: terminal
+            ? `Row is already completed — Delay should be 0, not "${issue.rawValue}".`
+            : `"${issue.rawValue}" is a date serial. Clear the cell so Delay recomputes from TAT vs Days Taken.`,
+        });
+        break;
+      case "negative_duration":
+        out.push({
+          column: issue.column,
+          action: "set",
+          value: "0",
+          rationale: `Negative durations don't make sense — replace "${issue.rawValue}" with 0 or the true value.`,
+        });
+        break;
+      case "missing_tat":
+        if (terminal) {
+          out.push({
+            column: issue.column,
+            action: "leave",
+            rationale:
+              `Row is terminal — TAT is only needed for active rows, safe to leave blank.`,
+          });
+        } else {
+          out.push({
+            column: issue.column,
+            action: "set",
+            rationale:
+              `Add the target TAT (in days) for this activity so pace and overdue calculations can run. Copy the TAT used for similar activities in this stage.`,
+          });
+        }
+        break;
+      case "missing_days_taken":
+        if (terminal) {
+          out.push({
+            column: issue.column,
+            action: "leave",
+            rationale:
+              `Row is terminal — Days Taken will be inferred from the completion date column.`,
+          });
+        } else if (startKey) {
+          out.push({
+            column: issue.column,
+            action: "recompute",
+            formula: `= TODAY() − ${startKey}`,
+            rationale:
+              `Days Taken can be derived from ${startKey} to today for an active row. Add a formula, or leave blank and the dashboard will fall back to status text.`,
+          });
+        } else {
+          out.push({
+            column: issue.column,
+            action: "set",
+            rationale: `Enter Days Taken manually, or fill in Start Date so it can be computed.`,
+          });
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+export const ROW_FIX_ACTION_LABEL: Record<RowFixAction, string> = {
+  clear: "Clear cell",
+  recompute: "Recompute from other columns",
+  set: "Set value",
+  leave: "Safe to leave blank",
+};
+

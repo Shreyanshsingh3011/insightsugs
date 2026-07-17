@@ -12,9 +12,10 @@ const KIND_LABEL: Record<Kind, string> = {
   bad_date: "Bad date",
   bad_number: "Bad number",
   duplicate_key: "Duplicate ID",
+  date_serial_in_duration: "Date leaked into duration",
 };
 
-const KIND_ORDER: Kind[] = ["empty_required", "bad_date", "bad_number", "duplicate_key"];
+const KIND_ORDER: Kind[] = ["empty_required", "bad_date", "bad_number", "date_serial_in_duration", "duplicate_key"];
 
 export function IngestValidationPanel({
   sheetType, headers, rows, mapping,
@@ -40,7 +41,7 @@ export function IngestValidationPanel({
 
   // Aggregate counts per kind and per column
   const { kindCounts, columnCounts } = useMemo(() => {
-    const k: Record<Kind, number> = { empty_required: 0, bad_date: 0, bad_number: 0, duplicate_key: 0 };
+    const k: Record<Kind, number> = { empty_required: 0, bad_date: 0, bad_number: 0, duplicate_key: 0, date_serial_in_duration: 0 };
     const c = new Map<string, number>();
     for (const i of summary.issues) {
       k[i.kind]++;
