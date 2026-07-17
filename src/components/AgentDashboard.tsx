@@ -2049,9 +2049,18 @@ export default function AgentDashboard() {
             </Link>
           </div>
 
-          {/* KPI STRIP */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "health" } }} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
+          {/* KPI BENTO — hero cell anchors situation, small cells give texture */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+            <div className="col-span-2 lg:col-span-2 lg:row-span-2">
+              <Kpi
+                variant="hero"
+                to={{ to: "/agent/kpi/$id", params: { id: "health" } }}
+                icon={<Activity className="h-4 w-4" />}
+                label="Activities in scope"
+                value={d.totals.total}
+                sub={`${d.completionRate}% done`}
+              />
+            </div>
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "ontime" } }} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
