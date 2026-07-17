@@ -1297,6 +1297,13 @@ function CopilotPage() {
                       <GroundingDiagnostics diagnostics={t.retrievalDiagnostics} />
                     )}
 
+                    <GroundingTracePanel
+                      sources={t.sources as any}
+                      diagnostics={t.retrievalDiagnostics as any}
+                      toolTrace={t.toolTrace}
+                      citationOk={t.citationOk}
+                      unmatchedTerms={t.unmatchedTerms}
+                    />
                     {isAdmin && t.toolTrace && t.toolTrace.length > 0 && (
                       <ToolCallTrace trace={t.toolTrace} />
                     )}
