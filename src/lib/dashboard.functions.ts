@@ -9,7 +9,7 @@ import type {
   FlagEntry,
 } from "@/lib/dashboard-data";
 import { resolvePerson, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, statusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, sanitizeDuration, statusBucket } from "@/lib/status-utils";
 
 
 type Row = Record<string, string>;
