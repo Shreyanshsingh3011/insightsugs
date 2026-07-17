@@ -77,10 +77,11 @@ export function useAgentSources() {
         const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
         return { project: p, payload: (res as { payload?: SourcePayload }).payload };
       },
-      staleTime: AUTO_REFRESH_MS,
+      staleTime: 0,
       refetchInterval: AUTO_REFRESH_MS,
       refetchIntervalInBackground: true,
-      refetchOnWindowFocus: true,
+      refetchOnMount: "always" as const,
+      refetchOnWindowFocus: "always" as const,
       placeholderData: keepPreviousData,
       retry: 2,
       enabled: !!p.url,
