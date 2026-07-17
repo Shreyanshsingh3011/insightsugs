@@ -209,7 +209,22 @@ function derive(payload: Payload | undefined) {
     // TAT values so a single bad cell can't inflate the ETA forecast into
     // thousands of days.
     const tat = tatRaw > 0 && tatRaw <= 365 ? tatRaw : 0;
+    if (tatRaw > 0 && tat === 0) {
+      etaDebug.tatClamped++;
+      if (etaDebug.samples.length < 5) etaDebug.samples.push({
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        field: "TAT", raw: tatRaw, used: 0,
+      });
+    }
+    const rawTaken = rawDaysTakenForRow(r);
     const taken = daysTakenForRow(r);
+    if (rawTaken > 0 && taken === 0) {
+      etaDebug.takenClamped++;
+      if (etaDebug.samples.length < 5) etaDebug.samples.push({
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        field: "Days Taken", raw: rawTaken, used: 0,
+      });
+    }
     // If the activity has recorded Days Taken within TAT, treat it as completed
     // even when the status column hasn't been flipped yet — otherwise done work
     // keeps surfacing in "Next best actions".
