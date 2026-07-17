@@ -159,7 +159,7 @@ async function investigateCore(opts: {
         else {
           const rTokens = new Set(keywordTokens(rActivity + " " + pick(r, "Stages", "Stages of Process")));
           const overlap = Array.from(tokens).filter(t => rTokens.has(t)).length;
-          if (overlap >= 2 && num(r["Delay in Days"]) > 0) siblings.push(r);
+          if (overlap >= 2 && sanitizeDuration(num(r["Delay in Days"])) > 0 && !isRowEffectivelyDone(r)) siblings.push(r);
         }
       }
       siblings = siblings.slice(0, 12);
