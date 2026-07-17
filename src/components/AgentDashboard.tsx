@@ -204,7 +204,11 @@ function derive(payload: Payload | undefined) {
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
     const delay = delayForRow(r, terminal, rowStatus);
-    const tat = num(r["TAT"]);
+    const tatRaw = num(r["TAT"]);
+    // Reject serial-date leaks (Excel serials ~30000–70000) and other absurd
+    // TAT values so a single bad cell can't inflate the ETA forecast into
+    // thousands of days.
+    const tat = tatRaw > 0 && tatRaw <= 365 ? tatRaw : 0;
     const taken = daysTakenForRow(r);
     // If the activity has recorded Days Taken within TAT, treat it as completed
     // even when the status column hasn't been flipped yet — otherwise done work
