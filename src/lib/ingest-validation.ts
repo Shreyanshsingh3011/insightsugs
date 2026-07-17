@@ -10,7 +10,7 @@ export type RowIssue = {
   header: string;                // source column
   canonical: string | null;      // mapped canonical field (null = extra)
   value: string;                 // raw cell text (truncated)
-  kind: "empty_required" | "bad_date" | "bad_number" | "duplicate_key";
+  kind: "empty_required" | "bad_date" | "bad_number" | "duplicate_key" | "date_serial_in_duration";
   message: string;
 };
 
@@ -37,6 +37,9 @@ const REQUIRED_FIELDS: Partial<Record<SheetType, string[]>> = {
 
 const DATE_FIELDS = /(_date$|^date_|_start$|_end$|_on$)/i;
 const NUMBER_FIELDS = /(amount|qty|percent|days|target|actual|variance|balance)/i;
+// Canonical fields that must be plain day counts — any Excel date-serial
+// value (≈30000-70000) in these columns is a formatting leak, not a duration.
+const DURATION_FIELDS = /^(tat_days|days_taken|delay_in_days|sla_days)$/i;
 
 function isDateish(s: string): boolean {
   const t = s.trim();
