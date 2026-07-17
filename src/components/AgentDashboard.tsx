@@ -163,13 +163,7 @@ function daysTakenForRow(r: Row): number {
   return isLikelySheetDateSerial(raw) ? 0 : clampRealDays(raw);
 }
 
-/**
- * Final render-time sanitizer for the ETA KPI. Even if upstream math misbehaves,
- * this guarantees the label can never render a serial-date leak or an absurd
- * multi-year projection like "1159d". Anything outside [1, 365] renders as "—".
- */
-// Render-safe ETA formatter (see src/lib/eta-format.ts for the canonical impl + tests)
-import { formatEtaDays } from "@/lib/eta-format";
+// Render-safe ETA formatter lives in src/lib/eta-format.ts (imported at top).
 
 function bucket(s: string): StatusBucket {
   return statusBucket(s);
