@@ -56,7 +56,7 @@ function KpiPage() {
   const meta = KPI_META[id as KpiId];
   if (!meta) throw notFound();
 
-  const { rows, anyLoading, anyFetching, refetchAll } = useAgentSources();
+  const { rows, anyLoading, anyFetching, refetchAll, focus, projects } = useAgentSources();
 
   const scoped = useMemo(() => {
     const all = rows.map((r, i) => toScopedRow(r, i));
@@ -64,6 +64,15 @@ function KpiPage() {
     if (meta.sort) filtered.sort(meta.sort);
     return filtered;
   }, [rows, meta]);
+
+  const focusBits: string[] = [];
+  if (focus?.selected && focus.selected !== "all") {
+    const proj = projects.find((p) => p.id === focus.selected);
+    focusBits.push(`Project: ${proj?.label ?? focus.selected}`);
+  }
+  if (focus?.person && focus.person !== "all") focusBits.push(`Person: ${focus.person}`);
+  if (focus?.dept && focus.dept !== "all") focusBits.push(`Dept: ${focus.dept}`);
+  const focusLabel = focusBits.length ? ` · ${focusBits.join(" · ")}` : "";
 
   // Top owner in this bucket becomes the default recipient for actions.
   const ownerCounts = new Map<string, { name: string; email: string; n: number }>();
@@ -79,7 +88,7 @@ function KpiPage() {
   return (
     <EntityDetailShell
       title={meta.title}
-      subtitle={`${scoped.length} matching activities · Rule: ${meta.rule}`}
+      subtitle={`${scoped.length} matching activities · Rule: ${meta.rule}${focusLabel}`}
       kindIcon="kpi"
       tone={meta.tone}
       rows={scoped}
