@@ -291,19 +291,25 @@ function derive(payload: Payload | undefined) {
   const completionRate = n ? Math.round((completedCount / n) * 100) : 0;
   const delayRate = n ? Math.round((delayedCount / n) * 100) : 0;
   const avgDelay = delayedCount ? Math.round(totalDelay / delayedCount) : 0;
-  const paceRatio = tatCounted ? Math.round((sumTaken / Math.max(1, sumTat)) * 100) : 100;
+  const paceRatioRaw = tatCounted ? Math.round((sumTaken / Math.max(1, sumTat)) * 100) : 100;
+  // Clamp pace so a handful of slow rows can't inflate the ETA into thousands of days.
+  const paceRatio = Math.min(200, Math.max(50, paceRatioRaw));
   const onTimeRate = 100 - delayRate;
   // Health = 0.4·onTime + 0.4·completion + 0.2·(200-pace) capped
   const healthScore = Math.max(0, Math.min(100, Math.round(
     0.4 * onTimeRate + 0.4 * completionRate + 0.2 * Math.max(0, 200 - paceRatio) / 2
   )));
 
-  // Forecast: at current completion velocity per row, days to finish remaining
+  // Forecast: at current completion velocity, days to finish remaining. Cap avgTat
+  // at 180d (any single-activity TAT above that is almost certainly a data leak)
+  // and clamp the projection to a 365-day horizon so the KPI never renders "1159d".
   const remaining = n - completedCount;
-  const avgTat = tatCounted ? sumTat / tatCounted : 0;
-  const projectedDaysToFinish = remaining && avgTat
+  const avgTatRaw = tatCounted ? sumTat / tatCounted : 0;
+  const avgTat = Math.min(180, avgTatRaw);
+  const rawProjection = remaining && avgTat
     ? Math.round(remaining * avgTat * (paceRatio / 100) / Math.max(1, Object.keys(personAgg).length))
     : 0;
+  const projectedDaysToFinish = Math.max(0, Math.min(365, rawProjection));
 
   // ── AGENTIC RULES: Next Best Actions
   type Action = {
