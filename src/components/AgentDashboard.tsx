@@ -168,13 +168,8 @@ function daysTakenForRow(r: Row): number {
  * this guarantees the label can never render a serial-date leak or an absurd
  * multi-year projection like "1159d". Anything outside [1, 365] renders as "—".
  */
-function formatEtaDays(n: number | null | undefined): string {
-  if (!Number.isFinite(n as number)) return "—";
-  const v = Math.round(n as number);
-  if (v <= 0) return "—";
-  if (v > 365) return "365d+";
-  return `${v}d`;
-}
+// Render-safe ETA formatter (see src/lib/eta-format.ts for the canonical impl + tests)
+import { formatEtaDays } from "@/lib/eta-format";
 
 function bucket(s: string): StatusBucket {
   return statusBucket(s);
