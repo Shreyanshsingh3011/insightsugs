@@ -20,6 +20,7 @@ import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog"
 
 import AgentChatWidget, { type AgentChatContext } from "@/components/AgentChatWidget";
 import { ViewSourceLink } from "@/components/ViewSourceLink";
+import { RowQualitySummary } from "@/components/RowQualitySummary";
 import { useSession } from "@/hooks/useSession";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1975,6 +1976,10 @@ export default function AgentDashboard() {
         </Card>
       )}
 
+
+      {payload && rowsAll.length > 0 && (
+        <RowQualitySummary rows={rowsAll} />
+      )}
 
       {payload && (
         <>
