@@ -113,9 +113,9 @@ function ruleSeeds(
   const person   = resolved.displayName || "the responsible person";
   const email    = (resolved.email || pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase()) || null;
   const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
-  const delay    = num(row["Delay in Days"]);
-  const tat      = num(row["TAT"]);
-  const taken    = num(row["Days Taken"]);
+  const delay    = sanitizeDuration(num(row["Delay in Days"]));
+  const tat      = sanitizeDuration(num(row["TAT"]));
+  const taken    = sanitizeDuration(num(row["Days Taken"]));
   const crit     = pick(row, "Criticality").toLowerCase();
   const reason   = pick(row, "Delay Reason", "Reason for Delay");
 
