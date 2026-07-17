@@ -131,7 +131,7 @@ async function fetchPublicCSV(): Promise<string[][]> {
 // useAgentSources.FALLBACK_PROJECTS. Used when the master sheet is empty or
 // unreachable so watchers/cron still have something to scan.
 export const FALLBACK_PROJECTS: AgentProject[] = [
-  { id: "nit58", label: "NIT-58",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/a02c5f0800319fabb6d0679ec385de83" },
+  { id: "nit58", label: "NIT-58",        url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1573279418#gid=1573279418" },
   { id: "bihar", label: "Bihar",         url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1685983370#gid=1685983370" },
   { id: "hp",    label: "Himachal",      url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1063989895#gid=1063989895" },
   { id: "pspcl", label: "PSPCL",         url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=318275095#gid=318275095" },
