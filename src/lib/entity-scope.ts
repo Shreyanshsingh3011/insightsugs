@@ -1,9 +1,10 @@
 // Shared row-scoping helpers used by the entity detail pages
 // (person/stage/project). Reuses the same field aliases as AgentDashboard.
 
-import { isTerminalRow, rowStatusText } from "@/lib/status-utils";
+import { computeRowStatus, isTerminalRow, rowStatusText } from "@/lib/status-utils";
 
 export type Row = Record<string, unknown>;
+
 
 export function pick(r: Row, ...keys: string[]): string {
   for (const k of keys) {
