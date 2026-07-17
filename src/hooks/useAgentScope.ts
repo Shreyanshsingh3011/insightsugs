@@ -28,7 +28,7 @@ export function useAgentScope(): AgentScope {
   const { session, userId, loading: sessionLoading } = useSession();
   const { data: roles } = useRoles();
   const sessionEmail = (session?.user.email ?? "").trim().toLowerCase();
-  const knownSuperAdminFallback = sessionEmail === "shreyansh.singh3011@gmail.com";
+  const knownSuperAdminFallback = isBootstrapSuperAdminEmail(sessionEmail) || isBootstrapSuperAdminUserId(userId);
   const isSuper = !!roles?.includes("super_admin") || knownSuperAdminFallback;
   const isAdmin = !!roles?.some((r) => r === "admin" || r === "super_admin");
 
