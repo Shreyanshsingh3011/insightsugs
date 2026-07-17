@@ -1984,15 +1984,15 @@ export default function AgentDashboard() {
       {payload && (
         <>
 
-          {/* AI BRIEF + HEALTH RING */}
+          {/* EXEC BRIEF + DARK HEALTH CARD */}
           <div className="grid gap-4 md:grid-cols-3">
-            <Card className="md:col-span-2 overflow-hidden border-primary/30 bg-gradient-to-br from-primary/[0.06] to-transparent">
+            <Card className="md:col-span-2 overflow-hidden border-border/70 bg-card">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Sparkles className="h-4 w-4 text-primary" /> Executive brief
+                <CardTitle className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <Sparkles className="h-3.5 w-3.5 text-[color:var(--color-brand)]" /> Executive brief
                   {briefMut.isPending && <Loader2 className="ml-1 h-3 w-3 animate-spin text-muted-foreground" />}
                   <Button
-                    variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs"
+                    variant="ghost" size="sm" className="ml-auto h-7 px-2 text-[11px] tracking-normal normal-case"
                     onClick={() => briefMut.mutate()} disabled={briefMut.isPending}
                   >
                     Regenerate
@@ -2001,7 +2001,7 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent>
                 {brief ? (
-                  <p className="text-[15px] leading-relaxed text-foreground/90">{brief}</p>
+                  <p className="font-serif text-[19px] leading-[1.45] text-foreground">{brief}</p>
                 ) : (
                   <p className="text-sm text-muted-foreground">Analyzing facts…</p>
                 )}
@@ -2013,39 +2013,37 @@ export default function AgentDashboard() {
               params={{ id: "health" }}
               className="block"
             >
-              <Card className="overflow-hidden transition hover:shadow-md">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Gauge className="h-4 w-4 text-primary" /> Project health
-                    <ArrowRight className="ml-auto h-3.5 w-3.5 opacity-40" />
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex items-center gap-3 pb-4">
-                  <div className="h-32 w-32 shrink-0">
+              <div className="group relative flex h-full flex-col overflow-hidden rounded-2xl bg-[color:var(--color-surface-invert)] p-4 text-[color:var(--color-surface-invert-foreground)] transition hover:shadow-[var(--shadow-elevated)]">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
+                  <Gauge className="h-3.5 w-3.5 text-[color:var(--color-brand)]" /> Project health
+                  <ArrowRight className="ml-auto h-3.5 w-3.5 text-white/40 transition-transform group-hover:translate-x-0.5" />
+                </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <div className="h-24 w-24 shrink-0">
                     <ResponsiveContainer>
-                      <RadialBarChart innerRadius="70%" outerRadius="100%" data={[{ name: "h", value: d.healthScore, fill: d.healthScore > 70 ? "#10b981" : d.healthScore > 40 ? "#f59e0b" : "#ef4444" }]} startAngle={90} endAngle={-270}>
+                      <RadialBarChart innerRadius="70%" outerRadius="100%" data={[{ name: "h", value: d.healthScore, fill: d.healthScore > 70 ? "#22c55e" : d.healthScore > 40 ? "#f59e0b" : "#ef4444" }]} startAngle={90} endAngle={-270}>
                         <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                        <RadialBar dataKey="value" cornerRadius={12} background={{ fill: "hsl(var(--muted))" }} />
+                        <RadialBar dataKey="value" cornerRadius={12} background={{ fill: "rgba(255,255,255,0.08)" }} />
                       </RadialBarChart>
                     </ResponsiveContainer>
                   </div>
                   <div className="min-w-0">
                     <div
-                      className="text-4xl font-semibold cursor-help"
+                      className="font-mono text-[44px] font-semibold leading-none tracking-tight tabular-nums cursor-help"
                       title={`Health = 0.4 × On-time + 0.4 × Completion + 0.1 × max(0, 200 − Pace)\n\n• On-time ${d.onTimeRate}% × 0.4 = ${(0.4 * d.onTimeRate).toFixed(1)}\n• Completion ${d.completionRate}% × 0.4 = ${(0.4 * d.completionRate).toFixed(1)}\n• Pace ${d.paceRatio}% → (200−${d.paceRatio})/2 × 0.2 = ${(0.2 * Math.max(0, 200 - d.paceRatio) / 2).toFixed(1)}\n\nTotal: ${d.healthScore} / 100`}
                     >
                       {d.healthScore}
                     </div>
-                    <div className="text-xs text-muted-foreground">out of 100 · hover for breakdown</div>
-                    <div className="mt-2 space-y-0.5 text-[11px]">
-                      <div>On-time <b>{d.onTimeRate}%</b> <span className="opacity-60">(×0.4)</span></div>
-                      <div>Completion <b>{d.completionRate}%</b> <span className="opacity-60">(×0.4)</span></div>
-                      <div>Pace <b>{d.paceRatio}%</b> of TAT <span className="opacity-60">(×0.2)</span></div>
-                    </div>
+                    <div className="mt-1 text-[10px] uppercase tracking-widest text-white/50">/ 100 · hover for breakdown</div>
                   </div>
-
-                </CardContent>
-              </Card>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-white/10 pt-3 text-[11px] text-white/70">
+                  <div><div className="text-white/40 uppercase tracking-widest text-[9px]">On-time</div><div className="font-mono text-sm text-white">{d.onTimeRate}%</div></div>
+                  <div><div className="text-white/40 uppercase tracking-widest text-[9px]">Done</div><div className="font-mono text-sm text-white">{d.completionRate}%</div></div>
+                  <div><div className="text-white/40 uppercase tracking-widest text-[9px]">Pace</div><div className="font-mono text-sm text-white">{d.paceRatio}%</div></div>
+                </div>
+                <div aria-hidden className="pointer-events-none absolute -right-10 -bottom-10 h-40 w-40 rounded-full bg-[color:var(--color-brand)]/20 blur-3xl" />
+              </div>
             </Link>
           </div>
 
