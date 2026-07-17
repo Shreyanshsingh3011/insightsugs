@@ -341,7 +341,7 @@ export type ComputedRowStatus = {
   delay: number;
 };
 
-function sanitizeDuration(raw: number): number {
+export function sanitizeDuration(raw: number): number {
   // Reject Excel date-serial leaks and impossible values.
   if (!Number.isFinite(raw)) return 0;
   if (raw < 0 || raw > 3650) return 0;
