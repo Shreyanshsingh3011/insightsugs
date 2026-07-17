@@ -88,7 +88,7 @@ function KpiPage() {
   return (
     <EntityDetailShell
       title={meta.title}
-      subtitle={`${scoped.length} matching activities · Rule: ${meta.rule}`}
+      subtitle={`${scoped.length} matching activities · Rule: ${meta.rule}${focusLabel}`}
       kindIcon="kpi"
       tone={meta.tone}
       rows={scoped}
