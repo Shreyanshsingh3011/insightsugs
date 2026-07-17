@@ -48,6 +48,7 @@ import {
 import {
   Sheet as UISheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
+import { formatEtaDays } from "@/lib/eta-format";
 
 // ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
 const FALLBACK_PROJECTS: AgentProject[] = [
