@@ -3,7 +3,7 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { toScopedRow, type ScopedRow } from "@/lib/entity-scope";
-import { isTerminalRow } from "@/lib/status-utils";
+import { isTerminalRow, isRowEffectivelyDone } from "@/lib/status-utils";
 
 type KpiId = "health" | "ontime" | "overdue" | "tat" | "risk";
 const KPI_META: Record<KpiId, {
