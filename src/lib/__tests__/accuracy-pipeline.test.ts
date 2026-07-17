@@ -125,7 +125,10 @@ describe("End-to-end accuracy pipeline (mocked feed → dashboard surfaces)", ()
     const serDel = computeRowStatus(RAW_ROWS[4]);
     expect(serTat.tat).toBe(0);
     expect(serDt.taken).toBe(0);
-    expect(serDel.delay).toBe(0);
+    // The 46100 serial in "Delay in Days" is discarded; any surviving delay
+    // comes only from the TAT-vs-taken breach (25 − 20 = 5), never the leak.
+    expect(serDel.delay).toBe(5);
+    expect(serDel.delay).toBeLessThan(100);
   });
 
   it("keeps an explicitly-active row out of Completed even with a stray date serial", () => {
