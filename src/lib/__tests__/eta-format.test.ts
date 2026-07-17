@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { formatEtaDays, isSaneDuration } from "@/lib/eta-format";
 import { sanitizeDuration } from "@/lib/status-utils";
 
