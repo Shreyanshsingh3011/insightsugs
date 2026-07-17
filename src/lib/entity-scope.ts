@@ -1,7 +1,7 @@
 // Shared row-scoping helpers used by the entity detail pages
 // (person/stage/project). Reuses the same field aliases as AgentDashboard.
 
-import { computeRowStatus, isTerminalRow, rowStatusText } from "@/lib/status-utils";
+import { computeRowStatus, isRowEffectivelyDone, rowStatusText } from "@/lib/status-utils";
 
 export type Row = Record<string, unknown>;
 
