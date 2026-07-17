@@ -331,6 +331,12 @@ function derive(payload: Payload | undefined) {
     ? Math.round(remaining * avgTat * (paceRatio / 100) / Math.max(1, Object.keys(personAgg).length))
     : 0;
   const projectedDaysToFinish = Math.max(0, Math.min(365, rawProjection));
+  etaDebug.inputs = {
+    sumTat, sumTaken, tatCounted,
+    remaining, persons: Object.keys(personAgg).length,
+    avgTatRaw, avgTat, paceRatioRaw, paceRatio,
+    rawProjection, final: projectedDaysToFinish,
+  };
 
   // ── AGENTIC RULES: Next Best Actions
   type Action = {
