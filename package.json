@@ -14,7 +14,9 @@
     "test:rls:ui": "python3 scripts/tests/rls-ui-smoke.py",
     "test:citations": "bun run scripts/tests/citation-contract.ts",
     "test:openrouter": "bun run scripts/tests/openrouter-tools.ts",
-    "test:issues": "bun run scripts/tests/issue-regression.ts"
+    "test:issues": "bun run scripts/tests/issue-regression.ts",
+    "test": "vitest run",
+    "test:accuracy": "vitest run src/lib/__tests__/accuracy-pipeline.test.ts src/lib/__tests__/eta-format.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.10",
