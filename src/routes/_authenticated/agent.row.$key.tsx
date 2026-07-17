@@ -18,7 +18,7 @@ import {
   activityName, statusText, num, encodeKey as encodeEntityKey, toScopedRow,
   type Row,
 } from "@/lib/entity-scope";
-import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
+import { isRowEffectivelyDone, sanitizeDuration, statusBucketForRow } from "@/lib/status-utils";
 import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
