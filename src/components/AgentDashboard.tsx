@@ -163,6 +163,19 @@ function daysTakenForRow(r: Row): number {
   return isLikelySheetDateSerial(raw) ? 0 : clampRealDays(raw);
 }
 
+/**
+ * Final render-time sanitizer for the ETA KPI. Even if upstream math misbehaves,
+ * this guarantees the label can never render a serial-date leak or an absurd
+ * multi-year projection like "1159d". Anything outside [1, 365] renders as "—".
+ */
+function formatEtaDays(n: number | null | undefined): string {
+  if (!Number.isFinite(n as number)) return "—";
+  const v = Math.round(n as number);
+  if (v <= 0) return "—";
+  if (v > 365) return "365d+";
+  return `${v}d`;
+}
+
 function bucket(s: string): StatusBucket {
   return statusBucket(s);
 }
@@ -191,6 +204,12 @@ function derive(payload: Payload | undefined) {
   const processAgg: Record<string, { total: number; delayed: number; delayDays: number }> = {};
   let totalDelay = 0, delayedCount = 0, overdueCount = 0, completedCount = 0;
   let sumTat = 0, sumTaken = 0, tatCounted = 0;
+  const etaDebug: {
+    tatClamped: number;
+    takenClamped: number;
+    samples: { activity: string; field: string; raw: number; used: number }[];
+    inputs: { sumTat: number; sumTaken: number; tatCounted: number; remaining: number; persons: number; avgTatRaw: number; avgTat: number; paceRatioRaw: number; paceRatio: number; rawProjection: number; final: number };
+  } = { tatClamped: 0, takenClamped: 0, samples: [], inputs: { sumTat: 0, sumTaken: 0, tatCounted: 0, remaining: 0, persons: 0, avgTatRaw: 0, avgTat: 0, paceRatioRaw: 0, paceRatio: 0, rawProjection: 0, final: 0 } };
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
@@ -209,7 +228,22 @@ function derive(payload: Payload | undefined) {
     // TAT values so a single bad cell can't inflate the ETA forecast into
     // thousands of days.
     const tat = tatRaw > 0 && tatRaw <= 365 ? tatRaw : 0;
+    if (tatRaw > 0 && tat === 0) {
+      etaDebug.tatClamped++;
+      if (etaDebug.samples.length < 5) etaDebug.samples.push({
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        field: "TAT", raw: tatRaw, used: 0,
+      });
+    }
+    const rawTaken = rawDaysTakenForRow(r);
     const taken = daysTakenForRow(r);
+    if (rawTaken > 0 && taken === 0) {
+      etaDebug.takenClamped++;
+      if (etaDebug.samples.length < 5) etaDebug.samples.push({
+        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        field: "Days Taken", raw: rawTaken, used: 0,
+      });
+    }
     // If the activity has recorded Days Taken within TAT, treat it as completed
     // even when the status column hasn't been flipped yet — otherwise done work
     // keeps surfacing in "Next best actions".
@@ -310,6 +344,12 @@ function derive(payload: Payload | undefined) {
     ? Math.round(remaining * avgTat * (paceRatio / 100) / Math.max(1, Object.keys(personAgg).length))
     : 0;
   const projectedDaysToFinish = Math.max(0, Math.min(365, rawProjection));
+  etaDebug.inputs = {
+    sumTat, sumTaken, tatCounted,
+    remaining, persons: Object.keys(personAgg).length,
+    avgTatRaw, avgTat, paceRatioRaw, paceRatio,
+    rawProjection, final: projectedDaysToFinish,
+  };
 
   // ── AGENTIC RULES: Next Best Actions
   type Action = {
@@ -391,6 +431,7 @@ function derive(payload: Payload | undefined) {
   return {
     n, status, critAgg, persons, personsByBurden, topPerformers, stages, processes, overdue, anomalies,
     completionRate, delayRate, healthScore, avgDelay, paceRatio, onTimeRate, projectedDaysToFinish,
+    etaDebug,
     totals: { total: n, completed: completedCount, delayed: delayedCount, overdue: overdueCount, notStarted },
     actions,
   };
@@ -2073,8 +2114,42 @@ export default function AgentDashboard() {
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={d.projectedDaysToFinish ? `${d.projectedDaysToFinish}d` : "—"} sub="to finish" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={formatEtaDays(d.projectedDaysToFinish)} sub="to finish" />
           </div>
+
+          {/* ETA DEBUG PANEL — transparent view of which fields drove the projection */}
+          <details className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+            <summary className="cursor-pointer select-none font-mono uppercase tracking-widest text-[10px] text-muted-foreground">
+              ETA debug · displayed {formatEtaDays(d.projectedDaysToFinish)} · {d.etaDebug.tatClamped + d.etaDebug.takenClamped} field(s) clamped
+            </summary>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              <div className="rounded border border-border/40 bg-background/60 p-2">
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Formula inputs</div>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono">
+                  <dt className="text-muted-foreground">remaining</dt><dd>{d.etaDebug.inputs.remaining}</dd>
+                  <dt className="text-muted-foreground">persons</dt><dd>{d.etaDebug.inputs.persons}</dd>
+                  <dt className="text-muted-foreground">avgTat raw</dt><dd>{d.etaDebug.inputs.avgTatRaw.toFixed(1)}d</dd>
+                  <dt className="text-muted-foreground">avgTat used</dt><dd>{d.etaDebug.inputs.avgTat.toFixed(1)}d{d.etaDebug.inputs.avgTatRaw !== d.etaDebug.inputs.avgTat && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                  <dt className="text-muted-foreground">pace raw</dt><dd>{d.etaDebug.inputs.paceRatioRaw}%</dd>
+                  <dt className="text-muted-foreground">pace used</dt><dd>{d.etaDebug.inputs.paceRatio}%{d.etaDebug.inputs.paceRatioRaw !== d.etaDebug.inputs.paceRatio && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                  <dt className="text-muted-foreground">raw projection</dt><dd>{d.etaDebug.inputs.rawProjection}d</dd>
+                  <dt className="text-muted-foreground">final (≤365d)</dt><dd>{d.etaDebug.inputs.final}d</dd>
+                </dl>
+              </div>
+              <div className="rounded border border-border/40 bg-background/60 p-2">
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Rejected rows ({d.etaDebug.tatClamped} TAT · {d.etaDebug.takenClamped} Days Taken)</div>
+                {d.etaDebug.samples.length === 0 ? (
+                  <div className="text-muted-foreground italic">No bad values detected.</div>
+                ) : (
+                  <ul className="space-y-0.5 font-mono">
+                    {d.etaDebug.samples.map((s, i) => (
+                      <li key={i} className="truncate"><span className="text-amber-500">{s.field}</span> {s.raw} → {s.used} · <span className="text-muted-foreground">{s.activity}</span></li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </details>
 
           {/* NEXT BEST ACTIONS */}
           <Card className="overflow-hidden">

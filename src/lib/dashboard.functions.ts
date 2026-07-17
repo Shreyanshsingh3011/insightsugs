@@ -9,7 +9,7 @@ import type {
   FlagEntry,
 } from "@/lib/dashboard-data";
 import { resolvePerson, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, statusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, sanitizeDuration, statusBucket } from "@/lib/status-utils";
 
 
 type Row = Record<string, string>;
@@ -91,11 +91,14 @@ function normalizeRow(
   const startDate = parseDate(merged.actual_start || merged.planned_start || merged.start_date || merged.po_date || merged.bill_date || merged.received_date || "");
 
   let overdue = 0;
-  let tat = num(merged.sla_days) ?? num(merged.tat_days);
-  let daysTaken = num(merged.tat_days);
+  // Sanitize TAT / Days-Taken at the feed boundary so serial-date leaks and
+  // multi-year junk values never reach the KPI aggregations.
+  const sanitize = (v: number | undefined) => v === undefined ? undefined : (sanitizeDuration(v) || undefined);
+  let tat = sanitize(num(merged.sla_days) ?? num(merged.tat_days));
+  let daysTaken = sanitize(num(merged.tat_days));
 
-  if (startDate && actualEnd) daysTaken = daysBetween(startDate, actualEnd);
-  if (startDate && plannedEnd && tat === undefined) tat = daysBetween(startDate, plannedEnd);
+  if (startDate && actualEnd) daysTaken = sanitize(daysBetween(startDate, actualEnd));
+  if (startDate && plannedEnd && tat === undefined) tat = sanitize(daysBetween(startDate, plannedEnd));
 
   if (isCompleted && plannedEnd && actualEnd) {
     overdue = Math.max(0, daysBetween(plannedEnd, actualEnd));
