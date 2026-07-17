@@ -13,6 +13,7 @@ const sourcesHealthQuery = queryOptions({
 });
 
 export const Route = createFileRoute("/_authenticated/admin/sources-health")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Sources Health — Admin" },
