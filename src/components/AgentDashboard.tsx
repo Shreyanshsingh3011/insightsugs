@@ -2049,9 +2049,18 @@ export default function AgentDashboard() {
             </Link>
           </div>
 
-          {/* KPI STRIP */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "health" } }} icon={<Activity className="h-4 w-4" />} label="Activities" value={d.totals.total} />
+          {/* KPI BENTO — hero cell anchors situation, small cells give texture */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+            <div className="col-span-2 lg:col-span-2 lg:row-span-2">
+              <Kpi
+                variant="hero"
+                to={{ to: "/agent/kpi/$id", params: { id: "health" } }}
+                icon={<Activity className="h-4 w-4" />}
+                label="Activities in scope"
+                value={d.totals.total}
+                sub={`${d.completionRate}% done`}
+              />
+            </div>
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "ontime" } }} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
@@ -2571,31 +2580,52 @@ function MiniStat({ label, value, sub, tone = "default" }: {
   );
 }
 
-function Kpi({ icon, label, value, sub, tone = "default", to }: {
+function Kpi({ icon, label, value, sub, tone = "default", to, variant = "default" }: {
   icon: React.ReactNode; label: string; value: string | number; sub?: string;
   tone?: "default" | "ok" | "med" | "high" | "low";
   to?: KpiLink;
+  variant?: "default" | "hero";
 }) {
-  const cls =
-    tone === "ok" ? TONE.ok :
-    tone === "med" ? TONE.med :
-    tone === "high" ? TONE.high :
-    tone === "low" ? TONE.low :
-    "border-border/60 bg-card";
+  const isHero = variant === "hero";
+  const toneAccent =
+    tone === "ok" ? "text-emerald-600 dark:text-emerald-400" :
+    tone === "high" ? "text-[color:var(--color-brand)]" :
+    tone === "med" ? "text-amber-600 dark:text-amber-400" :
+    tone === "low" ? "text-muted-foreground" :
+    "text-foreground";
   const body = (
-    <Card className={`border transition ${cls} ${to ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5" : ""}`}>
-      <CardContent className="p-3.5">
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest opacity-70">
-          {icon}{label}
-          {to && <ArrowRight className="ml-auto h-3 w-3 opacity-40" />}
-        </div>
-        <div className="mt-1 text-2xl font-semibold leading-none">{value}</div>
-        {sub && <div className="mt-1 text-[11px] opacity-70">{sub}</div>}
-      </CardContent>
-    </Card>
+    <div
+      className={[
+        "group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border p-4 transition-all",
+        isHero
+          ? "bg-[color:var(--color-surface-invert)] text-[color:var(--color-surface-invert-foreground)] border-transparent min-h-[136px]"
+          : "bg-card border-border/70 hover:border-foreground/30 hover:shadow-[var(--shadow-card)]",
+        to ? "cursor-pointer hover:-translate-y-0.5" : "",
+      ].join(" ")}
+    >
+      <div className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${isHero ? "text-white/60" : "text-muted-foreground"}`}>
+        <span className={isHero ? "text-[color:var(--color-brand)]" : "text-foreground/70"}>{icon}</span>
+        <span className="truncate">{label}</span>
+        {to && <ArrowRight className={`ml-auto h-3 w-3 transition-transform group-hover:translate-x-0.5 ${isHero ? "text-white/40" : "text-muted-foreground/50"}`} />}
+      </div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <span
+          className={`font-mono text-[34px] font-semibold leading-none tracking-tight tabular-nums ${isHero ? "text-white" : toneAccent}`}
+        >
+          {value}
+        </span>
+        {sub && (
+          <span className={`font-mono text-[11px] uppercase tracking-widest ${isHero ? "text-white/50" : "text-muted-foreground"}`}>
+            {sub}
+          </span>
+        )}
+      </div>
+      {isHero && (
+        <div aria-hidden className="pointer-events-none absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-[color:var(--color-brand)]/15 blur-2xl" />
+      )}
+    </div>
   );
   if (!to) return body;
-  // Discriminated Link so TS accepts every param shape.
   if (to.to === "/agent/kpi/$id")
     return <Link to={to.to} params={to.params} className="block">{body}</Link>;
   if (to.to === "/agent/row/$key")

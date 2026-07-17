@@ -12,9 +12,14 @@
  */
 
 @theme inline {
-  --font-sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Space Grotesk", "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Instrument Sans", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-surface-invert: var(--surface-invert);
+  --color-surface-invert-foreground: var(--surface-invert-foreground);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -71,6 +76,10 @@
   --foreground: oklch(0.22 0.005 60);        /* near-black ink */
   --card: oklch(0.995 0.002 85);             /* crisp white card */
   --card-foreground: oklch(0.22 0.005 60);
+  --brand: oklch(0.68 0.16 45);              /* situation-board orange #E67E22 */
+  --brand-foreground: oklch(0.99 0.003 85);
+  --surface-invert: oklch(0.18 0.004 60);    /* dark health card #1A1918 */
+  --surface-invert-foreground: oklch(0.97 0.003 85);
   --popover: oklch(0.995 0.002 85);
   --popover-foreground: oklch(0.22 0.005 60);
   --primary: oklch(0.18 0.004 60);           /* deep ink #0d0d0d */
@@ -118,6 +127,10 @@
   --foreground: oklch(0.95 0.004 85);
   --card: oklch(0.19 0.005 60);
   --card-foreground: oklch(0.95 0.004 85);
+  --brand: oklch(0.72 0.17 45);
+  --brand-foreground: oklch(0.14 0.004 60);
+  --surface-invert: oklch(0.97 0.003 85);
+  --surface-invert-foreground: oklch(0.14 0.004 60);
   --popover: oklch(0.19 0.005 60);
   --popover-foreground: oklch(0.95 0.004 85);
   --primary: oklch(0.97 0.003 85);
