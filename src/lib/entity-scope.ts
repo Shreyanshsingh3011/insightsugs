@@ -54,6 +54,12 @@ export type ScopedRow = {
 };
 
 export function toScopedRow(row: Row, i: number, projectLabel?: string): ScopedRow {
+  // Route status/TAT/Days Taken/Delay through the canonical computeRowStatus
+  // so entity pages match Agent Dashboard exactly — sanitizes Excel date-serial
+  // leaks (46028/46029 in Delay/Days Taken columns) and honors terminal signals
+  // when the sheet's Status text is stale (e.g. still "In Progress" after
+  // completion dates were filled in).
+  const s = computeRowStatus(row);
   return {
     i,
     row,
@@ -62,10 +68,10 @@ export function toScopedRow(row: Row, i: number, projectLabel?: string): ScopedR
     person: personName(row) || "Unassigned",
     email: personEmail(row),
     stage: stageName(row) || "—",
-    status: statusText(row) || "—",
-    tat: num(row["TAT"]),
-    taken: num(row["Days Taken"]),
-    delay: isTerminalRow(row) ? 0 : num(row["Delay in Days"]),
+    status: s.label || statusText(row) || "—",
+    tat: s.tat,
+    taken: s.taken,
+    delay: s.isDone ? 0 : s.delay,
   };
 }
 
