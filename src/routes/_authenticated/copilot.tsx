@@ -36,6 +36,7 @@ import { AIStatusBadge } from "@/components/AIStatusBadge";
 import { SHEET_TYPE_LABELS, type SheetType } from "@/lib/sheets-schemas";
 import { ChatGroundingHint } from "@/components/ChatGroundingHint";
 import { ToolCallTrace } from "@/components/copilot/ToolCallTrace";
+import { GroundingTracePanel } from "@/components/copilot/GroundingTracePanel";
 import { renderWithCitations } from "@/components/copilot/CitationLink";
 import { PrimarySourceLink, stripCitations } from "@/components/copilot/PrimarySourceLink";
 import { TeachCopilotDialog } from "@/components/copilot/TeachCopilotDialog";
@@ -1297,6 +1298,13 @@ function CopilotPage() {
                       <GroundingDiagnostics diagnostics={t.retrievalDiagnostics} />
                     )}
 
+                    <GroundingTracePanel
+                      sources={t.sources as any}
+                      diagnostics={t.retrievalDiagnostics as any}
+                      toolTrace={t.toolTrace}
+                      citationOk={t.citationOk}
+                      unmatchedTerms={t.unmatchedTerms}
+                    />
                     {isAdmin && t.toolTrace && t.toolTrace.length > 0 && (
                       <ToolCallTrace trace={t.toolTrace} />
                     )}
