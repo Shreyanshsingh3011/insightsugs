@@ -125,11 +125,8 @@ export function mergeData(base: DashboardData, extras: ExtraEntry[]): DashboardD
   const person_ranking = [...personMap.values()].sort((a, b) => b.total_overdue_days - a.total_overdue_days);
   const department_ranking = [...deptMap.values()].sort((a, b) => b.total_overdue_days - a.total_overdue_days);
 
-  // Guard the external TAT feed: reject serial-date leaks (~30k–70k), negatives,
-  // and impossible multi-year durations so bad upstream cells can't poison the
-  // ETA / TAT KPIs downstream.
-  const isSaneDuration = (n: number | null | undefined): n is number =>
-    typeof n === "number" && Number.isFinite(n) && n > 0 && n <= 3650 && !(n >= 30000 && n <= 70000);
+  // Guard the external TAT feed via the canonical isSaneDuration helper
+  // (see src/lib/eta-format.ts for tests covering serial-date leaks etc.).
   const tatExtras: TatRow[] = extras
     .filter((e) => isSaneDuration(e.tat) && isSaneDuration(e.days_taken))
     .map((e) => ({
