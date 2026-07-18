@@ -50,12 +50,89 @@ export const NAME_ALIASES = [
 ];
 
 
+/**
+ * Conservative English stemmer. Runs on already-lowercased tokens.
+ *
+ * Rules (kept intentionally small to avoid mangling identifiers or names):
+ *  - Skip anything with a digit ("it76" stays "it76").
+ *  - Skip tokens shorter than 5 chars ("gas", "bus", "his" untouched).
+ *  - "ies" → "y"  (cities → city, activities → activity)
+ *  - "sses" → "ss" (classes → class, addresses → address)
+ *  - "(s|x|z|ch|sh)es" → drop "es" (boxes → box, watches → watch)
+ *  - trailing "s" → drop, unless "ss" | "us" | "is" (avoids status/basis/oasis mangling)
+ *  - Handful of irregulars whose naive stem would corrupt them
+ */
+const STEM_IRREGULARS_SKIP = new Set([
+  "series", "species", "news", "means", "assess", "process",
+]);
+function stemWord(w: string): string {
+  if (w.length < 5) return w;
+  if (/\d/.test(w)) return w;
+  if (STEM_IRREGULARS_SKIP.has(w)) return w;
+  if (w.endsWith("ies") && w.length >= 5) return w.slice(0, -3) + "y";
+  if (w.endsWith("sses")) return w.slice(0, -2);
+  if (/(?:s|x|z|ch|sh)es$/.test(w)) return w.slice(0, -2);
+  if (w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us") && !w.endsWith("is")) {
+    return w.slice(0, -1);
+  }
+  return w;
+}
+
+/**
+ * Lowercase, strip punctuation, collapse whitespace, and lightly stem
+ * plural/singular so "stores" and "store" match symmetrically on both
+ * sides of every downstream `includes` check. Because the same transform
+ * runs on haystack AND phrase, exact lookups remain lossless.
+ */
 export function normalizeText(s: string): string {
-  return s
+  const cleaned = s
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+  if (!cleaned) return cleaned;
+  return cleaned.split(" ").map(stemWord).join(" ");
+}
+
+/** Levenshtein distance capped at `max` — bails as soon as the row min exceeds `max`. */
+function levenshteinCapped(a: string, b: string, max: number): number {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const n = a.length, m = b.length;
+  if (n === 0) return m;
+  if (m === 0) return n;
+  let prev = new Array(m + 1);
+  let curr = new Array(m + 1);
+  for (let j = 0; j <= m; j++) prev[j] = j;
+  for (let i = 1; i <= n; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= m; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin > max) return max + 1;
+    [prev, curr] = [curr, prev];
+  }
+  return prev[m];
+}
+
+/**
+ * Fuzzy substring hit: token appears verbatim, OR any word in the haystack
+ * is within Levenshtein-1 of the token (for tokens ≥5 chars, no digits).
+ * Use ONLY in ranking/suggestion paths — never gate exact lookups on this.
+ */
+export function looseTokenHit(hay: string, token: string): boolean {
+  if (!token) return false;
+  if (hay.includes(token)) return true;
+  if (token.length < 5 || /\d/.test(token)) return false;
+  const max = token.length >= 8 ? 2 : 1;
+  for (const w of hay.split(" ")) {
+    if (!w || Math.abs(w.length - token.length) > max) continue;
+    if (levenshteinCapped(w, token, max) <= max) return true;
+  }
+  return false;
 }
 
 export function contentTokens(query: string): string[] {
