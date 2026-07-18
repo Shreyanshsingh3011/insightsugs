@@ -491,7 +491,7 @@ export async function deterministicAnswer(params: {
   }
   const tokenIsOnlyScope = (t: string) =>
     mentionedScopeTokenSet.has(t) && scopeNames.some((n) => n.split(/\s+/).includes(t));
-  const tokens = rawTokens.filter((t) => !tokenIsOnlyScope(t));
+  const tokens = rawTokens.filter((t) => !tokenIsOnlyScope(t)) as string[];
   const phraseIsOnlyScope = (p: string) => {
     const lc = p.toLowerCase().trim();
     return scopeNames.some((n) => n === lc || n.includes(lc));
