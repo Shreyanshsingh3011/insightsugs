@@ -103,6 +103,7 @@ import {
   extractSerialNumber,
   rowSerialNumber,
   resolveColumnReference,
+  looseTokenHit,
 } from "./query-match";
 import { detectIntent as detectVerbIntent } from "./copilot-verb-lexicon";
 
