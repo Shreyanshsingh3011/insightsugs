@@ -103,6 +103,7 @@ import {
   extractSerialNumber,
   rowSerialNumber,
   resolveColumnReference,
+  looseTokenHit,
 } from "./query-match";
 import { detectIntent as detectVerbIntent } from "./copilot-verb-lexicon";
 
@@ -1171,7 +1172,10 @@ ${scopeMarkers.map((marker) => `- ${marker}`).join("\n")}`,
             const values = requestedColumns.length > 0 ? requestedColumns.map((col) => r.data[col]) : Object.values(r.data);
             const hay = normalizeHaystack(values);
             let s = 0;
-            for (const t of scoredPhrases.flatMap((p) => p.split(" ").filter((x) => x.length >= 2))) if (hay.includes(t)) s++;
+            for (const t of scoredPhrases.flatMap((p) => p.split(" ").filter((x) => x.length >= 2))) {
+              if (hay.includes(t)) s += 2;                 // exact
+              else if (looseTokenHit(hay, t)) s += 1;      // typo/plural tolerance (suggestions only)
+            }
             return { r, s };
           })
           .filter((x) => x.s > 0)
