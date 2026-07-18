@@ -491,12 +491,38 @@ export async function deterministicAnswer(params: {
   }
   const tokenIsOnlyScope = (t: string) =>
     mentionedScopeTokenSet.has(t) && scopeNames.some((n) => n.split(/\s+/).includes(t));
-  const tokens = rawTokens.filter((t) => !tokenIsOnlyScope(t));
+  const tokens = rawTokens.filter((t) => !tokenIsOnlyScope(t)) as string[];
   const phraseIsOnlyScope = (p: string) => {
     const lc = p.toLowerCase().trim();
     return scopeNames.some((n) => n === lc || n.includes(lc));
   };
-  const basePhrases = rawPhrases.filter((p) => !phraseIsOnlyScope(p));
+  let basePhrases = rawPhrases.filter((p) => !phraseIsOnlyScope(p));
+
+  // Strip verb-lexicon phrases (e.g. "compare", "break down", "find", "show")
+  // from the tokens/phrases used for row-level matching. Without this, a
+  // question like "compare store" gets sent to the EXACT-MATCH GUARDRAIL with
+  // "compare" as a target phrase, which rejects every row and emits a
+  // "did you mean" refusal — the verb is intent, not a value to look up.
+  {
+    const verbDet = detectVerbIntent(question);
+    const verbTokenSet = new Set<string>();
+    for (const m of verbDet.allMatches) {
+      for (const w of m.phrase.toLowerCase().split(/\s+/)) {
+        if (w && w.length >= 2) verbTokenSet.add(w);
+      }
+    }
+    if (verbTokenSet.size > 0) {
+      // Drop phrases whose non-scope content is ENTIRELY verb words.
+      basePhrases = basePhrases.filter((p) => {
+        const words = p.toLowerCase().split(/\s+/).filter(Boolean);
+        return words.some((w) => !verbTokenSet.has(w));
+      });
+    }
+    // Rewrap tokens filter to also exclude verb words.
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (verbTokenSet.has(tokens[i].toLowerCase())) tokens.splice(i, 1);
+    }
+  }
 
   const cites: string[] = [];
   const parts: string[] = [];
