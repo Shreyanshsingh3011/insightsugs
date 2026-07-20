@@ -53,29 +53,28 @@ export async function suggestQuestions(opts: { token: string; enabled_sources: E
   return data as { suggestions: string[] };
 }
 
+// All notebook access goes through SECURITY DEFINER RPCs. The tables have no
+// direct anon/authenticated grants — RPCs validate the capability token
+// (length >= 32, [A-Za-z0-9_-]) which blocks enumeration/brute-force.
 export async function loadHistory(token: string) {
-  const { data, error } = await supabase
-    .from("notebook_messages")
-    .select("id, role, content, citations, generated_by, created_at")
-    .eq("token", token)
-    .order("created_at", { ascending: true })
-    .limit(200);
+  const { data, error } = await supabase.rpc("notebook_load_messages", { _token: token });
   if (error) throw error;
   return data ?? [];
 }
 
 export async function loadSources(token: string) {
-  const { data, error } = await supabase
-    .from("notebook_sources")
-    .select("id, type, label, enabled, summary, summary_generated_at, row_count")
-    .eq("token", token);
+  const { data, error } = await supabase.rpc("notebook_load_sources", { _token: token });
   if (error) throw error;
   return data ?? [];
 }
 
 export async function upsertSource(token: string, row: { type: string; label: string; enabled?: boolean; row_count?: number }) {
-  const { error } = await supabase
-    .from("notebook_sources")
-    .upsert({ token, ...row }, { onConflict: "token,type,label" });
+  const { error } = await supabase.rpc("notebook_upsert_source", {
+    _token: token,
+    _type: row.type,
+    _label: row.label,
+    _enabled: row.enabled ?? true,
+    _row_count: row.row_count ?? 0,
+  });
   if (error) throw error;
 }
