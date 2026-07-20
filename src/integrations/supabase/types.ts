@@ -2583,6 +2583,40 @@ export type Database = {
         }
         Returns: number
       }
+      notebook_load_messages: {
+        Args: { _token: string }
+        Returns: {
+          citations: Json
+          content: string
+          created_at: string
+          generated_by: string
+          id: string
+          role: string
+        }[]
+      }
+      notebook_load_sources: {
+        Args: { _token: string }
+        Returns: {
+          enabled: boolean
+          id: string
+          label: string
+          row_count: number
+          summary: string
+          summary_generated_at: string
+          type: string
+        }[]
+      }
+      notebook_token_ok: { Args: { _token: string }; Returns: boolean }
+      notebook_upsert_source: {
+        Args: {
+          _enabled?: boolean
+          _label: string
+          _row_count?: number
+          _token: string
+          _type: string
+        }
+        Returns: undefined
+      }
       pgrst_reload: { Args: never; Returns: undefined }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
