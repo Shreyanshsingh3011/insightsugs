@@ -21,6 +21,7 @@ import {
   sendDirectMessage, markMessageRead, markAllInboxRead,
   type DirectMessage, type DirectoryUser,
 } from "@/lib/messages.functions";
+import { approveSignupFn, rejectSignupFn } from "@/lib/signup-verify.functions";
 
 export const Route = createFileRoute("/_authenticated/notifications")({
   head: () => ({ meta: [{ title: "Inbox — DelayLens" }] }),
