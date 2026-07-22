@@ -2209,18 +2209,32 @@ export default function AgentDashboard() {
             </summary>
             <div className="mt-2 grid gap-2 md:grid-cols-2">
               <div className="rounded border border-border/40 bg-background/60 p-2">
-                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Formula inputs</div>
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Forecast method · <span className="text-foreground">{d.etaDebug.inputs.method}</span>
+                </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono">
                   <dt className="text-muted-foreground">remaining</dt><dd>{d.etaDebug.inputs.remaining}</dd>
-                  <dt className="text-muted-foreground">persons</dt><dd>{d.etaDebug.inputs.persons}</dd>
-                  <dt className="text-muted-foreground">avgTat raw</dt><dd>{d.etaDebug.inputs.avgTatRaw.toFixed(1)}d</dd>
-                  <dt className="text-muted-foreground">avgTat used</dt><dd>{d.etaDebug.inputs.avgTat.toFixed(1)}d{d.etaDebug.inputs.avgTatRaw !== d.etaDebug.inputs.avgTat && <span className="ml-1 text-amber-500">clamped</span>}</dd>
-                  <dt className="text-muted-foreground">pace raw</dt><dd>{d.etaDebug.inputs.paceRatioRaw}%</dd>
-                  <dt className="text-muted-foreground">pace used</dt><dd>{d.etaDebug.inputs.paceRatio}%{d.etaDebug.inputs.paceRatioRaw !== d.etaDebug.inputs.paceRatio && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                  {d.etaDebug.inputs.method === "rolling-velocity" ? (
+                    <>
+                      <dt className="text-muted-foreground">window</dt><dd>{d.etaDebug.inputs.windowDays}d</dd>
+                      <dt className="text-muted-foreground">completions in window</dt><dd>{d.etaDebug.inputs.completionsInWindow}</dd>
+                      <dt className="text-muted-foreground">rows with dates</dt><dd>{d.etaDebug.inputs.totalWithDates}</dd>
+                      <dt className="text-muted-foreground">velocity</dt><dd>{d.etaDebug.inputs.velocityPerDay.toFixed(3)}/day</dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="text-muted-foreground">persons</dt><dd>{d.etaDebug.inputs.persons}</dd>
+                      <dt className="text-muted-foreground">avgTat raw</dt><dd>{d.etaDebug.inputs.avgTatRaw.toFixed(1)}d</dd>
+                      <dt className="text-muted-foreground">avgTat used</dt><dd>{d.etaDebug.inputs.avgTat.toFixed(1)}d{d.etaDebug.inputs.avgTatRaw !== d.etaDebug.inputs.avgTat && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                      <dt className="text-muted-foreground">implied velocity</dt><dd>{d.etaDebug.inputs.velocityPerDay.toFixed(3)}/day</dd>
+                      <dt className="text-muted-foreground">rows with dates</dt><dd className="text-amber-500">{d.etaDebug.inputs.totalWithDates} (none usable)</dd>
+                    </>
+                  )}
                   <dt className="text-muted-foreground">raw projection</dt><dd>{d.etaDebug.inputs.rawProjection}d</dd>
-                  <dt className="text-muted-foreground">final (≤365d)</dt><dd>{d.etaDebug.inputs.final}d</dd>
+                  <dt className="text-muted-foreground">final (≤365d)</dt><dd>{d.etaDebug.inputs.final}d{d.etaDebug.inputs.rawProjection > 365 && <span className="ml-1 text-amber-500">capped</span>}</dd>
                 </dl>
               </div>
+
               <div className="rounded border border-border/40 bg-background/60 p-2">
                 <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Rejected rows ({d.etaDebug.tatClamped} TAT · {d.etaDebug.takenClamped} Days Taken)</div>
                 {d.etaDebug.samples.length === 0 ? (
