@@ -198,6 +198,25 @@ export const approveSignupFn = createServerFn({ method: "POST" })
         after: { status: "approved", granted_role: data.role, verified_via: "admin" },
       },
     });
+    if (before?.email) {
+      try {
+        const [{ enqueueAppEmail }, { data: reviewer }] = await Promise.all([
+          import("@/lib/email/enqueue-app-email.server"),
+          supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
+        ]);
+        await enqueueAppEmail({
+          templateName: "signup-approved",
+          recipientEmail: before.email,
+          idempotencyKey: `signup-approved-${data.requestId}`,
+          templateData: {
+            candidateName: before.full_name ?? "",
+            grantedRole: data.role,
+            appUrl: "https://insightsugs.lovable.app",
+            reviewerName: reviewer?.full_name ?? "",
+          },
+        });
+      } catch { /* ignore */ }
+    }
     return { ok: true };
   });
 
@@ -231,6 +250,24 @@ export const rejectSignupFn = createServerFn({ method: "POST" })
         after: { status: "rejected", reject_reason: data.reason ?? null },
       },
     });
+    if (before?.email) {
+      try {
+        const [{ enqueueAppEmail }, { data: reviewer }] = await Promise.all([
+          import("@/lib/email/enqueue-app-email.server"),
+          supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle(),
+        ]);
+        await enqueueAppEmail({
+          templateName: "signup-rejected",
+          recipientEmail: before.email,
+          idempotencyKey: `signup-rejected-${data.requestId}`,
+          templateData: {
+            candidateName: before.full_name ?? "",
+            reason: data.reason ?? "",
+            reviewerName: reviewer?.full_name ?? "",
+          },
+        });
+      } catch { /* ignore */ }
+    }
     return { ok: true };
   });
 
