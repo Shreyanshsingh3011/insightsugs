@@ -106,7 +106,7 @@ function valueForAliases(row: StatusRow, aliases: string[]): string {
 
 // Parse a cell value into a Date. Supports Excel/Sheets date serials,
 // ISO strings, and common dd/mm/yyyy or mm/dd/yyyy formats.
-function parseDateCell(raw: unknown): Date | null {
+export function parseDateCell(raw: unknown): Date | null {
   if (raw == null) return null;
   const s = String(raw).trim();
   if (!s) return null;
@@ -130,6 +130,33 @@ function parseDateCell(raw: unknown): Date | null {
   }
   return null;
 }
+
+/**
+ * Best-effort completion timestamp for a row, used by the rolling-velocity
+ * ETA forecast. Tries known completion-date aliases first, then any column
+ * whose name looks completion-shaped, and finally an Excel date-serial leak
+ * inside the "Days Taken" duration column. Returns null when nothing usable
+ * is present — the caller decides how to fall back.
+ */
+export function completionDateForRow(row: StatusRow): Date | null {
+  const primary = parseDateCell(valueForAliases(row, COMPLETION_ALIASES));
+  if (primary) return primary;
+  const pattern = /(completion|completed|complete\s*date|actual(\s|_)*(date|end|finish|completion)?|finish(ed)?\s*date|closed?\s*(date|on)|closure|delivered|dispatch(ed)?|received|paid|approv(al|ed)|signed?\s*(off|on)|handover|handed\s*over|done\s*on)/i;
+  for (const [key, value] of Object.entries(row)) {
+    if (!pattern.test(key)) continue;
+    const d = parseDateCell(value);
+    if (d) return d;
+  }
+  // Days-Taken column sometimes leaks a completion serial-date instead of a
+  // duration; treat that leak as the completion timestamp.
+  const daysTakenRaw = valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]);
+  const dtNum = Number(String(daysTakenRaw ?? "").replace(/[,\s]/g, ""));
+  if (Number.isFinite(dtNum) && dtNum >= 30000 && dtNum <= 70000) {
+    return parseDateCell(dtNum);
+  }
+  return null;
+}
+
 
 // Recompute "Days Taken" authoritatively from Start + Completion dates.
 // The sheet's own Days Taken column is unreliable (frequently TODAY()-Start

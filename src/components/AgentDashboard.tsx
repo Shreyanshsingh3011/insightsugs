@@ -14,7 +14,7 @@ import { generateGeminiFn } from "@/lib/gemini.functions";
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, computeRowStatus, type StatusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, computeRowStatus, completionDateForRow, type StatusBucket } from "@/lib/status-utils";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 
@@ -198,8 +198,25 @@ function derive(payload: Payload | undefined) {
     tatClamped: number;
     takenClamped: number;
     samples: { activity: string; field: string; raw: number; used: number }[];
-    inputs: { sumTat: number; sumTaken: number; tatCounted: number; remaining: number; persons: number; avgTatRaw: number; avgTat: number; paceRatioRaw: number; paceRatio: number; rawProjection: number; final: number };
-  } = { tatClamped: 0, takenClamped: 0, samples: [], inputs: { sumTat: 0, sumTaken: 0, tatCounted: 0, remaining: 0, persons: 0, avgTatRaw: 0, avgTat: 0, paceRatioRaw: 0, paceRatio: 0, rawProjection: 0, final: 0 } };
+    inputs: {
+      method: "rolling-velocity" | "fallback-avgTat" | "none";
+      remaining: number;
+      windowDays: number;
+      completionsInWindow: number;
+      totalWithDates: number;
+      velocityPerDay: number;
+      rawProjection: number;
+      final: number;
+      // Fallback-only fields (still surfaced for transparency).
+      avgTatRaw: number;
+      avgTat: number;
+      paceRatioRaw: number;
+      paceRatio: number;
+      persons: number;
+    };
+  } = { tatClamped: 0, takenClamped: 0, samples: [], inputs: { method: "none", remaining: 0, windowDays: 0, completionsInWindow: 0, totalWithDates: 0, velocityPerDay: 0, rawProjection: 0, final: 0, avgTatRaw: 0, avgTat: 0, paceRatioRaw: 0, paceRatio: 0, persons: 0 } };
+  const completionDates: number[] = [];
+
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
@@ -252,7 +269,20 @@ function derive(payload: Payload | undefined) {
     if (tat > 0) { sumTat += tat; sumTaken += taken; tatCounted++; }
 
     const isDelayed = !effectivelyDone && (st === "Delayed" || (taken > tat && tat > 0) || delay > 0);
-    if (effectivelyDone) { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
+    if (effectivelyDone) {
+      completedCount++; personAgg[person].completed++; stageAgg[stage].completed++;
+      const cd = completionDateForRow(r);
+      if (cd) {
+        const t = cd.getTime();
+        // Reject future-dated completions and anything older than ~5y — both
+        // are almost always data-entry noise, not real velocity signal.
+        const now = Date.now();
+        if (Number.isFinite(t) && t <= now + 86400000 && t >= now - 5 * 365 * 86400000) {
+          completionDates.push(t);
+        }
+      }
+    }
+
     if (isDelayed) {
       delayedCount++; personAgg[person].delayed++; stageAgg[stage].delayed++;
       processAgg[process].delayed++; personAgg[person].delayDays += delay;
@@ -324,22 +354,87 @@ function derive(payload: Payload | undefined) {
     0.4 * onTimeRate + 0.4 * completionRate + 0.2 * Math.max(0, 200 - paceRatio) / 2
   )));
 
-  // Forecast: at current completion velocity, days to finish remaining. Cap avgTat
-  // at 180d (any single-activity TAT above that is almost certainly a data leak)
-  // and clamp the projection to a 365-day horizon so the KPI never renders "1159d".
+  // Forecast: rolling completion velocity.
+  //
+  // Instead of the old `remaining × avgTat / persons` fantasy (which routinely
+  // saturated the 365d cap on any project with sparse TAT data or a small
+  // team), we look at how many activities have actually been completed inside
+  // a trailing window and extrapolate forward.
+  //
+  //   velocity_per_day = completions_in_window / window_days
+  //   ETA_days         = remaining / velocity_per_day
+  //
+  // Window widens (30d → 60d → 90d → all-time) until it holds enough signal.
+  // If no completion dates exist at all we fall back to the old TAT-based
+  // heuristic so the KPI still shows something rather than "—".
   const remaining = n - completedCount;
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const CANDIDATE_WINDOWS = [30, 60, 90];
+  const MIN_COMPLETIONS_FOR_VELOCITY = 3;
   const avgTatRaw = tatCounted ? sumTat / tatCounted : 0;
   const avgTat = Math.min(180, avgTatRaw);
-  const rawProjection = remaining && avgTat
-    ? Math.round(remaining * avgTat * (paceRatio / 100) / Math.max(1, Object.keys(personAgg).length))
-    : 0;
+
+  let chosenWindowDays = 0;
+  let completionsInWindow = 0;
+  let velocityPerDay = 0;
+  let method: "rolling-velocity" | "fallback-avgTat" | "none" = "none";
+  let rawProjection = 0;
+
+  if (completionDates.length > 0) {
+    for (const w of CANDIDATE_WINDOWS) {
+      const cutoff = now - w * DAY;
+      const count = completionDates.reduce((acc, t) => acc + (t >= cutoff ? 1 : 0), 0);
+      if (count >= MIN_COMPLETIONS_FOR_VELOCITY) {
+        chosenWindowDays = w;
+        completionsInWindow = count;
+        break;
+      }
+    }
+    // Fallback to lifetime velocity if no trailing window had enough completions.
+    if (!chosenWindowDays) {
+      const earliest = Math.min(...completionDates);
+      const spanDays = Math.max(7, Math.ceil((now - earliest) / DAY));
+      chosenWindowDays = spanDays;
+      completionsInWindow = completionDates.length;
+    }
+    velocityPerDay = completionsInWindow / chosenWindowDays;
+    if (velocityPerDay > 0 && remaining > 0) {
+      method = "rolling-velocity";
+      rawProjection = Math.round(remaining / velocityPerDay);
+    } else if (remaining === 0) {
+      method = "rolling-velocity";
+      rawProjection = 0;
+    }
+  }
+
+  // Fallback: no usable completion dates → derive an implied velocity from
+  // avgTat (activities/day ≈ persons / avgTat), still clamped hard.
+  if (method === "none" && remaining > 0 && avgTat > 0) {
+    method = "fallback-avgTat";
+    const persons = Math.max(1, Object.keys(personAgg).length);
+    const impliedVelocity = persons / avgTat; // activities/day
+    velocityPerDay = impliedVelocity;
+    rawProjection = Math.round(remaining / impliedVelocity);
+  }
+
   const projectedDaysToFinish = Math.max(0, Math.min(365, rawProjection));
   etaDebug.inputs = {
-    sumTat, sumTaken, tatCounted,
-    remaining, persons: Object.keys(personAgg).length,
-    avgTatRaw, avgTat, paceRatioRaw, paceRatio,
-    rawProjection, final: projectedDaysToFinish,
+    method,
+    remaining,
+    windowDays: chosenWindowDays,
+    completionsInWindow,
+    totalWithDates: completionDates.length,
+    velocityPerDay,
+    rawProjection,
+    final: projectedDaysToFinish,
+    avgTatRaw,
+    avgTat,
+    paceRatioRaw,
+    paceRatio,
+    persons: Object.keys(personAgg).length,
   };
+
 
   // ── AGENTIC RULES: Next Best Actions
   type Action = {
@@ -2114,18 +2209,32 @@ export default function AgentDashboard() {
             </summary>
             <div className="mt-2 grid gap-2 md:grid-cols-2">
               <div className="rounded border border-border/40 bg-background/60 p-2">
-                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Formula inputs</div>
+                <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Forecast method · <span className="text-foreground">{d.etaDebug.inputs.method}</span>
+                </div>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono">
                   <dt className="text-muted-foreground">remaining</dt><dd>{d.etaDebug.inputs.remaining}</dd>
-                  <dt className="text-muted-foreground">persons</dt><dd>{d.etaDebug.inputs.persons}</dd>
-                  <dt className="text-muted-foreground">avgTat raw</dt><dd>{d.etaDebug.inputs.avgTatRaw.toFixed(1)}d</dd>
-                  <dt className="text-muted-foreground">avgTat used</dt><dd>{d.etaDebug.inputs.avgTat.toFixed(1)}d{d.etaDebug.inputs.avgTatRaw !== d.etaDebug.inputs.avgTat && <span className="ml-1 text-amber-500">clamped</span>}</dd>
-                  <dt className="text-muted-foreground">pace raw</dt><dd>{d.etaDebug.inputs.paceRatioRaw}%</dd>
-                  <dt className="text-muted-foreground">pace used</dt><dd>{d.etaDebug.inputs.paceRatio}%{d.etaDebug.inputs.paceRatioRaw !== d.etaDebug.inputs.paceRatio && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                  {d.etaDebug.inputs.method === "rolling-velocity" ? (
+                    <>
+                      <dt className="text-muted-foreground">window</dt><dd>{d.etaDebug.inputs.windowDays}d</dd>
+                      <dt className="text-muted-foreground">completions in window</dt><dd>{d.etaDebug.inputs.completionsInWindow}</dd>
+                      <dt className="text-muted-foreground">rows with dates</dt><dd>{d.etaDebug.inputs.totalWithDates}</dd>
+                      <dt className="text-muted-foreground">velocity</dt><dd>{d.etaDebug.inputs.velocityPerDay.toFixed(3)}/day</dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="text-muted-foreground">persons</dt><dd>{d.etaDebug.inputs.persons}</dd>
+                      <dt className="text-muted-foreground">avgTat raw</dt><dd>{d.etaDebug.inputs.avgTatRaw.toFixed(1)}d</dd>
+                      <dt className="text-muted-foreground">avgTat used</dt><dd>{d.etaDebug.inputs.avgTat.toFixed(1)}d{d.etaDebug.inputs.avgTatRaw !== d.etaDebug.inputs.avgTat && <span className="ml-1 text-amber-500">clamped</span>}</dd>
+                      <dt className="text-muted-foreground">implied velocity</dt><dd>{d.etaDebug.inputs.velocityPerDay.toFixed(3)}/day</dd>
+                      <dt className="text-muted-foreground">rows with dates</dt><dd className="text-amber-500">{d.etaDebug.inputs.totalWithDates} (none usable)</dd>
+                    </>
+                  )}
                   <dt className="text-muted-foreground">raw projection</dt><dd>{d.etaDebug.inputs.rawProjection}d</dd>
-                  <dt className="text-muted-foreground">final (≤365d)</dt><dd>{d.etaDebug.inputs.final}d</dd>
+                  <dt className="text-muted-foreground">final (≤365d)</dt><dd>{d.etaDebug.inputs.final}d{d.etaDebug.inputs.rawProjection > 365 && <span className="ml-1 text-amber-500">capped</span>}</dd>
                 </dl>
               </div>
+
               <div className="rounded border border-border/40 bg-background/60 p-2">
                 <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Rejected rows ({d.etaDebug.tatClamped} TAT · {d.etaDebug.takenClamped} Days Taken)</div>
                 {d.etaDebug.samples.length === 0 ? (
