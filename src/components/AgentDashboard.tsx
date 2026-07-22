@@ -198,8 +198,25 @@ function derive(payload: Payload | undefined) {
     tatClamped: number;
     takenClamped: number;
     samples: { activity: string; field: string; raw: number; used: number }[];
-    inputs: { sumTat: number; sumTaken: number; tatCounted: number; remaining: number; persons: number; avgTatRaw: number; avgTat: number; paceRatioRaw: number; paceRatio: number; rawProjection: number; final: number };
-  } = { tatClamped: 0, takenClamped: 0, samples: [], inputs: { sumTat: 0, sumTaken: 0, tatCounted: 0, remaining: 0, persons: 0, avgTatRaw: 0, avgTat: 0, paceRatioRaw: 0, paceRatio: 0, rawProjection: 0, final: 0 } };
+    inputs: {
+      method: "rolling-velocity" | "fallback-avgTat" | "none";
+      remaining: number;
+      windowDays: number;
+      completionsInWindow: number;
+      totalWithDates: number;
+      velocityPerDay: number;
+      rawProjection: number;
+      final: number;
+      // Fallback-only fields (still surfaced for transparency).
+      avgTatRaw: number;
+      avgTat: number;
+      paceRatioRaw: number;
+      paceRatio: number;
+      persons: number;
+    };
+  } = { tatClamped: 0, takenClamped: 0, samples: [], inputs: { method: "none", remaining: 0, windowDays: 0, completionsInWindow: 0, totalWithDates: 0, velocityPerDay: 0, rawProjection: 0, final: 0, avgTatRaw: 0, avgTat: 0, paceRatioRaw: 0, paceRatio: 0, persons: 0 } };
+  const completionDates: number[] = [];
+
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
