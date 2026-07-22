@@ -428,3 +428,109 @@ function ComposeDialog({
     </Dialog>
   );
 }
+
+function SignupNotificationActions({ body, notificationId }: { body: string; notificationId: string }) {
+  const qc = useQueryClient();
+  const approveFn = useServerFn(approveSignupFn);
+  const rejectFn = useServerFn(rejectSignupFn);
+  const [busy, setBusy] = useState<"approve" | "dismiss" | null>(null);
+
+  const emailMatch = body.match(/<([^>\s]+@[^>\s]+)>/);
+  const email = emailMatch?.[1]?.toLowerCase() ?? null;
+  const roleMatch = body.match(/^(super_admin|admin|user)\b/i);
+  const requestedRole = (roleMatch?.[1]?.toLowerCase() as "super_admin" | "admin" | "user" | undefined) ?? "user";
+
+  const reqQ = useQuery({
+    queryKey: ["signup-request-by-email", email],
+    enabled: !!email,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("signup_requests")
+        .select("id, status, requested_role, email")
+        .ilike("email", email!)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const markNotifRead = async () => {
+    await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("id", notificationId);
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+  };
+
+  const onDone = () => {
+    qc.invalidateQueries({ queryKey: ["signup-request-by-email", email] });
+    qc.invalidateQueries({ queryKey: ["signup-requests"] });
+    qc.invalidateQueries({ queryKey: ["pending-signups-count"] });
+  };
+
+  const approve = async () => {
+    if (!reqQ.data?.id) return toast.error("Request not found");
+    setBusy("approve");
+    try {
+      const role = (reqQ.data.requested_role as any) ?? requestedRole;
+      await approveFn({ data: { requestId: reqQ.data.id, role } });
+      await markNotifRead();
+      toast.success("Signup approved");
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to approve");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const dismiss = async () => {
+    if (!reqQ.data?.id) return toast.error("Request not found");
+    setBusy("dismiss");
+    try {
+      await rejectFn({ data: { requestId: reqQ.data.id, reason: "Dismissed from inbox" } });
+      await markNotifRead();
+      toast.success("Signup dismissed");
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to dismiss");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!email) return null;
+
+  const status = reqQ.data?.status;
+  if (status && status !== "pending") {
+    return (
+      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="outline" className="uppercase">{status}</Badge>
+        <span>Already resolved</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <Button
+        size="sm"
+        onClick={approve}
+        disabled={busy !== null || reqQ.isLoading || !reqQ.data}
+      >
+        {busy === "approve" ? "Approving…" : "Approve"}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={dismiss}
+        disabled={busy !== null || reqQ.isLoading || !reqQ.data}
+      >
+        {busy === "dismiss" ? "Dismissing…" : "Dismiss"}
+      </Button>
+      {reqQ.isLoading && <span className="text-xs text-muted-foreground">Loading…</span>}
+      {!reqQ.isLoading && !reqQ.data && (
+        <span className="text-xs text-muted-foreground">No matching pending request</span>
+      )}
+    </div>
+  );
+}
