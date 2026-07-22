@@ -18,7 +18,22 @@ type N = {
   body: string | null;
   created_at: string;
   read_at: string | null;
+  activity_id: string | null;
+  project_id: string | null;
 };
+
+function targetForNotification(n: N): { to: string; params?: Record<string, string>; search?: Record<string, string> } {
+  const k = (n.kind || "").toLowerCase();
+  if (k.includes("alert")) return { to: "/alerts" };
+  if (k.includes("brief")) return { to: "/briefings" };
+  if (k.includes("concern")) return { to: "/concerns" };
+  if (k.includes("approval") || k.includes("pending")) return { to: "/agent/approvals" };
+  if (k.includes("inbox") || k.includes("agent")) return { to: "/agent/inbox" };
+  if (k.includes("digest")) return { to: "/agent" };
+  if (n.activity_id) return { to: "/my-activities" };
+  if (n.project_id) return { to: "/agent/project/$projectId", params: { projectId: n.project_id } };
+  return { to: "/notifications" };
+}
 
 function fmtWhen(iso: string) {
   const d = new Date(iso);
@@ -42,7 +57,7 @@ export function NotificationsBell() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("notifications")
-        .select("id, kind, title, body, created_at, read_at")
+        .select("id, kind, title, body, created_at, read_at, activity_id, project_id")
         .eq("user_id", userId!)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -147,8 +162,16 @@ export function NotificationsBell() {
           ) : (
             <ul className="divide-y divide-border/60">
               {items.map((n) => (
-                <li key={n.id} className={`px-3 py-2.5 text-xs ${n.read_at ? "" : "bg-primary/5"}`}>
-                  <div className="flex items-start gap-2">
+                <li key={n.id} className={`text-xs ${n.read_at ? "" : "bg-primary/5"}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!n.read_at) markOne.mutate(n.id);
+                      const t = targetForNotification(n);
+                      navigate(t as Parameters<typeof navigate>[0]);
+                    }}
+                    className="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/60 focus:outline-none focus:bg-accent/60"
+                  >
                     <span
                       className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${n.read_at ? "bg-transparent" : "bg-primary"}`}
                       aria-hidden
@@ -165,15 +188,12 @@ export function NotificationsBell() {
                         <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</div>
                       )}
                       {!n.read_at && (
-                        <button
-                          onClick={() => markOne.mutate(n.id)}
-                          className="mt-1 text-[11px] text-primary hover:underline"
-                        >
-                          Mark as read
-                        </button>
+                        <span className="mt-1 inline-block text-[11px] text-primary">
+                          Open →
+                        </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 </li>
               ))}
             </ul>
