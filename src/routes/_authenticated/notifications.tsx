@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -59,6 +59,51 @@ function InboxPage() {
       return data as N[];
     },
   });
+
+  // Reconcile stale signup_pending_review notifications: if the underlying
+  // signup_request is no longer 'pending', mark the notification read so the
+  // Inbox stops implying there are approvals waiting when /agent/approvals is empty.
+  useEffect(() => {
+    const rows = notifQ.data ?? [];
+    const stale = rows.filter(
+      (n) => n.kind === "signup_pending_review" && !n.read_at && n.body,
+    );
+    if (stale.length === 0) return;
+    const emails = Array.from(
+      new Set(
+        stale
+          .map((n) => n.body!.match(/<([^>\s]+@[^>\s]+)>/)?.[1]?.toLowerCase())
+          .filter((e): e is string => !!e),
+      ),
+    );
+    if (emails.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data: reqs } = await supabase
+        .from("signup_requests")
+        .select("email,status")
+        .in("email", emails);
+      if (cancelled || !reqs) return;
+      const resolved = new Set(
+        reqs.filter((r) => r.status !== "pending").map((r) => r.email.toLowerCase()),
+      );
+      // Emails with no signup_request row at all are also stale.
+      const known = new Set(reqs.map((r) => r.email.toLowerCase()));
+      const staleIds = stale
+        .filter((n) => {
+          const em = n.body!.match(/<([^>\s]+@[^>\s]+)>/)?.[1]?.toLowerCase();
+          return em && (resolved.has(em) || !known.has(em));
+        })
+        .map((n) => n.id);
+      if (staleIds.length === 0) return;
+      await supabase
+        .from("notifications")
+        .update({ read_at: new Date().toISOString() })
+        .in("id", staleIds);
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    })();
+    return () => { cancelled = true; };
+  }, [notifQ.data, qc]);
 
   const markAllNotif = useMutation({
     mutationFn: async () => {
