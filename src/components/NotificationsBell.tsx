@@ -18,7 +18,22 @@ type N = {
   body: string | null;
   created_at: string;
   read_at: string | null;
+  activity_id: string | null;
+  project_id: string | null;
 };
+
+function targetForNotification(n: N): { to: string; params?: Record<string, string>; search?: Record<string, string> } {
+  const k = (n.kind || "").toLowerCase();
+  if (k.includes("alert")) return { to: "/alerts" };
+  if (k.includes("brief")) return { to: "/briefings" };
+  if (k.includes("concern")) return { to: "/concerns" };
+  if (k.includes("approval") || k.includes("pending")) return { to: "/agent/approvals" };
+  if (k.includes("inbox") || k.includes("agent")) return { to: "/agent/inbox" };
+  if (k.includes("digest")) return { to: "/agent" };
+  if (n.activity_id) return { to: "/my-activities" };
+  if (n.project_id) return { to: "/agent/project/$projectId", params: { projectId: n.project_id } };
+  return { to: "/notifications" };
+}
 
 function fmtWhen(iso: string) {
   const d = new Date(iso);
