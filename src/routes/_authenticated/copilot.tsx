@@ -24,7 +24,9 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronRight,
+  Download,
 } from "lucide-react";
+import { exportCopilotTurnToPdf } from "@/lib/copilot-pdf-export";
 
 import { listSheets, askCopilot, generateAutoInsights, generateCombinedAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
