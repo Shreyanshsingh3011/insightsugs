@@ -269,7 +269,20 @@ function derive(payload: Payload | undefined) {
     if (tat > 0) { sumTat += tat; sumTaken += taken; tatCounted++; }
 
     const isDelayed = !effectivelyDone && (st === "Delayed" || (taken > tat && tat > 0) || delay > 0);
-    if (effectivelyDone) { completedCount++; personAgg[person].completed++; stageAgg[stage].completed++; }
+    if (effectivelyDone) {
+      completedCount++; personAgg[person].completed++; stageAgg[stage].completed++;
+      const cd = completionDateForRow(r);
+      if (cd) {
+        const t = cd.getTime();
+        // Reject future-dated completions and anything older than ~5y — both
+        // are almost always data-entry noise, not real velocity signal.
+        const now = Date.now();
+        if (Number.isFinite(t) && t <= now + 86400000 && t >= now - 5 * 365 * 86400000) {
+          completionDates.push(t);
+        }
+      }
+    }
+
     if (isDelayed) {
       delayedCount++; personAgg[person].delayed++; stageAgg[stage].delayed++;
       processAgg[process].delayed++; personAgg[person].delayDays += delay;
