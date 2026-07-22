@@ -907,8 +907,80 @@ export const Route = createFileRoute("/api/chat")({
         }
 
         const allTools = buildTools(ctx, run, body.actorId ?? null, tool, ctxFp);
-        const tools = Object.fromEntries(
-          Object.entries(allTools).filter(([name]) => agentSpec.toolAllowList.includes(name)),
+
+        // Runtime guardrail: the dashboard chatbot may only call dashboard-data
+        // tools. Copilot / document / uploaded-file tools must never be
+        // reachable from this endpoint even if a future refactor adds one to
+        // buildTools or to an agent's toolAllowList.
+        const DASHBOARD_TOOL_ALLOWLIST = new Set<string>(Object.keys(allTools));
+        const FORBIDDEN_TOOL_PATTERN =
+          /(copilot|document|doc_|_doc|pdf|upload|source_?panel|embedding|ocr|file_?search|notebook)/i;
+
+        const disallowedFromRegistry: string[] = [];
+        const filteredEntries = Object.entries(allTools).filter(([name]) => {
+          if (!agentSpec.toolAllowList.includes(name)) return false;
+          if (!DASHBOARD_TOOL_ALLOWLIST.has(name) || FORBIDDEN_TOOL_PATTERN.test(name)) {
+            disallowedFromRegistry.push(name);
+            return false;
+          }
+          return true;
+        });
+
+        // Wrap every tool's execute() so each call is logged and any tool that
+        // slipped past the allowlist is hard-blocked at invocation time.
+        const wrappedEntries = filteredEntries.map(([name, def]) => {
+          const original = def as { execute?: (...args: unknown[]) => unknown };
+          const originalExecute = original.execute;
+          if (typeof originalExecute !== "function") return [name, def] as const;
+          const guarded = async (...args: unknown[]) => {
+            if (!DASHBOARD_TOOL_ALLOWLIST.has(name) || FORBIDDEN_TOOL_PATTERN.test(name)) {
+              const violation = {
+                tool: name,
+                run_id: run?.id ?? null,
+                actor_id: body.actorId ?? null,
+                routed_to: routedTo,
+              };
+              console.error("[chatbot:tool-guard] blocked non-dashboard tool", violation);
+              try {
+                const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+                await supabaseAdmin.from("agent_run_events").insert({
+                  actor_id: body.actorId ?? null,
+                  agent: `chatbot:${routedTo}`,
+                  event: "tool_blocked",
+                  run_id: run?.id ?? null,
+                  metadata: violation,
+                });
+              } catch { /* best-effort */ }
+              return {
+                blocked: true,
+                reason:
+                  "This tool is not available to the dashboard chatbot. Uploaded documents / Copilot sources are only accessible at /copilot.",
+              };
+            }
+            console.log(
+              "[chatbot:tool]",
+              name,
+              "run=",
+              run?.id ?? "-",
+              "actor=",
+              body.actorId ?? "-",
+            );
+            return await originalExecute(...args);
+          };
+          return [name, { ...def, execute: guarded }] as const;
+        });
+
+        const tools = Object.fromEntries(wrappedEntries);
+
+        if (disallowedFromRegistry.length > 0) {
+          console.warn(
+            "[chatbot:tool-guard] filtered disallowed tool(s) from registry:",
+            disallowedFromRegistry.join(", "),
+          );
+        }
+        console.log(
+          "[chatbot:tool-guard] dashboard tools registered:",
+          Object.keys(tools).join(", ") || "(none)",
         );
 
         // Load top user memories (best-effort).
