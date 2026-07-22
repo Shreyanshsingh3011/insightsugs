@@ -162,8 +162,16 @@ export function NotificationsBell() {
           ) : (
             <ul className="divide-y divide-border/60">
               {items.map((n) => (
-                <li key={n.id} className={`px-3 py-2.5 text-xs ${n.read_at ? "" : "bg-primary/5"}`}>
-                  <div className="flex items-start gap-2">
+                <li key={n.id} className={`text-xs ${n.read_at ? "" : "bg-primary/5"}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!n.read_at) markOne.mutate(n.id);
+                      const t = targetForNotification(n);
+                      navigate(t as Parameters<typeof navigate>[0]);
+                    }}
+                    className="flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors hover:bg-accent/60 focus:outline-none focus:bg-accent/60"
+                  >
                     <span
                       className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${n.read_at ? "bg-transparent" : "bg-primary"}`}
                       aria-hidden
@@ -180,15 +188,12 @@ export function NotificationsBell() {
                         <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{n.body}</div>
                       )}
                       {!n.read_at && (
-                        <button
-                          onClick={() => markOne.mutate(n.id)}
-                          className="mt-1 text-[11px] text-primary hover:underline"
-                        >
-                          Mark as read
-                        </button>
+                        <span className="mt-1 inline-block text-[11px] text-primary">
+                          Open →
+                        </span>
                       )}
                     </div>
-                  </div>
+                  </button>
                 </li>
               ))}
             </ul>
