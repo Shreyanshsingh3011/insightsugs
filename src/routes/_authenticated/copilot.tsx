@@ -24,7 +24,9 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronRight,
+  Download,
 } from "lucide-react";
+import { exportCopilotTurnToPdf } from "@/lib/copilot-pdf-export";
 
 import { listSheets, askCopilot, generateAutoInsights, generateCombinedAutoInsights, generateDocumentAutoInsights, generateChart } from "@/lib/sheets.functions";
 import { listDocuments } from "@/lib/documents.functions";
@@ -1328,7 +1330,29 @@ function CopilotPage() {
                         {stripCitations(t.answer)}
                       </ReactMarkdown>
                     </div>
-                    <PrimarySourceLink answer={t.answer} sources={t.sources} />
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <PrimarySourceLink answer={t.answer} sources={t.sources} />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={() => {
+                          try {
+                            exportCopilotTurnToPdf({
+                              question: t.question,
+                              answer: t.answer,
+                              sources: t.sources,
+                            });
+                          } catch (e) {
+                            toast.error(e instanceof Error ? e.message : "Failed to export PDF");
+                          }
+                        }}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Export PDF
+                      </Button>
+                    </div>
 
                     {t.charts && t.charts.length > 0 && (
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
