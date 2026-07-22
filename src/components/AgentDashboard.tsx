@@ -354,22 +354,87 @@ function derive(payload: Payload | undefined) {
     0.4 * onTimeRate + 0.4 * completionRate + 0.2 * Math.max(0, 200 - paceRatio) / 2
   )));
 
-  // Forecast: at current completion velocity, days to finish remaining. Cap avgTat
-  // at 180d (any single-activity TAT above that is almost certainly a data leak)
-  // and clamp the projection to a 365-day horizon so the KPI never renders "1159d".
+  // Forecast: rolling completion velocity.
+  //
+  // Instead of the old `remaining × avgTat / persons` fantasy (which routinely
+  // saturated the 365d cap on any project with sparse TAT data or a small
+  // team), we look at how many activities have actually been completed inside
+  // a trailing window and extrapolate forward.
+  //
+  //   velocity_per_day = completions_in_window / window_days
+  //   ETA_days         = remaining / velocity_per_day
+  //
+  // Window widens (30d → 60d → 90d → all-time) until it holds enough signal.
+  // If no completion dates exist at all we fall back to the old TAT-based
+  // heuristic so the KPI still shows something rather than "—".
   const remaining = n - completedCount;
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const CANDIDATE_WINDOWS = [30, 60, 90];
+  const MIN_COMPLETIONS_FOR_VELOCITY = 3;
   const avgTatRaw = tatCounted ? sumTat / tatCounted : 0;
   const avgTat = Math.min(180, avgTatRaw);
-  const rawProjection = remaining && avgTat
-    ? Math.round(remaining * avgTat * (paceRatio / 100) / Math.max(1, Object.keys(personAgg).length))
-    : 0;
+
+  let chosenWindowDays = 0;
+  let completionsInWindow = 0;
+  let velocityPerDay = 0;
+  let method: "rolling-velocity" | "fallback-avgTat" | "none" = "none";
+  let rawProjection = 0;
+
+  if (completionDates.length > 0) {
+    for (const w of CANDIDATE_WINDOWS) {
+      const cutoff = now - w * DAY;
+      const count = completionDates.reduce((acc, t) => acc + (t >= cutoff ? 1 : 0), 0);
+      if (count >= MIN_COMPLETIONS_FOR_VELOCITY) {
+        chosenWindowDays = w;
+        completionsInWindow = count;
+        break;
+      }
+    }
+    // Fallback to lifetime velocity if no trailing window had enough completions.
+    if (!chosenWindowDays) {
+      const earliest = Math.min(...completionDates);
+      const spanDays = Math.max(7, Math.ceil((now - earliest) / DAY));
+      chosenWindowDays = spanDays;
+      completionsInWindow = completionDates.length;
+    }
+    velocityPerDay = completionsInWindow / chosenWindowDays;
+    if (velocityPerDay > 0 && remaining > 0) {
+      method = "rolling-velocity";
+      rawProjection = Math.round(remaining / velocityPerDay);
+    } else if (remaining === 0) {
+      method = "rolling-velocity";
+      rawProjection = 0;
+    }
+  }
+
+  // Fallback: no usable completion dates → derive an implied velocity from
+  // avgTat (activities/day ≈ persons / avgTat), still clamped hard.
+  if (method === "none" && remaining > 0 && avgTat > 0) {
+    method = "fallback-avgTat";
+    const persons = Math.max(1, Object.keys(personAgg).length);
+    const impliedVelocity = persons / avgTat; // activities/day
+    velocityPerDay = impliedVelocity;
+    rawProjection = Math.round(remaining / impliedVelocity);
+  }
+
   const projectedDaysToFinish = Math.max(0, Math.min(365, rawProjection));
   etaDebug.inputs = {
-    sumTat, sumTaken, tatCounted,
-    remaining, persons: Object.keys(personAgg).length,
-    avgTatRaw, avgTat, paceRatioRaw, paceRatio,
-    rawProjection, final: projectedDaysToFinish,
+    method,
+    remaining,
+    windowDays: chosenWindowDays,
+    completionsInWindow,
+    totalWithDates: completionDates.length,
+    velocityPerDay,
+    rawProjection,
+    final: projectedDaysToFinish,
+    avgTatRaw,
+    avgTat,
+    paceRatioRaw,
+    paceRatio,
+    persons: Object.keys(personAgg).length,
   };
+
 
   // ── AGENTIC RULES: Next Best Actions
   type Action = {
