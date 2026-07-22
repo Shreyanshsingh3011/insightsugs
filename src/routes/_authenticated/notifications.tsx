@@ -182,6 +182,9 @@ function InboxPage() {
                   <span className="ml-auto text-xs text-muted-foreground">{fmtWhen(n.created_at)}</span>
                 </div>
                 {n.body && <p className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">{n.body}</p>}
+                {n.kind === "signup_pending_review" && (
+                  <SignupNotificationActions body={n.body ?? ""} notificationId={n.id} />
+                )}
               </div>
             ))}
           </Card>
