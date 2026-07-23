@@ -348,3 +348,15 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
       sheets: sheetsMeta,
     };
   });
+
+export const listMyRegistryIds = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<string[]> => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("sheet_registry")
+      .select("id")
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r) => r.id as string);
+  });
