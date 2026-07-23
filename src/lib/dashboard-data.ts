@@ -40,6 +40,7 @@ export interface FlagEntry {
   severity?: string;
   status?: string;
   stage?: string;
+  source?: string;
   criticality?: string;
   escalation_level?: number;
 }

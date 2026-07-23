@@ -287,6 +287,14 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
           deptMap.set(n.dept, d);
         }
 
+        // Skip phantom flags: rows with no identifiable activity, owner, or
+        // department are unusable — the user cannot trace the source. Also
+        // skip "not started" rows (no work booked) unless the sheet text
+        // explicitly labels them delayed.
+        const hasIdentity = !!(n.activity || n.owner || n.dept);
+        const notStartedNoSignal = (!n.daysTaken || n.daysTaken === 0) && n.overdue === 0;
+        if (!hasIdentity || notStartedNoSignal) continue;
+
         const severity = n.overdue >= 15 ? "Critical" : n.overdue >= 7 ? "High" : n.overdue >= 3 ? "Medium" : "Low";
         flags.push({
           id: `F-${String(flagSeq++).padStart(4, "0")}`,
@@ -300,6 +308,7 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
           severity,
           status: n.status,
           stage: n.sheetType,
+          source: n.sheetName,
           escalation_level: n.overdue >= 15 ? 2 : n.overdue >= 7 ? 1 : 0,
         });
       }
