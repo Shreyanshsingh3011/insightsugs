@@ -162,7 +162,7 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
     z
-      .object({ sheetIds: z.array(z.string().uuid()).min(1).max(20) })
+      .object({ sheetIds: z.array(z.string().min(1)).min(1).max(20) })
       .parse(input),
   )
   .handler(async ({ data, context }): Promise<DashboardData> => {
