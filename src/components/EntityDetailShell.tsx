@@ -181,7 +181,7 @@ export function EntityDetailShell({
             <p className="py-6 text-center text-sm text-muted-foreground">Nothing matches.</p>
           ) : (
             <div className="max-h-[520px] overflow-auto rounded-lg border border-border/60">
-              <Table>
+              <Table className="min-w-[900px]">
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
                     <TableHead>Activity</TableHead>
