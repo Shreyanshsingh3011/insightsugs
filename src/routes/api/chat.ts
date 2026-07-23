@@ -521,12 +521,29 @@ export function buildTools(
             q = q.ilike("display_name", `%${query.trim()}%`);
           }
           const { data, error } = await q;
+          // If ilike returned nothing, retry punctuation/case-agnostic in-memory.
+          let items = data ?? [];
+          if (query && query.trim() && items.length === 0) {
+            let all = supabaseAdmin
+              .from("sheet_registry")
+              .select("id, display_name, sheet_type, row_count, last_refreshed_at, user_id, visibility")
+              .order("last_refreshed_at", { ascending: false, nullsFirst: false })
+              .limit(200);
+            if (actorId) all = all.or(`user_id.eq.${actorId},visibility.eq.shared,visibility.eq.public`);
+            else all = all.eq("visibility", "public");
+            const { data: allRows } = await all;
+            const n = query.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+            items = (allRows ?? []).filter((r) => {
+              const dn = (r.display_name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+              return dn.includes(n) || n.includes(dn);
+            }).slice(0, Math.max(1, Math.min(limit ?? 20, 50)));
+          }
           const out = error
             ? { error: error.message, items: [] }
             : {
-                count: data?.length ?? 0,
+                count: items.length,
                 current_project: ctx.projectLabel ?? ctx.projectId ?? null,
-                items: (data ?? []).map((r) => ({
+                items: items.map((r) => ({
                   id: r.id,
                   name: r.display_name,
                   type: r.sheet_type,
