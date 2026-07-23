@@ -70,9 +70,23 @@ export interface ExtraEntry {
 }
 
 export async function fetchDashboard(): Promise<DashboardData> {
-  const res = await fetch(DATA_URL);
-  if (!res.ok) throw new Error("Failed to load dashboard data");
-  return res.json();
+  try {
+    const res = await fetch(DATA_URL);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && Array.isArray(json.flags) && json.flags.length > 0) return json;
+      // Static endpoint returned no flags — fall through to dynamic build.
+    }
+  } catch { /* fall through */ }
+  // Static endpoint is dead or empty — build from the registered sheets so
+  // alerts / flag detail pages don't strand users on "not found".
+  const [{ fetchAgentProjects }, { buildDashboardFromSheets }] = await Promise.all([
+    import("./agent-registry.functions"),
+    import("./dashboard.functions"),
+  ]);
+  const reg = await fetchAgentProjects();
+  const sheetIds = reg.projects.map((p) => p.id);
+  return buildDashboardFromSheets({ data: { sheetIds } });
 }
 
 // Merge user-fed extras into base data, recomputing aggregates
