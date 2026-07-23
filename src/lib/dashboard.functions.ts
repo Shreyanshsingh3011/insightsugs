@@ -158,6 +158,8 @@ function normalizeRow(
   };
 }
 
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export const buildDashboardFromSheets = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
@@ -168,10 +170,15 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<DashboardData> => {
     const { supabase, userId } = context;
 
+    // Callers may pass registry UUIDs OR slug ids (e.g. "nit58") from
+    // FALLBACK_PROJECTS. Only UUIDs are valid keys for sheet_registry.id.
+    const uuidIds = data.sheetIds.filter((id) => UUID_RE.test(id));
+    if (uuidIds.length === 0) throw new Error("No registered sheets found for this user.");
+
     const { data: regs, error: regErr } = await supabase
       .from("sheet_registry")
       .select("id, display_name, sheet_type")
-      .in("id", data.sheetIds)
+      .in("id", uuidIds)
       .eq("user_id", userId);
     if (regErr) throw new Error(regErr.message);
     if (!regs || regs.length === 0) throw new Error("No matching sheets.");
@@ -340,4 +347,16 @@ export const buildDashboardFromSheets = createServerFn({ method: "POST" })
       mode_badge: "Live · Multi-sheet",
       sheets: sheetsMeta,
     };
+  });
+
+export const listMyRegistryIds = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<string[]> => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("sheet_registry")
+      .select("id")
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((r) => r.id as string);
   });

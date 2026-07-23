@@ -80,12 +80,9 @@ export async function fetchDashboard(): Promise<DashboardData> {
   } catch { /* fall through */ }
   // Static endpoint is dead or empty — build from the registered sheets so
   // alerts / flag detail pages don't strand users on "not found".
-  const [{ fetchAgentProjects }, { buildDashboardFromSheets }] = await Promise.all([
-    import("./agent-registry.functions"),
-    import("./dashboard.functions"),
-  ]);
-  const reg = await fetchAgentProjects();
-  const sheetIds = reg.projects.map((p) => p.id);
+  const { buildDashboardFromSheets, listMyRegistryIds } = await import("./dashboard.functions");
+  const sheetIds = await listMyRegistryIds();
+  if (!sheetIds.length) throw new Error("No registered sheets yet.");
   return buildDashboardFromSheets({ data: { sheetIds } });
 }
 
