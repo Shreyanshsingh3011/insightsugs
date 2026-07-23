@@ -521,12 +521,29 @@ export function buildTools(
             q = q.ilike("display_name", `%${query.trim()}%`);
           }
           const { data, error } = await q;
+          // If ilike returned nothing, retry punctuation/case-agnostic in-memory.
+          let items = data ?? [];
+          if (query && query.trim() && items.length === 0) {
+            let all = supabaseAdmin
+              .from("sheet_registry")
+              .select("id, display_name, sheet_type, row_count, last_refreshed_at, user_id, visibility")
+              .order("last_refreshed_at", { ascending: false, nullsFirst: false })
+              .limit(200);
+            if (actorId) all = all.or(`user_id.eq.${actorId},visibility.eq.shared,visibility.eq.public`);
+            else all = all.eq("visibility", "public");
+            const { data: allRows } = await all;
+            const n = query.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+            items = (allRows ?? []).filter((r) => {
+              const dn = (r.display_name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+              return dn.includes(n) || n.includes(dn);
+            }).slice(0, Math.max(1, Math.min(limit ?? 20, 50)));
+          }
           const out = error
             ? { error: error.message, items: [] }
             : {
-                count: data?.length ?? 0,
+                count: items.length,
                 current_project: ctx.projectLabel ?? ctx.projectId ?? null,
-                items: (data ?? []).map((r) => ({
+                items: items.map((r) => ({
                   id: r.id,
                   name: r.display_name,
                   type: r.sheet_type,
@@ -709,59 +726,107 @@ export function buildTools(
 
     generateStatusReport: tool({
       description:
-        "Snapshot a project's status: totals (activities, overdue, blocked, open alerts/concerns), top overdue activities, and a 3-paragraph executive brief. Read-only — does NOT send email. Use when the user asks 'give me a status report for project X' or 'how is project Y doing'.",
+        "Snapshot a project's status. Accepts either a project UUID or a name/keyword (e.g. 'PSPCL', 'NIT-58'). Resolves against both the projects table and the sheet registry (fuzzy, case-insensitive, punctuation-agnostic). Prefer passing project_name when the user names a project. Read-only — does NOT send email.",
       inputSchema: z.object({
-        project_id: z.string().uuid().describe("The project UUID to report on"),
+        project_id: z.string().nullable().describe("Project UUID if you already have one"),
+        project_name: z.string().nullable().describe("Project or sheet name/keyword — used when no UUID is known. Prefer this when the user names a project."),
       }),
-      execute: async ({ project_id }) => {
+      execute: async ({ project_id, project_name }) => {
         const t0 = Date.now();
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const input = { project_id, project_name };
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-          const { data: project } = await supabaseAdmin
-            .from("projects")
-            .select("id, name")
-            .eq("id", project_id)
-            .maybeSingle();
-          if (!project) {
-            const err = { ok: false as const, error: "Project not found" };
-            recordToolCall(run, { name: "generateStatusReport", input: { project_id }, output: err, ms: Date.now() - t0 });
+          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+          // 1) Try projects table by UUID
+          if (project_id && uuidRe.test(project_id)) {
+            const { data: project } = await supabaseAdmin
+              .from("projects").select("id, name").eq("id", project_id).maybeSingle();
+            if (project) {
+              const today = new Date().toISOString().slice(0, 10);
+              const { data: acts } = await supabaseAdmin
+                .from("activities").select("id, title, status, due_date, assignee_id")
+                .eq("project_id", project.id).limit(500);
+              const rows = acts ?? [];
+              const overdueRows = rows
+                .filter((a) => a.status !== "completed" && a.due_date && a.due_date < today)
+                .map((a) => ({ title: a.title, days_over: Math.max(0, Math.floor((Date.now() - new Date(a.due_date as string).getTime()) / 86_400_000)) }))
+                .sort((x, y) => y.days_over - x.days_over).slice(0, 8);
+              const out = { ok: true as const, source: "projects" as const, project: { id: project.id, name: project.name },
+                totals: { activities: rows.length, completed: rows.filter((a) => a.status === "completed").length, overdue: overdueRows.length, blocked: rows.filter((a) => a.status === "blocked").length },
+                top_overdue: overdueRows };
+              recordToolCall(run, { name: "generateStatusReport", input, output: out, ms: Date.now() - t0 });
+              return out;
+            }
+          }
+
+          // 2) Resolve against sheet_registry by name/keyword (fuzzy, punctuation-agnostic)
+          const needle = (project_name ?? project_id ?? "").trim();
+          if (!needle) {
+            const err = { ok: false as const, error: "Provide a project name or UUID. Tip: call queryProjects first to see available names." };
+            recordToolCall(run, { name: "generateStatusReport", input, output: err, ms: Date.now() - t0 });
             return err;
           }
-          const today = new Date().toISOString().slice(0, 10);
-          const { data: acts } = await supabaseAdmin
-            .from("activities")
-            .select("id, title, status, due_date, assignee_id")
-            .eq("project_id", project_id)
-            .limit(500);
-          const rows = acts ?? [];
-          const overdueRows = rows
-            .filter((a) => a.status !== "completed" && a.due_date && a.due_date < today)
-            .map((a) => ({
-              title: a.title,
-              days_over: Math.max(
-                0,
-                Math.floor((Date.now() - new Date(a.due_date as string).getTime()) / 86_400_000),
-              ),
-            }))
-            .sort((x, y) => y.days_over - x.days_over)
-            .slice(0, 8);
-          const out = {
-            ok: true as const,
-            project: { id: project.id, name: project.name },
+          let regQ = supabaseAdmin.from("sheet_registry")
+            .select("id, display_name, sheet_type, row_count, last_refreshed_at, user_id, visibility")
+            .limit(200);
+          if (actorId) regQ = regQ.or(`user_id.eq.${actorId},visibility.eq.shared,visibility.eq.public`);
+          else regQ = regQ.eq("visibility", "public");
+          const { data: sheets } = await regQ;
+          const nNeedle = norm(needle);
+          const matches = (sheets ?? []).filter((s) => {
+            const n = norm(s.display_name ?? "");
+            return n.includes(nNeedle) || nNeedle.includes(n);
+          });
+          if (matches.length === 0) {
+            const err = { ok: false as const,
+              error: `No project or sheet matches "${needle}". Call queryProjects to list visible names.`,
+              hint: "Names are matched fuzzily (punctuation/case ignored)." };
+            recordToolCall(run, { name: "generateStatusReport", input, output: err, ms: Date.now() - t0 });
+            return err;
+          }
+          if (matches.length > 1) {
+            const out = { ok: false as const, ambiguous: true,
+              error: `Multiple sheets match "${needle}". Ask the user which one, or retry with a more specific name.`,
+              candidates: matches.slice(0, 8).map((s) => ({ id: s.id, name: s.display_name, rows: s.row_count })) };
+            recordToolCall(run, { name: "generateStatusReport", input, output: out, ms: Date.now() - t0 });
+            return out;
+          }
+          const sheet = matches[0];
+          const { data: rowsData } = await supabaseAdmin
+            .from("sheet_rows").select("row_index, canonical")
+            .eq("sheet_registry_id", sheet.id).limit(1000);
+          const canon = (rowsData ?? []).map((r) => (r.canonical ?? {}) as Record<string, unknown>);
+          const statusOf = (c: Record<string, unknown>) => String(c.status ?? c.Status ?? c["current status"] ?? "").toLowerCase();
+          const isDone = (s: string) => /(complete|done|closed|resolved|finish)/.test(s);
+          const isBlocked = (s: string) => /(block|hold|stall)/.test(s);
+          const daysDelayed = (c: Record<string, unknown>) => {
+            const raw = c["days delayed"] ?? c["delay days"] ?? c["days_delayed"] ?? c["delay"] ?? 0;
+            const n = Number(raw); return Number.isFinite(n) ? n : 0;
+          };
+          const isOverdue = (c: Record<string, unknown>) => !isDone(statusOf(c)) && daysDelayed(c) > 0;
+          const overdueRows = canon.filter(isOverdue).slice(0, 8).map((c) => ({
+            title: String(c.activity ?? c.Activity ?? c.task ?? c.title ?? "").slice(0, 120),
+            days_over: daysDelayed(c),
+          }));
+          const out = { ok: true as const, source: "sheet_registry" as const,
+            project: { id: sheet.id, name: sheet.display_name },
+            last_refreshed: sheet.last_refreshed_at,
             totals: {
-              activities: rows.length,
-              completed: rows.filter((a) => a.status === "completed").length,
-              overdue: overdueRows.length,
-              blocked: rows.filter((a) => a.status === "blocked").length,
+              activities: canon.length,
+              completed: canon.filter((c) => isDone(statusOf(c))).length,
+              overdue: canon.filter(isOverdue).length,
+              blocked: canon.filter((c) => isBlocked(statusOf(c))).length,
             },
             top_overdue: overdueRows,
-            note: "For a full PDF/email version, open the project on /projects and click 'Status report'.",
+            note: "Derived from the live sheet. For a full PDF/email version, open /projects.",
           };
-          recordToolCall(run, { name: "generateStatusReport", input: { project_id }, output: out, ms: Date.now() - t0 });
+          recordToolCall(run, { name: "generateStatusReport", input, output: out, ms: Date.now() - t0 });
           return out;
         } catch (e) {
           const err = { ok: false as const, error: e instanceof Error ? e.message : String(e) };
-          recordToolCall(run, { name: "generateStatusReport", input: { project_id }, output: err, ms: Date.now() - t0 });
+          recordToolCall(run, { name: "generateStatusReport", input: { project_id, project_name }, output: err, ms: Date.now() - t0 });
           return err;
         }
       },
