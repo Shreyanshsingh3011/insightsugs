@@ -10,6 +10,7 @@ import {
   saveMyBriefingPreferences,
   generateBriefingsNow,
 } from "@/lib/briefings.functions";
+import { exportBriefingMarkdown, exportBriefingPdf } from "@/lib/briefing-export";
 
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +18,26 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Settings2, Loader2 } from "lucide-react";
+import { Settings2, Loader2, Download, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/briefings")({
+  head: () => ({
+    meta: [
+      { title: "Weekly Briefing Reports — DelayLens" },
+      {
+        name: "description",
+        content: "Generate, view, and download weekly operations briefing reports.",
+      },
+      { property: "og:title", content: "Weekly Briefing Reports — DelayLens" },
+      {
+        property: "og:description",
+        content: "Generate, view, and download weekly operations briefing reports.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: BriefingsPage,
 });
 
@@ -190,9 +207,35 @@ function BriefingsPage() {
           )}
           {selected && isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
           {selected && current && (
-            <article className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown>{current.content_markdown}</ReactMarkdown>
-            </article>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                <div>
+                  <div className="text-sm font-medium">
+                    {current.scope === "org" ? "Org-wide report" : "Your report"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {current.week_start} → {current.week_end}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportBriefingMarkdown(current)}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Markdown
+                  </Button>
+                  <Button size="sm" onClick={() => exportBriefingPdf(current)}>
+                    <Download className="h-4 w-4" />
+                    PDF report
+                  </Button>
+                </div>
+              </div>
+              <article className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown>{current.content_markdown}</ReactMarkdown>
+              </article>
+            </div>
           )}
         </Card>
       </div>
