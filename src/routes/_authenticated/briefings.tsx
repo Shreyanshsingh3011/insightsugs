@@ -71,6 +71,16 @@ function BriefingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const generate = useMutation({
+    mutationFn: () => genNowFn(),
+    onSuccess: (r: any) => {
+      toast.success(`Briefing generated for ${r?.users_briefed ?? 0} user(s).`);
+      qc.invalidateQueries({ queryKey: ["briefings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
   const { data: current, isLoading } = useQuery({
     queryKey: ["briefing", selected],
     queryFn: () => (selected ? getFn({ data: { id: selected } }) : null),
