@@ -74,3 +74,15 @@ export const saveMyBriefingPreferences = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const generateBriefingsNow = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: isAdmin } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
+    if (!isAdmin) throw new Error("Only admins can trigger briefings");
+    const { runWeeklyBriefing } = await import("@/lib/weekly-briefing-run.server");
+    const origin = process.env.PUBLIC_APP_URL ?? "https://insightsugs.lovable.app";
+    return await runWeeklyBriefing({ origin, sendEmail: false });
+  });
+
+
