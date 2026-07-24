@@ -127,7 +127,7 @@ function RowPage() {
   // TEMP: default to the current super-admin org leads until real sheet
   // columns provide Reporting Manager / Vertical Head. Yash = reporting
   // manager, Rakesh Sharma = vertical head; both are super_admin users.
-  const reportingManager = String(row["Reporting Manager"] ?? row["Reporting To"] ?? "Mr. Yash (yash@sugslloyds.com)");
+  const reportingManager = String(row["Reporting Manager"] ?? row["Reporting To"] ?? "Yash (yash@sugslloyds.com)");
   const verticalHead = String(row["Vertical Head"] ?? "Rakesh Sharma (r.sharma@sugslloyds.com)");
   const tone = toneFor(delay, tat);
 
