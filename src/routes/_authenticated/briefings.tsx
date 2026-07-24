@@ -8,7 +8,9 @@ import {
   getBriefing,
   getMyBriefingPreferences,
   saveMyBriefingPreferences,
+  generateBriefingsNow,
 } from "@/lib/briefings.functions";
+
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,10 +42,12 @@ function BriefingsPage() {
   const getFn = useServerFn(getBriefing);
   const getPrefsFn = useServerFn(getMyBriefingPreferences);
   const savePrefsFn = useServerFn(saveMyBriefingPreferences);
+  const genNowFn = useServerFn(generateBriefingsNow);
   const qc = useQueryClient();
 
   const { data: list } = useQuery({ queryKey: ["briefings"], queryFn: () => listFn() });
   const { data: prefs } = useQuery({ queryKey: ["briefing-prefs"], queryFn: () => getPrefsFn() });
+
   const [selected, setSelected] = useState<string | null>(null);
   const [showPrefs, setShowPrefs] = useState(false);
   const [sections, setSections] = useState<string[]>([]);
@@ -67,6 +71,16 @@ function BriefingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const generate = useMutation({
+    mutationFn: () => genNowFn(),
+    onSuccess: (r: any) => {
+      toast.success(`Briefing generated for ${r?.users_briefed ?? 0} user(s).`);
+      qc.invalidateQueries({ queryKey: ["briefings"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
   const { data: current, isLoading } = useQuery({
     queryKey: ["briefing", selected],
     queryFn: () => (selected ? getFn({ data: { id: selected } }) : null),
@@ -83,9 +97,21 @@ function BriefingsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Weekly briefings</h1>
           <p className="text-sm text-muted-foreground">AI-generated summaries of what happened across your projects, activities, sheets, documents, and alerts.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setShowPrefs((v) => !v)}>
-          <Settings2 className="mr-1.5 h-4 w-4" /> Customize
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+          >
+            {generate.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+            Generate now
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowPrefs((v) => !v)}>
+            <Settings2 className="mr-1.5 h-4 w-4" /> Customize
+          </Button>
+        </div>
+
       </div>
 
       {showPrefs && (
