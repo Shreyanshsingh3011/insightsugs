@@ -227,10 +227,10 @@ function BriefingsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => exportBriefingMarkdown(current)}
+                    onClick={() => exportBriefingDocx(current)}
                   >
                     <FileText className="h-4 w-4" />
-                    Markdown
+                    Word (.docx)
                   </Button>
                   <Button size="sm" onClick={() => exportBriefingPdf(current)}>
                     <Download className="h-4 w-4" />
