@@ -140,8 +140,13 @@ function MyActivitiesPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">My Activities</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Tasks assigned to you. Mark blocked or late completions with a reason.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">My Activities</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Tasks assigned to you. Mark blocked or late completions with a reason.</p>
+        </div>
+        <NewActivityForm />
+      </div>
 
       <div className="mt-6 space-y-3">
         {activities?.length === 0 && (
