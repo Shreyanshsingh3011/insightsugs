@@ -97,9 +97,21 @@ function BriefingsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Weekly briefings</h1>
           <p className="text-sm text-muted-foreground">AI-generated summaries of what happened across your projects, activities, sheets, documents, and alerts.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setShowPrefs((v) => !v)}>
-          <Settings2 className="mr-1.5 h-4 w-4" /> Customize
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+          >
+            {generate.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+            Generate now
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowPrefs((v) => !v)}>
+            <Settings2 className="mr-1.5 h-4 w-4" /> Customize
+          </Button>
+        </div>
+
       </div>
 
       {showPrefs && (
