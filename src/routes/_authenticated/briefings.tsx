@@ -10,6 +10,7 @@ import {
   saveMyBriefingPreferences,
   generateBriefingsNow,
 } from "@/lib/briefings.functions";
+import { exportBriefingMarkdown, exportBriefingPdf } from "@/lib/briefing-export";
 
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +18,26 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Settings2, Loader2 } from "lucide-react";
+import { Settings2, Loader2, Download, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/briefings")({
+  head: () => ({
+    meta: [
+      { title: "Weekly Briefing Reports — DelayLens" },
+      {
+        name: "description",
+        content: "Generate, view, and download weekly operations briefing reports.",
+      },
+      { property: "og:title", content: "Weekly Briefing Reports — DelayLens" },
+      {
+        property: "og:description",
+        content: "Generate, view, and download weekly operations briefing reports.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: BriefingsPage,
 });
 
@@ -45,7 +62,7 @@ function BriefingsPage() {
   const genNowFn = useServerFn(generateBriefingsNow);
   const qc = useQueryClient();
 
-  const { data: list } = useQuery({ queryKey: ["briefings"], queryFn: () => listFn() });
+  const { data: list, refetch: refetchBriefings } = useQuery({ queryKey: ["briefings"], queryFn: () => listFn() });
   const { data: prefs } = useQuery({ queryKey: ["briefing-prefs"], queryFn: () => getPrefsFn() });
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -60,6 +77,10 @@ function BriefingsPage() {
     }
   }, [prefs]);
 
+  useEffect(() => {
+    if (!selected && (list ?? []).length > 0) setSelected(list?.[0]?.id ?? null);
+  }, [list, selected]);
+
   const save = useMutation({
     mutationFn: () =>
       savePrefsFn({ data: { sections: sections as any, overdue_priority: priority as any } }),
@@ -73,9 +94,11 @@ function BriefingsPage() {
 
   const generate = useMutation({
     mutationFn: () => genNowFn(),
-    onSuccess: (r: any) => {
+    onSuccess: async (r: any) => {
       toast.success(`Briefing generated for ${r?.users_briefed ?? 0} user(s).`);
-      qc.invalidateQueries({ queryKey: ["briefings"] });
+      await qc.invalidateQueries({ queryKey: ["briefings"] });
+      const refreshed = await refetchBriefings();
+      setSelected(refreshed.data?.[0]?.id ?? null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -190,9 +213,35 @@ function BriefingsPage() {
           )}
           {selected && isLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
           {selected && current && (
-            <article className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown>{current.content_markdown}</ReactMarkdown>
-            </article>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+                <div>
+                  <div className="text-sm font-medium">
+                    {current.scope === "org" ? "Org-wide report" : "Your report"}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {current.week_start} → {current.week_end}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportBriefingMarkdown(current)}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Markdown
+                  </Button>
+                  <Button size="sm" onClick={() => exportBriefingPdf(current)}>
+                    <Download className="h-4 w-4" />
+                    PDF report
+                  </Button>
+                </div>
+              </div>
+              <article className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown>{current.content_markdown}</ReactMarkdown>
+              </article>
+            </div>
           )}
         </Card>
       </div>
