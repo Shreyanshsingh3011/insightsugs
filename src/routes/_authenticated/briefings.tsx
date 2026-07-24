@@ -62,7 +62,7 @@ function BriefingsPage() {
   const genNowFn = useServerFn(generateBriefingsNow);
   const qc = useQueryClient();
 
-  const { data: list } = useQuery({ queryKey: ["briefings"], queryFn: () => listFn() });
+  const { data: list, refetch: refetchBriefings } = useQuery({ queryKey: ["briefings"], queryFn: () => listFn() });
   const { data: prefs } = useQuery({ queryKey: ["briefing-prefs"], queryFn: () => getPrefsFn() });
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -77,6 +77,10 @@ function BriefingsPage() {
     }
   }, [prefs]);
 
+  useEffect(() => {
+    if (!selected && (list ?? []).length > 0) setSelected(list?.[0]?.id ?? null);
+  }, [list, selected]);
+
   const save = useMutation({
     mutationFn: () =>
       savePrefsFn({ data: { sections: sections as any, overdue_priority: priority as any } }),
@@ -90,9 +94,11 @@ function BriefingsPage() {
 
   const generate = useMutation({
     mutationFn: () => genNowFn(),
-    onSuccess: (r: any) => {
+    onSuccess: async (r: any) => {
       toast.success(`Briefing generated for ${r?.users_briefed ?? 0} user(s).`);
-      qc.invalidateQueries({ queryKey: ["briefings"] });
+      await qc.invalidateQueries({ queryKey: ["briefings"] });
+      const refreshed = await refetchBriefings();
+      setSelected(refreshed.data?.[0]?.id ?? null);
     },
     onError: (e: Error) => toast.error(e.message),
   });
