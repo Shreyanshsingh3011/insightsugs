@@ -75,13 +75,22 @@ function AlertsList() {
         <div className="grid h-9 w-9 place-items-center rounded-md bg-destructive/15 text-destructive">
           <Bell className="h-4 w-4" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Alerts</h1>
           <p className="text-sm text-muted-foreground">
-            Delay alerts across {dynamic ? `${selectedSheetIds.length} selected sheet${selectedSheetIds.length === 1 ? "" : "s"}` : "the demo dataset"}. Click a row for full details.
+            Delay alerts across {projects.length} live source{projects.length === 1 ? "" : "s"} — same feed as the dashboard, refreshed every 2 minutes. Click a row for full details.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => refetchAll()}
+          disabled={anyFetching}
+          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${anyFetching ? "animate-spin" : ""}`} /> Refresh
+        </button>
       </div>
+
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
