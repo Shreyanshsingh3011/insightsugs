@@ -11,9 +11,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet, Activity as ActivityIcon } from "lucide-react";
+import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet, Activity as ActivityIcon, Download, FileText } from "lucide-react";
 import { getMyDependentActivities } from "@/lib/sheets.functions";
 import { NewActivityForm } from "@/components/NewActivityForm";
+import { exportActivitiesCsv, exportActivitiesPdf, type ExportableActivity } from "@/lib/activities-export";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 
 export const Route = createFileRoute("/_authenticated/my-activities")({
