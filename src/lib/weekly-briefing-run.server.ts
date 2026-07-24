@@ -263,17 +263,20 @@ export async function runWeeklyBriefing(opts: { origin: string; sendEmail?: bool
   const orgMarkdown = sectionsToMarkdown(orgSections, `Org weekly briefing · ${startISO} → ${endISO}`);
   await admin
     .from("weekly_briefings")
-    .upsert(
-      {
-        user_id: null,
-        scope: "org",
-        week_start: startISO,
-        week_end: endISO,
-        content_json: { sections: orgSections },
-        content_markdown: orgMarkdown,
-      },
-      { onConflict: "user_id,scope,week_start" as any },
-    );
+    .delete()
+    .is("user_id", null)
+    .eq("scope", "org")
+    .eq("week_start", startISO);
+  const { error: orgInsErr } = await admin.from("weekly_briefings").insert({
+    user_id: null,
+    scope: "org",
+    week_start: startISO,
+    week_end: endISO,
+    content_json: { sections: orgSections },
+    content_markdown: orgMarkdown,
+  });
+  if (orgInsErr) console.error("[weekly-briefing] org insert failed", orgInsErr);
+
 
   let emailQueued = 0;
   if (opts.sendEmail) {
