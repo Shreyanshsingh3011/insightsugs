@@ -438,7 +438,7 @@ function AlertDetails() {
                 <FileSearch className="h-3.5 w-3.5" /> Source context
               </p>
               <p className="text-sm text-muted-foreground">
-                Sourced from {dynamic ? `${selectedSheetIds.length} selected sheet${selectedSheetIds.length === 1 ? "" : "s"}` : "the demo dataset"}.
+                Sourced from {flag.source ?? "live sheet"}.
                 Stage label: <span className="text-foreground">{flag.stage ?? "sheet"}</span>.
               </p>
             </Card>
