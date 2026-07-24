@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { CheckCircle2, Clock, Play, AlertTriangle, FileSpreadsheet, Activity as ActivityIcon } from "lucide-react";
 import { getMyDependentActivities } from "@/lib/sheets.functions";
+import { NewActivityForm } from "@/components/NewActivityForm";
 
 
 export const Route = createFileRoute("/_authenticated/my-activities")({
