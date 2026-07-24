@@ -137,7 +137,7 @@ export function buildAgentFlags(rows: Row[]): FlagEntry[] {
       days_taken: daysTakenFor(row),
       overdue_days: overdue,
       severity: severityFor(overdue),
-      status: isDelayed && bucket !== "Blocked" ? "Delayed" : bucket,
+      status: isDelayed ? "Delayed" : bucket,
       stage: source,
       source,
       escalation_level: overdue >= 15 ? 2 : overdue >= 7 ? 1 : 0,
