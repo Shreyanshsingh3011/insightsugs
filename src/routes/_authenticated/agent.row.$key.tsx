@@ -124,8 +124,9 @@ function RowPage() {
   const criticality = String(row["Criticality"] ?? "—");
   const startDate = String(row["Start Date"] ?? row["Planned Start"] ?? "—");
   const hc1 = String(row["HC-1"] ?? row["HC1"] ?? "—");
-  const reportingManager = String(row["Reporting Manager"] ?? row["Reporting To"] ?? "—");
-  const verticalHead = String(row["Vertical Head"] ?? "—");
+  // TEMP: hardcoded defaults until real org data is wired in.
+  const reportingManager = String(row["Reporting Manager"] ?? row["Reporting To"] ?? "Yash");
+  const verticalHead = String(row["Vertical Head"] ?? "Rakesh Sharma");
   const tone = toneFor(delay, tat);
 
   // Rule-based recommendation identical to AgentDetail's logic.
