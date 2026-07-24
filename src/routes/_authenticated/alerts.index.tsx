@@ -1,16 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Bell, FileSearch, Search, UserCheck } from "lucide-react";
-import { fetchDashboard, type DashboardData } from "@/lib/dashboard-data";
-import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
-import { listSheets } from "@/lib/sheets.functions";
+import { AlertTriangle, Bell, FileSearch, RefreshCw, Search, UserCheck } from "lucide-react";
+import { useAgentSources } from "@/hooks/useAgentSources";
 import { useAgentScope } from "@/hooks/useAgentScope";
-
-const SHEETS_KEY = "dashboard.selectedSheets.v1";
+import { buildAgentFlags } from "@/lib/agent-flag-builder";
 
 export const Route = createFileRoute("/_authenticated/alerts/")({
   head: () => ({
@@ -34,42 +29,19 @@ function sevColor(sev?: string) {
 function AlertsList() {
   const navigate = useNavigate();
 
-  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
-  useEffect(() => {
-    try { const s = localStorage.getItem(SHEETS_KEY); if (s) setSelectedSheetIds(JSON.parse(s)); } catch {}
-  }, []);
-
-  const buildFn = useServerFn(buildDashboardFromSheets);
-  const listFn = useServerFn(listSheets);
-
-  // Auto-fallback: if user hasn't explicitly picked sheets, use every sheet they can see.
-  const { data: allSheets } = useQuery({
-    queryKey: ["alerts", "all-sheets-fallback"],
-    queryFn: () => listFn(),
-    enabled: selectedSheetIds.length === 0,
-    staleTime: 60_000,
-  });
-  const effectiveSheetIds = selectedSheetIds.length > 0
-    ? selectedSheetIds
-    : (allSheets?.sheets ?? []).map((s: any) => s.id);
-  const dynamic = effectiveSheetIds.length > 0;
-
-  const { data, isLoading, error } = useQuery<DashboardData>({
-    queryKey: dynamic ? ["alerts", "dynamic", ...effectiveSheetIds] : ["alerts", "static"],
-    queryFn: () => dynamic ? buildFn({ data: { sheetIds: effectiveSheetIds } }) : fetchDashboard(),
-    retry: 0,
-  });
-
-  const allFlags = data?.flags ?? [];
+  // Alerts now feed from the exact same live sheets the dashboard renders
+  // (FALLBACK_PROJECTS via useAgentSources) — no registry pick required.
+  const { rows, anyLoading, anyFetching, refetchAll, projects } = useAgentSources();
+  const allFlags = useMemo(() => buildAgentFlags(rows), [rows]);
   const scope = useAgentScope();
   const [q, setQ] = useState("");
   const [fSev, setFSev] = useState<string>("all");
   const [fStatus, setFStatus] = useState<string>("all");
   const [onlyMine, setOnlyMine] = useState<boolean>(scope.mode === "name-scoped");
   useEffect(() => {
-    // Default non-admins to "For me" once scope loads
     if (!scope.loading && scope.mode === "name-scoped") setOnlyMine(true);
   }, [scope.loading, scope.mode]);
+
 
   const severities = useMemo(
     () => Array.from(new Set(allFlags.map((f) => f.severity).filter(Boolean))) as string[],
@@ -103,13 +75,22 @@ function AlertsList() {
         <div className="grid h-9 w-9 place-items-center rounded-md bg-destructive/15 text-destructive">
           <Bell className="h-4 w-4" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-semibold tracking-tight">Alerts</h1>
           <p className="text-sm text-muted-foreground">
-            Delay alerts across {dynamic ? `${selectedSheetIds.length} selected sheet${selectedSheetIds.length === 1 ? "" : "s"}` : "the demo dataset"}. Click a row for full details.
+            Delay alerts across {projects.length} live source{projects.length === 1 ? "" : "s"} — same feed as the dashboard, refreshed every 2 minutes. Click a row for full details.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => refetchAll()}
+          disabled={anyFetching}
+          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${anyFetching ? "animate-spin" : ""}`} /> Refresh
+        </button>
       </div>
+
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -153,13 +134,9 @@ function AlertsList() {
           </div>
         </div>
 
-        {isLoading && <p className="mt-4 text-sm text-muted-foreground">Loading alerts…</p>}
-        {error && (
-          <p className="mt-4 text-sm text-destructive">
-            Failed to load alerts: {(error as Error).message}. {!dynamic && "Register a sheet from the Sheets page to see live alerts."}
-          </p>
-        )}
-        {!isLoading && !flags.length && (
+        {anyLoading && !allFlags.length && <p className="mt-4 text-sm text-muted-foreground">Loading alerts…</p>}
+        {!anyLoading && !flags.length && (
+
           <div className="mt-6 flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
             <AlertTriangle className="h-6 w-6" />
             <p className="text-sm">No alerts match the current filters.</p>
