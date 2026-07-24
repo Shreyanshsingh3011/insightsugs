@@ -141,6 +141,30 @@ function MyActivitiesPage() {
     setDelayDialog(null);
   };
 
+  const assigneeName = "Me";
+  const buildExportRows = (): ExportableActivity[] =>
+    (activities ?? []).map((a) => ({
+      title: a.title,
+      status: a.status,
+      start_date: a.start_date,
+      due_date: a.due_date,
+      tat_days: a.tat_days,
+      completed_at: a.completed_at,
+      assignee: assigneeName,
+    }));
+  const handleExportCsv = () => {
+    const rows = buildExportRows();
+    if (!rows.length) return toast.error("No activities to export");
+    exportActivitiesCsv(rows);
+    toast.success("CSV downloaded");
+  };
+  const handleExportPdf = () => {
+    const rows = buildExportRows();
+    if (!rows.length) return toast.error("No activities to export");
+    exportActivitiesPdf(rows, { title: "My Activities" });
+    toast.success("PDF downloaded");
+  };
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -148,7 +172,24 @@ function MyActivitiesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">My Activities</h1>
           <p className="mt-1 text-sm text-muted-foreground">Tasks assigned to you. Mark blocked or late completions with a reason.</p>
         </div>
-        <NewActivityForm />
+        <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1" disabled={(activities?.length ?? 0) === 0}>
+                <Download className="h-4 w-4" /> Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleExportCsv} className="gap-2">
+                <FileSpreadsheet className="h-4 w-4" /> Download CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPdf} className="gap-2">
+                <FileText className="h-4 w-4" /> Download PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <NewActivityForm />
+        </div>
       </div>
 
       <div className="mt-6 space-y-3">
