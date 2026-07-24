@@ -226,17 +226,20 @@ export async function runWeeklyBriefing(opts: { origin: string; sendEmail?: bool
     const markdown = sectionsToMarkdown(sections, `Your weekly briefing · ${startISO} → ${endISO}`);
     await admin
       .from("weekly_briefings")
-      .upsert(
-        {
-          user_id: uid,
-          scope: "user",
-          week_start: startISO,
-          week_end: endISO,
-          content_json: { sections },
-          content_markdown: markdown,
-        },
-        { onConflict: "user_id,scope,week_start" as any },
-      );
+      .delete()
+      .eq("user_id", uid)
+      .eq("scope", "user")
+      .eq("week_start", startISO);
+    const { error: insErr } = await admin.from("weekly_briefings").insert({
+      user_id: uid,
+      scope: "user",
+      week_start: startISO,
+      week_end: endISO,
+      content_json: { sections },
+      content_markdown: markdown,
+    });
+    if (insErr) console.error("[weekly-briefing] user insert failed", uid, insErr);
+
     generated.push({ user_id: uid, scope: "user", sections, email: u.email, name: u.full_name });
   }
 
