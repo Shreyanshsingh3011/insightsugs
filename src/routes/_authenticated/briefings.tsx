@@ -42,10 +42,12 @@ function BriefingsPage() {
   const getFn = useServerFn(getBriefing);
   const getPrefsFn = useServerFn(getMyBriefingPreferences);
   const savePrefsFn = useServerFn(saveMyBriefingPreferences);
+  const genNowFn = useServerFn(generateBriefingsNow);
   const qc = useQueryClient();
 
   const { data: list } = useQuery({ queryKey: ["briefings"], queryFn: () => listFn() });
   const { data: prefs } = useQuery({ queryKey: ["briefing-prefs"], queryFn: () => getPrefsFn() });
+
   const [selected, setSelected] = useState<string | null>(null);
   const [showPrefs, setShowPrefs] = useState(false);
   const [sections, setSections] = useState<string[]>([]);
