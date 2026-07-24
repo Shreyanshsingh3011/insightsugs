@@ -135,7 +135,7 @@ function AlertDetails() {
       for (const p of data?.person_ranking ?? []) {
         if (!p.email) continue;
         const matchesOwner = responsible && p.person.trim().toLowerCase() === responsible;
-        const matchesActivity = p.activities?.some((a) => a === flag.activity);
+        const matchesActivity = p.activities?.some((a: string) => a === flag.activity);
         if (matchesOwner || matchesActivity) addExtra(p.email, p.person);
       }
       // Add members from selected email groups
