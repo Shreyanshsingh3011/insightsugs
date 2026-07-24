@@ -1,4 +1,17 @@
 import { jsPDF } from "jspdf";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  LevelFormat,
+  BorderStyle,
+  Header,
+  Footer,
+  PageNumber,
+} from "docx";
 
 export type BriefingExport = {
   scope: string;
