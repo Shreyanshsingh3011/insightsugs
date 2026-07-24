@@ -243,22 +243,118 @@ export async function runWeeklyBriefing(opts: { origin: string; sendEmail?: bool
     generated.push({ user_id: uid, scope: "user", sections, email: u.email, name: u.full_name });
   }
 
+  const allActs = activities ?? [];
+  const overdueActs = allActs.filter(
+    (a) => a.due_date && a.due_date < endISO && a.status !== "completed",
+  );
+  const completedActs = allActs.filter((a) => a.completed_at && a.completed_at >= startTs);
+  const upcomingActs = allActs.filter(
+    (a) => a.due_date && a.due_date >= endISO && a.status !== "completed",
+  );
+  const blockedActs = allActs.filter((a) => a.status === "blocked");
+
+  const profileById = new Map((users ?? []).map((u) => [u.id, u]));
+  const projById = new Map((projects ?? []).map((p) => [p.id, p]));
+
+  const perProject = (projects ?? []).map((p) => {
+    const rows = allActs.filter((a) => a.project_id === p.id);
+    return {
+      project: p.name,
+      total: rows.length,
+      overdue: rows.filter((a) => a.due_date && a.due_date < endISO && a.status !== "completed")
+        .length,
+      completed_last_7d: rows.filter((a) => a.completed_at && a.completed_at >= startTs).length,
+      blocked: rows.filter((a) => a.status === "blocked").length,
+    };
+  });
+  const projectsRanked = perProject
+    .filter((p) => p.total > 0)
+    .sort((a, b) => b.overdue - a.overdue || b.total - a.total)
+    .slice(0, 10);
+
+  const perAssignee = new Map<string, { name: string; overdue: number; completed: number; total: number }>();
+  for (const a of allActs) {
+    if (!a.assignee_id) continue;
+    const key = a.assignee_id;
+    const cur = perAssignee.get(key) ?? {
+      name: profileById.get(key)?.full_name || profileById.get(key)?.email || "unknown",
+      overdue: 0,
+      completed: 0,
+      total: 0,
+    };
+    cur.total++;
+    if (a.due_date && a.due_date < endISO && a.status !== "completed") cur.overdue++;
+    if (a.completed_at && a.completed_at >= startTs) cur.completed++;
+    perAssignee.set(key, cur);
+  }
+  const topOverdueAssignees = [...perAssignee.values()]
+    .filter((p) => p.overdue > 0)
+    .sort((a, b) => b.overdue - a.overdue)
+    .slice(0, 8);
+  const topPerformers = [...perAssignee.values()]
+    .filter((p) => p.completed > 0)
+    .sort((a, b) => b.completed - a.completed)
+    .slice(0, 6);
+
+  const topOverdue = [...overdueActs]
+    .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""))
+    .slice(0, 12)
+    .map((a) => ({
+      title: a.title,
+      due: a.due_date,
+      project: projById.get(a.project_id ?? "")?.name ?? "",
+      assignee:
+        profileById.get(a.assignee_id ?? "")?.full_name ||
+        profileById.get(a.assignee_id ?? "")?.email ||
+        "",
+    }));
+
+  const sheetHealth = (sheets ?? []).map((s) => ({
+    name: s.display_name,
+    rows: s.row_count,
+    last_refreshed_at: s.last_refreshed_at,
+  }));
+  const staleSheets = sheetHealth
+    .filter(
+      (s) =>
+        !s.last_refreshed_at ||
+        Date.now() - new Date(s.last_refreshed_at).getTime() > 24 * 60 * 60 * 1000,
+    )
+    .slice(0, 10);
+
   const orgRaw = {
     week: { start: startISO, end: endISO },
-    activities_total: (activities ?? []).length,
-    overdue_total: (activities ?? []).filter(
-      (a) => a.due_date && a.due_date < endISO && a.status !== "completed",
-    ).length,
-    completed_last_7d: (activities ?? []).filter((a) => a.completed_at && a.completed_at >= startTs)
-      .length,
-    alerts_open_last_7d: (alerts ?? []).length,
-    concerns_open_last_7d: (concerns ?? []).length,
-    documents_updated_last_7d: (documents ?? []).length,
-    top_projects: (projects ?? []).slice(0, 10).map((p) => p.name),
+    totals: {
+      activities: allActs.length,
+      overdue: overdueActs.length,
+      completed_last_7d: completedActs.length,
+      upcoming: upcomingActs.length,
+      blocked: blockedActs.length,
+      alerts_last_7d: (alerts ?? []).length,
+      concerns_last_7d: (concerns ?? []).length,
+      documents_updated_last_7d: (documents ?? []).length,
+      sheets_tracked: (sheets ?? []).length,
+    },
+    projects_ranked_by_risk: projectsRanked,
+    top_overdue_activities: topOverdue,
+    top_overdue_assignees: topOverdueAssignees,
+    top_performers_last_7d: topPerformers,
+    alerts_last_7d: (alerts ?? [])
+      .slice(0, 15)
+      .map((a) => ({ activity: a.activity, severity: a.severity, status: a.status })),
+    concerns_last_7d: (concerns ?? [])
+      .slice(0, 15)
+      .map((c) => ({ title: c.title, severity: c.severity, status: c.status })),
+    documents_updated_samples: (documents ?? []).slice(0, 8).map((d) => d.name),
+    sheet_health: {
+      total: sheetHealth.length,
+      stale_over_24h: staleSheets,
+    },
   };
   const orgSections = await generateAiSections(orgRaw, {
     scope: "org",
-    audience: "organization leadership",
+    audience:
+      "organization leadership. Produce a rich multi-section briefing covering Executive summary, Projects at risk, Overdue hotspots, Team throughput, Sheet health, and Alerts & concerns. Include concrete names, counts, and dates from the data. Do NOT skip sections when data is present.",
   });
   const orgMarkdown = sectionsToMarkdown(orgSections, `Org weekly briefing · ${startISO} → ${endISO}`);
   await admin
