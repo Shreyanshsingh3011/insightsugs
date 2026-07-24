@@ -9,12 +9,17 @@ async function generateAiSections(
 ): Promise<Section[]> {
   const key = process.env.LOVABLE_API_KEY;
   if (!key) return [{ title: "Summary", summary: "AI not configured.", bullets: [] }];
-  const prompt = `You are writing a concise weekly briefing for ${opts.audience}. Cover the last 7 days.
+  const sectionMenu =
+    opts.scope === "org"
+      ? `"Executive summary", "Projects at risk", "Overdue hotspots", "Team throughput", "Sheet health", "Alerts & concerns", "Documents"`
+      : `"Projects & activities", "Sheets", "Documents", "Alerts & concerns"`;
+  const minSections = opts.scope === "org" ? 4 : 1;
+  const prompt = `You are writing a ${opts.scope === "org" ? "rich organization-wide" : "concise personal"} weekly briefing for ${opts.audience}. Cover the last 7 days.
 Return STRICT JSON only, no prose, matching:
 {"sections":[{"title": string, "summary": string, "bullets": string[]}]}
-Include one section per non-empty area from: "Projects & activities", "Sheets", "Documents", "Alerts & concerns".
-Keep it factual, terse (max 3 sentences summary, max 5 bullets per section). Data:
-${truncateJsonForPrompt(rawData, 12000)}`;
+Include one section per non-empty area from: ${sectionMenu}.
+Produce at least ${minSections} sections when data supports it. Use concrete names, counts, and dates from the data — never write generic filler like "no new items" when the data below lists items. Keep each summary to 2-4 sentences and 3-6 bullets per section. Data:
+${truncateJsonForPrompt(rawData, 16000)}`;
   try {
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
