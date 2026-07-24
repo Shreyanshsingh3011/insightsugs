@@ -1,4 +1,17 @@
 import { jsPDF } from "jspdf";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  LevelFormat,
+  BorderStyle,
+  Header,
+  Footer,
+  PageNumber,
+} from "docx";
 
 export type BriefingExport = {
   scope: string;
@@ -38,9 +51,143 @@ function triggerDownload(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function briefingFilename(briefing: BriefingExport, extension: "pdf" | "md") {
+export function briefingFilename(briefing: BriefingExport, extension: "pdf" | "md" | "docx") {
   const scope = briefing.scope === "org" ? "org" : "user";
   return `${safeFilePart(`${scope}-weekly-report-${briefing.week_start}-to-${briefing.week_end}`)}.${extension}`;
+}
+
+// Parse inline markdown (**bold**, *italic*, `code`, [text](url)) into TextRuns.
+function parseInlineRuns(text: string, baseOpts: { bold?: boolean; italics?: boolean; color?: string; size?: number } = {}): TextRun[] {
+  const runs: TextRun[] = [];
+  // Tokenize by **bold**, *italic*/_italic_, `code`, [text](url)
+  const regex = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  const push = (t: string, opts: { bold?: boolean; italics?: boolean; color?: string; size?: number } = {}) => {
+    if (!t) return;
+    runs.push(new TextRun({ text: t, bold: opts.bold ?? baseOpts.bold, italics: opts.italics ?? baseOpts.italics, color: opts.color ?? baseOpts.color, size: opts.size ?? baseOpts.size, font: "Calibri" }));
+  };
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) push(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("**") || tok.startsWith("__")) push(tok.slice(2, -2), { bold: true });
+    else if (tok.startsWith("`")) push(tok.slice(1, -1), { color: "9333EA" });
+    else if (tok.startsWith("[")) {
+      const mm = /^\[([^\]]+)]\(([^)]+)\)$/.exec(tok);
+      if (mm) push(mm[1], { color: "1D4ED8" });
+    } else push(tok.slice(1, -1), { italics: true });
+    last = m.index + tok.length;
+  }
+  if (last < text.length) push(text.slice(last));
+  return runs.length ? runs : [new TextRun({ text, font: "Calibri", size: baseOpts.size, bold: baseOpts.bold, italics: baseOpts.italics, color: baseOpts.color })];
+}
+
+export async function exportBriefingDocx(briefing: BriefingExport) {
+  const scopeLabel = briefing.scope === "org" ? "Organization Weekly Report" : "My Weekly Report";
+  const md = briefing.content_markdown.replace(/^#\s+.+\n+/, "");
+  const blocks = parseMarkdownBlocks(md);
+
+  const accent = "EA580C";
+  const muted = "6E7178";
+  const ink = "18181B";
+
+  const children: Paragraph[] = [];
+
+  // Cover
+  children.push(
+    new Paragraph({
+      spacing: { after: 60 },
+      children: [new TextRun({ text: (briefing.scope === "org" ? "ORGANIZATION" : "PERSONAL") + " · WEEKLY REPORT", bold: true, color: accent, size: 18, font: "Calibri" })],
+    }),
+    new Paragraph({
+      spacing: { after: 120 },
+      children: [new TextRun({ text: scopeLabel, bold: true, size: 44, color: ink, font: "Calibri" })],
+    }),
+    new Paragraph({
+      spacing: { after: 60 },
+      children: [
+        new TextRun({ text: "Reporting period: ", color: muted, size: 20, font: "Calibri" }),
+        new TextRun({ text: `${briefing.week_start} → ${briefing.week_end}`, bold: true, size: 20, color: ink, font: "Calibri" }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { after: 240 },
+      children: [
+        new TextRun({ text: "Generated: ", color: muted, size: 20, font: "Calibri" }),
+        new TextRun({ text: new Date().toLocaleString(), bold: true, size: 20, color: ink, font: "Calibri" }),
+      ],
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "E1E3E8", space: 8 } },
+    }),
+  );
+
+  for (const b of blocks) {
+    switch (b.kind) {
+      case "h1":
+        children.push(new Paragraph({ heading: HeadingLevel.HEADING_1, spacing: { before: 240, after: 120 }, children: parseInlineRuns(b.text, { bold: true, size: 36, color: ink }) }));
+        break;
+      case "h2":
+        children.push(new Paragraph({
+          heading: HeadingLevel.HEADING_2,
+          spacing: { before: 220, after: 100 },
+          border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: accent, space: 4 } },
+          children: parseInlineRuns(b.text, { bold: true, size: 28, color: ink }),
+        }));
+        break;
+      case "h3":
+        children.push(new Paragraph({ heading: HeadingLevel.HEADING_3, spacing: { before: 160, after: 80 }, children: parseInlineRuns(b.text, { bold: true, size: 24, color: ink }) }));
+        break;
+      case "bullet":
+        children.push(new Paragraph({ numbering: { reference: "briefing-bullets", level: 0 }, spacing: { after: 60 }, children: parseInlineRuns(b.text, { size: 22, color: ink }) }));
+        break;
+      case "para":
+        children.push(new Paragraph({ spacing: { after: 120, line: 320 }, children: parseInlineRuns(b.text, { size: 22, color: ink }) }));
+        break;
+      case "spacer":
+        children.push(new Paragraph({ spacing: { after: 80 }, children: [new TextRun({ text: "", font: "Calibri" })] }));
+        break;
+    }
+  }
+
+  const doc = new Document({
+    creator: "DelayLens",
+    title: scopeLabel,
+    styles: {
+      default: { document: { run: { font: "Calibri", size: 22 } } },
+    },
+    numbering: {
+      config: [{
+        reference: "briefing-bullets",
+        levels: [{
+          level: 0,
+          format: LevelFormat.BULLET,
+          text: "•",
+          alignment: AlignmentType.LEFT,
+          style: { paragraph: { indent: { left: 480, hanging: 240 } }, run: { color: accent } },
+        }],
+      }],
+    },
+    sections: [{
+      properties: { page: { margin: { top: 1080, right: 1080, bottom: 1080, left: 1080 } } },
+      headers: {
+        default: new Header({ children: [new Paragraph({ children: [new TextRun({ text: `${briefing.scope === "org" ? "Organization" : "Personal"} weekly report`, color: muted, size: 18, font: "Calibri" })] })] }),
+      },
+      footers: {
+        default: new Footer({ children: [new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [
+            new TextRun({ text: `${briefing.week_start} → ${briefing.week_end}  ·  Page `, color: muted, size: 18, font: "Calibri" }),
+            new TextRun({ children: [PageNumber.CURRENT], color: muted, size: 18, font: "Calibri" }),
+            new TextRun({ text: " of ", color: muted, size: 18, font: "Calibri" }),
+            new TextRun({ children: [PageNumber.TOTAL_PAGES], color: muted, size: 18, font: "Calibri" }),
+          ],
+        })] }),
+      },
+      children,
+    }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  triggerDownload(blob, briefingFilename(briefing, "docx"));
 }
 
 export function exportBriefingMarkdown(briefing: BriefingExport) {
