@@ -124,9 +124,11 @@ function RowPage() {
   const criticality = String(row["Criticality"] ?? "—");
   const startDate = String(row["Start Date"] ?? row["Planned Start"] ?? "—");
   const hc1 = String(row["HC-1"] ?? row["HC1"] ?? "—");
-  // TEMP: hardcoded defaults until real org data is wired in.
-  const reportingManager = String(row["Reporting Manager"] ?? row["Reporting To"] ?? "Yash");
-  const verticalHead = String(row["Vertical Head"] ?? "Rakesh Sharma");
+  // TEMP: default to the current super-admin org leads until real sheet
+  // columns provide Reporting Manager / Vertical Head. Yash = reporting
+  // manager, Rakesh Sharma = vertical head; both are super_admin users.
+  const reportingManager = String(row["Reporting Manager"] ?? row["Reporting To"] ?? "Mr. Yash (yash@sugslloyds.com)");
+  const verticalHead = String(row["Vertical Head"] ?? "Rakesh Sharma (r.sharma@sugslloyds.com)");
   const tone = toneFor(delay, tat);
 
   // Rule-based recommendation identical to AgentDetail's logic.
