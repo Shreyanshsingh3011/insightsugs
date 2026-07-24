@@ -10,14 +10,13 @@ import {
   ArrowLeft, Flag, AlertTriangle, Clock, User, Building2, Mail, Phone,
   FileSearch, TrendingUp, Lock, Send, CheckCircle2, MessageSquare, ShieldCheck,
 } from "lucide-react";
-import { fetchDashboard, type DashboardData, type FlagEntry } from "@/lib/dashboard-data";
-import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
+import type { FlagEntry } from "@/lib/dashboard-data";
 import { sendAlert, getAlertByFlag, replyToAlert, resolveAlert } from "@/lib/alerts.functions";
 import { investigateDelay } from "@/lib/delay-root-cause.functions";
 import { listEmailGroups } from "@/lib/email-groups.functions";
 import { useIsAdmin } from "@/hooks/useSession";
-
-const SHEETS_KEY = "dashboard.selectedSheets.v1";
+import { useAgentSources } from "@/hooks/useAgentSources";
+import { buildAgentFlags } from "@/lib/agent-flag-builder";
 
 export const Route = createFileRoute("/_authenticated/alerts/$id")({
   head: ({ params }) => ({
@@ -52,12 +51,6 @@ function AlertDetails() {
   const qc = useQueryClient();
   const isAdmin = useIsAdmin();
 
-  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
-  useEffect(() => {
-    try { const s = localStorage.getItem(SHEETS_KEY); if (s) setSelectedSheetIds(JSON.parse(s)); } catch {}
-  }, []);
-
-  const buildFn = useServerFn(buildDashboardFromSheets);
   const sendFn = useServerFn(sendAlert);
   const getAlertFn = useServerFn(getAlertByFlag);
   const replyFn = useServerFn(replyToAlert);
@@ -71,13 +64,13 @@ function AlertDetails() {
   });
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
 
-  const dynamic = selectedSheetIds.length > 0;
-  const { data, isLoading } = useQuery<DashboardData>({
-    queryKey: dynamic ? ["alerts", "dynamic", ...selectedSheetIds] : ["alerts", "static"],
-    queryFn: () => dynamic ? buildFn({ data: { sheetIds: selectedSheetIds } }) : fetchDashboard(),
-  });
+  // Feed from the same live sheets the /alerts list uses so IDs always line up.
+  const { rows, anyLoading } = useAgentSources();
+  const allFlags = useMemo(() => buildAgentFlags(rows), [rows]);
+  const isLoading = anyLoading && allFlags.length === 0;
+  const data = useMemo(() => ({ flags: allFlags, person_ranking: [] as any[] }), [allFlags]);
 
-  const flag: FlagEntry | undefined = useMemo(() => data?.flags?.find((f) => f.id === id), [data, id]);
+  const flag: FlagEntry | undefined = useMemo(() => allFlags.find((f) => f.id === id), [allFlags, id]);
 
   const alertQ = useQuery({
     queryKey: ["alert", id],
