@@ -157,7 +157,7 @@ function AlertDetails() {
             activity: flag.activity,
             stage: flag.stage ?? null,
             severity: flag.severity ?? null,
-            source: flag.stage ?? null,
+            source: flag.source ?? flag.stage ?? null,
             root_cause: rootCause,
             reason: flag.reason_text?.trim() || flag.reason || null,
             responsible_email: flag.flagged_to?.email ?? null,
@@ -356,7 +356,7 @@ function AlertDetails() {
                   <Row icon={<User className="h-3.5 w-3.5" />} label="Responsible" value={owner ?? "—"} />
                   <Row icon={<Mail className="h-3.5 w-3.5" />} label="Email" value={email ?? "—"} />
                   <Row icon={<Phone className="h-3.5 w-3.5" />} label="Phone" value={phone ?? "—"} />
-                  <Row icon={<Building2 className="h-3.5 w-3.5" />} label="Source sheet" value={flag.source ?? flag.stage ?? "—"} />
+                  <Row icon={<Building2 className="h-3.5 w-3.5" />} label="Source sheet" value={flag.source ?? alertRow?.source ?? "—"} />
                 </div>
               </Card>
 
