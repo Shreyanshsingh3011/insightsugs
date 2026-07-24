@@ -16,7 +16,9 @@ function ProjectPage() {
 
   const project = projects.find((p) => p.id === projectId);
   const src = sources.find((s) => s.project.id === projectId);
-  const label = src?.payload?.connector?.replace(" — view", "") || project?.label || projectId;
+  // Use canonical project label (e.g. "Himachal") — the connector string is
+  // often generic ("Google Sheet — public CSV") and breaks row-key matching.
+  const label = project?.label || projectId;
   const dept = src?.payload?.department;
 
   const scoped = useMemo(() => {
