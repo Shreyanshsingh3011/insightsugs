@@ -108,19 +108,18 @@ export function NewActivityForm({ onCreated }: { onCreated?: () => void }) {
       }
       if (!pid) throw new Error("Pick a project");
 
-      const payload: Record<string, unknown> = {
-        project_id: pid,
-        title: title.trim(),
-        description: description.trim() || null,
-        assignee_id: assigneeId,
-        status: "pending",
-        start_date: startDate || null,
-        due_date: dueDate || null,
-        tat_days: tatDays ? Number(tatDays) : null,
-      };
       const { data, error } = await supabase
         .from("activities")
-        .insert(payload)
+        .insert({
+          project_id: pid,
+          title: title.trim(),
+          description: description.trim() || null,
+          assignee_id: assigneeId,
+          status: "pending",
+          start_date: startDate || null,
+          due_date: dueDate || null,
+          tat_days: tatDays ? Number(tatDays) : null,
+        })
         .select("id")
         .single();
       if (error) throw error;
