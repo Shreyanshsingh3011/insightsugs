@@ -1,16 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { AlertTriangle, Bell, FileSearch, Search, UserCheck } from "lucide-react";
-import { fetchDashboard, type DashboardData } from "@/lib/dashboard-data";
-import { buildDashboardFromSheets } from "@/lib/dashboard.functions";
-import { listSheets } from "@/lib/sheets.functions";
+import { AlertTriangle, Bell, FileSearch, RefreshCw, Search, UserCheck } from "lucide-react";
+import { useAgentSources } from "@/hooks/useAgentSources";
 import { useAgentScope } from "@/hooks/useAgentScope";
-
-const SHEETS_KEY = "dashboard.selectedSheets.v1";
+import { buildAgentFlags } from "@/lib/agent-flag-builder";
 
 export const Route = createFileRoute("/_authenticated/alerts/")({
   head: () => ({
@@ -34,42 +29,19 @@ function sevColor(sev?: string) {
 function AlertsList() {
   const navigate = useNavigate();
 
-  const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([]);
-  useEffect(() => {
-    try { const s = localStorage.getItem(SHEETS_KEY); if (s) setSelectedSheetIds(JSON.parse(s)); } catch {}
-  }, []);
-
-  const buildFn = useServerFn(buildDashboardFromSheets);
-  const listFn = useServerFn(listSheets);
-
-  // Auto-fallback: if user hasn't explicitly picked sheets, use every sheet they can see.
-  const { data: allSheets } = useQuery({
-    queryKey: ["alerts", "all-sheets-fallback"],
-    queryFn: () => listFn(),
-    enabled: selectedSheetIds.length === 0,
-    staleTime: 60_000,
-  });
-  const effectiveSheetIds = selectedSheetIds.length > 0
-    ? selectedSheetIds
-    : (allSheets?.sheets ?? []).map((s: any) => s.id);
-  const dynamic = effectiveSheetIds.length > 0;
-
-  const { data, isLoading, error } = useQuery<DashboardData>({
-    queryKey: dynamic ? ["alerts", "dynamic", ...effectiveSheetIds] : ["alerts", "static"],
-    queryFn: () => dynamic ? buildFn({ data: { sheetIds: effectiveSheetIds } }) : fetchDashboard(),
-    retry: 0,
-  });
-
-  const allFlags = data?.flags ?? [];
+  // Alerts now feed from the exact same live sheets the dashboard renders
+  // (FALLBACK_PROJECTS via useAgentSources) — no registry pick required.
+  const { rows, anyLoading, anyFetching, refetchAll, projects } = useAgentSources();
+  const allFlags = useMemo(() => buildAgentFlags(rows), [rows]);
   const scope = useAgentScope();
   const [q, setQ] = useState("");
   const [fSev, setFSev] = useState<string>("all");
   const [fStatus, setFStatus] = useState<string>("all");
   const [onlyMine, setOnlyMine] = useState<boolean>(scope.mode === "name-scoped");
   useEffect(() => {
-    // Default non-admins to "For me" once scope loads
     if (!scope.loading && scope.mode === "name-scoped") setOnlyMine(true);
   }, [scope.loading, scope.mode]);
+
 
   const severities = useMemo(
     () => Array.from(new Set(allFlags.map((f) => f.severity).filter(Boolean))) as string[],
