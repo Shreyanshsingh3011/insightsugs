@@ -150,7 +150,11 @@ export function useAgentSources() {
     const out: Row[] = [];
     for (const s of sources) {
       if (selected !== "all" && s.project.id !== selected) continue;
-      const label = s.payload?.connector?.replace(" — view", "") || s.project.label;
+      // Always tag rows with the canonical project label (e.g. "Himachal"),
+      // never the generic connector string ("Google Sheet — public CSV").
+      // URL row keys are built from this label, so a connector-based tag
+      // makes /agent/row/... fail to rehydrate the live row.
+      const label = s.project.label;
       const dept = s.payload?.department;
       const data = s.payload?.data ?? [];
       for (const r of data) {
