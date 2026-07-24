@@ -157,7 +157,7 @@ function AlertDetails() {
             activity: flag.activity,
             stage: flag.stage ?? null,
             severity: flag.severity ?? null,
-            source: flag.stage ?? null,
+            source: flag.source ?? flag.stage ?? null,
             root_cause: rootCause,
             reason: flag.reason_text?.trim() || flag.reason || null,
             responsible_email: flag.flagged_to?.email ?? null,
