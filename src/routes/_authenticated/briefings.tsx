@@ -10,7 +10,7 @@ import {
   saveMyBriefingPreferences,
   generateBriefingsNow,
 } from "@/lib/briefings.functions";
-import { exportBriefingMarkdown, exportBriefingPdf } from "@/lib/briefing-export";
+import { exportBriefingDocx, exportBriefingPdf } from "@/lib/briefing-export";
 
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
