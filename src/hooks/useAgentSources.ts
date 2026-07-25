@@ -21,6 +21,8 @@ import { FALLBACK_PROJECTS, type AgentProject } from "@/lib/agent-registry.funct
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow } from "@/lib/person-resolver";
+import { useQaScenario } from "@/hooks/useQaScenario";
+import { buildQaPayload } from "@/lib/qa-fixtures";
 import type { Row } from "@/lib/entity-scope";
 
 // Match AgentDashboard.AUTO_REFRESH_MS exactly so entity pages share the
