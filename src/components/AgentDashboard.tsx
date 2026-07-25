@@ -506,11 +506,13 @@ function derive(payload: Payload | undefined) {
         stage: pick(r, "Stages", "Stages of Process") || "—",
         tat, taken,
         ratio: tat > 0 ? taken / tat : 0,
+        row: r,
       };
     })
     .filter(a => a.tat > 0 && a.ratio >= 1.8)
     .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 6);
+
 
 
   return {
