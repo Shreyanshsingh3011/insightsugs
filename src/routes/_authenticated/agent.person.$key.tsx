@@ -3,8 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import {
-  decodeKey, personEmail, personName, toScopedRow, pick,
+  decodeKey, personEmail, personName, toScopedRow, pick, type Row,
 } from "@/lib/entity-scope";
+
 import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/person/$key")({
