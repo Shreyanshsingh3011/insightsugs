@@ -17,10 +17,17 @@ function StagePage() {
   const norm = (s: string) => s.toLowerCase().replace(/[\s\-_/]+/g, " ").trim();
   const needle = norm(decoded);
 
-  const scoped = useMemo(() => rows
-    .filter((r) => norm(stageName(r)) === needle)
-    .map((r, i) => toScopedRow(r, i)),
-  [rows, needle]);
+  const scoped = useMemo(() => {
+    const exact = rows.filter((r) => norm(stageName(r)) === needle);
+    const matched = exact.length
+      ? exact
+      : rows.filter((r) => {
+          const n = norm(stageName(r));
+          return n && (n.includes(needle) || needle.includes(n));
+        });
+    return matched.map((r, i) => toScopedRow(r, i));
+  }, [rows, needle]);
+
 
 
   const projects = new Set(scoped.map((r) => r.project));
