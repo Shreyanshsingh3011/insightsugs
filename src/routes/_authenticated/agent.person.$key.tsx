@@ -3,8 +3,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import {
-  decodeKey, personEmail, personName, toScopedRow, pick,
+  decodeKey, personEmail, personName, toScopedRow, pick, type Row,
 } from "@/lib/entity-scope";
+
 import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/person/$key")({
@@ -19,16 +20,21 @@ function PersonPage() {
 
   const { rows, anyLoading, anyFetching, refetchAll } = useAgentSources();
 
-  const needle = decoded.toLowerCase();
+  const norm = (s: string) => s.toLowerCase().replace(/[\s\-_.]+/g, " ").trim();
+  const needle = norm(decoded);
+  const isEmail = needle.includes("@");
   const scoped = useMemo(() => {
-    return rows
-      .filter((r) => {
-        const n = personName(r).toLowerCase();
-        const e = personEmail(r).toLowerCase();
-        return n === needle || e === needle || (needle.includes("@") ? e.includes(needle) : n.includes(needle));
-      })
-      .map((r, i) => toScopedRow(r, i));
-  }, [rows, needle]);
+    const match = (r: Row) => {
+      const n = norm(personName(r));
+      const e = norm(personEmail(r));
+      if (isEmail) return e === needle || e.includes(needle);
+      return n === needle || e === needle || (n && (n.includes(needle) || needle.includes(n)));
+    };
+    const exact = rows.filter((r) => norm(personName(r)) === needle || norm(personEmail(r)) === needle);
+    const chosen = exact.length ? exact : rows.filter(match);
+    return chosen.map((r, i) => toScopedRow(r, i));
+  }, [rows, needle, isEmail]);
+
 
   // Pick canonical display info from the first matching row.
   const first = scoped[0]?.row;
