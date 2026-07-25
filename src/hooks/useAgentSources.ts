@@ -21,6 +21,8 @@ import { FALLBACK_PROJECTS, type AgentProject } from "@/lib/agent-registry.funct
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow } from "@/lib/person-resolver";
+import { useQaScenario } from "@/hooks/useQaScenario";
+import { buildQaPayload } from "@/lib/qa-fixtures";
 import type { Row } from "@/lib/entity-scope";
 
 // Match AgentDashboard.AUTO_REFRESH_MS exactly so entity pages share the
@@ -59,6 +61,7 @@ export function useAgentSources() {
   const fetchUrl = useServerFn(fetchInsightUrl);
   const scope = useAgentScope();
   const { directory: profileDir } = useProfileDirectory();
+  const [qaScenario] = useQaScenario();
 
   // Same source list the dashboard uses — no registry override.
   const allProjects: AgentProject[] = useMemo(() => FALLBACK_PROJECTS, []);
@@ -88,13 +91,20 @@ export function useAgentSources() {
     })),
   });
 
-  const rawSources = queries.map((q, i) => ({
-    project: projects[i],
-    payload: (q.data as { payload?: SourcePayload } | undefined)?.payload,
-    isFetching: q.isFetching,
-    isLoading: q.isLoading,
-    isError: q.isError,
-  }));
+  const rawSources = queries.map((q, i) => {
+    const project = projects[i];
+    const livePayload = (q.data as { payload?: SourcePayload } | undefined)?.payload;
+    // QA override: swap live payload for the fixture BEFORE decoration/scoping
+    // so downstream consumers (dashboard, alerts, KPIs, briefings) all agree.
+    const qaPayload = qaScenario === "off" ? null : buildQaPayload(qaScenario, project);
+    return {
+      project,
+      payload: qaPayload ?? livePayload,
+      isFetching: qaScenario === "off" ? q.isFetching : false,
+      isLoading: qaScenario === "off" ? q.isLoading : false,
+      isError: qaScenario === "off" ? q.isError : false,
+    };
+  });
 
   // Same person-decoration the dashboard applies to every source row.
   const sources = useMemo(() => {
@@ -118,7 +128,7 @@ export function useAgentSources() {
         : s
     ));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir]);
+  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, qaScenario]);
 
   // Pick up the dashboard's persisted focus so detail pages reflect the
   // exact slice the user is looking at on /agent.
@@ -174,6 +184,7 @@ export function useAgentSources() {
     focusPerson,
     focusDept,
     canFocus,
+    qaScenario,
   ]);
 
   const anyLoading = queries.some((q) => q.isLoading);
