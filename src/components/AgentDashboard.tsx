@@ -506,11 +506,13 @@ function derive(payload: Payload | undefined) {
         stage: pick(r, "Stages", "Stages of Process") || "—",
         tat, taken,
         ratio: tat > 0 ? taken / tat : 0,
+        row: r,
       };
     })
     .filter(a => a.tat > 0 && a.ratio >= 1.8)
     .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 6);
+
 
 
   return {
@@ -2705,26 +2707,34 @@ export default function AgentDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {d.anomalies.map((a, i) => (
-                  <Link
-                    key={i}
-                    to="/agent/stage/$key"
-                    params={{ key: encodeEntityKey(a.stage) }}
-                    className="block"
-                  >
-                    <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
-                      <div className="flex items-start gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{a.activity}</div>
-                          <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                {d.anomalies.map((a, i) => {
+                  const rowKey = encodeRowKey({
+                    project: String((a.row as Row)?.["__project"] ?? payload?.project ?? ""),
+                    srNo: String((a.row as Row)?.["Sr. No."] ?? (a.row as Row)?.["Sr No"] ?? (a.row as Row)?.["ID"] ?? ""),
+                    activity: a.activity || "",
+                  });
+                  return (
+                    <Link
+                      key={i}
+                      to="/agent/row/$key"
+                      params={{ key: rowKey }}
+                      className="block"
+                    >
+                      <div className="rounded-lg border border-border/60 p-2.5 transition hover:bg-muted/40">
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">{a.activity}</div>
+                            <div className="text-[11px] text-muted-foreground">{a.person} · {a.stage}</div>
+                          </div>
+                          <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
+                            {a.ratio.toFixed(1)}×
+                          </Badge>
                         </div>
-                        <Badge className="shrink-0 bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30" variant="outline">
-                          {a.ratio.toFixed(1)}×
-                        </Badge>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  );
+                })}
+
                 {d.anomalies.length === 0 && <p className="text-xs text-muted-foreground">No anomalies detected.</p>}
               </CardContent>
             </Card>
