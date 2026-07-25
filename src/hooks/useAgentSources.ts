@@ -61,6 +61,7 @@ export function useAgentSources() {
   const fetchUrl = useServerFn(fetchInsightUrl);
   const scope = useAgentScope();
   const { directory: profileDir } = useProfileDirectory();
+  const [qaScenario] = useQaScenario();
 
   // Same source list the dashboard uses — no registry override.
   const allProjects: AgentProject[] = useMemo(() => FALLBACK_PROJECTS, []);
