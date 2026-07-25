@@ -184,6 +184,7 @@ export function useAgentSources() {
     focusPerson,
     focusDept,
     canFocus,
+    qaScenario,
   ]);
 
   const anyLoading = queries.some((q) => q.isLoading);
