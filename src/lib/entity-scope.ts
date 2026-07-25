@@ -133,10 +133,33 @@ export function decodeRowKey(key: string): RowIdent {
   return { project, srNo, activity: rest.join("::") };
 }
 
-/** Match a source row against a decoded ident. Falls back to activity if Sr. No. is blank. */
+/** Normalize identity strings so tiny drift (case, punctuation, whitespace,
+ * leading zeros on Sr. No.) doesn't break row-key matching from dashboard
+ * cards. Mirrors the fuzzy-normalize logic used by stage/person routes. */
+function normIdent(s: string): string {
+  return String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()]+/g, " ").trim();
+}
+function normSrNo(s: string): string {
+  const t = String(s ?? "").trim().replace(/^0+/, "");
+  return t.toLowerCase();
+}
+
+/** Match a source row against a decoded ident. Falls back to activity if Sr. No. is blank.
+ * All comparisons are normalized (case/whitespace/punctuation-insensitive) so
+ * dashboard card links resolve even when sheet values have minor drift. */
 export function rowMatchesIdent(r: Row, ident: RowIdent, projectLabel?: string): boolean {
   const id = rowIdent(r, projectLabel);
-  if (ident.project && id.project && id.project !== ident.project) return false;
-  if (ident.srNo && id.srNo) return id.srNo === ident.srNo;
-  return !!ident.activity && id.activity === ident.activity;
+  const wantProject = normIdent(ident.project);
+  const gotProject = normIdent(id.project);
+  if (wantProject && gotProject && wantProject !== gotProject) {
+    // allow contains-match either direction (e.g. "Himachal" vs "Himachal Pradesh")
+    if (!gotProject.includes(wantProject) && !wantProject.includes(gotProject)) return false;
+  }
+  const wantSr = normSrNo(ident.srNo);
+  const gotSr = normSrNo(id.srNo);
+  if (wantSr && gotSr) return wantSr === gotSr;
+  const wantAct = normIdent(ident.activity);
+  const gotAct = normIdent(id.activity);
+  if (!wantAct) return false;
+  return gotAct === wantAct || (!!gotAct && (gotAct.includes(wantAct) || wantAct.includes(gotAct)));
 }
