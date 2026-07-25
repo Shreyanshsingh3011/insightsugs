@@ -315,6 +315,7 @@ function AuthLayout() {
           </Button>
         </header>
         <Outlet />
+        <QaDataSwitcher />
       </div>
 
       {/* Mobile drawer */}
