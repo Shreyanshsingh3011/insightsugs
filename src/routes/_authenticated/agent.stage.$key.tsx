@@ -14,12 +14,14 @@ function StagePage() {
   const decoded = useMemo(() => { try { return decodeKey(key); } catch { return key; } }, [key]);
 
   const { rows, anyLoading, anyFetching, refetchAll } = useAgentSources();
-  const needle = decoded.toLowerCase();
+  const norm = (s: string) => s.toLowerCase().replace(/[\s\-_/]+/g, " ").trim();
+  const needle = norm(decoded);
 
   const scoped = useMemo(() => rows
-    .filter((r) => stageName(r).toLowerCase() === needle)
+    .filter((r) => norm(stageName(r)) === needle)
     .map((r, i) => toScopedRow(r, i)),
   [rows, needle]);
+
 
   const projects = new Set(scoped.map((r) => r.project));
   const people = new Set(scoped.map((r) => r.person).filter((p) => p && p !== "Unassigned"));
