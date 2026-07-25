@@ -91,13 +91,20 @@ export function useAgentSources() {
     })),
   });
 
-  const rawSources = queries.map((q, i) => ({
-    project: projects[i],
-    payload: (q.data as { payload?: SourcePayload } | undefined)?.payload,
-    isFetching: q.isFetching,
-    isLoading: q.isLoading,
-    isError: q.isError,
-  }));
+  const rawSources = queries.map((q, i) => {
+    const project = projects[i];
+    const livePayload = (q.data as { payload?: SourcePayload } | undefined)?.payload;
+    // QA override: swap live payload for the fixture BEFORE decoration/scoping
+    // so downstream consumers (dashboard, alerts, KPIs, briefings) all agree.
+    const qaPayload = qaScenario === "off" ? null : buildQaPayload(qaScenario, project);
+    return {
+      project,
+      payload: qaPayload ?? livePayload,
+      isFetching: qaScenario === "off" ? q.isFetching : false,
+      isLoading: qaScenario === "off" ? q.isLoading : false,
+      isError: qaScenario === "off" ? q.isError : false,
+    };
+  });
 
   // Same person-decoration the dashboard applies to every source row.
   const sources = useMemo(() => {
