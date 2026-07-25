@@ -14,8 +14,22 @@ function ProjectPage() {
   const { projectId } = Route.useParams();
   const { projects, sources, anyLoading, anyFetching, refetchAll } = useAgentSources();
 
-  const project = projects.find((p) => p.id === projectId);
-  const src = sources.find((s) => s.project.id === projectId);
+  const norm = (s: string) => String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()]+/g, " ").trim();
+  const needle = norm(projectId);
+  const project =
+    projects.find((p) => p.id === projectId) ||
+    projects.find((p) => norm(p.id) === needle || norm(p.label) === needle) ||
+    projects.find((p) => {
+      const a = norm(p.label), b = norm(p.id);
+      return (a && (a.includes(needle) || needle.includes(a))) || (b && (b.includes(needle) || needle.includes(b)));
+    });
+  const src =
+    sources.find((s) => s.project.id === (project?.id ?? projectId)) ||
+    sources.find((s) => norm(s.project.label) === needle) ||
+    sources.find((s) => {
+      const a = norm(s.project.label);
+      return a && (a.includes(needle) || needle.includes(a));
+    });
   // Use canonical project label (e.g. "Himachal") — the connector string is
   // often generic ("Google Sheet — public CSV") and breaks row-key matching.
   const label = project?.label || projectId;
