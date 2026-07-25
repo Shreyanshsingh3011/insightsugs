@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { NotificationsBell } from "@/components/NotificationsBell";
 import { ShortcutsDialog } from "@/components/ShortcutsDialog";
+import { QaDataSwitcher } from "@/components/QaDataSwitcher";
 import {
   LogOut, LayoutDashboard, ListChecks, FolderKanban, Users, ScrollText, Bell,
   Settings, Sun, Moon, FileText, Sparkles, Sheet as SheetIcon,
