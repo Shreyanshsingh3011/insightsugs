@@ -2604,11 +2604,8 @@ export const generateChart = createServerFn({ method: "POST" })
     const skipped: Array<{ sheet: string; reason: string }> = [];
 
     for (const r of regs ?? []) {
-      const { count } = await supabase
-        .from("sheet_rows")
-        .select("row_index", { count: "exact", head: true })
-        .eq("sheet_registry_id", r.id);
-      const total = count ?? 0;
+      const total = await countSheetRows(supabase, r.id);
+
       if (!total) {
         skipped.push({ sheet: r.display_name, reason: "no rows" });
         continue;
