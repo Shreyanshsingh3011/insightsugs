@@ -7,6 +7,8 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { callEmergent } from "@/lib/emergent-client";
 import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 import { isTransientDataApiError } from "@/lib/transient-errors";
+import { countSheetRows } from "@/lib/sheet-row-count.server";
+
 import {
   emailFromJwtPayload,
   isBootstrapSuperAdminEmail,
