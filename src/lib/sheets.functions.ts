@@ -1520,11 +1520,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
     };
 
     for (const r of regs) {
-      let { count } = await supabase
-        .from("sheet_rows")
-        .select("row_index", { count: "exact", head: true })
-        .eq("sheet_registry_id", r.id);
-      let total = count ?? 0;
+      let total = await countSheetRows(supabase, r.id);
       let fetchTarget = Math.min(total, FULL_FETCH_CAP);
       let allRows = await fetchStoredRows(r.id, fetchTarget);
 
@@ -1532,15 +1528,11 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       // repair it on demand before answering so Copilot can see real columns.
       if (storedRowsLookMisread(allRows.slice(0, 12))) {
         await syncRowsInternal(supabase, userId, r.id);
-        const recount = await supabase
-          .from("sheet_rows")
-          .select("row_index", { count: "exact", head: true })
-          .eq("sheet_registry_id", r.id);
-        count = recount.count;
-        total = count ?? 0;
+        total = await countSheetRows(supabase, r.id);
         fetchTarget = Math.min(total, FULL_FETCH_CAP);
         allRows = await fetchStoredRows(r.id, fetchTarget);
       }
+
 
       sources.push({
         id: r.id,
