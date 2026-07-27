@@ -37,6 +37,8 @@ import {
 import { cn } from "@/lib/utils";
 import { CitationPanel, type CitationTarget } from "@/components/CitationPanel";
 import { REFUSAL_PHRASE, extractCitations, parseRefusal } from "@/lib/citation-parser";
+import { CitationChips } from "@/components/copilot/CitationChips";
+
 
 export type AgentChatContext = {
   projectId?: string;
