@@ -1210,10 +1210,9 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .eq("sheet_registry_id", data.registryId)
       .order("position", { ascending: true });
 
-    const { count } = await supabase
-      .from("sheet_rows")
-      .select("row_index", { count: "exact", head: true })
-      .eq("sheet_registry_id", data.registryId);
+    // Reuse the registry's maintained row_count instead of a full COUNT scan.
+    const count = await countSheetRows(supabase, data.registryId, reg.row_count);
+
 
     const { data: rows } = await supabase
       .from("sheet_rows")
