@@ -144,25 +144,43 @@ export async function getSheetIndex(
   supabase: any,
   registryId: string,
 ): Promise<SheetIndex> {
-  // Fingerprint = row count + max created_at. Row count alone is unsafe for
-  // sheet refreshes that replace rows with the same length, which made Copilot
-  // answer from stale indexes after uploaded/future sheet changes.
-  const [{ count }, latestRes] = await Promise.all([
-    supabase
-      .from("sheet_rows")
-      .select("row_index", { count: "exact", head: true })
-      .eq("sheet_registry_id", registryId),
-    supabase
-      .from("sheet_rows")
-      .select("created_at")
-      .eq("sheet_registry_id", registryId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-  const rowCount = count ?? 0;
-  const newest = latestRes?.data?.created_at ?? "none";
+  // Fingerprint = row count + content hash of the last sync. Row count alone
+  // is unsafe for sheet refreshes that replace rows with the same length,
+  // which made Copilot answer from stale indexes after sheet changes.
+  //
+  // Both values live on `sheet_registry` and are written by every sync, so a
+  // single primary-key lookup replaces a full COUNT scan plus an unindexed
+  // `ORDER BY created_at DESC` sort over sheet_rows.
+  const { data: regMeta } = await supabase
+    .from("sheet_registry")
+    .select("row_count, last_content_hash, last_refreshed_at")
+    .eq("id", registryId)
+    .maybeSingle();
+
+  let rowCount = typeof regMeta?.row_count === "number" ? regMeta.row_count : null;
+  let newest: string = regMeta?.last_content_hash ?? regMeta?.last_refreshed_at ?? "none";
+
+  if (rowCount === null) {
+    // Never-synced sheet: fall back to counting rows directly.
+    const [{ count }, latestRes] = await Promise.all([
+      supabase
+        .from("sheet_rows")
+        .select("row_index", { count: "exact", head: true })
+        .eq("sheet_registry_id", registryId),
+      supabase
+        .from("sheet_rows")
+        .select("created_at")
+        .eq("sheet_registry_id", registryId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    rowCount = count ?? 0;
+    newest = latestRes?.data?.created_at ?? "none";
+  }
+
   const cacheKey = `${registryId}:${rowCount}:${newest}`;
+
 
   const cached = CACHE.get(cacheKey);
   if (cached) {
