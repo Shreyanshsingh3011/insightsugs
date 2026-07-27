@@ -16,11 +16,9 @@ export async function ensureSheetEmbeddings(
   const { embedTexts, contentHash } = await import("./embeddings.server");
   const batchCap = opts?.batchCap ?? 2000;
 
-  const { count: totalCount } = await supabase
-    .from("sheet_rows")
-    .select("row_index", { count: "exact", head: true })
-    .eq("sheet_registry_id", registryId);
-  const total = totalCount ?? 0;
+  const { countSheetRows } = await import("./sheet-row-count.server");
+  const total = await countSheetRows(supabase, registryId);
+
   if (total === 0) return { embedded: 0, total: 0, remaining: 0, refreshed: 0 };
 
   // Pull existing (row_index, content_hash) so we can detect changed rows too.

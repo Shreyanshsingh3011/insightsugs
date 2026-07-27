@@ -7,6 +7,8 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { callEmergent } from "@/lib/emergent-client";
 import { isTerminalRow, statusBucketForRow } from "@/lib/status-utils";
 import { isTransientDataApiError } from "@/lib/transient-errors";
+import { countSheetRows } from "@/lib/sheet-row-count.server";
+
 import {
   emailFromJwtPayload,
   isBootstrapSuperAdminEmail,
@@ -1210,10 +1212,9 @@ export const getSheetDetail = createServerFn({ method: "POST" })
       .eq("sheet_registry_id", data.registryId)
       .order("position", { ascending: true });
 
-    const { count } = await supabase
-      .from("sheet_rows")
-      .select("row_index", { count: "exact", head: true })
-      .eq("sheet_registry_id", data.registryId);
+    // Reuse the registry's maintained row_count instead of a full COUNT scan.
+    const count = await countSheetRows(supabase, data.registryId, reg.row_count);
+
 
     const { data: rows } = await supabase
       .from("sheet_rows")
@@ -1519,11 +1520,7 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
     };
 
     for (const r of regs) {
-      let { count } = await supabase
-        .from("sheet_rows")
-        .select("row_index", { count: "exact", head: true })
-        .eq("sheet_registry_id", r.id);
-      let total = count ?? 0;
+      let total = await countSheetRows(supabase, r.id);
       let fetchTarget = Math.min(total, FULL_FETCH_CAP);
       let allRows = await fetchStoredRows(r.id, fetchTarget);
 
@@ -1531,15 +1528,11 @@ const _legacyAskCopilotDeprecated = createServerFn({ method: "POST" })
       // repair it on demand before answering so Copilot can see real columns.
       if (storedRowsLookMisread(allRows.slice(0, 12))) {
         await syncRowsInternal(supabase, userId, r.id);
-        const recount = await supabase
-          .from("sheet_rows")
-          .select("row_index", { count: "exact", head: true })
-          .eq("sheet_registry_id", r.id);
-        count = recount.count;
-        total = count ?? 0;
+        total = await countSheetRows(supabase, r.id);
         fetchTarget = Math.min(total, FULL_FETCH_CAP);
         allRows = await fetchStoredRows(r.id, fetchTarget);
       }
+
 
       sources.push({
         id: r.id,
@@ -2611,11 +2604,8 @@ export const generateChart = createServerFn({ method: "POST" })
     const skipped: Array<{ sheet: string; reason: string }> = [];
 
     for (const r of regs ?? []) {
-      const { count } = await supabase
-        .from("sheet_rows")
-        .select("row_index", { count: "exact", head: true })
-        .eq("sheet_registry_id", r.id);
-      const total = count ?? 0;
+      const total = await countSheetRows(supabase, r.id);
+
       if (!total) {
         skipped.push({ sheet: r.display_name, reason: "no rows" });
         continue;
