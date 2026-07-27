@@ -294,66 +294,20 @@ export default function AgentChatWidget({
                             </div>
                           )}
                           {cites.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                                Sources
-                              </span>
-                              {cites.map((c, idx) => {
-                                if (c.kind === "sheet") {
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={`s${idx}`}
-                                      data-testid="citation-chip-sheet"
-                                      onClick={() =>
-                                        setSelectedCitation({ kind: "sheet", label: c.label, row: c.row })
-                                      }
-                                      className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[10px] text-primary hover:bg-primary/10 transition"
-                                      title={`Open sheet "${c.label}" row ${c.row}`}
-                                    >
-                                      <FileText className="h-3 w-3" aria-hidden />
-                                      {c.label} · row {c.row}
-                                    </button>
-                                  );
-                                }
-                                if (c.kind === "doc") {
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={`d${idx}`}
-                                      data-testid="citation-chip-doc"
-                                      onClick={() =>
-                                        setSelectedCitation({ kind: "doc", label: c.label, page: c.page })
-                                      }
-                                      className="inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/5 px-2 py-0.5 text-[10px] text-foreground hover:bg-accent/10 transition"
-                                      title={`Open document "${c.label}" p.${c.page}`}
-                                    >
-                                      <FileText className="h-3 w-3" aria-hidden />
-                                      {c.label} · p.{c.page}
-                                    </button>
-                                  );
-                                }
+                            <CitationChips
+                              citations={cites}
+                              selected={selectedCitation}
+                              onSelect={setSelectedCitation}
+                              resolveDashboardValue={(field) => {
                                 const ctxSnap = contextRef.current as unknown as Record<string, unknown>;
-                                const val =
-                                  ctxSnap?.[c.field] ??
-                                  (ctxSnap?.totals as Record<string, unknown> | undefined)?.[c.field];
                                 return (
-                                  <button
-                                    type="button"
-                                    key={`x${idx}`}
-                                    data-testid="citation-chip-dashboard"
-                                    onClick={() =>
-                                      setSelectedCitation({ kind: "dashboard", field: c.field, value: val })
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/30 bg-muted/40 px-2 py-0.5 text-[10px] text-foreground hover:bg-muted transition"
-                                    title={`Inspect dashboard field "${c.field}"`}
-                                  >
-                                    dashboard · {c.field}
-                                  </button>
+                                  ctxSnap?.[field] ??
+                                  (ctxSnap?.totals as Record<string, unknown> | undefined)?.[field]
                                 );
-                              })}
-                            </div>
+                              }}
+                            />
                           )}
+
                         </div>
                       );
                     })()}
