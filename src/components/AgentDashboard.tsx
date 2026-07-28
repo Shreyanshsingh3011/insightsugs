@@ -939,13 +939,17 @@ export default function AgentDashboard() {
   const errorSigRef = useRef<string>("");
   const warnSigRef = useRef<string>("");
   useEffect(() => {
-    const errs = queries
-      .map((q, i) => (q.isError ? `${projects[i]?.label}: ${(q.error as Error)?.message ?? "fetch failed"}` : null))
-      .filter(Boolean) as string[];
+    const errored = queries
+      .map((q, i) => (q.isError ? { id: projects[i]?.id ?? String(i), msg: `${projects[i]?.label}: ${(q.error as Error)?.message ?? "fetch failed"}` } : null))
+      .filter(Boolean) as { id: string; msg: string }[];
+    const errs = errored.map(e => e.msg);
     const sig = errs.join("|");
     if (sig && sig !== errorSigRef.current) {
       errorSigRef.current = sig;
-      errs.slice(0, 3).forEach(msg => toast.error(msg, { duration: 8000 }));
+      // Stable per-project toast id so a repeatedly failing source replaces its
+      // own toast instead of stacking a new one on every refetch/remount.
+      errored.slice(0, 3).forEach(e => toast.error(e.msg, { id: `src-err-${e.id}`, duration: 8000 }));
+
       // Record a failure audit row per errored project.
       queries.forEach((q, i) => {
         if (!q.isError) return;
