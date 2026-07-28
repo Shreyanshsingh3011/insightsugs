@@ -238,11 +238,34 @@ export const fetchInsightUrl = createServerFn({ method: "POST" })
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.warn(`[insights-proxy] Google Sheets public CSV failed; trying connector fallback. ${msg}`);
-        payload = await fetchGoogleSheetRows(url, data.tab);
-        payload.warning = payload.warning ?? `Connector fallback used: ${msg}`;
+        try {
+          payload = await fetchGoogleSheetRows(url, data.tab);
+          payload.warning = payload.warning ?? `Connector fallback used: ${msg}`;
+        } catch (connErr) {
+          // Both paths failed (typically the spreadsheet is no longer shared
+          // publicly and the connector account lacks access → 403). Return a
+          // degraded payload instead of throwing so the dashboard keeps
+          // rendering cached/other sources instead of blank-screening.
+          const cMsg = connErr instanceof Error ? connErr.message : String(connErr);
+          console.warn(`[insights-proxy] Google Sheets connector fallback failed: ${cMsg}`);
+          return {
+            payload: {
+              connector: "Google Sheet — unavailable",
+              data: [],
+              generated_at: new Date().toISOString(),
+              warning: `Sheet is not accessible. Public CSV: ${msg}. Connector: ${cMsg}`,
+              degraded: true,
+            },
+            fetchedAt: Date.now(),
+            fetchMs: Date.now() - started,
+            url: url.toString(),
+            degraded: true,
+          };
+        }
       }
       return { payload, fetchedAt: Date.now(), fetchMs: Date.now() - started, url: url.toString() };
     }
+
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 55_000);
