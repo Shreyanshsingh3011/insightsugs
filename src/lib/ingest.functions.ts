@@ -1,3 +1,14 @@
+/**
+ * Server functions for ingesting user-uploaded tables (CSV/XLSX/paste) as
+ * new sheet_registry entries, independent of the Google Sheets sync path.
+ * Uploaded datasets are tagged with an `apps_script_url` sentinel of the
+ * form `upload://<label>/<uuid>` so refreshSheet (sheets.functions.ts) can
+ * detect them and prompt for re-upload instead of trying to re-fetch a URL.
+ *
+ * All Supabase writes go through `withSchemaHeal` (schema-retry.ts) so a
+ * stale PostgREST schema cache (PGRST002/205) triggers a cache reload +
+ * retry instead of surfacing a hard failure to the user.
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

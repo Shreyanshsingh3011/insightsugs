@@ -49,6 +49,7 @@ function popularityWeight(popularity: number): number {
 
 // ---------- ranking primitives ----------
 
+/** A single clarification choice offered to the user (sheet, column, time window, entity, or document). */
 export type RankableOption = {
   /** Human-facing label used verbatim in the clarify question. */
   label: string;
@@ -60,6 +61,7 @@ export type RankableOption = {
   popularity?: number;
 };
 
+/** Minimal sheet metadata needed to rank/label clarify options. */
 export type CatalogSheet = {
   id: string;
   name: string;
@@ -67,6 +69,7 @@ export type CatalogSheet = {
   columns: string[];
 };
 
+/** Minimal document metadata needed to rank/label clarify options. */
 export type CatalogDoc = {
   id: string;
   name: string;
@@ -81,6 +84,7 @@ const TIME_WINDOWS: RankableOption[] = [
   { label: "Year to date", kind: "time_window", popularity: 1 },
 ];
 
+/** Score, sort, dedupe, and cap a pool of options by relevance to `query`. */
 function rank(query: string, options: RankableOption[], limit = 4): RankableOption[] {
   const scored = options.map((o) => {
     const sim = tokenSimilarity(o.label, query);
@@ -107,6 +111,7 @@ function rank(query: string, options: RankableOption[], limit = 4): RankableOpti
 
 // ---------- public option builder ----------
 
+/** Category of ambiguity that triggered a clarifying question. */
 export type AmbiguityKind =
   | "sheet_unspecified"     // multi-sheet, no sheet named
   | "column_unspecified"    // metric/column phrase maps to multiple columns
@@ -114,6 +119,10 @@ export type AmbiguityKind =
   | "entity_ambiguous"      // an ID/name matches multiple rows
   | "generic";
 
+/**
+ * Assemble and rank the candidate options for a clarify prompt from the
+ * requested ambiguity kinds (sheet/column/time/entity) against the catalog.
+ */
 export function buildRankedOptions(input: {
   question: string;
   ambiguityKinds: AmbiguityKind[];
@@ -207,6 +216,7 @@ export function matchReplyToOption(
 
 // ---------- persistence ----------
 
+/** Structural subset of the Supabase client this module depends on. */
 type SupabaseLike = {
   from: (table: string) => any;
 };
@@ -214,6 +224,11 @@ type SupabaseLike = {
 const scopeKey = (sheetIds: string[], documentIds: string[]) =>
   [...sheetIds].sort().join(",") + "|" + [...documentIds].sort().join(",");
 
+/**
+ * Look up the most recent pending/resolved clarify session for this
+ * user+scope within the TTL window, so a follow-up reply or a previously
+ * resolved scope can be reused without re-asking.
+ */
 export async function loadRecentClarifySession(
   supabase: SupabaseLike,
   userId: string,
@@ -276,6 +291,7 @@ export async function loadRecentClarifySession(
   };
 }
 
+/** Persist a newly-asked clarifying question and its offered options. */
 export async function savePendingClarifySession(
   supabase: SupabaseLike,
   userId: string,
@@ -298,6 +314,7 @@ export async function savePendingClarifySession(
   });
 }
 
+/** Mark a pending clarify session resolved and store the scope it resolved to. */
 export async function markClarifySessionResolved(
   supabase: SupabaseLike,
   sessionId: string,

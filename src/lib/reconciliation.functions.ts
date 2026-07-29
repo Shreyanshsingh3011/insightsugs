@@ -1,3 +1,12 @@
+/**
+ * Server function that finds the best-matching material-reconciliation sheet
+ * for the current user (scored by sheet_type + column-name heuristics) and
+ * runs computeReconciliation (see ./reconciliation.ts) over its rows.
+ *
+ * Returns `summary: null` when no sheet scores highly enough (matchScore < 2)
+ * so the UI can render an explicit "no reconciliation-shaped sheet found"
+ * state instead of guessing.
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

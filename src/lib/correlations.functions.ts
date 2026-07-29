@@ -42,6 +42,11 @@ export type PickerEntity = {
   meta?: { sheetRegistryId?: string; rowIndex?: number };
 };
 
+/**
+ * Typeahead search across activities, projects, sheet rows, and people for
+ * the Correlations picker UI. Runs 4 independent ilike queries in parallel
+ * and merges results — no ranking/dedupe across kinds, the UI groups by kind.
+ */
 export const listCorrelationEntities = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: { query?: string; limit?: number } = {}) => ({
@@ -92,6 +97,13 @@ export const listCorrelationEntities = createServerFn({ method: "POST" })
 // ---------------------------------------------------------------------------
 // Main correlation entry
 // ---------------------------------------------------------------------------
+/**
+ * Given a focus entity (activity/sheet_row/project/person), finds related
+ * entities via exact SQL joins (crossSheet/crossTask/crossProject, backed by
+ * Postgres RPCs) and tops up with embedding similarity search only when a
+ * bucket has fewer than MIN_PER_BUCKET exact hits — keeps the common case
+ * fast and free of embedding calls while still covering sparse data.
+ */
 export const getCorrelations = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: { kind: string; id: string; rowIndex?: number }) => ({

@@ -1,3 +1,9 @@
+/**
+ * Builds a merged, time-ordered timeline of alert dispatches, replies, and
+ * status changes for a single source record (matched loosely by activity
+ * title + optional stage). Used by the row-detail drawer to show "what
+ * happened around this row" without a dedicated timeline table.
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

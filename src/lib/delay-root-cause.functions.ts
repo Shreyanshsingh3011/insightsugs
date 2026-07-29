@@ -235,6 +235,12 @@ const InvestigateInput = z.object({
   alert_id: z.string().uuid().optional(),
 });
 
+/**
+ * Admin-triggered entry point: runs the root-cause investigation for one
+ * draft or alert (see investigateCore) and returns the diagnosis. Requires
+ * admin/super-admin role — this calls out to a paid AI model and writes to
+ * alerts/agent_drafts, so it isn't exposed to ordinary users.
+ */
 export const investigateDelay = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => InvestigateInput.parse(d ?? {}))

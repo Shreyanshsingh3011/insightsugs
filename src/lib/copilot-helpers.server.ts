@@ -6,6 +6,7 @@
 
 import { isTransientDataApiError } from "./transient-errors";
 
+/** Merge a sheet_rows record's `canonical` + `extras` JSON columns into one flat object (extras wins on key collision). */
 export function mergeRow(row: { canonical?: unknown; extras?: unknown }): Record<string, unknown> {
   return {
     ...(((row.canonical as Record<string, unknown>) ?? {})),
@@ -13,6 +14,7 @@ export function mergeRow(row: { canonical?: unknown; extras?: unknown }): Record
   };
 }
 
+/** Render a row as a compact "col: value | col: value" string for embeddings/prompts, capped at 1200 chars. */
 export function stringifyRow(data: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(data)) {
@@ -22,10 +24,12 @@ export function stringifyRow(data: Record<string, unknown>): string {
   return parts.join(" | ").slice(0, 1200);
 }
 
+/** Lowercase + collapse whitespace so sheet/doc display names compare equal regardless of casing/spacing. */
 export function normalizeCitationLabel(label: string): string {
   return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** Parse a citation row spec ("12", "3-9", "1,4,7") into an explicit list of row numbers, or null if malformed/too large a range. */
 export function parseCitationRowSpec(spec: string): number[] | null {
   const clean = spec.trim();
   if (/^\d+$/.test(clean)) return [Number(clean)];
@@ -47,6 +51,7 @@ export function parseCitationRowSpec(spec: string): number[] | null {
   return null;
 }
 
+/** True when an AI gateway error is a billing/quota/rate-limit condition (402/429/5xx-ish), used to trigger provider fallback. */
 export function isAiBillingOrQuotaError(error: unknown): boolean {
   const err = error as { statusCode?: number; status?: number; message?: string; cause?: unknown };
   const status = err?.statusCode ?? err?.status;
@@ -64,6 +69,10 @@ export function isAiBillingOrQuotaError(error: unknown): boolean {
 // Cap high enough to cover the largest sheets we ingest (stock/store
 // summaries ~50k rows). Copilot's deterministic + keyword tools scan the
 // full row set, so a truncated cap = silently missing answers on big sheets.
+/**
+ * Page through every row of a sheet (up to `cap`), merging canonical+extras
+ * per row. Retries transient PostgREST/data-API errors with backoff.
+ */
 export async function fetchAllRows(
   supabase: any,
   registryId: string,
@@ -100,6 +109,7 @@ export async function fetchAllRows(
   return out;
 }
 
+/** Page through every chunk of the given documents (up to `cap`), retrying transient data-API errors. */
 export async function fetchAllDocumentChunks(
   supabase: any,
   documentIds: string[],

@@ -1,3 +1,20 @@
+/**
+ * Server functions that build the live DashboardData shape directly from
+ * registered Supabase sheet_registry / sheet_rows, bypassing the static
+ * DATA_URL export. This is the fallback path used by dashboard-data.ts
+ * when the public export endpoint is empty or unreachable.
+ *
+ * Gotchas:
+ *  - `normalizeRow` re-derives status/overdue/TAT from raw columns using the
+ *    same aliasing rules as status-utils.ts / person-resolver.ts, so results
+ *    stay consistent with the Agent Dashboard even though this path never
+ *    calls computeRowStatus directly.
+ *  - `buildDashboardFromSheets` accepts BOTH registry UUIDs and legacy slug
+ *    ids (e.g. "nit58" from FALLBACK_PROJECTS) but only UUIDs are valid keys
+ *    into sheet_registry — non-UUID ids are silently filtered out.
+ *  - Flags are skipped for rows with no identifiable activity/owner/dept, or
+ *    "not started" rows with no delay signal, to avoid unusable phantom flags.
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

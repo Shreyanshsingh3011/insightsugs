@@ -14,6 +14,7 @@ type DocMeta = { id: string; name: string };
 type StoredRow = { row_index: number; data: Record<string, unknown> };
 type DocChunk = { document_id: string; page_no: number | null; content: string | null };
 
+/** Explanation of how the deterministic engine searched a source (shown in grounding trace). */
 export type CopilotRetrievalDiagnostic = {
   sourceId: string;
   sourceName: string;
@@ -24,6 +25,7 @@ export type CopilotRetrievalDiagnostic = {
   columnsSearched?: string[];
 };
 
+/** A sheet row the deterministic engine used to ground its answer. */
 export type DeterministicLedgerRow = {
   kind: "sheet_row";
   registryId: string;
@@ -31,6 +33,7 @@ export type DeterministicLedgerRow = {
   rowIndex: number;
   data: Record<string, unknown>;
 };
+/** A document chunk the deterministic engine used to ground its answer. */
 export type DeterministicLedgerDoc = {
   kind: "doc_chunk";
   documentId: string;
@@ -246,6 +249,12 @@ function scopeMentionRegex(scopeName: string): RegExp | null {
 // short-circuit to the same Auto-Insights output the sheet header shows,
 // so the Copilot answers from the *computed insights* — not from row-name
 // token matching.
+/**
+ * True when a question asks for a broad sheet-wide summary/overview
+ * ("insights", "highlights", "what's in this sheet") rather than a lookup
+ * about a specific row/entity. See inline heuristics for the exceptions
+ * (explain/why shapes, row-scoped asks, targeted "of <name>" tails).
+ */
 export function isInsightShapedQuery(q: string): boolean {
   const s = q.toLowerCase().trim();
 

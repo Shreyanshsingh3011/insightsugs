@@ -1,3 +1,10 @@
+/**
+ * Thin server-fn wrapper around the hosted Emergent dependency-inference
+ * service (see emergent-client.ts). Emergent fetches the Apps Script URL
+ * itself, so this function does no data fetching of its own — it only
+ * forwards the request and normalizes failure into a user-facing message
+ * distinguishing "not configured" vs "temporarily unavailable".
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

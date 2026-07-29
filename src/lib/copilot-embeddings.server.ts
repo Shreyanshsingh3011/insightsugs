@@ -8,6 +8,14 @@ import { mergeRow, stringifyRow } from "./copilot-helpers.server";
 // calls (from copilot questions or the backfill hook) pick up where this
 // one left off, so a huge sheet reaches 100% coverage across a few runs
 // instead of stalling in one request.
+/**
+ * Backfill/refresh row embeddings for one sheet, bounded by `batchCap` so a
+ * single call can't blow past the request time limit on huge sheets.
+ * Resumable: subsequent calls pick up rows that are still missing or whose
+ * content hash changed, and prune embeddings for rows that no longer exist.
+ *
+ * @returns counts of newly embedded, total, remaining, and refreshed rows.
+ */
 export async function ensureSheetEmbeddings(
   supabase: any,
   registryId: string,
