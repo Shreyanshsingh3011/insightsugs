@@ -1,3 +1,7 @@
+// Surfaces the single most relevant citation from a copilot answer as a prominent
+// "Open source" CTA button (distinct from CitationLink's inline per-marker links).
+// Only handles [sheet:...] markers today — doc citations have no viewer route yet,
+// so they're silently skipped and the function returns null.
 import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 

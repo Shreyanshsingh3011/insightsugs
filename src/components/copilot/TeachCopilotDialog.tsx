@@ -21,6 +21,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { saveCopilotSynonym } from "@/lib/copilot-synonyms.functions";
+// Dialog for teaching the copilot a user-specific vocabulary mapping, opened when
+// a query has unmatched terms. Two modes: map a term to a concrete sheet/column/value
+// (helps entity/column resolution), or map a phrase to a canonical intent verb (helps
+// query routing, e.g. teaching "crunch" -> distribution). Persists via the
+// saveCopilotSynonym server fn and invalidates the "copilot-synonyms" query on success
+// so the next query in this session picks up the new mapping.
 
 type SheetOption = { id: string; label: string };
 type Mode = "column" | "verb";
@@ -42,6 +48,11 @@ const CANONICAL_INTENTS = [
   { value: "list",         label: "List / all" },
 ] as const;
 
+/**
+ * @param unmatchedTerms Terms the router/parser couldn't resolve for the last query;
+ *   the dialog seeds its term field with the first one and offers the rest as quick picks.
+ * @param sheets Sheets available to scope a column/value mapping to.
+ */
 export function TeachCopilotDialog({
   open,
   onOpenChange,
@@ -61,6 +72,8 @@ export function TeachCopilotDialog({
   const [intent, setIntent] = useState<string>("");
   const [note, setNote] = useState("");
 
+  // Reset form state each time the dialog is (re)opened, seeding the term from the
+  // most recent unmatched query term.
   useEffect(() => {
     if (open) {
       setMode("column");

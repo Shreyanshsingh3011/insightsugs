@@ -9,6 +9,14 @@ export type EnabledSource = {
   columns?: string[];
 };
 
+/**
+ * A grounding reference attached to an assistant message, used both to render
+ * clickable citation chips and to verify (see lib/notebook/verify.ts) that the
+ * answer actually points at real data before it's shown as trustworthy.
+ * - "sheet": `row` is a 0-based index into that sheet's rows array (optional —
+ *   omitted when the claim is sheet-level rather than row-level).
+ * - "concern"/"reminder": `id` links back to the source record for jump-to-open.
+ */
 export type Citation =
   | { type: "sheet"; sheet: string; row?: number }
   | { type: "concern"; id?: string }

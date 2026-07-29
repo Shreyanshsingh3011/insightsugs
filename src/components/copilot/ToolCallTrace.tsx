@@ -1,6 +1,11 @@
+// Collapsible list of tool calls (e.g. get_cell, filter_rows, search_docs) the copilot
+// agent made while answering, with per-call timing/success and expandable raw results.
+// Rendered under an assistant message; also consumed by GroundingTracePanel, which
+// pattern-matches on `name` to infer which guardrail rules applied.
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Check, X, Wrench } from "lucide-react";
 
+/** One recorded agent tool invocation, as returned by the copilot backend. */
 export type ToolCall = {
   name: string;
   args: any;
@@ -10,6 +15,7 @@ export type ToolCall = {
   result?: any;
 };
 
+/** Renders nothing when `trace` is empty (e.g. answers served from cache/computed path). */
 export function ToolCallTrace({ trace }: { trace: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -69,6 +75,7 @@ export function ToolCallTrace({ trace }: { trace: ToolCall[] }) {
   );
 }
 
+/** Compact `key="val", key2=1` rendering of tool args for the collapsed summary line. */
 function renderArgs(args: any): string {
   if (args == null) return "";
   if (typeof args !== "object") return String(args);
@@ -80,6 +87,7 @@ function renderArgs(args: any): string {
   return bits.join(", ");
 }
 
+/** JSON.stringify with a length cap so huge tool results don't blow up the DOM. */
 function safeStringify(v: unknown): string {
   try {
     return JSON.stringify(v, null, 2).slice(0, 4000);

@@ -1,3 +1,9 @@
+// Collapsible "Grounding trace" panel shown under a copilot answer, summarizing
+// which sheets/docs were consulted, which columns/derived fields were referenced,
+// and which guardrail rules fired (inferred from tool-call names + citation flags).
+// Purely a presentational aggregation of props already computed elsewhere
+// (ToolCallTrace's tool list, per-source diagnostics, and citation verification);
+// it does no fetching itself and renders nothing if there's nothing to show.
 import { useMemo, useState } from "react";
 import {
   ChevronDown,
@@ -36,6 +42,14 @@ type Diagnostic = {
   reason?: string;
 };
 
+/**
+ * @param sources Retrieved source records (sheet rows / doc chunks) used to answer.
+ * @param diagnostics Per-source lookup diagnostics (rows scanned/matched, missing columns).
+ * @param toolTrace Tool calls the agent made; their names are pattern-matched to infer
+ *   which guardrail "rules" applied (e.g. presence of `get_cell` implies pin-to-cell lookup).
+ * @param citationOk Whether citation verification passed for this answer.
+ * @param unmatchedTerms Query terms that couldn't be matched to columns/values, surfaced as a rule.
+ */
 export function GroundingTracePanel({
   sources,
   diagnostics,
