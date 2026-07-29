@@ -45,6 +45,13 @@ function hoursSince(iso: string | null): number {
   return (Date.now() - new Date(iso).getTime()) / 3_600_000;
 }
 
+/**
+ * Cron entry point: advances pending_actions whose SLA for the current
+ * escalation_tier has elapsed to the next tier (assignee → project admins →
+ * super admins), refreshing severity/days_over and notifying the new tier.
+ * Auto-closes proposals whose underlying activity is already
+ * completed/cancelled. Idempotent: only one tier bump per invocation per row.
+ */
 export async function runEscalationLadder(): Promise<{
   scanned: number;
   escalated: number;

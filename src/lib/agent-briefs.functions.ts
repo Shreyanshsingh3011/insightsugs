@@ -47,6 +47,7 @@ const SummarizeInput = z.object({
 });
 
 
+/** Public shape of summarizeThread's result (mirrors ThreadBriefCore minus the internal match_mode field). */
 export type ThreadBrief = {
   ok: true;
   kind: "concern" | "alert";
@@ -62,6 +63,7 @@ export type ThreadBrief = {
   recommended_decision: string;
 };
 
+/** Auth-scoped wrapper around summarizeThreadCore; strips the internal `match_mode` field before returning to the client. */
 export const summarizeThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => SummarizeInput.parse(input))
@@ -88,6 +90,7 @@ const StatusInput = z.object({
   recipient_email: z.string().email().optional(),
 });
 
+/** Result of generateStatusReport: totals snapshot, top overdue items, AI brief + rendered HTML, and optional email delivery outcome. */
 export type StatusReport = {
   ok: true;
   project: { id: string; name: string };
@@ -115,6 +118,13 @@ export type StatusReport = {
 
 };
 
+/**
+ * Build a project status report (totals, top overdue activities, AI brief,
+ * rendered HTML) and optionally email it. Uses an idempotency key of
+ * `status-report:<project>:<hour>` so repeated clicks within the same hour
+ * don't spam recipients; delivery status can be looked up afterwards via
+ * getStatusReportDelivery.
+ */
 export const generateStatusReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => StatusInput.parse(input))

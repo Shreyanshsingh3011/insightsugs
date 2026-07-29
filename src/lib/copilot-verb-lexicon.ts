@@ -251,13 +251,6 @@ export interface IntentDetection {
  * hits distribution + temporal — both surface in `allMatches`, but the
  * highest-priority one is returned as the primary `intent`.
  */
-/**
- * Detects the canonical intent(s) from a natural-language question.
- *
- * Multi-match: a question like "break down expiring contracts by vendor"
- * hits distribution + temporal — both surface in `allMatches`, but the
- * highest-priority one is returned as the primary `intent`.
- */
 export function detectIntent(question: string): IntentDetection {
   const q = ` ${question.toLowerCase()} `;
   const matches: { intent: CanonicalIntent; phrase: string; priority: number; start: number; end: number }[] = [];
@@ -290,7 +283,6 @@ export function detectIntent(question: string): IntentDetection {
   };
 }
 
-/** Convenience: does the question carry ANY of the given intents? */
 /** Convenience: does the question carry ANY of the given intents? */
 export function hasIntent(detection: IntentDetection, ...wanted: CanonicalIntent[]): boolean {
   const set = new Set(wanted);

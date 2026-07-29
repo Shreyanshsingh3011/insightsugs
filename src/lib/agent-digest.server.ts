@@ -17,6 +17,13 @@ type ProposalRow = {
   payload: Record<string, unknown> | null;
 };
 
+/**
+ * Cron entry point: emails a 24h digest of pending agent proposals to
+ * super admins (all proposals) and project-scoped admins (only proposals
+ * whose payload.project_id they own/are a member of), and optionally
+ * cross-posts a summary to Slack if SLACK_API_KEY + SLACK_DIGEST_CHANNEL
+ * are configured. Uses supabaseAdmin since it must read/notify across users.
+ */
 export async function runAgentDigest(): Promise<{
   proposals: number;
   emails_queued: number;

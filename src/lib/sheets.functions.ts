@@ -1,3 +1,18 @@
+/**
+ * Core sheet ingestion/sync engine: fetches external sheet sources (Google
+ * Apps Script web apps, Emergent connector URLs, or generic JSON APIs),
+ * normalizes their payload shape, proposes/stores column mappings against
+ * CANONICAL_FIELDS (sheets-schemas.ts), and syncs rows into sheet_registry /
+ * sheet_rows. Also powers the dashboard "copilot" query helpers (row counts,
+ * status breakdowns) used by the chat assistant.
+ *
+ * This file is intentionally large — it's the single integration point
+ * between arbitrary external tabular sources and the rest of the app's
+ * canonical row model. Helper functions here (cellText, spreadsheet column
+ * index/label conversion, header-shape detection, etc.) exist to make that
+ * normalization tolerant of messy real-world sheets (merged headers, stray
+ * spreadsheet column letters used as headers, formatted numbers/currency).
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";

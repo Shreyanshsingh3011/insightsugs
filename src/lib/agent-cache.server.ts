@@ -98,6 +98,7 @@ export function ctxFingerprintSync(ctx: unknown): string {
   return fnv1a(stableStringify(shape));
 }
 
+/** Async wrapper around ctxFingerprintSync kept for call sites that await a Promise<string>. */
 export async function ctxFingerprint(ctx: unknown): Promise<string> {
   return ctxFingerprintSync(ctx);
 }
@@ -130,6 +131,7 @@ export async function setCachedToolResult(
   set(key, output, TOOL_TTL_MS);
 }
 
+/** Look up a cached final chatbot answer for (question, routedTo, ctxFp); returns undefined on miss/expiry. */
 export async function getCachedAnswer(
   question: string, routedTo: string, ctxFp: string,
 ): Promise<string | undefined> {
@@ -138,6 +140,7 @@ export async function getCachedAnswer(
   const key = "ans:" + (await sha256(`${routedTo}|${ctxFp}|${q}`));
   return get<string>(key);
 }
+/** Cache a final chatbot answer for ANSWER_TTL_MS (5 min), keyed by normalized question + route + context fingerprint. */
 export async function setCachedAnswer(
   question: string, routedTo: string, ctxFp: string, text: string,
 ): Promise<void> {
