@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/verify-role"
+ * Access: authenticated user (requires super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +26,7 @@ export const Route = createFileRoute("/_authenticated/admin/verify-role")({
   component: VerifyRoleGate,
 });
 
+/** Page component for "/_authenticated/admin/verify-role". */
 function VerifyRoleGate() {
   const isSuper = useIsSuper();
   if (isSuper === undefined) return <div className="p-6 text-sm text-muted-foreground">Checking permissions…</div>;

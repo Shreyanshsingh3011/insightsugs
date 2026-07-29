@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/row/$key"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 // Per-row detail page. Every dashboard row (overdue queue, filtered report,
 // scoped entity tables) deep-links here via `encodeRowKey`. We rehydrate the
 // row from the live source cache (same queries the dashboard uses) so the URL
@@ -43,6 +51,7 @@ function toneFor(delay: number, tat: number): keyof typeof TONE {
   return "ok";
 }
 
+/** Page component for "/_authenticated/agent/row/$key". */
 function RowPage() {
   const { key } = Route.useParams();
   const nav = useNavigate();

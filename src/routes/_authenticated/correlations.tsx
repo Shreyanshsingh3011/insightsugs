@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/correlations"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 // Correlations dashboard. Left: entity picker (typeahead). Right: four buckets
 // of matches for the selected focus entity.
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -201,6 +209,7 @@ function BucketPanel({ bucket, items, onFocus }: {
   );
 }
 
+/** Page component for "/_authenticated/correlations". */
 function CorrelationsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();

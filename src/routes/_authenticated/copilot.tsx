@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/copilot"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -427,6 +435,7 @@ type Insight = { title: string; detail: string; severity: "info" | "warning" | "
 
 const CHART_COLORS = ["hsl(var(--primary))", "#f59e0b", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
 
+/** Page component for "/_authenticated/copilot". */
 function CopilotPage() {
   const { userId } = useSession();
   const isAdmin = useIsAdmin();

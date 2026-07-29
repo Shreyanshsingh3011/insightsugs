@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/ingest"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, useRouter, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -40,6 +48,7 @@ export const Route = createFileRoute("/_authenticated/ingest")({
 
 type Parsed = { headers: string[]; rows: string[][]; source: "csv" | "xlsx" | "paste" };
 
+/** Page component for "/_authenticated/ingest". */
 function IngestPage() {
   return (
     <div className="mx-auto w-full max-w-5xl p-4 md:p-6">

@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/audit"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -121,6 +129,7 @@ function DetailRow({ entry, projectName }: { entry: Entry; projectName?: string 
   );
 }
 
+/** Page component for "/_authenticated/admin/audit". */
 function AuditPage() {
   const isAdmin = useIsAdmin();
   const { data, isLoading } = useQuery({

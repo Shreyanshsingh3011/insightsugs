@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/email-groups"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,6 +35,7 @@ type GroupRow = {
 
 const SEVERITIES = ["Critical", "High", "Medium", "Low"];
 
+/** Page component for "/_authenticated/admin/email-groups". */
 function EmailGroupsPage() {
   const isAdmin = useIsAdmin();
   const qc = useQueryClient();

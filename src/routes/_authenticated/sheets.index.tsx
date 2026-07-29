@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/sheets/"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,6 +39,7 @@ export const Route = createFileRoute("/_authenticated/sheets/")({
   component: SheetsPage,
 });
 
+/** Page component for "/_authenticated/sheets/". */
 function SheetsPage() {
   const qc = useQueryClient();
   const fetchList = useServerFn(listSheets);

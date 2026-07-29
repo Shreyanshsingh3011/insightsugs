@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/sources-health"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery, queryOptions } from "@tanstack/react-query";
 import { getSourcesHealth } from "@/lib/sources-health.functions";
@@ -32,6 +40,7 @@ function statusColor(status: string): "default" | "secondary" | "destructive" | 
   return "outline";
 }
 
+/** Page component for "/_authenticated/admin/sources-health". */
 function SourcesHealthPage() {
   const { data, refetch, isFetching } = useSuspenseQuery(sourcesHealthQuery);
   const s = data.summary;

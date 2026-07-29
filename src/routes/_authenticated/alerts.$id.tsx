@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/alerts/$id"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
@@ -45,6 +53,7 @@ function statusColor(s?: string | null) {
   }
 }
 
+/** Page component for "/_authenticated/alerts/$id". */
 function AlertDetails() {
   const { id } = Route.useParams();
   const navigate = useNavigate();

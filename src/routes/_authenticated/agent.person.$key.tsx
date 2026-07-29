@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/person/$key"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
@@ -12,6 +20,7 @@ export const Route = createFileRoute("/_authenticated/agent/person/$key")({
   component: PersonPage,
 });
 
+/** Page component for "/_authenticated/agent/person/$key". */
 function PersonPage() {
   const { key } = Route.useParams();
   const decoded = useMemo(() => {

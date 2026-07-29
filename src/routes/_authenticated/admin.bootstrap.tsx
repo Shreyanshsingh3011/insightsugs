@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/bootstrap"
+ * Access: authenticated user (requires super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -20,6 +28,7 @@ export const Route = createFileRoute("/_authenticated/admin/bootstrap")({
   }),
 });
 
+/** Page component for "/_authenticated/admin/bootstrap". */
 function BootstrapAdminsPage() {
   const { data: roles } = useRoles();
   const isSuper = !!roles?.includes("super_admin");

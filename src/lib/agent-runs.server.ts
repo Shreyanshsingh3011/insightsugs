@@ -10,6 +10,12 @@ type ToolCall = {
   ms?: number;
 };
 
+/**
+ * Insert a `running` agent_runs row via supabaseAdmin (system telemetry, not
+ * user data — RLS is intentionally bypassed here). Returns null on failure
+ * so callers can no-op the rest of the run-tracking lifecycle rather than
+ * throwing and aborting the actual agent work.
+ */
 export async function startAgentRun(opts: {
   agent: string;
   trigger?: string;
@@ -36,6 +42,7 @@ export async function startAgentRun(opts: {
   }
 }
 
+/** Stamp a run as succeeded/failed with output, error, token counts, latency and recorded tool calls. Best-effort — swallows errors so telemetry never breaks the caller. */
 export async function finishAgentRun(
   run: { id: string; toolCalls: ToolCall[]; startedAt: number } | null,
   opts: {
@@ -68,6 +75,7 @@ export async function finishAgentRun(
   }
 }
 
+/** Append a tool-call record to an in-flight run's buffer; flushed to the DB by finishAgentRun. No-op if run tracking failed to start. */
 export function recordToolCall(
   run: { toolCalls: ToolCall[] } | null,
   call: ToolCall,

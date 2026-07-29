@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/my-activities"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Supabase tables: activities, audit_log, delay_reasons.
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,6 +47,7 @@ type Activity = {
 
 const STATUSES = ["pending", "in_progress", "blocked", "completed"] as const;
 
+/** Page component for "/_authenticated/my-activities". */
 function MyActivitiesPage() {
   const { userId } = useSession();
   const qc = useQueryClient();
