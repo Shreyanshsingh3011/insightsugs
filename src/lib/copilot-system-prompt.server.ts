@@ -10,8 +10,10 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 // The validator in copilot-agent.functions.ts enforces (1) and (2) at runtime
 // by matching every inline marker against the ledger of tool-returned rows.
 
+/** One persisted per-user memory fact injected as context (never citable). */
 type MemoryEntry = { kind: string; key: string; value: string; importance: number };
 
+/** Everything the system-prompt builder needs: computed sheet insights, the full source catalog, and the user's memory snapshot. */
 export type CopilotSystemPromptInput = {
   sheetInsightSnapshot: Array<{
     id: string;
@@ -43,8 +45,14 @@ export type CopilotSystemPromptInput = {
   memorySnapshot: MemoryEntry[];
 };
 
+/** Fixed phrase the model must emit verbatim when it cannot ground an answer — mirrored by the client-side citation parser/tests. */
 export const COPILOT_REFUSAL_PHRASE = "I don't have that in the current dashboard data.";
 
+/**
+ * Build the full Copilot system prompt: grounding contract, clarify-first
+ * policy, tool-usage playbooks, citation rules, and the injected sheet
+ * insights + catalog + memory snapshot. Pure function — no I/O.
+ */
 export function buildCopilotSystemPrompt(input: CopilotSystemPromptInput): string {
   const { sheetInsightSnapshot, catalog, memorySnapshot } = input;
   return [

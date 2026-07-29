@@ -1,6 +1,10 @@
+// Client-side PDF export for a single Copilot Q&A turn — renders question,
+// cleaned answer prose, inline citation list, and cited sources into a
+// downloadable PDF via jsPDF. Pure client utility; no network calls.
 import { jsPDF } from "jspdf";
 import { stripCitations } from "@/components/copilot/PrimarySourceLink";
 
+/** One cited source (sheet or document) summarized for the PDF footer. */
 export type ExportSource = {
   id: string;
   name: string;
@@ -10,12 +14,14 @@ export type ExportSource = {
   truncated: boolean;
 };
 
+/** One question/answer turn plus the sources it cited, ready to export. */
 export type ExportTurn = {
   question: string;
   answer: string;
   sources: ExportSource[];
 };
 
+/** Extract [..] citation markers so we can list them under the answer. */
 /** Extract [..] citation markers so we can list them under the answer. */
 function extractCitations(answer: string): string[] {
   const re = /\[([^\]]+)\]/g;
@@ -33,6 +39,7 @@ function extractCitations(answer: string): string[] {
   return out;
 }
 
+// jsPDF's Helvetica only supports WinAnsi; drop unsupported chars.
 function sanitize(text: string): string {
   // jsPDF's Helvetica only supports WinAnsi; drop unsupported chars.
   return text
@@ -43,6 +50,7 @@ function sanitize(text: string): string {
     .replace(/[^\x09\x0A\x20-\x7E\xA0-\xFF]/g, "");
 }
 
+/** Render one Copilot Q&A turn to a multi-page PDF and trigger a browser download. */
 export function exportCopilotTurnToPdf(turn: ExportTurn): void {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();

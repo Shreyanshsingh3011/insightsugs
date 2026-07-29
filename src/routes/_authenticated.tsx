@@ -1,3 +1,22 @@
+/**
+ * Route: "/_authenticated" (pathless layout route)
+ * Access: any signed-in Supabase user with at least one assigned role. Wraps all
+ * `_authenticated/*` child routes with the app shell (sidebar nav, header, command palette).
+ * Purpose: client-side auth gate + navigation chrome. Not itself reachable by URL (pathless).
+ * Data dependencies:
+ *  - useSession()/useRoles() (Supabase auth state + `user_roles` table) to gate access and
+ *    build admin/super_admin-only nav sections.
+ *  - `signup_requests` table (super_admin only) to badge the "Pending signups" nav item.
+ * Gotchas:
+ *  - This is a client-only auth gate (no `beforeLoad`/loader redirect): while `loading` is true
+ *    it renders a spinner; if unauthenticated it imperatively calls `router.navigate` in the
+ *    component body (a thrown `redirect()` here would be caught by errorComponent and not
+ *    navigate, hence AuthErrorFallback specifically handles that pattern for nested throws).
+ *  - Users with zero roles (approved account but no role granted yet) see PendingApprovalScreen
+ *    instead of the app -- this is the "awaiting admin approval" state.
+ *  - Saves the attempted deep-link path to sessionStorage("postLoginPath") before bouncing to
+ *    /login so login.tsx/index.tsx can restore it after sign-in.
+ */
 import { createFileRoute, Outlet, Link, useRouter, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useSession, useRoles } from "@/hooks/useSession";
@@ -23,6 +42,7 @@ export const Route = createFileRoute("/_authenticated")({
   errorComponent: AuthErrorFallback,
 });
 
+/** Error boundary for this layout. Specifically detects a redirect() thrown during render (e.g. from a child route) and performs the navigation manually, since throwing redirect() outside a loader/beforeLoad is caught here rather than handled by the router. */
 function AuthErrorFallback({ error }: { error: unknown }) {
   // A `redirect({ to: "/login" })` thrown from the component during render
   // surfaces here instead of navigating. Perform the navigation on mount.
@@ -60,6 +80,7 @@ function AuthErrorFallback({ error }: { error: unknown }) {
 type NavItem = { to: string; label: string; icon: React.ReactNode; badge?: number };
 type NavSection = { label: string; items: NavItem[] };
 
+/** Authenticated app shell: sidebar navigation, header (search/theme/notifications/sign-out), mobile drawer, and global overlays (command palette, shortcuts). Also owns the session/role gate described in the file header. */
 function AuthLayout() {
   const { session, loading } = useSession();
   const { data: roles, isLoading: rolesLoading } = useRoles();
@@ -364,6 +385,7 @@ function AuthLayout() {
   );
 }
 
+/** Small logo/wordmark shown in the sidebar header (and mobile drawer, in compact mode). */
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`flex items-center gap-2.5 ${compact ? "" : "h-14 border-b border-border px-4"}`}>
@@ -379,6 +401,7 @@ function BrandMark({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/** Renders one labeled group of sidebar links; hidden entirely if it has no items (e.g. Admin section for non-admins). */
 function NavGroup({ section }: { section: NavSection }) {
   if (section.items.length === 0) return null;
   return (
@@ -397,6 +420,7 @@ function NavGroup({ section }: { section: NavSection }) {
   );
 }
 
+/** Sidebar footer showing the signed-in user's email/avatar initial and a sign-out button. */
 function UserFooter({ email, initial, onSignOut }: { email: string; initial: string; onSignOut: () => void }) {
   return (
     <div className="flex items-center gap-2 border-t border-border p-3">
@@ -418,6 +442,7 @@ function UserFooter({ email, initial, onSignOut }: { email: string; initial: str
   );
 }
 
+/** A single sidebar nav link; highlights itself when the current path matches or is nested under `to`. */
 function SideLink({ to, icon, children, badge }: { to: string; icon: React.ReactNode; children: React.ReactNode; badge?: number }) {
   const currentPath = useRouterState({ select: (r) => r.location.pathname });
   const active = currentPath === to || (to !== "/" && currentPath.startsWith(to + "/"));

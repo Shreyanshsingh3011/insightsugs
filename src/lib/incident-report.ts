@@ -1,3 +1,9 @@
+/**
+ * PDF "incident report" generator: takes ad-hoc flags/anomalies (looser
+ * shape than FlagEntry since it's fed from multiple call sites), buckets
+ * them into root-cause categories via keyword regexes, and renders a
+ * summary table plus one detail table per category.
+ */
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 

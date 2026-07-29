@@ -1,3 +1,10 @@
+/**
+ * Exported helper: builds the same FlagEntry[] shape as
+ * dashboard.functions.ts#buildDashboardFromSheets, but purely client-side
+ * from already-fetched project rows (useAgentSources), so pages that don't
+ * have a Supabase registry (e.g. /alerts working off live fallback sheets)
+ * stay in sync with the server-built dashboard's flag logic.
+ */
 // Client-side flag builder that mirrors buildDashboardFromSheets's flag
 // logic, but sources its rows from the same FALLBACK_PROJECTS payloads the
 // dashboard renders (via useAgentSources). Keeps /alerts and /agent in

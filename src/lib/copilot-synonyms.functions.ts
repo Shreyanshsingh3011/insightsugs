@@ -1,7 +1,12 @@
+// CRUD server functions for user-taught Copilot synonyms: mappings from a
+// free-text term the user types to either (a) a specific sheet/column/value,
+// or (b) a canonical verb-lexicon intent (see copilot-verb-lexicon.ts). Used
+// by the "Teach Copilot" dialog to let users correct routing mistakes.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+/** A saved term → (sheet/column/value) or (term → intent) mapping row. */
 export type CopilotSynonym = {
   id: string;
   term: string;
@@ -14,6 +19,7 @@ export type CopilotSynonym = {
   updated_at: string;
 };
 
+/** Canonicalize a term for the unique `term_normalized` upsert key. */
 function normalizeTerm(t: string): string {
   return t.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -21,6 +27,7 @@ function normalizeTerm(t: string): string {
 const SELECT_COLS =
   "id, term, sheet_id, column_name, value, intent, note, created_at, updated_at";
 
+/** List all synonyms saved by any user (global — Copilot mappings are shared across the workspace). */
 export const listCopilotSynonyms = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -49,6 +56,7 @@ const SaveSchema = z.object({
   note: z.string().trim().max(500).nullable().optional(),
 });
 
+/** Upsert a synonym mapping (by normalized term) for the current user. Requires at least one of sheet/column/value/intent. */
 export const saveCopilotSynonym = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => SaveSchema.parse(input))
@@ -77,6 +85,7 @@ export const saveCopilotSynonym = createServerFn({ method: "POST" })
     return upserted as CopilotSynonym;
   });
 
+/** Delete a synonym mapping by id. */
 export const deleteCopilotSynonym = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))

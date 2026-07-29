@@ -1,3 +1,9 @@
+/**
+ * Encodes/decodes the row/aggregate detail payload passed via URL param to
+ * the Agent Dashboard's detail route, so a full row or KPI drill-down can be
+ * deep-linked without a server round trip. Uses URL-safe base64 (works in
+ * both browser and Node/SSR contexts).
+ */
 // Small pure helpers shared by the Agent Dashboard and its detail route.
 // Encodes a JSON payload to a URL-safe base64 string.
 

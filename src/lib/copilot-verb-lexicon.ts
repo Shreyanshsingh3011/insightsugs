@@ -9,6 +9,7 @@
 // residual string (question minus the verb tokens) so downstream can resolve
 // column/value references from what's left.
 
+/** Canonical question intents the deterministic engine and agent both route on. */
 export type CanonicalIntent =
   | "distribution"
   | "lookup"
@@ -26,6 +27,7 @@ export type CanonicalIntent =
   | "predict"
   | "generic";
 
+/** One canonical intent + the surface phrases that trigger it. */
 export interface LexiconEntry {
   intent: CanonicalIntent;
   /** Ordered by specificity — longer/more-specific phrases first for better residual stripping. */
@@ -232,6 +234,7 @@ const COMPILED = VERB_LEXICON.map((e) => {
   return { entry: e, regex: new RegExp(src, "iu") };
 });
 
+/** Result of matching a question against the compiled lexicon. */
 export interface IntentDetection {
   intent: CanonicalIntent;
   matchedPhrase: string | null;
@@ -241,6 +244,13 @@ export interface IntentDetection {
   residual: string;
 }
 
+/**
+ * Detects the canonical intent(s) from a natural-language question.
+ *
+ * Multi-match: a question like "break down expiring contracts by vendor"
+ * hits distribution + temporal — both surface in `allMatches`, but the
+ * highest-priority one is returned as the primary `intent`.
+ */
 /**
  * Detects the canonical intent(s) from a natural-language question.
  *
@@ -280,6 +290,7 @@ export function detectIntent(question: string): IntentDetection {
   };
 }
 
+/** Convenience: does the question carry ANY of the given intents? */
 /** Convenience: does the question carry ANY of the given intents? */
 export function hasIntent(detection: IntentDetection, ...wanted: CanonicalIntent[]): boolean {
   const set = new Set(wanted);

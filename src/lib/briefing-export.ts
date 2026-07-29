@@ -1,3 +1,8 @@
+/**
+ * Export the AI-generated weekly briefing (markdown) as PDF, Markdown, or
+ * DOCX. Handles inline markdown parsing (bold/italic/code/links) and strips
+ * characters jsPDF's default font can't render so exports don't show mojibake.
+ */
 import { jsPDF } from "jspdf";
 import {
   Document,
