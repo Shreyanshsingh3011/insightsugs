@@ -66,6 +66,7 @@ function renderHtml(summary: ReturnType<typeof summarize>): string {
   </div>`;
 }
 
+/** Cron/webhook handler for "/api/public/hooks/infra-digest". Verifies the caller via isHookAuthorized() before doing any work; returns JSON { ok, ... }. */
 async function handle(request: Request): Promise<Response> {
   if (!isHookAuthorized(request)) return json({ error: "unauthorized" }, 401);
 

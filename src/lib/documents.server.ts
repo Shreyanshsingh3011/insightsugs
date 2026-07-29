@@ -45,6 +45,7 @@ async function embedTextsWithGemini(inputs: string[]): Promise<number[][]> {
   return out;
 }
 
+/** Service-role Supabase client for background document processing (bypasses RLS). */
 export function getAdminSupabase() {
   return createClient<Database>(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -53,11 +54,13 @@ export function getAdminSupabase() {
 
 // ----- Text extraction -------------------------------------------------------
 
+/** Extracted document text, split into pages. */
 export type ExtractedText = {
   pages: { page: number; text: string }[];
   pageCount: number;
 };
 
+/** Native PDF text extraction via unpdf (fast path; OCR is only used as a fallback for scanned PDFs). */
 async function extractPdf(buffer: ArrayBuffer): Promise<ExtractedText> {
   const { extractText, getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
@@ -80,6 +83,7 @@ async function extractPlain(buffer: ArrayBuffer): Promise<ExtractedText> {
   return { pages: [{ page: 1, text }], pageCount: 1 };
 }
 
+/** OCR a raster image via the Gemini vision model. */
 async function ocrImage(buffer: ArrayBuffer, mime: string): Promise<string> {
   const b64 = Buffer.from(buffer).toString("base64");
   const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -114,6 +118,7 @@ async function ocrImage(buffer: ArrayBuffer, mime: string): Promise<string> {
   return j.choices?.[0]?.message?.content ?? "";
 }
 
+/** OCR every page of a (likely scanned) PDF via Gemini, capped at 15MB. Returns null if the model returns nothing usable. */
 async function ocrPdfWithGemini(
   buffer: ArrayBuffer,
   name: string,
@@ -159,6 +164,11 @@ async function ocrPdfWithGemini(
   return { pages, pageCount: pages.length };
 }
 
+/**
+ * Extract text from an uploaded document by mime/extension, auto-OCRing
+ * PDFs whose native text extraction yields suspiciously little content
+ * (likely scanned pages).
+ */
 export async function extractText(
   buffer: ArrayBuffer,
   mime: string,
@@ -218,8 +228,10 @@ function splitOcrPages(raw: string): { page: number; text: string }[] {
 
 // ----- Chunking --------------------------------------------------------------
 
+/** One fixed-size, overlapping text chunk ready for embedding. */
 export type Chunk = { index: number; content: string; pageNo: number | null };
 
+/** Split extracted pages into overlapping fixed-size chunks for embedding/retrieval. */
 export function chunkText(
   pages: ExtractedText["pages"],
   size = 1000,
@@ -282,6 +294,7 @@ export async function embedTexts(inputs: string[]): Promise<number[][]> {
 
 // ----- Summary + key points --------------------------------------------------
 
+/** Generate a short summary + key points for a document via the AI gateway; degrades to a truncated raw excerpt on any failure. */
 export async function summarize(text: string, fileName: string) {
   const trimmed = text.slice(0, 18000); // keep token use modest
   const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -331,6 +344,7 @@ export async function summarize(text: string, fileName: string) {
 
 // ----- Vector formatting -----------------------------------------------------
 
+/** Format a JS number array as a pgvector literal string, e.g. "[0.1,0.2]". */
 export function toPgVector(v: number[]): string {
   return "[" + v.join(",") + "]";
 }

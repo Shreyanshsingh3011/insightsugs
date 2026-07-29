@@ -1,3 +1,6 @@
+// createServerFn wrappers around gemini-client for client-triggered Gemini
+// calls that must run server-side (API key custody).
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { lovableAiFetchWithFallback } from "./ai-fallback.server";

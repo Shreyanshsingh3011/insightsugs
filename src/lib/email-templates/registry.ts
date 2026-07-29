@@ -1,3 +1,6 @@
+// Maps templateName -> React email template component, used by
+// enqueue-app-email.server to render outgoing transactional emails.
+
 import type { ComponentType } from 'react'
 import { template as agentNotification } from './agent-notification'
 import { template as weeklyBriefing } from './weekly-briefing'

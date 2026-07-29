@@ -1,5 +1,11 @@
 "use client";
 
+// AI Elements: Conversation — sticky-to-bottom scroll container for chat
+// message lists (built on use-stick-to-bottom), plus a "scroll to bottom"
+// button and a "download conversation as markdown" action. Used inside
+// AgentChatWidget and other chat surfaces. Do not confuse with the app's
+// domain data — this is purely presentational chat scaffolding vendored
+// from the AI Elements component set.
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { UIMessage } from "ai";

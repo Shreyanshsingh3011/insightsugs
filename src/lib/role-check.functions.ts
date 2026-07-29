@@ -1,3 +1,7 @@
+// Server functions for reading/checking a user's roles (admin/super_admin/
+// member) — the authoritative role source is Postgres RLS/RPCs; these
+// wrap that for client consumption.
+
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";

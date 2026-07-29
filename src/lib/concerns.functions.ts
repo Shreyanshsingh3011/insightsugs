@@ -1,3 +1,6 @@
+// Server functions for the Concerns thread feature: raise/acknowledge/
+// resolve a concern and reply within its thread, RLS-scoped per project.
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

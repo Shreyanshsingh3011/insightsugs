@@ -42,6 +42,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Static reference dialog (opened via "?" or the command palette) listing keyboard shortcuts. */
 export function ShortcutsDialog({
   open,
   onOpenChange,

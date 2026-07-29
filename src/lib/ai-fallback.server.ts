@@ -43,6 +43,7 @@ function served(p: Provider) {
   if (p !== "gateway") console.warn(`[ai-fallback] request served by ${p} (primary gateway unavailable)`);
 }
 
+/** Snapshot of each provider's circuit-breaker state, for the /agent health/diagnostics surface. */
 export function getBreakerSnapshot() {
   const now = Date.now();
   const out: Record<string, { open: boolean; ms_remaining: number; status?: number; error?: string }> = {};

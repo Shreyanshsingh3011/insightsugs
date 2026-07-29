@@ -6,6 +6,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Json = string | number | boolean | null | { [k: string]: Json } | Json[];
 
+/** A row from public.audit_log restricted to approval.* events, enriched with the actor's display name/email. */
 export type AuditEntry = {
   id: string;
   actor_id: string | null;
@@ -18,6 +19,7 @@ export type AuditEntry = {
 
 const FilterEnum = z.enum(["all", "action", "signup", "approve", "reject"]);
 
+/** List approval.* audit events (pending-action / signup approve-reject decisions) with optional sub-filtering, newest first. */
 export const listAuditLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: { filter?: string; limit?: number } = {}) => ({

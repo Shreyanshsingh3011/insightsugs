@@ -7,10 +7,12 @@ const MODEL = "openai/text-embedding-3-small";
 const DIMS = 1536;
 const BATCH = 96; // OpenAI per-request cap on this model is generous; keep well under
 
+/** True when an embeddings response looks like a billing/quota/rate-limit/5xx condition — triggers the Gemini fallback. */
 function isQuotaOrBilling(status: number, text: string) {
   return status === 402 || status === 429 || status >= 500 || /payment required|credits exhausted|quota|rate limit/i.test(text);
 }
 
+/** Fallback embedder using Gemini directly when the Lovable gateway is unavailable or out of quota. */
 async function embedWithGemini(inputs: string[], dimensions: number): Promise<number[][]> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("Missing GEMINI_API_KEY on the server");
@@ -49,6 +51,10 @@ async function embedWithGemini(inputs: string[], dimensions: number): Promise<nu
   return out;
 }
 
+/**
+ * Embed a batch of texts via the Lovable AI Gateway, falling back to direct
+ * Gemini calls on quota/billing/5xx errors (if GEMINI_API_KEY is set).
+ */
 export async function embedTexts(
   inputs: string[],
   opts?: { model?: string; dimensions?: number },
@@ -97,11 +103,14 @@ export async function embedTexts(
   return out;
 }
 
+/** Embed a single query string (convenience wrapper over embedTexts). */
 export async function embedQuery(input: string): Promise<number[]> {
   const [v] = await embedTexts([input]);
   return v;
 }
 
+// Cheap stable content hash for dedupe. Uses FNV-1a 64-bit — good enough for
+// content-change detection (no cryptographic use).
 // Cheap stable content hash for dedupe. Uses FNV-1a 64-bit — good enough for
 // content-change detection (no cryptographic use).
 export function contentHash(input: string): string {

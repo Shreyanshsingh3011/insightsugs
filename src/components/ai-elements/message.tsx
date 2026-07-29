@@ -1,5 +1,8 @@
 "use client";
 
+// AI Elements: Message — chat bubble primitives (avatar, content wrapper,
+// markdown-rendered assistant responses via MessageResponse). Consumed by
+// AgentChatWidget for every message in the transcript.
 import { Button } from "@/components/ui/button";
 import {
   ButtonGroup,
@@ -30,6 +33,8 @@ import {
 // Streamdown and its plugins (mermaid, katex, shiki, cjk) are enormous.
 // Lazy-load them so they never touch the SSR entry bundle and only fetch
 // once the user actually opens the chat.
+// Markdown rendering is lazy-loaded (see streamdown-lazy.tsx) since
+// Streamdown + its plugins are large and only needed once a chat is open.
 const StreamdownLazy = lazy(() => import("./streamdown-lazy"));
 
 

@@ -1,3 +1,12 @@
+// ActiveIntegrationCard — dashboard card summarizing the currently configured
+// "live" external integration (e.g. an ERP/ticketing system) and its last
+// health check. Rendered on the admin/settings overview. Super admins get a
+// "Manage" shortcut into Settings; everyone else just sees status.
+/**
+ * @returns Card showing connection status of the configured live integration,
+ * refetched every 60s and on window focus so status doesn't go stale while a
+ * user is mid-incident.
+ */
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Link } from "@tanstack/react-router";

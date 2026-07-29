@@ -1,3 +1,7 @@
+// Server-only weekly briefing generator: aggregates the week's activity
+// across projects and emails/queues the digest. Intended cron caller:
+// /api/public/weekly-briefing (pg_cron, weekly cadence).
+
 import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createClient } from "@supabase/supabase-js";
 

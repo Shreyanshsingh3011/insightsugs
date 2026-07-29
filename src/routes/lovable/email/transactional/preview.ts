@@ -1,3 +1,14 @@
+/**
+ * Route: "/lovable/email/transactional/preview" (server function, POST)
+ * Access: internal — gated by `Authorization: Bearer <LOVABLE_API_KEY>` exact match. Intended
+ * caller: the Lovable platform's Go API (template preview tooling), not end users.
+ * Purpose: renders every registered email template (@/lib/email-templates/registry) with its
+ * built-in `previewData` to HTML, for preview/QA purposes only — sends nothing.
+ * Data dependencies: none beyond the in-repo template registry; no database access.
+ * Gotchas: templates without `previewData` are reported with status "preview_data_required"
+ * rather than failing the whole request; per-template render errors are caught individually so
+ * one broken template doesn't block previewing the others.
+ */
 import * as React from 'react'
 import { render } from 'react-email'
 import { createFileRoute } from '@tanstack/react-router'

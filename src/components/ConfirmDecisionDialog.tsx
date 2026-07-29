@@ -55,6 +55,12 @@ function DiffPanel({ label, data, tone }: {
   );
 }
 
+/**
+ * Approve/reject confirmation modal used by admin review screens (pending
+ * actions, signup requests). Re-renders the before/after diff so reviewers
+ * don't approve blind, and optionally collects a note/reason that is stored
+ * alongside the audit log entry.
+ */
 export function ConfirmDecisionDialog({
   open,
   onOpenChange,

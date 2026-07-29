@@ -1,3 +1,5 @@
+// Route: "/api/public/hooks/smart-alerts-scan" (public API hook).
+// Auth: shared cron/webhook secret via isHookAuthorized() (@/lib/hook-auth.server) — requires header Authorization: Bearer <CRON_HOOK_SECRET> (or x-cron-secret/apikey/x-api-key), or the Supabase service-role key. Intended callers: pg_cron / external schedulers, not browsers.
 import { createFileRoute } from "@tanstack/react-router";
 import { isHookAuthorized } from "@/lib/hook-auth.server";
 import { createClient } from "@supabase/supabase-js";

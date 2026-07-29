@@ -23,6 +23,11 @@ interface Props {
 
 const SEVERITIES = ["Low", "Medium", "High", "Critical"] as const;
 
+/**
+ * Dialog to escalate an activity/row as a formal concern to a department.
+ * Department list is fetched lazily (`enabled: open`) since it rarely
+ * changes and isn't needed until the dialog is actually shown.
+ */
 export function RaiseConcernDialog({
   open,
   onOpenChange,

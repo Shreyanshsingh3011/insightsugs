@@ -3,6 +3,7 @@
 // schema cache" during writes/reads is retried with exponential backoff
 // instead of surfacing to the user as an ingest failure.
 
+/** Client-safe check for PostgREST schema-cache staleness (PGRST002/PGRST205). */
 export function isSchemaCacheError(error: unknown): boolean {
   if (!error) return false;
   const msg = `${(error as { message?: string })?.message ?? ""} ${(error as { code?: string })?.code ?? ""}`.toLowerCase();

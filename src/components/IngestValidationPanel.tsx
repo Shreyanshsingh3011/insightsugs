@@ -1,3 +1,8 @@
+// IngestValidationPanel — shown during sheet/CSV ingestion to surface
+// per-row validation problems (missing required fields, bad dates/numbers,
+// duplicate keys, Excel date-serials leaking into duration columns) before
+// the user commits the import. Validation itself lives in
+// lib/ingest-validation.ts; this component is presentation + filtering only.
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Filter, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +22,11 @@ const KIND_LABEL: Record<Kind, string> = {
 
 const KIND_ORDER: Kind[] = ["empty_required", "bad_date", "bad_number", "date_serial_in_duration", "duplicate_key"];
 
+/**
+ * @param mapping Header -> canonical-field mapping chosen by the user in the
+ * ingest wizard; passed straight through to validateParsedTable so issues
+ * are computed against the mapping the user is about to commit.
+ */
 export function IngestValidationPanel({
   sheetType, headers, rows, mapping,
 }: {

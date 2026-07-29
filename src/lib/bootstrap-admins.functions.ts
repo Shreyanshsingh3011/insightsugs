@@ -1,3 +1,6 @@
+// One-time/idempotent admin bootstrap helpers exposed to already-privileged
+// callers for promoting users to the admin role.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

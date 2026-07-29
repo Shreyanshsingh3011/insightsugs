@@ -1,3 +1,6 @@
+// Thin client for calling the Gemini API directly (bypassing the Lovable
+// gateway), used by call sites that specifically need Gemini's API shape.
+
 import { generateGeminiFn } from "@/lib/gemini.functions";
 
 // Key lives server-side (GEMINI_API_KEY). Assume configured; callers will

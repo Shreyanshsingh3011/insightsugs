@@ -74,6 +74,7 @@ async function recordHealth(rows: Array<{ name: string; status: string; latency_
   }
 }
 
+/** Cron/webhook handler for "/api/public/hooks/ai-health". Verifies the caller via isHookAuthorized() before doing any work; returns JSON { ok, ... }. */
 async function handle(request: Request): Promise<Response> {
   if (!isHookAuthorized(request)) return json({ error: "unauthorized" }, 401);
 

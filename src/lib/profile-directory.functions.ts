@@ -1,3 +1,6 @@
+// Server function returning a lightweight profile directory (id/name/email)
+// used to resolve @mentions and recipient pickers.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

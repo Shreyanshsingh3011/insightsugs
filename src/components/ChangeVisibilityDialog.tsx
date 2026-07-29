@@ -1,3 +1,8 @@
+// ChangeVisibilityDialog — shared dialog for flipping a document or sheet
+// between private/public/shared visibility. Wraps VisibilityPicker and picks
+// the right server functions (documents.functions vs sheets.functions) based
+// on `kind`. Only fetches existing shares when visibility is already "shared"
+// to avoid an extra round-trip for the common private/public cases.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -23,6 +28,12 @@ import {
 
 type Kind = "document" | "sheet";
 
+/**
+ * @param kind Whether `id` refers to a document or a sheet registry row —
+ * determines which server functions are called.
+ * @param currentVisibility Visibility to seed the picker with; the dialog
+ * resets to this value every time it is reopened.
+ */
 export function ChangeVisibilityDialog({
   open,
   onOpenChange,

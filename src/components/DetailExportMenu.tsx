@@ -25,6 +25,12 @@ export type DetailExportMenuProps = {
   ownerEmail?: string | null;
 };
 
+/**
+ * Dropdown offering CSV/PDF export of the rows currently visible on a detail
+ * page, or escalating the same scope as a concern via {@link RaiseConcernDialog}.
+ * `rows` vs `totalInScope` are shown together so users know whether the
+ * export reflects an active filter.
+ */
 export function DetailExportMenu({
   rows, totalInScope, ctx, targetDept, ownerEmail,
 }: DetailExportMenuProps) {

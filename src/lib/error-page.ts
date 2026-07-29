@@ -1,3 +1,5 @@
+// Shared helpers for rendering the app's generic error boundary page.
+
 export function renderErrorPage(): string {
   return `<!doctype html>
 <html lang="en">

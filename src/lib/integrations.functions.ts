@@ -1,3 +1,6 @@
+// Server functions for managing third-party integration connections
+// (status, linking/unlinking) surfaced in Settings.
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

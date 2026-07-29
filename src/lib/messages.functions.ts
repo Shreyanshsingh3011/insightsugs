@@ -1,3 +1,6 @@
+// Server functions for direct messages between users (compose/list/reply),
+// RLS-scoped to sender/recipient.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

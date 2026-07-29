@@ -14,6 +14,12 @@ const KEY = "brief_match_mode";
 
 export type BriefMatchMode = "keyword" | "expanded";
 
+/**
+ * Reads the current user's brief-matching preference from Supabase.
+ * Defaults to "keyword" while loading or when unset — the safer/narrower
+ * mode — so summarizeThread never over-matches documents before a user has
+ * made a choice.
+ */
 export function useBriefMatchMode(): BriefMatchMode {
   const { userId } = useSession();
   const { data } = useQuery({
@@ -36,6 +42,11 @@ export function useBriefMatchMode(): BriefMatchMode {
   return data ?? "keyword";
 }
 
+/**
+ * Switch UI for {@link useBriefMatchMode}. Persists the choice to
+ * `agent_preferences` (per-user) and shows a toast confirming the new
+ * matching behavior. Disabled while unauthenticated or saving.
+ */
 export function BriefMatchModeToggle() {
   const { userId } = useSession();
   const qc = useQueryClient();

@@ -1,3 +1,6 @@
+// Server functions for email-ops observability: inspecting the transactional
+// email queue/log (email_send_log) and retrying failed sends.
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

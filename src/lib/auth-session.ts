@@ -1,3 +1,8 @@
+// Client-side Supabase session helpers used before the app trusts a session
+// for API calls. Handles the common failure modes of long-lived SPA tabs:
+// expired-but-not-yet-refreshed tokens, concurrent refresh storms (single-
+// flight + retry), and corrupted/partial localStorage entries.
+
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -32,6 +37,7 @@ function sessionExpiry(session: Session): number | null {
   return typeof payload?.exp === "number" ? payload.exp : null;
 }
 
+/** True if the session has a well-formed JWT and isn't within TOKEN_EXPIRY_SKEW_SECONDS of expiring. */
 export function isUsableSession(session: Session | null | undefined): session is Session {
   if (!session?.access_token || !session.user?.id) return false;
   if (session.access_token.split(".").length !== 3) return false;
@@ -44,6 +50,7 @@ function isRefreshableSession(session: Session | null | undefined): session is S
   return !!session?.refresh_token && !!session.user?.id;
 }
 
+/** Best-effort scan of localStorage for a usable `sb-*-auth-token` entry — used as a fast fallback when `getSession()` is slow/hanging. */
 export function readStoredSession(): Session | null {
   if (typeof window === "undefined") return null;
   for (const key of Object.keys(window.localStorage)) {
@@ -59,6 +66,7 @@ export function readStoredSession(): Session | null {
   return null;
 }
 
+/** Remove all Supabase auth tokens from localStorage; call when a session fails validation to force a clean re-login. */
 export function clearStoredSupabaseAuth() {
   if (typeof window === "undefined") return;
   for (const key of Object.keys(window.localStorage)) {
@@ -109,6 +117,14 @@ async function validateSession(session: Session, timeoutMs: number, strictValida
   return isRefreshableSession(session) ? refreshSession(timeoutMs) : null;
 }
 
+/**
+ * Resolve a usable session with bounded latency: races `getSession()`
+ * against a localStorage fallback, refreshes if expired/refreshable, and
+ * optionally validates the token against the auth server (`options.validate`)
+ * before returning — clearing storage on failure unless `clearOnInvalid` is
+ * explicitly false. This is the primary entry point other modules should use
+ * instead of calling supabase.auth.getSession() directly.
+ */
 export async function getUsableSupabaseSession(timeoutMs = 2500, options: SessionOptions = {}): Promise<Session | null> {
   if (typeof window === "undefined") return null;
   const sessionResult = supabase.auth

@@ -1,3 +1,7 @@
+// Server functions letting the agent read/write Google Sheets rows through
+// the Google Sheets connector, scoped to whatever sheet the project registry
+// points at.
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

@@ -1,3 +1,20 @@
+/**
+ * Route: "/api/chat" (server function, streaming POST)
+ * Access: authenticated app users only (called from AgentChatWidget / copilot UI). No
+ * separate server-side auth check in this file — trust boundary is "reachable only from the
+ * authenticated SPA"; do not wire this up to public/cron callers.
+ * Purpose: multi-turn streaming chat with tool-calling over a client-supplied dashboard
+ * `context` snapshot (rows/rankings/flags/actions for the currently viewed project). Read-only
+ * tools answer from that snapshot; propose* tools queue rows into `pending_actions` for human
+ * approval at /agent/approvals rather than mutating data directly.
+ * Data dependencies: LOVABLE_API_KEY (AI Gateway/model), `pending_actions` table (via
+ * supabaseAdmin, service-role — used only for queuing proposals), agent_runs/tool-call logging
+ * via @/lib/agent-runs.server, and an in-process answer/tool-result cache
+ * (@/lib/agent-cache.server) keyed by a fingerprint of the context snapshot.
+ * Gotchas: this file is large; `buildTools` defines the full tool surface exposed to the model
+ * (read-only getters + propose* writers). Server-only handler — heavy deps are dynamically
+ * imported.
+ */
 // Streaming chat endpoint for the AgentDashboard chatbot.
 //
 // The dashboard is client-side (data fetched from external sheets in the

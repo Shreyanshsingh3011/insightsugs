@@ -1,5 +1,10 @@
 "use client";
 
+// AI Elements: PromptInput — the chat composer (textarea, attachments,
+// model/tool pickers, submit button with streaming-aware icon states).
+// This is the largest AI Elements file; most of it is compound sub-
+// components (PromptInputBody, PromptInputTextarea, PromptInputSubmit,
+// attachment menus) assembled by callers like AgentChatWidget.
 import {
   Command,
   CommandEmpty,

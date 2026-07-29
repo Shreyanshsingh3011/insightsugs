@@ -14,6 +14,14 @@ export type CitationTarget =
   | { kind: "doc"; label: string; page: number }
   | { kind: "dashboard"; field: string; value?: unknown };
 
+/**
+ * Side sheet that shows the exact grounding data behind a citation chip in
+ * chat (a sheet row, a document page, or a dashboard aggregate snapshot).
+ * `dashboard` targets need no fetch — the value was already captured at
+ * answer time and is rendered as-is. "Open in dashboard" resolves a deep
+ * link once the async context (`ctx`) has loaded, e.g. only once we know a
+ * sheet's internal id.
+ */
 export function CitationPanel({
   target,
   onOpenChange,

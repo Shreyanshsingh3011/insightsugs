@@ -1,3 +1,8 @@
+// AutonomousAgentsPanel — dashboard banner listing the background agents
+// (Daily Standup, Delay Root-Cause, Doc -> Action Extractor) plus quick links
+// into their review surfaces (Approvals, Activity, Runs, Memory, Evals,
+// Custom, Correlations). Only the Standup agent has a manual "Run now" — the
+// others trigger from their own screens or crons.
 import { useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";

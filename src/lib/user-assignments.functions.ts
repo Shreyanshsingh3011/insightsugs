@@ -1,3 +1,6 @@
+// Server functions for viewing/managing which user is assigned to which
+// activities, used by admin assignment UIs.
+
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";

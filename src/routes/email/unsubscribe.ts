@@ -1,3 +1,17 @@
+/**
+ * Route: "/email/unsubscribe" (server function, GET + POST)
+ * Access: public/unauthenticated — reached via the unsubscribe link/button embedded in
+ * outbound emails. No caller-identity check beyond possession of the opaque `token` query param
+ * (or form body, for RFC 8058 one-click unsubscribe).
+ * Purpose: GET validates a token (without consuming it) so the unsubscribe confirmation page can
+ * render state; POST atomically marks the token used and adds the associated email to
+ * `suppressed_emails` so future sends are blocked.
+ * Data dependencies: Supabase tables `email_unsubscribe_tokens`, `suppressed_emails` — accessed
+ * via the service-role key (SUPABASE_SERVICE_ROLE_KEY), bypassing RLS.
+ * Gotchas: POST must handle three content types (RFC 8058 one-click form-encoded, JSON from the
+ * app's own unsubscribe page, and a bare query-param token) — see the content-type branching.
+ * The update-then-check pattern on `used_at` is written to avoid a TOCTOU double-unsubscribe race.
+ */
 import { createClient } from '@supabase/supabase-js'
 import { createFileRoute } from '@tanstack/react-router'
 

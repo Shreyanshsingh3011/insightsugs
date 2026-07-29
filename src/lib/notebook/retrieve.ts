@@ -9,6 +9,7 @@ const STOPWORDS = new Set("the a an of for and or to is are was were be been bei
 
 const DEFAULT_BUDGET = 60000;
 
+/** Lowercase + strip punctuation + drop stopwords/1-char tokens for retrieval scoring. */
 export function tokenize(q: string): string[] {
   return q
     .toLowerCase()
@@ -50,6 +51,12 @@ function rowText(sheet: SheetSource, rec: Record<string, unknown>): string {
     .join("; ");
 }
 
+/**
+ * Build a token-budgeted context payload for a qualitative question: per-
+ * sheet schema, precomputed facts, concerns/reminders, and a relevance-
+ * ranked sample of row data — each item tagged so the model's citations can
+ * be verified against real records.
+ */
 export function buildContext(opts: {
   question: string;
   sheets: SheetSource[];

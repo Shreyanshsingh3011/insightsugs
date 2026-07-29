@@ -1,3 +1,8 @@
+// EmailQueuePanel — admin view of the outbound email log/queue (agent_drafts
+// emails). Lets admins filter by status, search, resend single or bulk
+// failed/suppressed emails, inspect resend history, and export the current
+// view as CSV. All mutations go through email-ops.functions server
+// functions; nothing here talks to the mail provider directly.
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -52,6 +57,11 @@ function toCsv(rows: EmailLogRow[]): string {
   return lines.join("\n");
 }
 
+/**
+ * Renders the filterable/paginated email queue table plus bulk-resend
+ * controls. FAIL_STATES groups every non-successful terminal status so bulk
+ * "retry failed" can target them all in one call.
+ */
 export function EmailQueuePanel() {
   const fetchStatus = useServerFn(getEmailQueueStatus);
   const resendFn = useServerFn(resendAgentDraftEmail);

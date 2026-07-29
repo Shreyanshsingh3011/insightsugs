@@ -1,3 +1,6 @@
+// Shared constant/helper identifying the auth scheme used by Supabase Edge
+// Functions callers, kept tiny and dependency-free.
+
 import { createMiddleware } from "@tanstack/react-start";
 import { getUsableSupabaseSession, readStoredSession } from "@/lib/auth-session";
 

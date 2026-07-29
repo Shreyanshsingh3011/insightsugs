@@ -1,3 +1,7 @@
+// NewActivityForm — admin-only dialog to manually create a tracked activity
+// (outside the normal sheet-ingestion pipeline), optionally under a new
+// project. Role is checked client-side for UX only; the insert is still
+// subject to Supabase RLS server-side.
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -31,6 +35,7 @@ import { Plus } from "lucide-react";
 type Profile = { id: string; full_name: string | null; email: string | null };
 type Project = { id: string; name: string };
 
+/** Renders nothing actionable for non-admins; dialog + form are gated on `isAdmin`. */
 export function NewActivityForm({ onCreated }: { onCreated?: () => void }) {
   const { userId } = useSession();
   const qc = useQueryClient();

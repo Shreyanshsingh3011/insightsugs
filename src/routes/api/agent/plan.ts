@@ -1,3 +1,15 @@
+/**
+ * Route: "/api/agent/plan" (server function, streaming POST)
+ * Access: authenticated app users only, called from the Agent Planner UI (@/routes/_authenticated/agent.planner.tsx).
+ * No public/service auth check here — relies on being reached only via the authenticated SPA;
+ * do not expose this path to unauthenticated cron/webhook callers.
+ * Purpose: streams a structured multi-step Plan object from the LLM via AI SDK `streamObject`.
+ * Proposal-only: no `pending_actions` are written here — the client later calls the
+ * `approvePlan` server function to bulk-queue the approved steps.
+ * Data dependencies: LOVABLE_API_KEY (AI Gateway), agent_runs table via startAgentRun/finishAgentRun.
+ * Gotchas: SSR/server-only handler (`server.handlers.POST`); heavy AI SDK deps are dynamically
+ * imported to keep them out of the client bundle.
+ */
 // Multi-step planner endpoint. Streams a structured Plan (steps[]) from the
 // LLM using AI SDK streamObject. The plan is proposal-only — nothing is
 // executed here. The frontend calls approvePlan() (server function) with the

@@ -1,3 +1,7 @@
+// Server functions for the Documents feature: folders, listing (with an
+// admin-bypass fallback when RLS/schema-cache hiccups hide rows), upload
+// registration + synchronous text-extract/chunk/embed/summarize pipeline,
+// and owner-only sharing/visibility controls.
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -17,6 +21,7 @@ import {
   readJwtPayload,
 } from "@/lib/bootstrap-super-admins";
 
+/** Throw unless the current user is admin/super-admin. */
 async function assertAdmin(supabase: any, userId: string) {
   const { data, error } = await supabase.rpc("is_admin_or_super", { _user_id: userId });
   if (error) throw new Error(error.message);
@@ -246,6 +251,10 @@ export const deleteDocument = createServerFn({ method: "POST" })
 // Client uploads to storage directly (RLS-scoped), then calls this fn with the
 // resulting storage_path. We insert the row and synchronously process it.
 
+/**
+ * Register an already-uploaded document row and synchronously run the
+ * extract → chunk → embed → summarize pipeline. Admin-only.
+ */
 export const registerAndProcessDocument = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(

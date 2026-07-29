@@ -31,6 +31,12 @@ type Report = {
   idempotency_key: string;
 };
 
+/**
+ * Generate -> preview -> send flow for a per-project status report PDF.
+ * `idempotency_key` returned by generateStatusReport is reused to look up
+ * delivery status afterward, so re-opening the dialog for the same report
+ * doesn't risk sending duplicate emails.
+ */
 export function StatusReportDialog({
   projectId,
   projectName,

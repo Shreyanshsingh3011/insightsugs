@@ -1,3 +1,7 @@
+// Minimal, fallback-free Lovable AI Gateway provider — used by call sites
+// that don't need run-id tracking. Prefer ai-gateway.server.ts for new code;
+// this is kept for existing simpler callers.
+
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createFallbackFetch } from "./ai-fallback.server";
 

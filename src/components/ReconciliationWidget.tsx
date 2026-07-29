@@ -9,6 +9,13 @@ function fmt(n: number): string {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n);
 }
 
+/**
+ * Planned-vs-consumed reconciliation summary for inventory-shaped sheets.
+ * Server-side `computeReconciliationForUser` does the heavy lifting
+ * (column-role detection, aggregation); this component only renders the
+ * result and explains which columns/derivations were used, since the
+ * column names vary a lot across source sheets.
+ */
 export default function ReconciliationWidget({ sheetIds }: { sheetIds?: string[] }) {
   const run = useServerFn(computeReconciliationForUser);
   const query = useQuery({

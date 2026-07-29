@@ -1,3 +1,6 @@
+// Server functions for AI-suggested "smart alert" recommendations surfaced
+// alongside manual alerts.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";

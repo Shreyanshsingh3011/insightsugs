@@ -52,6 +52,7 @@ async function probeModel(key: string, model: string) {
   }
 }
 
+/** Cron/webhook handler for "/api/public/hooks/model-health". Verifies the caller via isHookAuthorized() before doing any work; returns JSON { ok, ... }. */
 async function handle(request: Request): Promise<Response> {
   if (!isHookAuthorized(request)) return json({ error: "unauthorized" }, 401);
   const key = process.env.OPENROUTER_API_KEY;
