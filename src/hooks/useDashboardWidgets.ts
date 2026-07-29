@@ -1,3 +1,6 @@
+// Hook managing which dashboard widgets are enabled/ordered for the current
+// user, persisted via usePersistedState.
+
 import { useCallback, useEffect, useState } from "react";
 
 export type WidgetId =

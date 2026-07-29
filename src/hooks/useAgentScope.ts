@@ -1,3 +1,6 @@
+// Hook resolving the current agent's project/data scope for components that
+// need to filter by it.
+
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";

@@ -1,3 +1,6 @@
+// Generic useState-like hook that persists its value to localStorage under a
+// given key.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**

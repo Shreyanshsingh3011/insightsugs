@@ -1,3 +1,6 @@
+// Hook for toggling/reading QA test-fixture scenarios in non-production
+// environments.
+
 import { useEffect, useState, useCallback } from "react";
 import type { QaScenarioId } from "@/lib/qa-fixtures";
 

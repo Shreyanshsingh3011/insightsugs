@@ -1,3 +1,6 @@
+// TanStack Start server entry point — bootstraps the SSR request handler.
+// Do not add business logic here; this must stay a thin bootstrap file.
+
 import { createStart, createMiddleware } from "@tanstack/react-start";
 import { attachUsableSupabaseAuth } from "@/lib/supabase-function-auth";
 

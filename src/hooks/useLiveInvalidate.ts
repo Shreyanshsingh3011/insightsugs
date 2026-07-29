@@ -1,3 +1,6 @@
+// Hook subscribing to realtime/polling signals and invalidating the relevant
+// react-query caches so dashboards stay live.
+
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";

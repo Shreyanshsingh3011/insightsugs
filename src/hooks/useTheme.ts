@@ -1,3 +1,5 @@
+// Hook for reading/toggling the light/dark theme preference.
+
 import { useEffect, useState, useCallback } from "react";
 
 export type ThemeMode = "light" | "dark" | "system";
