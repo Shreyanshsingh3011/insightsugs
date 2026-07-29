@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/health"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,6 +52,7 @@ function toneCls(s: string) {
   return "bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-400";
 }
 
+/** Page component for "/_authenticated/admin/health". */
 function HealthPage() {
   const { data: roles } = useRoles();
   const isAdmin = !!roles?.some((r) => r === "admin" || r === "super_admin");

@@ -1,3 +1,6 @@
+// Server functions for managing named recipient groups used when composing
+// bulk notifications/alerts.
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

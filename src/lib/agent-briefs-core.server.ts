@@ -8,12 +8,14 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** Input to summarizeThreadCore: which thread (concern/alert) to brief, and how broadly to search for linked documents. */
 export type ThreadBriefCoreInput = {
   kind: "concern" | "alert";
   id: string;
   matchMode?: "keyword" | "expanded";
 };
 
+/** Shape returned on success: participants, transcript stats, linked docs, and the AI-composed brief/bullets/decision. */
 export type ThreadBriefCore = {
   ok: true;
   kind: "concern" | "alert";
@@ -50,6 +52,14 @@ async function aiSummarize(system: string, user: string): Promise<string> {
   }
 }
 
+/**
+ * Build a decision-ready brief for a concern or alert thread: loads the
+ * thread + participants + messages via the caller-scoped `supabase` client
+ * (RLS applies), finds loosely-related documents, and asks the model for a
+ * BRIEF / KEY POINTS / RECOMMENDED DECISION writeup.
+ * Shared by the `summarizeThread` server fn and the /api/chat tool of the
+ * same name so both surfaces produce identical output.
+ */
 export async function summarizeThreadCore(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,

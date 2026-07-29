@@ -1,3 +1,6 @@
+// Dev/test-only server functions for seeding demo login accounts. Not for
+// production use — gated behind an explicit flag/role check in the handler.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/users"
+ * Access: authenticated user (requires super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Supabase tables: profiles, user_roles.
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -37,6 +45,7 @@ function ageDays(iso: string) {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
 }
 
+/** Page component for "/_authenticated/admin/users". */
 function UsersGate() {
   const { data: roles, isLoading } = useRoles();
   const isSuper = useIsSuper();

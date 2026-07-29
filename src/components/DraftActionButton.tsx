@@ -30,6 +30,7 @@ type Props = {
   variant?: "default" | "outline" | "secondary";
 };
 
+/** Opens {@link DraftDialog} to compose and queue an agent draft (nudge/escalation/etc). */
 export function DraftActionButton(props: Props) {
   const [open, setOpen] = useState(false);
   return (
@@ -46,6 +47,9 @@ export function DraftActionButton(props: Props) {
   );
 }
 
+// Pre-fills subject/body from scopeLabel + contextSummary so most drafts
+// need zero edits before queuing. Submits via createAgentDraft, which
+// dedupes against any existing pending draft for the same source_kind/key.
 function DraftDialog(props: Props & { open: boolean; onOpenChange: (o: boolean) => void }) {
   const createFn = useServerFn(createAgentDraft);
 

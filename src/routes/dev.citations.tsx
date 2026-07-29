@@ -2,6 +2,8 @@
 // and interaction-test the refusal card + citation side panel. Renders the
 // same visual pieces (refusal card markup + chip buttons + CitationPanel)
 // used inside AgentChatWidget so we can drive them without a live chat run.
+// Route: "/dev/citations". Access: unauthenticated (outside _authenticated layout) — intended
+// for local/dev/test use only; not linked from app navigation. No data dependencies (static fixtures).
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { CitationPanel, type CitationTarget } from "@/components/CitationPanel";
@@ -11,6 +13,7 @@ export const Route = createFileRoute("/dev/citations")({
   component: DevCitationsFixture,
 });
 
+/** Renders static refusal-card + citation-chip markup and wires it to CitationPanel for dev/test interaction, without any live chat/session dependency. */
 function DevCitationsFixture() {
   const [selected, setSelected] = useState<CitationTarget | null>(null);
   return (

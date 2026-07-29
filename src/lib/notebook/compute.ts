@@ -9,6 +9,7 @@ export type SheetSource = {
 
 const TOTAL_ROW_RE = /^\s*(grand\s*total|sub[\s-]*total|total)\s*$/i;
 
+/** Heuristic: true when the first couple columns read "Total"/"Subtotal"/"Grand total" — these rows must be excluded from aggregations. */
 export function isTotalRow(row: Record<string, unknown>, columns: string[]): boolean {
   for (const c of columns.slice(0, 2)) {
     const v = row?.[c];
@@ -17,6 +18,7 @@ export function isTotalRow(row: Record<string, unknown>, columns: string[]): boo
   return false;
 }
 
+/** Parse a cell value as a number, stripping common currency/thousands formatting. Returns null when not numeric. */
 export function toNumber(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -29,6 +31,7 @@ export function toNumber(v: unknown): number | null {
   return null;
 }
 
+/** Locale-format a number for display (integers without decimals, others to 4 dp). */
 export function fmtNumber(n: number): string {
   if (!Number.isFinite(n)) return String(n);
   if (Number.isInteger(n)) return n.toLocaleString();
@@ -41,6 +44,7 @@ export function normKey(s: string): string {
 }
 
 /** Find best matching column name in a sheet for a free-text token. */
+/** Find the best-matching column across sheets for a free-text token (exact > substring > token-overlap). */
 export function matchColumn(sheets: SheetSource[], token: string): { sheet: SheetSource; column: string } | null {
   const t = normKey(token);
   if (!t) return null;
@@ -66,8 +70,10 @@ export function matchColumn(sheets: SheetSource[], token: string): { sheet: Shee
   return best ? { sheet: best.sheet, column: best.column } : null;
 }
 
+/** Inferred semantic type of a sheet column. */
 export type ColumnType = "number" | "date" | "categorical" | "text";
 
+/** Computed distribution/aggregate stats for one column, shaped by its inferred type. */
 export type ColumnStats = {
   column: string;
   type: ColumnType;
@@ -84,6 +90,7 @@ export type ColumnStats = {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2})?|^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/;
 
+/** Infer each column's type (number/date/categorical/text) and compute its summary stats, skipping total rows. */
 export function inferColumnStats(sheet: SheetSource): ColumnStats[] {
   const rows = sheet.rows.filter((r) => !isTotalRow(r, sheet.columns));
   return sheet.columns.map((col): ColumnStats => {
@@ -129,6 +136,7 @@ export function inferColumnStats(sheet: SheetSource): ColumnStats[] {
   });
 }
 
+/** A quantitative question parsed into a concrete, executable aggregation shape. */
 export type ParsedAgg =
   | { kind: "sum" | "avg" | "min" | "max"; column: string; sheet?: string; filter?: FilterSpec }
   | { kind: "count"; sheet?: string; filter?: FilterSpec }
@@ -139,6 +147,7 @@ export type ParsedAgg =
 
 export type FilterSpec = { column: string; equalsLower: string };
 
+/** Evaluate a parsed aggregation over the given sheets. Returns null if no rows match. */
 /** Evaluate a parsed aggregation over the given sheets. Returns null if no rows match. */
 export function evaluate(parsed: ParsedAgg, sheets: SheetSource[]): ComputedResult | null {
   const useSheets = parsed.sheet

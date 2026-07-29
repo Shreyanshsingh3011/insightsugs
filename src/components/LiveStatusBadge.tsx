@@ -12,6 +12,12 @@ function formatAgo(ms: number): string {
   return `${h}h ago`;
 }
 
+/**
+ * Realtime connection indicator (green pulsing dot / amber "reconnecting" /
+ * gray "offline") for any screen using {@link useLiveInvalidate}-style
+ * status. Re-renders every 15s purely to keep the "Xs/Xm ago" label fresh —
+ * it does not re-check the connection itself.
+ */
 export function LiveStatusBadge({
   status,
   label = "Live",

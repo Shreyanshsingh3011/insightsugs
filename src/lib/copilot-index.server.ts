@@ -140,6 +140,11 @@ function evictIfNeeded() {
   if (oldestKey) CACHE.delete(oldestKey);
 }
 
+/**
+ * Get (building + caching if needed) the in-memory search index for a
+ * sheet. Cache key includes row_count + last_content_hash/last_refreshed_at
+ * so a sheet resync invalidates the cache even when row count is unchanged.
+ */
 export async function getSheetIndex(
   supabase: any,
   registryId: string,
@@ -223,6 +228,7 @@ export function candidatesForTokens(index: SheetIndex, tokens: string[]): number
   return out;
 }
 
+/** Fast token-OR candidate lookup — union of posting lists, used as a looser fallback when the strict AND intersection returns nothing. */
 export function candidatesForAnyToken(index: SheetIndex, tokens: string[]): number[] | null {
   if (tokens.length === 0) return null;
   const out = new Set<number>();

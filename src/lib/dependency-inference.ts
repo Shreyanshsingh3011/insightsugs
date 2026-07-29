@@ -1,3 +1,15 @@
+/**
+ * Local (non-Emergent) fallback for dependency-chain inference: fetches a
+ * sheet's rows directly and derives a dependency graph either from a
+ * user-supplied JS "logic" snippet or from an Emergent share-link payload
+ * embedded in that snippet.
+ *
+ * SECURITY NOTE: `new Function(...)` executes the user-supplied `logic`
+ * body. This is acceptable here because logic is authored by the
+ * authenticated project owner and only runs against their own already-
+ * fetched sheet data (no network/DOM access) — never wire untrusted input
+ * into this path.
+ */
 // Local dependency inference: fetches a sheet (Apps Script / public JSON) and
 // derives a dependency chain from the actual rows + a user-supplied logic
 // snippet. Supports two return shapes from the user's JS body:

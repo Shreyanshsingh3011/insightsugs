@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/"
+ * Access: authenticated user (requires super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useRoles } from "@/hooks/useSession";
@@ -27,6 +35,7 @@ type Entry = {
   live?: number;
 };
 
+/** Page component for "/_authenticated/admin/". */
 function AdminIndex() {
   const { data: roles } = useRoles();
   const isAdmin = !!roles?.some((r) => r === "admin" || r === "super_admin");

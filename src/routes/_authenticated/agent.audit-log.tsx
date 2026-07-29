@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/audit-log"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +51,7 @@ function DiffPanel({ label, data, tone }: {
   );
 }
 
+/** Page component for "/_authenticated/agent/audit-log". */
 function AuditLogPage() {
   const list = useServerFn(listAuditLog);
   const qc = useQueryClient();

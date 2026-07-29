@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/projects"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Supabase tables: activities, holidays, profiles, projects.
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,6 +47,7 @@ type Activity = {
 };
 type Profile = { id: string; full_name: string; email: string };
 
+/** Page component for "/_authenticated/projects". */
 function ProjectsPage() {
   const isAdmin = useIsAdmin();
   const { userId } = useSession();

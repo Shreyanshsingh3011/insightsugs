@@ -19,6 +19,10 @@ import {
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
 
+// AI Elements: Tool — collapsible card rendering a single tool call's
+// input/output/state inside a chat message (used by AgentChatWidget for
+// tool-* message parts from the AI SDK). Defaults to collapsed so a chat
+// full of tool calls doesn't overwhelm the transcript.
 import { CodeBlock } from "./code-block";
 
 export type ToolProps = ComponentProps<typeof Collapsible>;

@@ -2,8 +2,10 @@
 // Keeps the refusal phrase and citation regexes in one place so the model
 // contract, the UI, and the test suite cannot drift apart.
 
+/** Fixed refusal phrase — must match COPILOT_REFUSAL_PHRASE in copilot-system-prompt.server.ts. */
 export const REFUSAL_PHRASE = "I don't have that in the current dashboard data.";
 
+/** Citation types the parser recognizes: sheet row, doc page, or dashboard field. */
 export type SheetCitation = { kind: "sheet"; label: string; row: number };
 export type DocCitation = { kind: "doc"; label: string; page: number };
 export type DashboardCitation = { kind: "dashboard"; field: string };
@@ -13,6 +15,7 @@ const SHEET_RE = /\[sheet:([^\]]+?)\s+row\s+(\d+)\]/gi;
 const DOC_RE = /\[doc:([^\]]+?)\s+p\.(\d+)\]/gi;
 const DASH_RE = /\[dashboard:([^\]]+?)\]/gi;
 
+/** Parse every [sheet:...]/[doc:...]/[dashboard:...] marker out of an answer, deduped. */
 export function extractCitations(text: string): AnyCitation[] {
   const out: AnyCitation[] = [];
   const seen = new Set<string>();
@@ -48,6 +51,7 @@ export function stripCitations(text: string): string {
     .trim();
 }
 
+/** Result of checking whether an answer is the fixed refusal, plus any listed missing items. */
 export type RefusalInfo = {
   isRefusal: boolean;
   missing: string[];
@@ -74,6 +78,11 @@ export function parseRefusal(text: string): RefusalInfo {
 const FACT_HINT_RE =
   /\b(\d+(\.\d+)?%?|overdue|late|delay|blocked|completed|assigned|owner|risk|days?|hours?|weeks?|approved|rejected|pending|alert|concern|project|sheet|row|activity|activities)\b/i;
 
+/**
+ * Heuristically flag factual-looking sentences (numbers, statuses, dates,
+ * etc.) that carry no citation marker. Used by automated tests to fail
+ * obviously ungrounded Copilot answers — not a runtime guardrail.
+ */
 export function findUncitedFactualSentences(text: string): string[] {
   // Ignore anything after "Sources:" — that's the citation footer.
   const body = text.split(/^\s*Sources?:/im)[0];

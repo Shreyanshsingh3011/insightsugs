@@ -3,6 +3,7 @@ import type { Citation } from "./types";
 import type { SheetSource } from "./compute";
 import type { ConcernLite, ReminderLite } from "./retrieve";
 
+/** Filter model-returned citations down to ones that actually point at real, currently-enabled records — drops hallucinated or stale references. */
 export function verifyCitations(opts: {
   citations: Citation[];
   sheets: SheetSource[];

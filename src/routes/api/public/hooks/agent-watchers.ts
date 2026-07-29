@@ -14,6 +14,7 @@ export const Route = createFileRoute("/api/public/hooks/agent-watchers")({
   },
 });
 
+/** Cron/webhook handler for "/api/public/hooks/agent-watchers". Verifies the caller via isHookAuthorized() before doing any work; returns JSON { ok, ... }. */
 async function handle(request: Request): Promise<Response> {
   if (!isHookAuthorized(request)) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {

@@ -10,6 +10,12 @@ import { Loader2, FolderKanban } from "lucide-react";
 import { saveMyAssignments } from "@/lib/user-assignments.functions";
 import type { AgentProject } from "@/lib/agent-registry.functions";
 
+/**
+ * Lets a user choose which projects they personally work on; this scopes
+ * their Agent Dashboard, tasks, and reports (see useAgentScope). Resets its
+ * local selection to `current` every time the dialog reopens so stale picks
+ * from a previous open don't leak in.
+ */
 export function ProjectAssignmentPicker({
   projects,
   current,

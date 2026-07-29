@@ -19,6 +19,15 @@ import { verifyCitations } from "@/lib/notebook/verify";
 import { callChat, loadHistory, loadSources, upsertSource, summarizeSource, suggestQuestions, tokenFromBase } from "@/lib/notebook/client";
 import type { Citation, ChatMessage } from "@/lib/notebook/types";
 
+// Standalone chat "co-pilot" for the public notebook share link (rendered on the
+// notebook detail page's Copilot tab). Lets a viewer toggle which sheets/concerns/
+// reminders are in scope, then asks questions that are either answered deterministically
+// (quantitative aggregations via lib/notebook/router+compute, so numbers are exact even
+// offline) or via the AI chat endpoint with retrieved context (lib/notebook/retrieve),
+// with citations verified against the actual source data before being shown
+// (lib/notebook/verify). Chat history, per-source enable state, and cached summaries
+// are all persisted server-side keyed by a token derived from the notebook's public `base` link.
+
 type Sheet = {
   label: string; columns?: { name: string }[]; rows?: Record<string, unknown>[]; row_count?: number;
 };
@@ -32,8 +41,15 @@ export type NotebookCopilotProps = {
   onOpenConcern?: (id?: string) => void;
 };
 
+/** Per-source toggle state shown in the sidebar; `summary` is a cached AI blurb, generated on demand. */
 type SrcState = { type: "sheet" | "concerns" | "reminders"; label: string; row_count: number; enabled: boolean; summary?: string };
 
+/**
+ * @param base The notebook's public share-link base URL; hashed into a token used to
+ *   namespace persisted chat history/source state/summaries for this notebook.
+ * @param onJumpToSheetRow / onOpenConcern Callbacks used when a citation chip is clicked,
+ *   letting the host page scroll/highlight the referenced row or open the referenced concern.
+ */
 export default function NotebookCopilot({ base, sheets, concerns, reminders, onJumpToSheetRow, onOpenConcern }: NotebookCopilotProps) {
   const token = useMemo(() => tokenFromBase(base), [base]);
 
@@ -48,6 +64,8 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
   }, [sheets, concerns, reminders]);
 
   const [sources, setSources] = useState<SrcState[]>(initialSources);
+  // Re-sync local toggle state whenever the underlying sheets/concerns/reminders change
+  // (e.g. notebook data refetch), without clobbering enabled/summary once loaded below.
   useEffect(() => { setSources(initialSources); }, [initialSources]);
 
   // Load persisted source enable/summary state
@@ -64,6 +82,8 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
     }).catch(() => undefined);
   }, [token]);
 
+  // Only sheets the user has enabled are exposed to the router/compute/retrieve layers,
+  // so disabled sources never leak into answers or citations.
   const sheetSources: SheetSource[] = useMemo(
     () =>
       sheets
@@ -108,7 +128,9 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
     return () => { alive = false; };
   }, [token]);
 
-  // Suggestions
+  // Suggestions — re-fetched whenever the set of enabled sources changes (query key
+  // includes a joined list of "type:label"), cached for 5 minutes since suggestions
+  // are cheap to reuse across quick toggles.
   const suggestQ = useQuery({
     queryKey: ["notebook-suggest", token, sources.filter((s) => s.enabled).map((s) => `${s.type}:${s.label}`).join("|")],
     queryFn: () =>
@@ -138,6 +160,12 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
     [sources],
   );
 
+  /**
+   * Routes a question either to the deterministic compute path (exact numeric answers,
+   * works offline) or the AI chat path with retrieved context, then verifies citations
+   * against live source data before appending the assistant message. Records a snapshot
+   * of which sources/kind were applied at ask-time for the "Applied filters" UI.
+   */
   const handleAsk = async (q: string) => {
     const question = q.trim();
     if (!question || sending) return;
@@ -158,6 +186,8 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
         if (parsed) {
           const computed = evaluate(parsed, sheetSources);
           if (computed) {
+            // Deterministic result found — still round-trips through callChat so the
+            // model can phrase a natural-language explanation around the exact number.
             const resp = await callChat({ token, question, computedResult: computed, history });
             const verified = verifyCitations({
               citations: resp.citations, sheets: sheetSources, concerns: enabledConcerns, reminders: enabledReminders,
@@ -174,6 +204,7 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
         }
         // Parsing failed — fall through to qualitative
       }
+
 
       const context = buildContext({ question, sheets: sheetSources, concerns: enabledConcerns, reminders: enabledReminders });
       const resp = await callChat({ token, question, contextItems: context, history });
@@ -342,6 +373,7 @@ export default function NotebookCopilot({ base, sheets, concerns, reminders, onJ
   );
 }
 
+/** Single chat bubble; enriches raw citations with human-readable labels/values via `enrichCitation`. */
 function MessageBubble({
   msg, sheets, filters, onCitationClick,
 }: {
@@ -445,6 +477,8 @@ type EnrichedCitation = {
   value?: unknown;
 };
 
+/** Resolves a raw Citation into a display label + the specific field/value it points at, by
+ * looking up the actual row from `sheets` and picking the most informative column (see `pickKeyField`). */
 function enrichCitation(c: Citation, sheets?: SheetSource[]): EnrichedCitation {
   if (c.type === "sheet") {
     const rowIdx = typeof c.row === "number" ? c.row : -1;
@@ -459,6 +493,8 @@ function enrichCitation(c: Citation, sheets?: SheetSource[]): EnrichedCitation {
   return { citation: c, label: `Reminder${c.id ? ` #${c.id.slice(0, 6)}` : ""}` };
 }
 
+// Prefers columns likely to explain *why* a row was cited (status/TAT/owner-ish names)
+// over picking an arbitrary populated column, falling back to the first non-empty one.
 function pickKeyField(columns: string[], row?: Record<string, unknown>): string | undefined {
   if (!row) return undefined;
   const priorities = [

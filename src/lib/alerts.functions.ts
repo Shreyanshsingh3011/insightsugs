@@ -1,3 +1,10 @@
+// Alert lifecycle: sendAlert dispatches a flagged activity to every relevant
+// recipient (responsible person, project members, dependent-activity
+// assignees) via in-app notification + transactional email, then the thread
+// (replyToAlert) and closure (resolveAlert) endpoints manage it afterwards.
+// sendAlert/resolveAlert require admin/super_admin (assertAdmin); reply is
+// open to any authenticated recipient via RLS.
+
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -22,6 +29,7 @@ const FlagSnapshot = z.object({
     .optional(),
 });
 
+/** Throws unless the caller has the admin or super_admin role. Used to gate sendAlert/resolveAlert to privileged users. */
 async function assertAdmin(supabase: any, userId: string) {
   const { data, error } = await supabase
     .from("user_roles")
@@ -34,6 +42,13 @@ async function assertAdmin(supabase: any, userId: string) {
   }
 }
 
+/**
+ * Dispatch an alert for a flagged activity: resolves recipients (responsible
+ * person, project members, and assignees of dependent activities), creates
+ * the `alerts` row (one per flag_id — re-dispatch is rejected), inserts
+ * alert_recipients rows for both in-app + email channels, and enqueues the
+ * transactional email per recipient. Admin/super_admin only.
+ */
 export const sendAlert = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { flag: unknown }) => ({ flag: FlagSnapshot.parse(d.flag) }))
@@ -201,6 +216,7 @@ export const sendAlert = createServerFn({ method: "POST" })
     };
   });
 
+/** Load an alert (if dispatched) plus its recipients and reply thread, keyed by the dashboard's flag_id rather than the alert's own id. */
 export const getAlertByFlag = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { flagId: string }) => ({ flagId: z.string().min(1).max(100).parse(d.flagId) }))
@@ -237,6 +253,7 @@ export const getAlertByFlag = createServerFn({ method: "GET" })
     };
   });
 
+/** Post a reply message on an alert thread and notify the other in-app recipients + the original sender. */
 export const replyToAlert = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { alertId: string; body: string }) => ({
@@ -279,6 +296,7 @@ export const replyToAlert = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Mark an alert resolved. Admin/super_admin only. */
 export const resolveAlert = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { alertId: string }) => ({ alertId: z.string().uuid().parse(d.alertId) }))

@@ -1,3 +1,6 @@
+// Hook exposing the current Supabase session/user, backed by
+// getUsableSupabaseSession (see lib/auth-session.ts).
+
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";

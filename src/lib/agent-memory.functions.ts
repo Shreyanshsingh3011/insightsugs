@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+/** A single per-user fact/preference the copilot remembers across sessions. */
 export type AgentMemoryRow = {
   id: string;
   kind: string;
@@ -14,6 +15,7 @@ export type AgentMemoryRow = {
   updated_at: string;
 };
 
+/** List the caller's own memory entries, most important + most recently updated first. */
 export const listAgentMemory = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -28,6 +30,7 @@ export const listAgentMemory = createServerFn({ method: "GET" })
     return (data ?? []) as AgentMemoryRow[];
   });
 
+/** Create or update a memory entry keyed by (kind, key) per user — upsert lets the copilot correct a fact without creating duplicates. */
 export const upsertAgentMemory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -55,6 +58,7 @@ export const upsertAgentMemory = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Delete one of the caller's own memory entries (scoped by user_id, not just id, so a stolen id can't delete another user's memory). */
 export const deleteAgentMemory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: { id: string }) => ({ id: z.string().uuid().parse(raw.id) }))

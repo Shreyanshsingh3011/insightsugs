@@ -1,3 +1,8 @@
+// AIStatusBadge — small pill shown in the header/dashboard chrome that reports
+// which AI backend is currently serving requests (Gateway > Gemini > Groq,
+// in fallback order) or "unavailable" when all three are down. Reads the
+// latest `integration_health` rows (written by the ai-health cron/hook) so
+// it never calls the AI providers itself. Polled every 60s.
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, AlertTriangle, XCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";

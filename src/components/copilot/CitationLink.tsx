@@ -1,3 +1,7 @@
+// Renders inline [sheet:...]/[doc:...] citation markers found in copilot answer text
+// as clickable links (sheet rows deep-link into /sheets/$sheetId) or badges (docs, until
+// a document viewer route exists). Used by AgentChatWidget-style answer rendering via
+// renderWithCitations, which tokenizes the raw markdown answer around these markers.
 import { Link } from "@tanstack/react-router";
 
 type Source = { id: string; name: string; type: string };

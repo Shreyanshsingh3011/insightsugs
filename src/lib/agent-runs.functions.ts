@@ -5,6 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
+/** Row shape of public.agent_runs — one row per agent/tool invocation, used for the observability dashboard. */
 export type AgentRunRow = {
   id: string;
   agent: string;
@@ -25,6 +26,7 @@ export type AgentRunRow = {
   finished_at: string | null;
 };
 
+/** List recent agent runs; scope="mine" (default) restricts to the caller's own runs, scope="all" is intended for admin views. */
 export const listAgentRuns = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -47,6 +49,7 @@ export const listAgentRuns = createServerFn({ method: "POST" })
     return (rows ?? []) as unknown as AgentRunRow[];
   });
 
+/** Record a thumbs up/down + optional note on a run, and mirror it into agent_run_events for the feedback timeline. */
 export const submitAgentRunFeedback = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -72,6 +75,7 @@ export const submitAgentRunFeedback = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** 7-day rollup of agent activity for the observability dashboard header. */
 export type AgentStats = {
   total_runs: number;
   succeeded: number;
@@ -83,6 +87,7 @@ export type AgentStats = {
   pending_actions: number;
 };
 
+/** Compute the 7-day AgentStats rollup (success/fail counts, avg latency, token usage, feedback, open pending_actions) for the caller's visible rows. */
 export const getAgentStats = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<AgentStats> => {

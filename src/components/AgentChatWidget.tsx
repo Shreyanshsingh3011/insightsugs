@@ -62,6 +62,14 @@ const SUGGESTIONS = [
   "Give me a project summary.",
 ];
 
+/**
+ * Floating grounded chat assistant for the Agent Dashboard.
+ * @param context Snapshot of the dashboard's current rows/filters/totals —
+ * sent with every request so answers are grounded only in what the user is
+ * currently looking at (see prepareSendMessagesRequest below). Kept in a
+ * ref so an in-flight stream keeps using the context from when it started.
+ * @param actorId Current user id, threaded through for feedback attribution.
+ */
 export default function AgentChatWidget({
   context,
   actorId,

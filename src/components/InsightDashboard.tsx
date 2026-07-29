@@ -1,3 +1,11 @@
+// InsightDashboard — the "/insights" screen: a tabbed view over one or more
+// analyzed sheets (KPIs, charts, flags, recommendations) plus an embedded
+// NotebookCopilot chat scoped to the active sheet. Distinct from
+// AgentDashboard (which is activity/delay-tracking focused) and from
+// AgenticInsightsOverview (a reusable module-rendering panel this file may
+// also drive). Data comes from fetchInsightUrl per sheet; Gemini is used
+// only for optional draft text (reorder lists / emails / summaries), never
+// to compute the numbers themselves — see DraftDialog and GROUNDING_RULES.
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import AgenticInsightsOverview, { computeAgenticTabs, type AgenticDashboardData } from "@/components/AgenticInsightsOverview";
 import { useServerFn } from "@tanstack/react-start";
@@ -3343,6 +3351,7 @@ const AGENTIC_SCROLL_TARGETS: Record<string, string> = {
   quality: "section-quality",
 };
 
+/** Top-level page component for the /insights route. */
 export default function InsightDashboard() {
   const { raw, setRaw, active, activeExport, exportOnly, error, apply, clear } = useLinkInput();
   const fetchUrl = useServerFn(fetchInsightUrl);

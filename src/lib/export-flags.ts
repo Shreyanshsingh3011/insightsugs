@@ -1,3 +1,8 @@
+/**
+ * CSV/PDF export of the dashboard's flag list (delayed/overdue activities).
+ * `flagsOverride` lets callers export a filtered subset while still reading
+ * summary totals (risk_score, delayed count) from the full DashboardData.
+ */
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { DashboardData, FlagEntry } from "./dashboard-data";

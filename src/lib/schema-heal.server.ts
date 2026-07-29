@@ -10,6 +10,7 @@
 let lastReloadAt = 0;
 const MIN_INTERVAL_MS = 10_000;
 
+/** Trigger a PostgREST schema-cache reload (rate-limited to 1 per 10s). Returns true if a reload was actually fired. */
 export async function healSchemaCache(reason: string): Promise<boolean> {
   const now = Date.now();
   if (now - lastReloadAt < MIN_INTERVAL_MS) return false;
@@ -32,6 +33,7 @@ export async function healSchemaCache(reason: string): Promise<boolean> {
   }
 }
 
+/** True when an error looks like a PostgREST stale-schema-cache (PGRST002) condition. */
 export function isSchemaCacheError(error: unknown): boolean {
   const msg = `${(error as { message?: string })?.message ?? ""} ${(error as { code?: string })?.code ?? ""}`.toLowerCase();
   return msg.includes("pgrst002") || msg.includes("schema cache");

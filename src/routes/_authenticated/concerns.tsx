@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/concerns"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -52,6 +60,7 @@ function statusColor(s: string) {
   }
 }
 
+/** Page component for "/_authenticated/concerns". */
 function ConcernsPage() {
   const qc = useQueryClient();
   const listFn = useServerFn(listConcerns);

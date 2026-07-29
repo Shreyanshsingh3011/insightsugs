@@ -40,6 +40,14 @@ function severityFor(daysOver: number): "info" | "warning" | "critical" {
   return "info";
 }
 
+/**
+ * Cron entry point: scans overdue activities org-wide (service-role read),
+ * ranks by days overdue with a per-project fairness cap, and queues one
+ * `create_alert` pending_action per top offender for human approval.
+ * De-dupes against the last 24h of proposals via a sha256 idempotency key
+ * over (kind, activity_id) so re-running the tick doesn't spam duplicates.
+ * Logs a row in agent_runs for observability regardless of outcome.
+ */
 export async function runAgentTick(): Promise<{
   scanned: number;
   queued: number;

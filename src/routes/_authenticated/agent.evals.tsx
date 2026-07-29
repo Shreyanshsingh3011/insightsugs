@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/evals"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Play, Trash2, Plus, FlaskConical, Check, X } from "lucide-react";
 
+/** Page component for "/_authenticated/agent/evals". */
 function EvalsPage() {
   const listCases = useServerFn(listEvalCases);
   const listRuns = useServerFn(listRecentEvalRuns);

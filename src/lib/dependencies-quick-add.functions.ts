@@ -1,3 +1,10 @@
+/**
+ * "Quick add a dependency row without leaving the chat" flow: lazily
+ * creates (or reuses) a single manual sheet_registry row per user, tagged
+ * with the `manual://quick-dependencies` sentinel URL, and appends rows to
+ * it. Because dashboards/chat all read from sheet_rows uniformly, these
+ * manually-added dependencies show up everywhere real synced rows do.
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";

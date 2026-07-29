@@ -34,6 +34,13 @@ export type EntityActionContext = {
   summaryLine?: string;       // one-line context injected into every draft
 };
 
+/**
+ * Four standard actions available on every entity (person/stage/project)
+ * detail page: message, email, task, concern. Each opens its own small
+ * dialog below and posts through the corresponding server function
+ * (messages/alerts/concerns) rather than mutating local state, so the
+ * action is durable even if the user navigates away mid-dialog.
+ */
 export function EntityActionsBar({ ctx }: { ctx: EntityActionContext }) {
   const [openMessage, setOpenMessage] = useState(false);
   const [openEmail, setOpenEmail] = useState(false);

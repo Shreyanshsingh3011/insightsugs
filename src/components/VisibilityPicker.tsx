@@ -9,6 +9,7 @@ import { Check, Globe, Lock, Users, X } from "lucide-react";
 
 export type Visibility = "private" | "public" | "shared";
 
+/** Read-only chip summarizing a visibility value (private/public/shared). */
 export function VisibilityBadge({
   visibility,
   shareCount,
@@ -40,6 +41,11 @@ export function VisibilityBadge({
   );
 }
 
+/**
+ * Editable private/public/shared control. The shareable-users list is only
+ * fetched when visibility is "shared" (`enabled` guard) to avoid pulling the
+ * whole user directory for the common private/public paths.
+ */
 export function VisibilityPicker({
   visibility,
   onVisibilityChange,

@@ -1,3 +1,8 @@
+// NotificationsBell — header popover listing the current user's recent
+// notifications. Combines a polled query (60s) with a Supabase Realtime
+// subscription on INSERT so new notifications appear immediately without
+// waiting for the next poll. Clicking an item marks it read and deep-links
+// to the relevant screen via targetForNotification's kind-based routing.
 import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -44,6 +49,7 @@ function fmtWhen(iso: string) {
   return d.toLocaleDateString();
 }
 
+/** Bell icon + unread badge + popover list; see file header for data flow. */
 export function NotificationsBell() {
   const { userId } = useSession();
   const qc = useQueryClient();

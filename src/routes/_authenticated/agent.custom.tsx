@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/custom"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +36,7 @@ const AVAILABLE_TOOLS = [
   "proposeNudgeAssignee",
 ];
 
+/** Page component for "/_authenticated/agent/custom". */
 function CustomAgentsPage() {
   const list = useServerFn(listCustomAgents);
   const create = useServerFn(createCustomAgent);

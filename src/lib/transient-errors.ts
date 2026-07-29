@@ -1,3 +1,6 @@
+// Classifies errors as transient (network/timeout/5xx) vs permanent so
+// retry logic elsewhere knows what's safe to retry.
+
 function errorText(error: unknown) {
   const fields =
     error && typeof error === "object"

@@ -1,3 +1,5 @@
+// Node/edge server entry used by the deploy target to serve the built app.
+
 import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";

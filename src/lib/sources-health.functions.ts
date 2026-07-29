@@ -1,3 +1,12 @@
+/**
+ * Aggregates health status across every connected sheet (sheet_registry)
+ * and every uploaded document (documents/document_chunks) into one report
+ * for the admin "Sources health" panel.
+ *
+ * Sheet status buckets: never-synced / fresh / stale (> STALE_HOURS since
+ * last refresh) / error (last_error set or still within degraded_until).
+ * Document health buckets: ok / no-chunks / missing-embeddings / error.
+ */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

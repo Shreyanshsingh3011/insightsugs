@@ -22,6 +22,7 @@ const KIND_LABEL: Record<DetailBreadcrumbsProps["kind"], string> = {
   row: "Activities",
 };
 
+/** Breadcrumb trail + back-to-dashboard link for a single entity detail page. */
 export function DetailBreadcrumbs({ kind, title, parent }: DetailBreadcrumbsProps) {
   return (
     <nav

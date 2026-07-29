@@ -135,6 +135,7 @@ export function looseTokenHit(hay: string, token: string): boolean {
   return false;
 }
 
+/** Normalize + tokenize a query, dropping stopwords and single-char tokens. */
 export function contentTokens(query: string): string[] {
   return normalizeText(query)
     .split(" ")
@@ -196,6 +197,7 @@ export function strictPhrases(query: string): string[] {
   return Array.from(out);
 }
 
+/** Join and normalize a row's cell values into one searchable haystack string. */
 export function normalizeHaystack(values: Iterable<unknown>): string {
   const parts: string[] = [];
   for (const v of values) {
@@ -306,6 +308,7 @@ export function matchesAllPhrasesFuzzy(
 }
 
 /** True when the query is specific enough that unrelated rows are unsafe. */
+/** True when the query is specific enough that unrelated rows are unsafe. */
 export function hasStrictTarget(query: string): boolean {
   return strictPhrases(query).length > 0;
 }
@@ -315,12 +318,14 @@ export function hasStrictTarget(query: string): boolean {
 // "details for S. No. 12"). Extract that so the deterministic engine can
 // look the row up by SNO_ALIASES header, rather than trying to string-match
 // "67" across every cell and returning a random row that mentions 67.
+/** Extract a requested serial/row number from phrasings like "S. No. 67", "sr no 12". */
 export function extractSerialNumber(query: string): number | null {
   const m = query.match(/\b(?:s|sr|sl|serial|sno)\s*\.?\s*(?:no|number|num|#)?\s*\.?\s*[:#-]?\s*(\d{1,6})\b/i);
   if (m) return Number(m[1]);
   return null;
 }
 
+/** Return the row's serial-number value (as string) if a SNO alias exists. */
 /** Return the row's serial-number value (as string) if a SNO alias exists. */
 export function rowSerialNumber(row: Record<string, unknown>): string | null {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -403,8 +408,10 @@ export function extractRequestedColumns(query: string, availableColumns: string[
 // deterministic engine to resolve group-by / filter / aggregate columns
 // without hardcoded hint lists.
 
+/** How a column reference was resolved — used for confidence tuning and debugging. */
 export type ColumnMatchVia = "exact" | "normalized" | "token-subset" | "fuzzy" | "synonym";
 
+/** Result of resolving a free-text fragment to a real sheet column. */
 export interface ColumnResolution {
   column: string;
   confidence: number; // 0..100

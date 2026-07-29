@@ -1,5 +1,9 @@
 "use client";
 
+// AI Elements: CodeBlock — syntax-highlighted code renderer (via Shiki) with
+// copy-to-clipboard and language switching, used for fenced code blocks in
+// streamed assistant markdown. Shiki's highlighter is dynamically imported
+// inside getHighlighter() further down so it never lands in the SSR bundle.
 import { Button } from "@/components/ui/button";
 import {
   Select,

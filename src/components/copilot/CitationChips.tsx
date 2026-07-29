@@ -9,18 +9,27 @@ import type { CitationTarget } from "@/components/CitationPanel";
 
 type KindFilter = "all" | "sheet" | "doc" | "dashboard";
 
+/** Human-readable label for a citation chip, e.g. "Sales · row 3" or "doc · foo". */
 function chipLabel(c: AnyCitation): string {
   if (c.kind === "sheet") return `${c.label} · row ${c.row}`;
   if (c.kind === "doc") return `${c.label} · p.${c.page}`;
   return `dashboard · ${c.field}`;
 }
 
+/** Stable dedupe/lookup key for a citation, used for selection + scroll targeting. */
 function chipKey(c: AnyCitation): string {
   if (c.kind === "sheet") return `s:${c.label}:${c.row}`;
   if (c.kind === "doc") return `d:${c.label}:${c.page}`;
   return `x:${c.field}`;
 }
 
+/**
+ * Filterable/searchable strip of citation chips shown under an assistant answer.
+ * `onSelect` drives the shared CitationPanel (row/page/dashboard-field highlight);
+ * `selected` lets the panel report back which citation is active so this strip can
+ * sync its prev/next cursor. `resolveDashboardValue` is used to hydrate the current
+ * value for dashboard-field citations only when the user jumps to one (lazy lookup).
+ */
 export function CitationChips({
   citations,
   onSelect,

@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/allowlist"
+ * Access: authenticated user (requires super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Supabase tables: signup_allowlist.
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +33,7 @@ type Row = {
   created_at: string;
 };
 
+/** Page component for "/_authenticated/admin/allowlist". */
 function AllowlistPage() {
   const isSuper = useIsSuper();
   const qc = useQueryClient();

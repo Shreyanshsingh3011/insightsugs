@@ -27,6 +27,7 @@ export type CitationContext =
       found: boolean;
     };
 
+/** Resolve one citation chip ([sheet:.. row N] or [doc:.. p.N]) to the underlying row/document data for the side panel. */
 export const getCitationContext = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((raw: { kind: "sheet" | "doc"; label: string; row?: number; page?: number }) => ({

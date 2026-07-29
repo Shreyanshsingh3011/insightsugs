@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/admin/sync-perf"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -19,6 +27,7 @@ export const Route = createFileRoute("/_authenticated/admin/sync-perf")({
   component: SyncPerfPage,
 });
 
+/** Page component for "/_authenticated/admin/sync-perf". */
 function SyncPerfPage() {
   const readAudit = useServerFn(readRecentSyncAudit);
   const q = useQuery({

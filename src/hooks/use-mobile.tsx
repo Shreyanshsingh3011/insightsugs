@@ -1,3 +1,6 @@
+// Hook returning whether the viewport is currently mobile-width, backed by a
+// matchMedia listener.
+
 import * as React from "react";
 
 const MOBILE_BREAKPOINT = 768;

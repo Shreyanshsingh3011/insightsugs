@@ -1,3 +1,6 @@
+// Hook that batches multiple react-query invalidate calls within a tick into
+// one, to avoid redundant refetch storms.
+
 import { useEffect, useMemo, useRef } from "react";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 

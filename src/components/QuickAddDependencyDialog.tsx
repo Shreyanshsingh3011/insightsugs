@@ -18,6 +18,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { appendQuickDependency } from "@/lib/dependencies-quick-add.functions";
 
+/**
+ * Lightweight dialog to append a single dependency/activity row directly
+ * from the dashboard, bypassing the full sheet-ingestion flow. Writes via
+ * appendQuickDependency and invalidates any caller-supplied query keys so
+ * the new row shows up without a manual refresh.
+ */
 export function QuickAddDependencyDialog({
   onAdded,
   invalidateKeys = [],

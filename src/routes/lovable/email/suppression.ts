@@ -1,3 +1,16 @@
+/**
+ * Route: "/lovable/email/suppression" (server function, POST)
+ * Access: external webhook — expects an HMAC-signed request verified via
+ * `verifyWebhookRequest` (@lovable.dev/webhooks-js) using LOVABLE_API_KEY as the shared secret.
+ * Caller: the Lovable email-sending backend, relaying Mailgun bounce/complaint/unsubscribe
+ * events. Requests failing signature or timestamp checks are rejected with 401.
+ * Purpose: idempotently upserts the reported email into `suppressed_emails` (bounce/complaint/
+ * unsubscribe) and appends an audit row to `email_send_log`, so future sends to that address are
+ * blocked (see lovable/email/transactional/send.ts's suppression check).
+ * Data dependencies: Supabase `suppressed_emails`, `email_send_log` via the service-role client.
+ * Gotchas: the `email_send_log` insert is treated as non-fatal/best-effort — the suppression
+ * itself has already been durably recorded by the time that insert is attempted.
+ */
 import { createClient } from '@supabase/supabase-js'
 import { WebhookError, verifyWebhookRequest } from '@lovable.dev/webhooks-js'
 import { createFileRoute } from '@tanstack/react-router'

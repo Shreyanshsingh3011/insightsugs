@@ -1,3 +1,13 @@
+/**
+ * Route: "/login"
+ * Access: public — the sign-in / sign-up screen for unauthenticated users.
+ * Purpose: email+password sign-in/sign-up via Supabase Auth, plus Google OAuth via the
+ * `lovable` integration. Redirects to the saved "postLoginPath" (see _authenticated.tsx) on success.
+ * Data dependencies: Supabase auth client (@/integrations/supabase/client) and the lazy-loaded
+ * `lovable.auth.signInWithOAuth` helper for Google sign-in.
+ * Gotchas: sign-up sends `requested_role` as user metadata for downstream admin approval; new
+ * accounts are not immediately granted roles (see PendingApprovalScreen in _authenticated.tsx).
+ */
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +20,7 @@ import { useSession } from "@/hooks/useSession";
 
 type RequestedRole = "super_admin" | "admin" | "user";
 
+/** Reads and clears the saved post-login redirect target, falling back to `fallback` if absent/invalid. */
 function consumePostLoginPath(fallback = "/agent") {
   if (typeof window === "undefined") return fallback;
   const saved = window.sessionStorage.getItem("postLoginPath");
@@ -20,6 +31,7 @@ function consumePostLoginPath(fallback = "/agent") {
   return saved;
 }
 
+/** Seeds sessionStorage with a default post-login redirect before starting an OAuth redirect flow (which reloads the page). */
 function ensurePostLoginPath(fallback = "/agent") {
   if (typeof window === "undefined") return;
   const saved = window.sessionStorage.getItem("postLoginPath");
@@ -33,6 +45,7 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+/** Sign-in / sign-up form component; redirects away automatically once a session exists. */
 function LoginPage() {
   const router = useRouter();
   const { session } = useSession();

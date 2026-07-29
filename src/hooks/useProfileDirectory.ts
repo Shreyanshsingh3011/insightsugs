@@ -1,3 +1,6 @@
+// Hook fetching the lightweight profile directory (see
+// profile-directory.functions) for @mention/recipient pickers.
+
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";

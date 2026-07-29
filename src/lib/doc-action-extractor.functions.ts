@@ -10,6 +10,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+/** One extracted contractual obligation/deadline/penalty, with its supporting citation. */
 type Obligation = {
   title: string;
   description: string;
@@ -21,6 +22,7 @@ type Obligation = {
   severity: "info" | "warning" | "critical";
 };
 
+/** Ask the model to extract obligations from document chunks as strict JSON; returns [] on any failure/missing key. */
 async function aiExtract(input: {
   docName: string;
   summary: string | null;
@@ -77,6 +79,7 @@ ${chunkText}`;
   } catch { return []; }
 }
 
+/** Escalate severity based on days-to-deadline, but never downgrade below the model's own assessment. */
 function severityFromDate(iso: string | null, fallback: Obligation["severity"]): Obligation["severity"] {
   if (!iso) return fallback;
   const days = (new Date(iso).getTime() - Date.now()) / 86_400_000;
@@ -85,6 +88,7 @@ function severityFromDate(iso: string | null, fallback: Obligation["severity"]):
   return fallback;
 }
 
+/** Summary of one extraction run: counts created plus the raw obligations found. */
 export type ExtractResult = {
   document_id: string;
   document_name: string;
@@ -101,6 +105,7 @@ const ExtractInput = z.object({
   project_id: z.string().uuid().optional().nullable(),
 });
 
+/** Extract obligations from a document and materialize them as alerts (always) + activities (if a project is given) + owner notifications. */
 export const extractDocActions = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ExtractInput.parse(d ?? {}))

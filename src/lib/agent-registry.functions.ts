@@ -1,3 +1,14 @@
+/**
+ * Resolves the list of source project sheets ("AgentProject") that power the
+ * Agent Dashboard's multi-project picker, by reading a master Google Sheet
+ * that lists every project's sheet URL/tab.
+ *
+ * Resolution order: Lovable Google Sheets connector (authenticated) ->
+ * public CSV export of the master sheet -> built-in FALLBACK_PROJECTS
+ * (kept in sync with AgentDashboard.FALLBACK_PROJECTS / useAgentSources).
+ * This layered fallback exists so watchers/cron jobs always have a project
+ * list even when credentials or sharing permissions are missing.
+ */
 import { createServerFn } from "@tanstack/react-start";
 
 // Master sheet that lists every project source. Each row should contain a

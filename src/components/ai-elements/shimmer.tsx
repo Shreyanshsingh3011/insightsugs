@@ -1,5 +1,9 @@
 "use client";
 
+// AI Elements: Shimmer — animated "text shimmer" used for streaming/loading
+// states (e.g. the "Thinking…" line in AgentChatWidget). Motion components
+// are cached at module scope (motionComponentCache) because motion.create()
+// is relatively expensive and the element type set is small/stable.
 import { cn } from "@/lib/utils";
 import type { MotionProps } from "motion/react";
 import { motion } from "motion/react";

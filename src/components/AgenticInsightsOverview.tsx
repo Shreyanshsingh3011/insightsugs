@@ -1,3 +1,14 @@
+// AgenticInsightsOverview — richer, module-based insights view for a single
+// uploaded sheet/project (pivot, anomalies, stock views, data quality,
+// recommendations, forecast, trends, digest). The backend
+// (`fetchInsightUrl`) computes each `modules.*` block; this file is
+// responsible for turning that payload into KPI cards, a severity-ranked
+// "next best actions" list (see buildActions), and an optional one-shot
+// Gemini pass that rewrites the commentary in plain English without being
+// allowed to invent or recompute any numbers (see useGroundedGemini).
+//
+// Rendered from the Agent Dashboard for sheet types where module-based
+// insights (rather than raw activity rows) are the primary view.
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
@@ -199,6 +210,7 @@ function inventoryColumns(sheet: SheetLite | undefined) {
   return { balanceCol, consumptionCol, keyCol };
 }
 
+/** Rule-based (non-LLM) stock recommendation for a single inventory row — reorder/overstock/healthy. */
 export function recommendationForInventoryRow(
   row: Record<string, unknown>,
   sheet: SheetLite | undefined,
@@ -219,6 +231,7 @@ export function recommendationForInventoryRow(
   return { text: "Levels healthy", severity: "ok" };
 }
 
+/** Rule-based recommendation for a non-inventory row, flagging anomalies and missing keys. */
 export function recommendationForGenericRow(
   row: Record<string, unknown>,
   sheet: SheetLite | undefined,
@@ -1363,6 +1376,7 @@ function TrendsSection({ trends }: { trends: Trends }) {
  * Main component
  * ================================================================== */
 
+/** Exported so the parent AgentDashboard can decide which tabs to show without duplicating this logic. */
 export function computeAgenticTabs(data: AgenticDashboardData) {
   return {
     inventory: !!data.modules?.stock_views?.enabled,
@@ -1376,6 +1390,10 @@ export function computeAgenticTabs(data: AgenticDashboardData) {
   };
 }
 
+/**
+ * Renders KPI hero cards, next-best-actions, and per-module panels for one
+ * project's {@link AgenticDashboardData} payload.
+ */
 export default function AgenticInsightsOverview({
   data, base, onRefresh, refreshing, scrollTo,
 }: {

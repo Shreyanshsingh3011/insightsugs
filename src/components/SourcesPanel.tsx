@@ -21,6 +21,14 @@ function relTime(iso: string | null | undefined): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+/**
+ * Admin panel listing every registered source sheet and its last sync
+ * result. Cross-references `listSheets` with `readRecentSyncAudit` (matched
+ * on the sheet's apps-script/source URL) to show delta counts and
+ * error/warning state per sheet. Auto-refreshes both queries every 5 min to
+ * mirror the background sync cadence, and exposes manual per-sheet and
+ * refresh-all actions.
+ */
 export function SourcesPanel() {
   const qc = useQueryClient();
   const fetchList = useServerFn(listSheets);

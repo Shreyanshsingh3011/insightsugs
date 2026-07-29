@@ -1,3 +1,6 @@
+// Server functions backing the Briefings feature (weekly/ad-hoc project
+// briefings surfaced in the UI).
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";

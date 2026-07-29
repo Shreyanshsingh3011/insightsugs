@@ -1,3 +1,6 @@
+// Server functions for the signup approval flow: request access, admin
+// approve/reject, and the resulting account provisioning.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 

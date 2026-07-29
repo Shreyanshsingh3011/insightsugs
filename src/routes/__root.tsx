@@ -1,3 +1,13 @@
+/**
+ * Route: "/__root" (TanStack Router root route)
+ * Access: public shell — wraps every route in the app (authenticated and unauthenticated).
+ * Purpose: defines the HTML document shell (via `shellComponent`), global <head> metadata/fonts,
+ * the shared QueryClientProvider, and the app-wide 404 / error boundaries.
+ * Data dependencies: none directly; provides the `queryClient` from router context to descendants.
+ * Gotchas: `shellComponent` runs on the server to produce the full <html> document (SSR), while
+ * `component` (RootComponent) is what renders inside it on both server and client. Theme is
+ * applied pre-hydration via an inline script (THEME_INIT_SCRIPT) to avoid a flash of wrong theme.
+ */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -12,6 +22,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { THEME_INIT_SCRIPT } from "@/hooks/useTheme";
 
+/** Fallback UI for unmatched routes (client + SSR). Links back to "/". */
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -34,6 +45,7 @@ function NotFoundComponent() {
   );
 }
 
+/** Root error boundary: shown when any route component throws during render. Logs the error and offers retry/home actions. */
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
@@ -103,6 +115,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+/** SSR document shell: renders the full <html>/<head>/<body>, injecting the pre-hydration theme script and TanStack Scripts. */
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -118,6 +131,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** App-wide providers rendered inside the shell: React Query provider, the matched route Outlet, and the toast host. */
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 

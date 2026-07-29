@@ -88,6 +88,7 @@ const ListInput = z.object({
   limit: z.number().int().min(1).max(500).default(200),
 });
 
+/** List drafts for the Agent Inbox. Non-admins (or scope="mine") only ever see drafts assigned to them; RLS also enforces this server-side. */
 export const listAgentDrafts = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ListInput.parse(d ?? {}))
@@ -141,6 +142,14 @@ const CreateInput = z.object({
   assigned_to: z.string().uuid().optional().nullable(),
 });
 
+/**
+ * Create a draft from user context (e.g. "Draft from answer" in the
+ * copilot). Inserts run through supabaseAdmin because agent_drafts
+ * intentionally has no INSERT policy for authenticated users — drafts must
+ * originate server-side so the review queue can't be spoofed. Unique-
+ * constraint hits are treated as a dedupe: the existing pending/snoozed
+ * draft id is returned instead of erroring.
+ */
 export const createAgentDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => CreateInput.parse(d))
@@ -228,6 +237,7 @@ const EditInput = z.object({
   recipient_email: z.string().email().max(255).optional().nullable(),
 });
 
+/** Edit subject/body/recipient of a still-pending or snoozed draft before approval; RLS restricts to the assignee/admin. */
 export const editAgentDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => EditInput.parse(d))
@@ -260,6 +270,7 @@ const SnoozeInput = z.object({
   hours: z.number().int().min(1).max(24 * 14).default(24),
 });
 
+/** Push a draft's snoozed_until forward and flip state to "snoozed" so it drops out of the default inbox view until then. */
 export const snoozeAgentDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SnoozeInput.parse(d))
@@ -286,6 +297,7 @@ const DismissInput = z.object({
   reason: z.string().max(500).optional().nullable(),
 });
 
+/** Permanently dismiss a pending/snoozed draft with an optional reason; terminal state, cannot be un-dismissed via this fn. */
 export const dismissAgentDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => DismissInput.parse(d))
@@ -310,6 +322,13 @@ const ApproveInput = z.object({
   id: z.string().uuid(),
 });
 
+/**
+ * Approve + dispatch a draft. Delivery channel is chosen by what's known
+ * about the recipient: a resolved recipient_user_id sends an in-app direct
+ * message + notification; a bare recipient_email queues a transactional
+ * email via enqueue-app-email. Always stamps the draft `sent` and writes an
+ * audit_log row recording who approved what and how it was delivered.
+ */
 export const approveAgentDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ApproveInput.parse(d))

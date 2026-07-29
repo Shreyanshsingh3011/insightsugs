@@ -1,3 +1,7 @@
+// Server-side proxy for dashboard "live link" data sources: fetches a public
+// Google Sheet (CSV export, connector fallback) or a public JSON analytics
+// URL, with SSRF guards (public-https-only) and degraded-payload fallbacks
+// so upstream failures don't blank-screen the dashboard.
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
@@ -90,6 +94,7 @@ async function fetchPublicGoogleSheetRows(parsed: { id: string; gid?: string }, 
   throw new Error(`Google Sheets public CSV fallback failed: ${lastErr || "no data"}`);
 }
 
+/** SSRF guard: only public https URLs (or the local /api/public/ dev shortcut) are allowed. */
 function assertSafePublicUrl(raw: string): URL {
   const url = new URL(raw);
   const host = url.hostname.toLowerCase();
@@ -215,6 +220,7 @@ async function fetchGoogleSheetRows(u: URL, tabHint: string | undefined): Promis
   };
 }
 
+/** Fetch a dashboard live-link source (Google Sheet or public JSON API) and return its rows, degrading gracefully on failure. */
 export const fetchInsightUrl = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => InputSchema.parse(input))
   .handler(async ({ data }) => {

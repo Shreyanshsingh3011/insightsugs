@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/planner"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef } from "react";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
@@ -37,6 +45,7 @@ const TOOL_META: Record<string, { icon: React.ReactNode; label: string; color: s
   notify: { icon: <MessageSquare className="h-3.5 w-3.5" />, label: "Notify", color: "bg-violet-100 text-violet-900 dark:bg-violet-900/40 dark:text-violet-200" },
 };
 
+/** Page component for "/_authenticated/agent/planner". */
 function PlannerPage() {
   const { session } = useSession();
   const [goal, setGoal] = useState("");

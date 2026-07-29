@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/approvals"
+ * Access: authenticated user (requires admin or super_admin role).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -550,6 +558,7 @@ function SignupRequestsTab() {
 // ---------------------------------------------------------------------------
 // Page shell
 // ---------------------------------------------------------------------------
+/** Page component for "/_authenticated/agent/approvals". */
 function ApprovalsPage() {
   const isAdmin = useIsAdmin();
   const [tab, setTab] = useState<"agent" | "signup">("agent");

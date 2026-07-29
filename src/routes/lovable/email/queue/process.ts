@@ -1,3 +1,19 @@
+/**
+ * Route: "/lovable/email/queue/process" (server function, POST)
+ * Access: internal cron only. Caller must send `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`
+ * (checked via exact string compare against the server's own service-role key) — wired up from a
+ * pg_cron job, not reachable usefully by end users or other services.
+ * Purpose: dispatcher/worker that drains the `auth_emails` and `transactional_emails` pgmq
+ * queues (auth emails prioritized), sending each via @lovable.dev/email-js, honoring per-queue
+ * TTL expiry, per-message retry limits, and provider rate-limit (429) backoff.
+ * Data dependencies: Supabase `email_send_state` (rate-limit cooldown + tunables),
+ * `email_send_log` (append-only send/failure audit trail), pgmq RPCs (`read_email_batch`,
+ * `delete_email`, `move_to_dlq`), all via the service-role client (RLS bypassed).
+ * Gotchas: on a 429 it stops processing the whole batch immediately (remaining messages stay
+ * invisible until their visibility timeout expires and are retried next cron tick); on a 403 it
+ * moves just that message to the DLQ and also stops the batch, since 403s are commonly
+ * account-wide config/auth failures rather than per-message.
+ */
 import { sendLovableEmail } from '@lovable.dev/email-js'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createFileRoute } from '@tanstack/react-router'

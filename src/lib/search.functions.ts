@@ -1,3 +1,6 @@
+// Server functions powering global search (activities/projects/people/
+// documents) with per-entity RLS-scoped queries merged into one result set.
+
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { embedTexts as embedDocQuery, toPgVector } from "./documents.server";

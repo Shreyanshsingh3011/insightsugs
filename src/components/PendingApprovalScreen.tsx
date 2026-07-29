@@ -11,6 +11,12 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, Clock, XCircle, ShieldCheck, LogOut } from "lucide-react";
 
+/**
+ * Full-screen gate shown to signed-in users whose account has not yet been
+ * approved. Auto-attempts allowlist-sheet verification on mount; if that
+ * fails, super admins are notified by email so a human can approve/reject.
+ * Polls `mySignupStatus` every 15s to auto-dismiss once approved.
+ */
 export function PendingApprovalScreen({ email }: { email: string }) {
   const verifyFn = useServerFn(verifySignupAgainstSheet);
   const statusFn = useServerFn(mySignupStatus);

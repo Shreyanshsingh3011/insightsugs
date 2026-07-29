@@ -4,10 +4,12 @@ import { matchColumn, normKey } from "./compute";
 
 const Q_INTENT = /\b(how\s+many|how\s+much|count|number\s+of|total|sum|average|avg|mean|median|max(?:imum)?|min(?:imum)?|highest|lowest|most|least|largest|smallest|top|bottom|per\s+\w+|by\s+\w+|group\s+by|break\s*down|breakdown|distribution|share\s+of|rank|list\s+\w+\s+by|percent|percentage|%\s*of|compare)\b/i;
 
+/** Classify a question as quantitative (route to deterministic evaluate()) or qualitative (route to retrieved-context chat). */
 export function classify(q: string): "quantitative" | "qualitative" {
   return Q_INTENT.test(q) ? "quantitative" : "qualitative";
 }
 
+/** Parse a quantitative question into a concrete ParsedAgg shape (group-by, top-N, filter, etc.) against the given sheets, or null if it can't be parsed deterministically. */
 export function parseQuestion(q: string, sheets: SheetSource[]): ParsedAgg | null {
   if (sheets.length === 0) return null;
   const lower = q.toLowerCase();

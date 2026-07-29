@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/agent/runs"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
@@ -92,6 +100,7 @@ function Field({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+/** Page component for "/_authenticated/agent/runs". */
 function RunsPage() {
   const runs = useServerFn(listAgentRuns);
   const [scope, setScope] = useState<"mine" | "all">("mine");

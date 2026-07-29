@@ -5,6 +5,11 @@ import { createFallbackFetch } from "./ai-fallback.server";
 
 export const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
 
+/**
+ * Wraps fetch to inject/capture the X-Lovable-AIG-Run-ID header. `waitForRunId`
+ * resolves once the header is seen on a response (or immediately if an
+ * initialRunId was supplied), letting callers correlate a stream with its run.
+ */
 export function createLovableAiGatewayRunIdFetch(initialRunId?: string) {
   let runId = initialRunId?.trim() || undefined;
   let resolveRunId: (value: string | undefined) => void = () => {};
@@ -38,6 +43,7 @@ export function createLovableAiGatewayRunIdFetch(initialRunId?: string) {
   };
 }
 
+/** Build an AI-SDK-compatible provider pointed at the Lovable Gateway, wired through the fallback + run-id-tracking fetch. */
 export function createLovableAiGatewayProvider(
   lovableApiKey: string,
   initialRunId?: string,
@@ -60,6 +66,7 @@ export function createLovableAiGatewayProvider(
   });
 }
 
+/** Read the AIG run id off an inbound Request's headers (e.g. inside an API route handling a gateway webhook). */
 export function getLovableAiGatewayRunId(request: Request) {
   return request.headers.get(LOVABLE_AIG_RUN_ID_HEADER)?.trim() || undefined;
 }

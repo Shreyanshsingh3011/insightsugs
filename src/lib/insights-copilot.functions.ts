@@ -66,6 +66,7 @@ function extractJson(s: string): unknown {
   return JSON.parse(text);
 }
 
+/** Ask the model to pick ONE analytics endpoint + params for a question — never computes numbers itself. */
 export const routeInsightQuestion = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { question: string; sheets: SheetMeta[] }) => {
@@ -134,6 +135,7 @@ export const routeInsightQuestion = createServerFn({ method: "POST" })
     return parsed;
   });
 
+/** Ask the model to phrase a plain-English answer using ONLY numbers verbatim from the already-computed payload. */
 export const phraseInsightAnswer = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(

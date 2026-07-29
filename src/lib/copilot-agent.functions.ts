@@ -49,12 +49,19 @@ void fetchAllDocumentChunks;
 
 // -------------------- ledger --------------------
 
+/**
+ * One retrieved fact the model is allowed to cite this turn. Every tool call
+ * that returns row/chunk data appends an entry here; the citation validator
+ * cross-checks the model's [sheet:...]/[doc:...] markers against this ledger
+ * so the agent can never cite something it wasn't actually shown.
+ */
 type LedgerEntry =
   | { kind: "sheet_row"; registryId: string; sheetLabel: string; rowIndex: number; data: Record<string, unknown> }
   | { kind: "doc_chunk"; documentId: string; documentName: string; pageNo: number; snippet: string };
 
 // Kept intentionally `any`-shaped: TanStack Start's server-fn return type
 // checker rejects `unknown` (not JSON-serializable by its rule set).
+/** Structured record of one tool invocation, surfaced to the UI's tool-trace panel. */
 type ToolCallLog = {
   name: string;
   args: any;
@@ -64,6 +71,8 @@ type ToolCallLog = {
   result?: any;
 };
 
+/** Per-source explanation of how a tool searched for a match — shown in the
+ * grounding trace panel when a query returns few/no rows. */
 type RetrievalDiagnostic = {
   sourceId: string;
   sourceName: string;
@@ -107,6 +116,21 @@ const InputSchema = z
 // through the client RPC stub — the stub path fails with
 // "Server function info not found for <hash>" when the callee isn't in the
 // client manifest.
+/**
+ * Runs one turn of the agentic Copilot: the model plans and calls read-only
+ * tools against the selected sheets/documents, and every fact it states must
+ * trace back to a tool call recorded in the ledger this turn (see file header).
+ *
+ * Extracted as a plain async function (not inlined in the server-fn handler)
+ * so other server functions (auto-insights, doc auto-insights) can call it
+ * in-process — going through the client RPC stub fails for callee functions
+ * not in the client manifest.
+ *
+ * @param data Validated question + scope (sheetIds/documentIds/history).
+ * @param context Auth context: the request-scoped Supabase client + userId.
+ * @param opts.skipCitationEnforcement Bypass the citation validator (used by
+ *   internal callers that already trust the output, e.g. insights summaries).
+ */
 export async function runCopilotAgent(
   data: z.infer<typeof InputSchema>,
   context: { supabase: any; userId: string },

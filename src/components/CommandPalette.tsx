@@ -30,6 +30,15 @@ type Cmd = {
   group: string;
 };
 
+/**
+ * Global ⌘K / Ctrl+K command palette. Combines static navigation + action
+ * commands with live-searched projects/sheets/agents from Supabase. The
+ * contextual queries are `enabled: open` so they only fire while the palette
+ * is visible, and results are cached for 60s since they rarely change
+ * mid-session. Admin/super-admin commands are appended conditionally based
+ * on the caller's roles (never trust client-only gating for real access
+ * control — RLS still enforces this server-side).
+ */
 export function CommandPalette({
   open,
   onOpenChange,

@@ -1,3 +1,21 @@
+// AgentDashboard — the main "Agent" screen: pulls raw rows for one or more
+// project sheets (via fetchInsightUrl / the agent project registry),
+// derives KPIs/person-rankings/TAT-breach lists/next-best-actions purely on
+// the client (see `derive()` below), and renders the grounded AgentChatWidget
+// scoped to whatever the user is currently looking at.
+//
+// Data flow gotchas baked into this file:
+// - Source sheets are wildly inconsistent about column names and about
+//   leaking Excel date-serials (30000-70000) into numeric duration columns;
+//   most of the standalone helpers below (clampRealDays,
+//   hasCompletionDateSerialInDaysTaken, isLikelySheetDateSerial, etc.) exist
+//   purely to defend the KPIs against that.
+// - ETA/forecast uses a rolling completion-velocity model with a widening
+//   trailing window (30/60/90d, then lifetime) and only falls back to the
+//   old avgTat heuristic when there is no completion-date signal at all —
+//   see the forecast block for the full rationale.
+// - FALLBACK_PROJECTS is a hardcoded safety net used only when the master
+//   project registry sheet is unreachable.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -525,6 +543,12 @@ function derive(payload: Payload | undefined) {
 }
 
 // ────────────────── COMPONENT ──────────────────
+/**
+ * Top-level Agent Dashboard page component. Owns project selection, sheet
+ * polling/auto-refresh, filter state (persisted to sessionStorage via
+ * loadReportFilters), and assembles the AgentChatContext passed to
+ * {@link AgentChatWidget}.
+ */
 export default function AgentDashboard() {
   const fetchUrl = useServerFn(fetchInsightUrl);
   const fetchRegistry = useServerFn(fetchAgentProjects);

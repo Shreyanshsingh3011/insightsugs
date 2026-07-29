@@ -1,3 +1,7 @@
+/**
+ * Client-side CSV/PDF export for the "My Activities" list. Pure browser
+ * helpers — builds a Blob and triggers a download, no server round-trip.
+ */
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 

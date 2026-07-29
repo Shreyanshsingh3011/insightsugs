@@ -1,3 +1,19 @@
+/**
+ * Route: "/lovable/email/transactional/send" (server function, POST)
+ * Access: authenticated Supabase users — requires `Authorization: Bearer <supabase JWT>`,
+ * validated server-side via `supabase.auth.getUser(token)` (no gateway in front of TanStack
+ * Start, so the JWT is checked manually here rather than relying on RLS alone).
+ * Purpose: renders a registered React Email template and enqueues it (via `enqueue_email` RPC
+ * into the `transactional_emails` pgmq queue) for async delivery by
+ * lovable/email/queue/process.ts. Handles suppression-list checks (fail-closed) and
+ * unsubscribe-token issuance/reuse per recipient before enqueueing.
+ * Data dependencies: Supabase `suppressed_emails`, `email_unsubscribe_tokens`, `email_send_log`,
+ * and the `enqueue_email` RPC — all via the service-role client.
+ * Gotchas: SENDER_DOMAIN/FROM_DOMAIN are baked-in constants tied to this project's verified
+ * sending domain — do not repurpose this route for a different domain without updating them.
+ * A template can define a fixed `to` recipient (e.g. internal notifications) which overrides
+ * the caller-supplied recipientEmail.
+ */
 import * as React from 'react'
 import { render } from 'react-email'
 import { createClient } from '@supabase/supabase-js'

@@ -1,3 +1,6 @@
+// Client-side route guard helpers used in route `beforeLoad` to redirect
+// unauthenticated/unauthorized users before a page renders.
+
 import { supabase } from "@/integrations/supabase/client";
 
 export type AppRole = "super_admin" | "admin" | "user";

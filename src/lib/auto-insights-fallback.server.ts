@@ -1,3 +1,7 @@
+// Server-only deterministic fallback for the insights/copilot when the AI
+// gateway is unavailable — computes canned insight cards directly from the
+// dashboard snapshot so the UI never shows a blank panel.
+
 import { isTerminalRow, statusBucketForRow } from "./status-utils";
 
 type Severity = "info" | "warning" | "critical";

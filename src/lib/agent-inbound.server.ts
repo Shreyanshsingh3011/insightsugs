@@ -47,6 +47,7 @@ type CmdResult = {
   message: string;
 };
 
+/** Normalized shape the inbound webhook hands to processInboundEmail after stripping quoted history. */
 export type InboundEmail = {
   providerMessageId?: string | null;
   fromEmail: string;
@@ -72,6 +73,11 @@ function toHours(n: number, unit: string): number {
   return n;
 }
 
+/**
+ * Parse one command per non-quoted line of a reply body. Stops at the
+ * first "On ... wrote:" attribution line, and only records the first
+ * unrecognized line (to avoid flooding the ack email with noise).
+ */
 export function parseCommands(body: string): Array<Command | { kind: "unknown"; raw: string }> {
   const out: Array<Command | { kind: "unknown"; raw: string }> = [];
   for (const rawLine of body.split(/\r?\n/)) {

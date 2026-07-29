@@ -1,3 +1,11 @@
+/**
+ * Route: "/_authenticated/search"
+ * Access: any authenticated user with at least one role (see _authenticated.tsx).
+ * Purpose: rendered inside the "_authenticated" layout (sidebar/header shell).
+ * Data dependencies: Data fetched via shared hooks/components used within the page (see imports).
+ * Gotchas: this is a client-rendered SPA route (no server loader) — data is fetched on mount
+ * via React Query/hooks, not via a TanStack Router `loader`.
+ */
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation } from "@tanstack/react-query";
@@ -192,6 +200,7 @@ function SectionLabel({
   );
 }
 
+/** Page component for "/_authenticated/search". */
 function SearchPage() {
   const params = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
