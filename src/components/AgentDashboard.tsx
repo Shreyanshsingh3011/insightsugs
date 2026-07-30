@@ -611,15 +611,10 @@ export default function AgentDashboard() {
   });
 
 
-  // Auto-demo: when every live source resolves with zero rows (sheets
-  // unreachable / permission-blocked), fall back to the full demo dataset so
-  // the whole app stays testable. An explicit QA scenario always wins.
-  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
-  const liveRowCount = queries.reduce((n, q) => {
-    const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    return n + (p?.data?.length ?? 0);
-  }, 0);
-  const autoDemo = qaScenario === "off" && allSettled && liveRowCount === 0;
+  // Keep one immediate, deterministic test dataset across the whole platform
+  // while live-sheet testing is disabled. Waiting for failed requests caused
+  // detail pages to briefly render zero rows while the dashboard showed demo.
+  const autoDemo = qaScenario === "off";
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
@@ -629,6 +624,7 @@ export default function AgentDashboard() {
     return {
       project,
       payload: qaPayload ?? livePayload,
+      isDemo: effectiveScenario !== "off",
       isFetching: effectiveScenario === "off" ? q.isFetching : false,
       isLoading: effectiveScenario === "off" ? q.isLoading : false,
       isError: effectiveScenario === "off" ? q.isError : false,
@@ -665,8 +661,8 @@ export default function AgentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, effectiveScenario]);
 
-  const anyLoading = queries.some(q => q.isLoading);
-  const anyFetching = queries.some(q => q.isFetching);
+  const anyLoading = rawSources.some((s) => s.isLoading);
+  const anyFetching = rawSources.some((s) => s.isFetching);
   const allError = queries.length > 0 && queries.every(q => q.isError);
   const lastSyncedAt = sources
     .map(s => s.payload?.generated_at)
@@ -959,7 +955,7 @@ export default function AgentDashboard() {
           })
           .catch(() => {});
       }
-      toast.success("Live data refreshed", { id: tid });
+      toast.success(autoDemo ? "Sources checked · demo dataset remains active" : "Live data refreshed", { id: tid });
     } catch (e) {
       toast.error(`Refresh failed: ${(e as Error)?.message ?? "unknown error"}`, { id: tid });
     }
@@ -1007,14 +1003,14 @@ export default function AgentDashboard() {
       })
       .filter(Boolean) as string[];
     const wsig = warns.join("|");
-    if (wsig && wsig !== warnSigRef.current) {
+    if (!autoDemo && wsig && wsig !== warnSigRef.current) {
       warnSigRef.current = wsig;
       warns.slice(0, 3).forEach(msg => toast.warning(msg, { duration: 10000 }));
-    } else if (!wsig) {
+    } else if (!wsig || autoDemo) {
       warnSigRef.current = "";
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queries.map(q => `${q.status}:${q.dataUpdatedAt}:${q.errorUpdatedAt}`).join("|")]);
+  }, [queries.map(q => `${q.status}:${q.dataUpdatedAt}:${q.errorUpdatedAt}`).join("|"), autoDemo]);
 
 
 
@@ -1829,7 +1825,9 @@ export default function AgentDashboard() {
               {payload?.project ?? "Delay Bridge — Agentic View"}
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              {scope.isSuper
+              {autoDemo
+                ? `Demo dataset is active across all ${projects.length} projects because one or more live sources are unavailable. Every page uses this same test dataset.`
+                : scope.isSuper
                 ? `Auto-syncs ${projects.length} live source${projects.length === 1 ? "" : "s"} every ${Math.round(AUTO_REFRESH_MS / 60_000)} min${registryLive ? " · project list pulled from master sheet" : " · using built-in list"} · use Sync for instant refresh.`
                 : scope.isAdmin
                 ? `Showing your ${projects.length} led project${projects.length === 1 ? "" : "s"} · auto-syncs every ${Math.round(AUTO_REFRESH_MS / 60_000)} min.`
@@ -1844,7 +1842,7 @@ export default function AgentDashboard() {
                   aria-hidden
                   className={`h-1.5 w-1.5 rounded-full ${anyFetching ? "animate-pulse bg-warning" : "bg-success"}`}
                 />
-                {anyFetching ? "Syncing" : "Live"} · updated {new Date(lastSyncedAt).toLocaleTimeString()}
+                {autoDemo ? "Demo data" : anyFetching ? "Syncing" : "Live"} · updated {new Date(lastSyncedAt).toLocaleTimeString()}
               </div>
             )}
             {/* Always-visible "View source sheet" chip — jumps to the registered
@@ -1883,8 +1881,9 @@ export default function AgentDashboard() {
               <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
                 {projects.map((p) => {
                   const s = perf[p.id];
-                  if (!s) return null;
-                  const diff = s.diff;
+                  const effectiveSource = sources.find((source) => source.project.id === p.id);
+                  if (!s && !effectiveSource) return null;
+                  const diff = s?.diff;
                   const changedBits: string[] = [];
                   if (diff?.added) changedBits.push(`+${diff.added}`);
                   if (diff?.removed) changedBits.push(`-${diff.removed}`);
@@ -1900,11 +1899,13 @@ export default function AgentDashboard() {
                       className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2 py-0.5 text-muted-foreground"
                     >
                       <span className="font-medium text-foreground">{p.label}</span>
-                      <span className="tabular-nums">{s.rowsTotal ?? 0}r</span>
-                      {typeof s.fetchMs === "number" && (
+                      <span className="tabular-nums">{effectiveSource?.payload?.data?.length ?? 0}r</span>
+                      {autoDemo ? (
+                        <span>· demo</span>
+                      ) : typeof s?.fetchMs === "number" && (
                         <span className="tabular-nums">· {s.fetchMs}ms</span>
                       )}
-                      {changedBits.length > 0 && (
+                      {!autoDemo && changedBits.length > 0 && (
                         <span className="tabular-nums text-warning">· Δ {changedBits.join(" ")}</span>
                       )}
                     </span>

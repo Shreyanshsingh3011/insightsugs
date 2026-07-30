@@ -91,16 +91,11 @@ export function useAgentSources() {
     })),
   });
 
-  // Auto-demo: when the live sheets are unreachable/permission-blocked and every
-  // source resolves with zero rows, fall back to the full demo dataset so every
-  // feature (dashboard, alerts, KPIs, stages, owners, briefings, copilot) stays
-  // testable. An explicitly chosen QA scenario always wins.
-  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
-  const liveRowCount = queries.reduce((n, q) => {
-    const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    return n + (p?.data?.length ?? 0);
-  }, 0);
-  const autoDemo = qaScenario === "off" && allSettled && liveRowCount === 0;
+  // The user requested a stable platform-wide test dataset while the sheets are
+  // unavailable. Make demo mode immediate rather than waiting for five failing
+  // requests: that loading race previously rendered 0 rows on a detail page
+  // while the dashboard already showed demo rows.
+  const autoDemo = qaScenario === "off";
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
@@ -112,6 +107,7 @@ export function useAgentSources() {
     return {
       project,
       payload: qaPayload ?? livePayload,
+      isDemo: effectiveScenario !== "off",
       isFetching: effectiveScenario === "off" ? q.isFetching : false,
       isLoading: effectiveScenario === "off" ? q.isLoading : false,
       isError: effectiveScenario === "off" ? q.isError : false,
@@ -201,8 +197,8 @@ export function useAgentSources() {
     effectiveScenario,
   ]);
 
-  const anyLoading = queries.some((q) => q.isLoading);
-  const anyFetching = queries.some((q) => q.isFetching);
+  const anyLoading = rawSources.some((s) => s.isLoading);
+  const anyFetching = rawSources.some((s) => s.isFetching);
   const refetchAll = () => { queries.forEach((q) => q.refetch()); };
 
   return {
@@ -215,7 +211,7 @@ export function useAgentSources() {
     refetchAll,
     scope,
     // Demo-data signals so the UI can label itself honestly.
-    isDemoData: effectiveScenario !== "off",
+    isDemoData: rawSources.some((s) => s.isDemo),
     isAutoDemo: autoDemo,
     // Surface the applied dashboard focus so pages can label themselves.
     focus: { selected, person: focusPerson, dept: focusDept },
