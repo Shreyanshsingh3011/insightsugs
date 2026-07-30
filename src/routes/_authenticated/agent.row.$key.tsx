@@ -26,7 +26,7 @@ import {
   activityName, statusText, num, encodeKey as encodeEntityKey, toScopedRow,
   type Row,
 } from "@/lib/entity-scope";
-import { isRowEffectivelyDone, sanitizeDuration, statusBucketForRow } from "@/lib/status-utils";
+import { isRowEffectivelyDone, sanitizeDuration, sanitizedDelayDays, statusBucketForRow } from "@/lib/status-utils";
 import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
@@ -128,8 +128,22 @@ function RowPage() {
   const tat = sanitizeDuration(num(row["TAT"]));
   const taken = sanitizeDuration(num(row["Days Taken"]));
   const terminal = isRowEffectivelyDone(row);
-  const rawDelay = sanitizeDuration(num(row["Delay in Days"])) || Math.max(0, taken - tat);
-  const delay = terminal ? 0 : rawDelay;
+  // Delay must agree with the status pill. `sanitizedDelayDays` reads the
+  // explicit "Delay in Days" column AND parses phrasing like "Delay by 24
+  // days" out of the status text — without it the KPI rendered 0d while the
+  // badge said "24 days delay". Overrun (taken − TAT) is the last fallback.
+  const explicitDelay = sanitizedDelayDays(row);
+  const overrunDelay = Math.max(0, taken - tat);
+  const rawDelay = explicitDelay || overrunDelay;
+  // Only zero-out a terminal row when nothing explicitly reports a delay;
+  // a completed-but-late row should still show how late it finished.
+  const delay = terminal && !explicitDelay ? 0 : rawDelay;
+  const delayBasis = explicitDelay
+    ? 'reported in the source row ("Delay in Days" / status text)'
+    : overrunDelay > 0
+      ? `derived from Days taken (${taken}d) exceeding TAT (${tat}d)`
+      : "no delay reported in the source row";
+
   const criticality = String(row["Criticality"] ?? "—");
   const startDate = String(row["Start Date"] ?? row["Planned Start"] ?? "—");
   const hc1 = String(row["HC-1"] ?? row["HC1"] ?? "—");
@@ -241,7 +255,7 @@ function RowPage() {
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Activity metrics">
         <Kpi icon={<Clock className="h-4 w-4" />} label="TAT" value={tat ? `${tat}d` : "—"} tone="low" />
         <Kpi icon={<Gauge className="h-4 w-4" />} label="Days taken" value={taken ? `${taken}d` : "—"} tone={!terminal && taken > tat && tat > 0 ? "high" : "ok"} />
-        <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Delay" value={delay ? `${delay}d` : "0d"} tone={tone} />
+        <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Delay" value={delay ? `${delay}d` : "0d"} tone={tone} hint={delayBasis} />
         <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Status" value={status} tone={
           terminal ? "ok" : statusBucketForRow(row) === "Delayed" ? "high" : "med"
         } />
@@ -324,8 +338,10 @@ function RowPage() {
   );
 }
 
-function Kpi({ icon, label, value, tone }: {
+function Kpi({ icon, label, value, tone, hint }: {
   icon: React.ReactNode; label: string; value: string | number; tone: keyof typeof TONE;
+  /** Optional one-line explanation of where the number came from. */
+  hint?: string;
 }) {
   return (
     <Card className={`border ${TONE[tone]}`}>
@@ -334,6 +350,7 @@ function Kpi({ icon, label, value, tone }: {
           {icon}{label}
         </div>
         <div className="mt-1 text-lg font-semibold leading-tight tabular-nums truncate" title={String(value)}>{value}</div>
+        {hint && <div className="mt-1 text-[10px] leading-snug opacity-70" title={hint}>{hint}</div>}
       </CardContent>
     </Card>
   );
