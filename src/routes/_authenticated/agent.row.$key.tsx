@@ -338,8 +338,10 @@ function RowPage() {
   );
 }
 
-function Kpi({ icon, label, value, tone }: {
+function Kpi({ icon, label, value, tone, hint }: {
   icon: React.ReactNode; label: string; value: string | number; tone: keyof typeof TONE;
+  /** Optional one-line explanation of where the number came from. */
+  hint?: string;
 }) {
   return (
     <Card className={`border ${TONE[tone]}`}>
@@ -348,6 +350,7 @@ function Kpi({ icon, label, value, tone }: {
           {icon}{label}
         </div>
         <div className="mt-1 text-lg font-semibold leading-tight tabular-nums truncate" title={String(value)}>{value}</div>
+        {hint && <div className="mt-1 text-[10px] leading-snug opacity-70" title={hint}>{hint}</div>}
       </CardContent>
     </Card>
   );
