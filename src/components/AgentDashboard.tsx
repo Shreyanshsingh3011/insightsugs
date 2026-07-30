@@ -2210,11 +2210,11 @@ export default function AgentDashboard() {
                 sub={`${d.completionRate}% done`}
               />
             </div>
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "ontime" } }} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "overdue" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "tat" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "completed" } }} icon={<CheckCircle2 className="h-4 w-4" />} label="Completed" value={d.totals.completed} tone="ok" sub={`${d.completionRate}%`} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "delayed" } }} icon={<Clock className="h-4 w-4" />} label="Delayed" value={d.totals.delayed} tone={d.delayRate > 15 ? "high" : "med"} sub={`${d.delayRate}%`} />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "delayed" } }} icon={<Flame className="h-4 w-4" />} label="Avg delay" value={`${d.avgDelay}d`} tone={d.avgDelay > 30 ? "high" : "med"} />
             <Kpi to={{ to: "/agent/kpi/$id", params: { id: "notstarted" } }} icon={<Target className="h-4 w-4" />} label="Not started" value={d.totals.notStarted} tone="low" />
-            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "risk" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={formatEtaDays(d.projectedDaysToFinish)} sub="to finish" />
+            <Kpi to={{ to: "/agent/kpi/$id", params: { id: "remaining" } }} icon={<TrendingUp className="h-4 w-4" />} label="ETA" value={formatEtaDays(d.projectedDaysToFinish)} sub="to finish" />
           </div>
 
           {/* ETA DEBUG PANEL — transparent view of which fields drove the projection */}

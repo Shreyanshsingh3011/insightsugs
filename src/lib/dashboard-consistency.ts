@@ -8,7 +8,7 @@ export type DashboardVerificationTarget =
   | { kind: "person"; label: string }
   | { kind: "stage"; label: string }
   | { kind: "project"; label: string }
-  | { kind: "kpi"; id: "health" | "ontime" | "overdue" | "tat" | "risk" | "notstarted" };
+  | { kind: "kpi"; id: "health" | "completed" | "ontime" | "delayed" | "overdue" | "tat" | "risk" | "remaining" | "notstarted" };
 
 export type DashboardRowSnapshot = {
   key: string;
@@ -187,14 +187,20 @@ export function expectedRowsForTarget(snapshot: DashboardSnapshot, target: Dashb
     switch (target.id) {
       case "health":
         return snapshot.rows;
+      case "completed":
+        return snapshot.rows.filter((r) => r.terminal);
       case "ontime":
         return snapshot.rows.filter((r) => r.terminal && r.delay <= 0);
+      case "delayed":
+        return snapshot.rows.filter((r) => !r.terminal && (r.delay > 0 || r.bucket === "Delayed" || (r.tat > 0 && r.taken > r.tat)));
       case "overdue":
         return snapshot.rows.filter((r) => !r.terminal && r.delay > 0);
       case "tat":
         return snapshot.rows.filter((r) => !r.terminal && r.tat > 0 && r.taken > r.tat);
       case "risk":
         return snapshot.rows.filter((r) => !r.terminal && (r.delay > 30 || (r.delay > 0 && /critical|high/i.test(r.criticality))));
+      case "remaining":
+        return snapshot.rows.filter((r) => !r.terminal);
       case "notstarted":
         return snapshot.rows.filter((r) => !r.terminal && (r.bucket === "Not Started" || /not\s*started/i.test(r.status)));
     }
