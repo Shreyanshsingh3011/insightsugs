@@ -611,19 +611,31 @@ export default function AgentDashboard() {
   });
 
 
+  // Auto-demo: when every live source resolves with zero rows (sheets
+  // unreachable / permission-blocked), fall back to the full demo dataset so
+  // the whole app stays testable. An explicit QA scenario always wins.
+  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
+  const liveRowCount = queries.reduce((n, q) => {
+    const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
+    return n + (p?.data?.length ?? 0);
+  }, 0);
+  const autoDemo = qaScenario === "off" && allSettled && liveRowCount === 0;
+  const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
+
   const rawSources = queries.map((q, i) => {
     const project = projects[i];
     const livePayload = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    const qaPayload = qaScenario === "off" || !project ? null : buildQaPayload(qaScenario, project);
+    const qaPayload = effectiveScenario === "off" || !project ? null : buildQaPayload(effectiveScenario, project);
     return {
       project,
       payload: qaPayload ?? livePayload,
-      isFetching: qaScenario === "off" ? q.isFetching : false,
-      isLoading: qaScenario === "off" ? q.isLoading : false,
-      isError: qaScenario === "off" ? q.isError : false,
-      error: qaScenario === "off" ? q.error as Error | undefined : undefined,
+      isFetching: effectiveScenario === "off" ? q.isFetching : false,
+      isLoading: effectiveScenario === "off" ? q.isLoading : false,
+      isError: effectiveScenario === "off" ? q.isError : false,
+      error: effectiveScenario === "off" ? q.error as Error | undefined : undefined,
     };
   });
+
 
   // Decorate every source row with the resolved person (real name, email,
   // resolution source). Overwrites the "Responsible Person" column value so
@@ -650,7 +662,7 @@ export default function AgentDashboard() {
         : s
     ));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, qaScenario]);
+  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, effectiveScenario]);
 
   const anyLoading = queries.some(q => q.isLoading);
   const anyFetching = queries.some(q => q.isFetching);
@@ -736,7 +748,7 @@ export default function AgentDashboard() {
       generated_at: s.payload.generated_at,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept, qaScenario]);
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept, effectiveScenario]);
 
   const d = useMemo(() => derive(payload), [payload]);
 
