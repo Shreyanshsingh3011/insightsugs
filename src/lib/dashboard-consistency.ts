@@ -39,6 +39,35 @@ export type DashboardSnapshot = {
   rows: DashboardRowSnapshot[];
 };
 
+/** A single field that disagrees between the dashboard snapshot and the destination page. */
+export type ConsistencyFieldDiff = {
+  key: string;
+  label: string;
+  field: string;
+  expected: string;
+  actual: string;
+};
+
+/** A recorded verification outcome, persisted so the mismatch inspector can review it. */
+export type ConsistencyReport = {
+  id: string;
+  target: DashboardVerificationTarget;
+  targetLabel: string;
+  path: string;
+  checkedAt: string;
+  ok: boolean;
+  available: boolean;
+  expectedCount: number;
+  actualCount: number;
+  missingKeys: string[];
+  extraKeys: string[];
+  fieldDiffs: ConsistencyFieldDiff[];
+  canonicalRows: DashboardRowSnapshot[];
+  actualRows: DashboardRowSnapshot[];
+  signature?: string;
+  message: string;
+};
+
 export type DashboardConsistencyResult = {
   available: boolean;
   ok: boolean;
@@ -51,6 +80,12 @@ export type DashboardConsistencyResult = {
   savedAt?: string;
   message: string;
   samples: string[];
+  targetLabel: string;
+  missingKeys: string[];
+  extraKeys: string[];
+  fieldDiffs: ConsistencyFieldDiff[];
+  canonicalRows: DashboardRowSnapshot[];
+  actualRows: DashboardRowSnapshot[];
 };
 
 function norm(s: unknown): string {
@@ -169,18 +204,27 @@ export function expectedRowsForTarget(snapshot: DashboardSnapshot, target: Dashb
   if (target.kind === "person") {
     const want = norm(target.label);
     if (!want) return snapshot.rows.filter((r) => isPlaceholderLabel(r.person));
+    // Mirror the person page exactly: exact name/email matches win outright, and
+    // only when there are none do we fall back to fuzzy containment. Without the
+    // exact-first rule a combined owner cell ("A / B") over-matches every row
+    // owned by either person and the parity check reports phantom mismatches.
+    const exact = snapshot.rows.filter((r) => norm(r.person) === want || norm(r.email) === want);
+    if (exact.length) return exact;
     return snapshot.rows.filter((r) => {
       const name = norm(r.person);
       const email = norm(r.email);
-      return name === want || email === want || (name && (name.includes(want) || want.includes(name)));
+      return want.includes("@") ? email.includes(want) : Boolean(name) && (name.includes(want) || want.includes(name));
     });
   }
   if (target.kind === "stage") {
     const want = norm(target.label);
     if (!want) return snapshot.rows.filter((r) => isPlaceholderLabel(r.stage));
+    // Exact-first, same as the stage page.
+    const exact = snapshot.rows.filter((r) => norm(r.stage) === want);
+    if (exact.length) return exact;
     return snapshot.rows.filter((r) => {
       const stage = norm(r.stage);
-      return stage === want || (stage && (stage.includes(want) || want.includes(stage)));
+      return Boolean(stage) && (stage.includes(want) || want.includes(stage));
     });
   }
   if (target.kind === "kpi") {
@@ -208,11 +252,44 @@ export function expectedRowsForTarget(snapshot: DashboardSnapshot, target: Dashb
   return [];
 }
 
+/** Human label for a verification target, used by the mismatch inspector. */
+export function targetLabelFor(target: DashboardVerificationTarget): string {
+  if (target.kind === "kpi") return `KPI · ${target.id}`;
+  if (target.kind === "row") return `Row · ${target.key}`;
+  return `${target.kind[0].toUpperCase()}${target.kind.slice(1)} · ${target.label || "—"}`;
+}
+
+/** Projects a live ScopedRow into the same shape stored in the dashboard snapshot. */
+export function snapshotShapeFromScoped(row: ScopedRow): DashboardRowSnapshot {
+  return {
+    key: rowKeyForScoped(row),
+    project: row.project,
+    activity: row.activity,
+    person: row.person,
+    email: row.email,
+    stage: row.stage,
+    status: row.status,
+    bucket: statusBucketForRow(row.row),
+    terminal: isRowEffectivelyDone(row.row),
+    tat: row.tat,
+    taken: row.taken,
+    delay: row.delay,
+    criticality: String(row.row["Criticality"] ?? ""),
+  };
+}
+
+const COMPARED_FIELDS: Array<keyof DashboardRowSnapshot> = [
+  "project", "activity", "person", "email", "stage", "status", "bucket", "terminal", "tat", "taken", "delay",
+];
+
 export function verifyDashboardConsistency(
   actualRows: ScopedRow[],
   target: DashboardVerificationTarget,
   snapshot = readDashboardSnapshot(),
 ): DashboardConsistencyResult {
+  const actualShaped = actualRows.map(snapshotShapeFromScoped);
+  const label = targetLabelFor(target);
+
   if (!snapshot) {
     return {
       available: false,
@@ -223,15 +300,52 @@ export function verifyDashboardConsistency(
       extraCount: 0,
       message: "No dashboard snapshot available for cross-check.",
       samples: [],
+      targetLabel: label,
+      missingKeys: [],
+      extraKeys: [],
+      fieldDiffs: [],
+      canonicalRows: [],
+      actualRows: actualShaped,
     };
   }
 
   const expected = expectedRowsForTarget(snapshot, target);
   const expectedKeys = expected.map((r) => r.key);
-  const actualKeys = actualRows.map(rowKeyForScoped);
+  const actualKeys = actualShaped.map((r) => r.key);
   const missing = subtractCounts(countKeys(expectedKeys), countKeys(actualKeys));
   const extra = subtractCounts(countKeys(actualKeys), countKeys(expectedKeys));
-  const ok = missing.length === 0 && extra.length === 0 && expected.length === actualRows.length;
+
+  // Field-level comparison for rows present on both sides: catches the class of
+  // bug where the same row renders with a different status/TAT/delay downstream.
+  // Duplicate row keys are possible when a sheet repeats a Sr. No./activity, so
+  // compare per key as a multiset of field values rather than first-match — the
+  // latter reports phantom diffs by pairing two unrelated duplicates.
+  const groupBy = (rows: DashboardRowSnapshot[]) => {
+    const m = new Map<string, DashboardRowSnapshot[]>();
+    for (const r of rows) m.set(r.key, [...(m.get(r.key) ?? []), r]);
+    return m;
+  };
+  const expectedByKey = groupBy(expected);
+  const actualByKey = groupBy(actualShaped);
+  const fieldDiffs: ConsistencyFieldDiff[] = [];
+  for (const [key, wantGroup] of expectedByKey.entries()) {
+    const gotGroup = actualByKey.get(key);
+    if (!gotGroup) continue;
+    for (const field of COMPARED_FIELDS) {
+      const wantVals = wantGroup.map((r) => String(r[field] ?? "")).sort();
+      const gotVals = gotGroup.map((r) => String(r[field] ?? "")).sort();
+      if (wantVals.join("\u0001") === gotVals.join("\u0001")) continue;
+      fieldDiffs.push({
+        key,
+        label: `${wantGroup[0].project} · ${wantGroup[0].activity}`,
+        field: String(field),
+        expected: wantVals.join(", ") || "—",
+        actual: gotVals.join(", ") || "—",
+      });
+    }
+  }
+
+  const ok = missing.length === 0 && extra.length === 0 && expected.length === actualRows.length && fieldDiffs.length === 0;
   const labelsByKey = new Map(expected.map((r) => [r.key, `${r.project} · ${r.activity}`]));
   const samples = [...missing, ...extra].slice(0, 3).map((key) => labelsByKey.get(key) ?? key);
 
@@ -247,7 +361,77 @@ export function verifyDashboardConsistency(
     savedAt: snapshot.savedAt,
     message: ok
       ? `Cross-verified with dashboard snapshot (${actualRows.length} row${actualRows.length === 1 ? "" : "s"}).`
-      : `Dashboard expected ${expected.length} row${expected.length === 1 ? "" : "s"}; this page loaded ${actualRows.length}.`,
+      : fieldDiffs.length && missing.length === 0 && extra.length === 0
+        ? `Same ${expected.length} row(s), but ${fieldDiffs.length} field(s) disagree with the dashboard.`
+        : `Dashboard expected ${expected.length} row${expected.length === 1 ? "" : "s"}; this page loaded ${actualRows.length}.`,
     samples,
+    targetLabel: label,
+    missingKeys: missing,
+    extraKeys: extra,
+    fieldDiffs,
+    canonicalRows: expected,
+    actualRows: actualShaped,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Report log — every destination page records its verification outcome so the
+// mismatch inspector (/agent/mismatch-inspector) can show what disagreed and
+// which canonical rows each page actually used.
+// ---------------------------------------------------------------------------
+
+const REPORTS_KEY = "agent:consistency-reports:v1";
+const MAX_REPORTS = 60;
+
+export function readConsistencyReports(): ConsistencyReport[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.sessionStorage.getItem(REPORTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as ConsistencyReport[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearConsistencyReports(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(REPORTS_KEY);
+    window.dispatchEvent(new CustomEvent("agent:consistency-reports"));
+  } catch { /* storage unavailable */ }
+}
+
+/** Records (or replaces) the verification outcome for one destination page. */
+export function recordConsistencyReport(
+  target: DashboardVerificationTarget,
+  result: DashboardConsistencyResult,
+  path?: string,
+): void {
+  if (typeof window === "undefined") return;
+  const id = `${target.kind}:${target.kind === "kpi" ? target.id : target.kind === "row" ? target.key : target.label}`;
+  const report: ConsistencyReport = {
+    id,
+    target,
+    targetLabel: result.targetLabel,
+    path: path ?? window.location.pathname,
+    checkedAt: new Date().toISOString(),
+    ok: result.ok,
+    available: result.available,
+    expectedCount: result.expectedCount,
+    actualCount: result.actualCount,
+    missingKeys: result.missingKeys,
+    extraKeys: result.extraKeys,
+    fieldDiffs: result.fieldDiffs,
+    canonicalRows: result.canonicalRows.slice(0, 50),
+    actualRows: result.actualRows.slice(0, 50),
+    signature: result.signature,
+    message: result.message,
+  };
+  try {
+    const next = [report, ...readConsistencyReports().filter((r) => r.id !== id)].slice(0, MAX_REPORTS);
+    window.sessionStorage.setItem(REPORTS_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("agent:consistency-reports"));
+  } catch { /* storage unavailable */ }
 }

@@ -742,6 +742,10 @@ export default function AgentDashboard() {
 
   useEffect(() => {
     const rows = payload?.data ?? [];
+    // Don't overwrite a good snapshot with an empty one while sources are still
+    // loading — destination pages would then "verify" against nothing and the
+    // parity check would pass vacuously.
+    if (rows.length === 0 && (anyFetching || anyLoading)) return;
     saveDashboardSnapshot(buildDashboardSnapshot(rows, {
       scopeLabel: payload?.project ?? "Dashboard",
       selected,
@@ -749,7 +753,8 @@ export default function AgentDashboard() {
       focusDept,
       generatedAt: payload?.generated_at,
     }));
-  }, [payload, selected, focusPerson, focusDept]);
+  }, [payload, selected, focusPerson, focusDept, anyFetching, anyLoading]);
+
 
   // Options for the admin focus bar — derived from the UNFILTERED scoped rows
   // so admins can always pivot back and see the full option list.
@@ -2009,6 +2014,11 @@ export default function AgentDashboard() {
             onClick={() => selectProject(s.project.id)}
           />
         ))}
+        <Link
+          to="/agent/mismatch-inspector"
+          className="ml-auto rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+          title="Compare dashboard cards with detail pages"
+        >Mismatch inspector</Link>
         {selected !== "all" && (
           <Link
             to="/agent/project/$projectId"
@@ -2842,6 +2852,8 @@ function ProjectChip({ label, count, active, loading, error, onClick }: {
   return (
     <button
       type="button"
+      data-testid="source-chip"
+      data-source-label={label}
       onClick={onClick}
       aria-pressed={active}
       aria-label={`Filter by ${label}${error ? " (error)" : loading ? " (loading)" : ""} · ${count} rows`}

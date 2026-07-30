@@ -11,7 +11,7 @@
 // row from the live source cache (same queries the dashboard uses) so the URL
 // stays short and the data stays real-time.
 
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft, RefreshCw, AlertTriangle, Clock, Gauge, User as UserIcon,
@@ -31,7 +31,7 @@ import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
 import { DraftActionButton } from "@/components/DraftActionButton";
-import { verifyDashboardConsistency } from "@/lib/dashboard-consistency";
+import { recordConsistencyReport, verifyDashboardConsistency } from "@/lib/dashboard-consistency";
 
 
 export const Route = createFileRoute("/_authenticated/agent/row/$key")({
@@ -70,6 +70,11 @@ function RowPage() {
     const scoped = liveRow ? [toScopedRow(liveRow, 0, String(liveRow["__project"] ?? ident.project ?? ""))] : [];
     return verifyDashboardConsistency(scoped, { kind: "row", key });
   }, [liveRow, ident.project, key]);
+  useEffect(() => {
+    if (anyLoading || anyFetching) return;
+    const t = setTimeout(() => recordConsistencyReport({ kind: "row", key }, consistency), 400);
+    return () => clearTimeout(t);
+  }, [consistency, anyLoading, anyFetching, key]);
 
   // When the live row isn't in cache (source query still loading, or a
   // transient refetch error dropped its payload), only bail out with the

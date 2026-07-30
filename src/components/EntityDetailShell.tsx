@@ -3,7 +3,7 @@
 // deep-links into the existing /agent/detail/$payload page, and a compact
 // scoped chatbot placeholder (the full grounded chat lives on the dashboard).
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RefreshCw, Layers, User as UserIcon, FolderKanban,
@@ -23,7 +23,7 @@ import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { summarize, type ScopedRow, encodeRowKey, rowIdent } from "@/lib/entity-scope";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { statusBucketForRow } from "@/lib/status-utils";
-import { verifyDashboardConsistency, type DashboardVerificationTarget } from "@/lib/dashboard-consistency";
+import { recordConsistencyReport, verifyDashboardConsistency, type DashboardVerificationTarget } from "@/lib/dashboard-consistency";
 
 export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
@@ -81,6 +81,14 @@ export function EntityDetailShell({
     () => verificationTarget ? verifyDashboardConsistency(rows, verificationTarget) : null,
     [rows, verificationTarget],
   );
+  // Persist the outcome so /agent/mismatch-inspector can show which cards and
+  // fields disagreed, and which canonical rows each destination page used.
+  useEffect(() => {
+    if (!verificationTarget || !consistency || loading || refetching) return;
+    // Debounce: sources settle in waves, so record the last stable outcome.
+    const t = setTimeout(() => recordConsistencyReport(verificationTarget, consistency), 400);
+    return () => clearTimeout(t);
+  }, [verificationTarget, consistency, loading, refetching]);
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     if (!q.trim()) return rows;
