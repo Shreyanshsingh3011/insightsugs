@@ -40,6 +40,8 @@ import AgentChatWidget, { type AgentChatContext } from "@/components/AgentChatWi
 import { ViewSourceLink } from "@/components/ViewSourceLink";
 import { RowQualitySummary } from "@/components/RowQualitySummary";
 import { useSession } from "@/hooks/useSession";
+import { useQaScenario } from "@/hooks/useQaScenario";
+import { buildQaPayload } from "@/lib/qa-fixtures";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -132,6 +134,10 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function numPick(r: Row, ...keys: string[]): number {
+  return num(pick(r, ...keys));
+}
+
 function clampRealDays(value: number): number {
   // Sheet formulas sometimes leak Excel date serials (45k+) into duration
   // columns. Treat those as unusable durations instead of active delays.
@@ -143,7 +149,7 @@ function isLikelySheetDateSerial(value: number): boolean {
 }
 
 function rawDaysTakenForRow(r: Row): number {
-  return num(r["Days Taken"]);
+  return numPick(r, "Days Taken", "days_taken", "Days taken", "Days_Taken");
 }
 
 function hasCompletionDateSerialInDaysTaken(r: Row): boolean {
@@ -231,21 +237,22 @@ function derive(payload: Payload | undefined) {
   const overdue: { activity: string; person: string; stage: string; delay: number; tat: number; taken: number; status: string; criticality: string; email: string; row: Row }[] = [];
 
   for (const r of rows) {
-    const terminal = isTerminalRow(r);
-    const rowStatus = statusOf(r);
-    const st: StatusBucket = terminal ? "Completed" : statusBucketForRow(r);
+    const computed = computeRowStatus(r);
+    const terminal = computed.isDone;
+    const rowStatus = computed.label || statusOf(r);
+    const st: StatusBucket = computed.bucket;
     status[st] = (status[st] || 0) + 1;
     const stage = pick(r, "Stages", "Stages of Process") || "—";
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const delay = delayForRow(r, terminal);
-    const tatRaw = num(r["TAT"]);
+    const delay = computed.delay;
+    const tatRaw = numPick(r, "TAT", "Tat", "tat", "TAT (days)", "TAT Days", "tat_days");
     // Reject serial-date leaks (Excel serials ~30000–70000) and other absurd
     // TAT values so a single bad cell can't inflate the ETA forecast into
     // thousands of days.
-    const tat = tatRaw > 0 && tatRaw <= 365 ? tatRaw : 0;
+    const tat = computed.tat;
     if (tatRaw > 0 && tat === 0) {
       etaDebug.tatClamped++;
       if (etaDebug.samples.length < 5) etaDebug.samples.push({
@@ -254,7 +261,7 @@ function derive(payload: Payload | undefined) {
       });
     }
     const rawTaken = rawDaysTakenForRow(r);
-    const taken = daysTakenForRow(r);
+    const taken = computed.taken;
     if (rawTaken > 0 && taken === 0) {
       etaDebug.takenClamped++;
       if (etaDebug.samples.length < 5) etaDebug.samples.push({
@@ -265,8 +272,7 @@ function derive(payload: Payload | undefined) {
     // If the activity has recorded Days Taken within TAT, treat it as completed
     // even when the status column hasn't been flipped yet — otherwise done work
     // keeps surfacing in "Next best actions".
-    const finishedWithinTat = !terminal && taken > 0 && tat > 0 && taken <= tat;
-    const effectivelyDone = terminal || finishedWithinTat || hasCompletionDateSerialInDaysTaken(r);
+    const effectivelyDone = computed.isDone;
 
     critAgg[crit] = (critAgg[crit] || 0) + 1;
     stageAgg[stage] ??= { total: 0, delayed: 0, delayDays: 0, completed: 0 };
@@ -279,7 +285,7 @@ function derive(payload: Payload | undefined) {
     personAgg[person].taken += taken;
     if (tat > 0) { sumTat += tat; sumTaken += taken; tatCounted++; }
 
-    const isDelayed = !effectivelyDone && (st === "Delayed" || (taken > tat && tat > 0) || delay > 0);
+    const isDelayed = !effectivelyDone && (computed.isDelayed || st === "Delayed" || (taken > tat && tat > 0) || delay > 0);
     if (effectivelyDone) {
       completedCount++; personAgg[person].completed++; stageAgg[stage].completed++;
       const cd = completionDateForRow(r);
@@ -549,6 +555,7 @@ export default function AgentDashboard() {
 
   const scope = useAgentScope();
   const { directory: profileDir } = useProfileDirectory();
+  const [qaScenario] = useQaScenario();
 
   // Persist the project selector across navigations so returning from the
   // detail page keeps the drill-down context intact.
@@ -631,14 +638,19 @@ export default function AgentDashboard() {
   });
 
 
-  const rawSources = queries.map((q, i) => ({
-    project: projects[i],
-    payload: (q.data as { payload?: SourcePayload } | undefined)?.payload,
-    isFetching: q.isFetching,
-    isLoading: q.isLoading,
-    isError: q.isError,
-    error: q.error as Error | undefined,
-  }));
+  const rawSources = queries.map((q, i) => {
+    const project = projects[i];
+    const livePayload = (q.data as { payload?: SourcePayload } | undefined)?.payload;
+    const qaPayload = qaScenario === "off" || !project ? null : buildQaPayload(qaScenario, project);
+    return {
+      project,
+      payload: qaPayload ?? livePayload,
+      isFetching: qaScenario === "off" ? q.isFetching : false,
+      isLoading: qaScenario === "off" ? q.isLoading : false,
+      isError: qaScenario === "off" ? q.isError : false,
+      error: qaScenario === "off" ? q.error as Error | undefined : undefined,
+    };
+  });
 
   // Decorate every source row with the resolved person (real name, email,
   // resolution source). Overwrites the "Responsible Person" column value so
@@ -665,7 +677,7 @@ export default function AgentDashboard() {
         : s
     ));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir]);
+  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, qaScenario]);
 
   const anyLoading = queries.some(q => q.isLoading);
   const anyFetching = queries.some(q => q.isFetching);
@@ -751,7 +763,7 @@ export default function AgentDashboard() {
       generated_at: s.payload.generated_at,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept]);
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept, qaScenario]);
 
   const d = useMemo(() => derive(payload), [payload]);
 

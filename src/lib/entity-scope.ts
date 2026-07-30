@@ -71,7 +71,7 @@ export function toScopedRow(row: Row, i: number, projectLabel?: string): ScopedR
     status: s.label || statusText(row) || "—",
     tat: s.tat,
     taken: s.taken,
-    delay: s.isDone ? 0 : s.delay,
+    delay: s.delay,
   };
 }
 
