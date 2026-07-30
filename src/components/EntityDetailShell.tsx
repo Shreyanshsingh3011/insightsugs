@@ -196,9 +196,14 @@ export function EntityDetailShell({
                 </TableHeader>
                 <TableBody>
                   {filtered.slice(0, 200).map((r) => {
+                    // Never bake the placeholder project label ("\u2014") into the row key:
+                    // rowIdent() falls back to the row's own __project when the scoped
+                    // label is a placeholder, so the row page can always rehydrate.
+                    const projectLabel = r.project && r.project !== "\u2014" ? r.project : undefined;
+                    const ident = rowIdent(r.row, projectLabel);
                     const rowKey = encodeRowKey({
-                      ...rowIdent(r.row, r.project),
-                      activity: rowIdent(r.row, r.project).activity || r.activity,
+                      ...ident,
+                      activity: ident.activity || r.activity,
                     });
                     // Legacy aggregate payload kept for the redirect fallback.
                     void encodeDetailPayload;

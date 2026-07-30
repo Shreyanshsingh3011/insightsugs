@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
-import { encodeKey as encodeEntityKey, encodeRowKey, rowIdent } from "@/lib/entity-scope";
+import { encodeKey as encodeEntityKey, encodeRowKey, rowIdent, isPlaceholderLabel } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 
@@ -2269,22 +2269,24 @@ export default function AgentDashboard() {
               {d.actions.slice(0, 8).map(a => {
                 // Route each action to its most specific detail page.
                 // Prefer the row page when the action ties to one activity, else fall back to the person page.
-                let to: "/agent/row/$key" | "/agent/person/$key" | "/agent/stage/$key" | "/agent";
-                let params: { key: string };
+                let to: "/agent/row/$key" | "/agent/person/$key" | "/agent/stage/$key" | "/agent/kpi/$id";
+                let params: { key: string } | { id: string };
                 if (a.row) {
                   to = "/agent/row/$key";
                   params = {
                     key: encodeRowKey(rowIdent(a.row as Row, String((a.row as Row)["__project"] ?? payload?.project ?? ""))),
                   };
-                } else if (a.stage) {
+                } else if (a.stage && !isPlaceholderLabel(a.stage)) {
                   to = "/agent/stage/$key";
                   params = { key: encodeEntityKey(a.stage) };
-                } else if (a.person) {
+                } else if (a.person && !isPlaceholderLabel(a.person)) {
                   to = "/agent/person/$key";
                   params = { key: encodeEntityKey(a.person) };
                 } else {
-                  to = "/agent";
-                  params = { key: "" };
+                  // Aggregate actions (Backlog / Pace) have no single entity: send the
+                  // user to the matching KPI drilldown instead of a dead self-link.
+                  to = "/agent/kpi/$id";
+                  params = { id: a.source === "Pace" ? "tat" : "overdue" };
                 }
                 const projectLabel = String((a.row as Row | undefined)?.["__project"] ?? payload?.project ?? "");
                 const activity = String(
@@ -2304,7 +2306,7 @@ export default function AgentDashboard() {
                     <div className="flex items-start justify-between gap-2">
                       <Link
                         to={to}
-                        params={to === "/agent" ? undefined : params}
+                        params={params as never}
                         className="min-w-0 flex-1 outline-none"
                       >
                         <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
@@ -2552,7 +2554,8 @@ export default function AgentDashboard() {
                     margin={{ left: 10, right: 10 }}
                     onClick={(e: { activeLabel?: string } | null) => {
                       const stage = e?.activeLabel;
-                      if (!stage) return;
+                      // Placeholder stage labels ("\u2014") have no detail page to open.
+                      if (!stage || isPlaceholderLabel(stage)) return;
                       nav({ to: "/agent/stage/$key", params: { key: encodeEntityKey(stage) } });
                     }}
                   >
