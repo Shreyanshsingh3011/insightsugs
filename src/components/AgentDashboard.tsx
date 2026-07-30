@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
-import { encodeKey as encodeEntityKey, encodeRowKey, rowIdent, isPlaceholderLabel } from "@/lib/entity-scope";
+import { activityName, encodeKey as encodeEntityKey, encodeRowKey, rowIdent, isPlaceholderLabel, stageName } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 
@@ -215,7 +215,7 @@ function derive(payload: Payload | undefined) {
     const rowStatus = computed.label || statusOf(r);
     const st: StatusBucket = computed.bucket;
     status[st] = (status[st] || 0) + 1;
-    const stage = pick(r, "Stages", "Stages of Process") || "—";
+    const stage = stageName(r) || pick(r, "Stages", "Stages of Process") || "—";
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name") || "Unassigned";
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
@@ -229,7 +229,7 @@ function derive(payload: Payload | undefined) {
     if (tatRaw > 0 && tat === 0) {
       etaDebug.tatClamped++;
       if (etaDebug.samples.length < 5) etaDebug.samples.push({
-        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        activity: activityName(r) || pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         field: "TAT", raw: tatRaw, used: 0,
       });
     }
@@ -238,7 +238,7 @@ function derive(payload: Payload | undefined) {
     if (rawTaken > 0 && taken === 0) {
       etaDebug.takenClamped++;
       if (etaDebug.samples.length < 5) etaDebug.samples.push({
-        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        activity: activityName(r) || pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         field: "Days Taken", raw: rawTaken, used: 0,
       });
     }
@@ -288,7 +288,7 @@ function derive(payload: Payload | undefined) {
       const actionDelay = Math.max(delay, breach);
       if (actionDelay <= 0) continue;
       overdue.push({
-        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        activity: activityName(r) || pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person, stage, delay: actionDelay, tat, taken,
         status: rowStatus, criticality: crit,
         email, row: r,
@@ -491,9 +491,9 @@ function derive(payload: Payload | undefined) {
       const tat = num(r["TAT"]);
       const taken = daysTakenForRow(r);
       return {
-        activity: pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
+        activity: activityName(r) || pick(r, "Activity List", "Process Descriptions", "Process") || "(unnamed)",
         person: pick(r, "Responsible Person", "Responsibility", "approvers name") || "—",
-        stage: pick(r, "Stages", "Stages of Process") || "—",
+        stage: stageName(r) || pick(r, "Stages", "Stages of Process") || "—",
         tat, taken,
         ratio: tat > 0 ? taken / tat : 0,
         row: r,
@@ -642,10 +642,11 @@ export default function AgentDashboard() {
   // every downstream picker — focus filters, chatbot, rankings, exports —
   // automatically speaks the resolved name instead of a role/title.
   const sources = useMemo(() => {
-    const decorate = (row: Row): Row => {
+    const decorate = (row: Row, index: number): Row => {
       const r = resolvePersonForRow(row, profileDir);
       return {
         ...row,
+        __sourceRowIndex: String(index),
         "Responsible Person": r.displayName,
         __personKey: r.key,
         __personDisplay: r.displayName,
@@ -1198,10 +1199,10 @@ export default function AgentDashboard() {
   const rowsAll: Row[] = payload?.data ?? [];
   // Build a compact, LLM-friendly row projection with the columns we care about.
   const rowIndex = useMemo(() => rowsAll.map((r, i) => {
-    const activity = pick(r, "Activity List", "Process Descriptions", "Process");
+    const activity = activityName(r) || pick(r, "Activity List", "Process Descriptions", "Process");
     const person = pick(r, "Responsible Person", "Responsibility", "approvers name");
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const stage = pick(r, "Stages", "Stages of Process");
+    const stage = stageName(r) || pick(r, "Stages", "Stages of Process");
     // Canonical computed status — one source of truth for bucket, label,
     // done/delayed flags, tat/taken/delay. Prevents raw sheet text from
     // contradicting the numbers (e.g. TAT=30 Taken=31 labelled "Timely").

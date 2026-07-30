@@ -121,10 +121,11 @@ export function useAgentSources() {
 
   // Same person-decoration the dashboard applies to every source row.
   const sources = useMemo(() => {
-    const decorate = (row: Row): Row => {
+    const decorate = (row: Row, index: number): Row => {
       const r = resolvePersonForRow(row, profileDir);
       return {
         ...row,
+        __sourceRowIndex: String(index),
         "Responsible Person": r.displayName,
         __personKey: r.key,
         __personDisplay: r.displayName,

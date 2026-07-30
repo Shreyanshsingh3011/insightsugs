@@ -158,7 +158,7 @@ export function decodeKey(s: string): string {
 // Compact, deterministic URL key for a single source row. We only encode the
 // identifier tuple (project + Sr. No. + activity) — never the full row — so
 // the URL stays short and the page rehydrates from the live source cache.
-export type RowIdent = { project: string; srNo: string; activity: string };
+export type RowIdent = { project: string; srNo: string; activity: string; sourceIndex?: string };
 
 const SR_NO_ALIASES = [
   "Sr. No.", "Sr No", "Sr.No", "Sr.No.", "Serial No", "Serial No.",
@@ -167,8 +167,13 @@ const SR_NO_ALIASES = [
 ];
 
 export function rowIdent(r: Row, projectLabel?: string): RowIdent {
+  const sourceIndex = pick(r, "__sourceRowIndex", "__rowIndex");
   return {
     project: projectLabel || String(r["__project"] ?? "") || "",
+    // Dashboard/detail parity must survive duplicate Sr. No. + activity rows.
+    // When available, stamp the original row offset from the source sheet into
+    // the URL key so a click rehydrates the exact row the dashboard rendered.
+    ...(sourceIndex ? { sourceIndex } : {}),
     // Unknown sources name their index column anything ("Sr no", "S/N",
     // "Item No", "Ref ID"); fall back to a header pattern scan so row keys
     // stay stable for sheets we've never seen.
@@ -180,11 +185,18 @@ export function rowIdent(r: Row, projectLabel?: string): RowIdent {
 
 
 export function encodeRowKey(ident: RowIdent): string {
+  if (ident.sourceIndex) {
+    return encodeKey(`v2::${ident.project}::${ident.sourceIndex}::${ident.srNo}::${ident.activity}`);
+  }
   return encodeKey(`${ident.project}::${ident.srNo}::${ident.activity}`);
 }
 
 export function decodeRowKey(key: string): RowIdent {
   const raw = decodeKey(key);
+  if (raw.startsWith("v2::")) {
+    const [, project = "", sourceIndex = "", srNo = "", ...rest] = raw.split("::");
+    return { project, sourceIndex, srNo, activity: rest.join("::") };
+  }
   const [project = "", srNo = "", ...rest] = raw.split("::");
   return { project, srNo, activity: rest.join("::") };
 }
@@ -242,8 +254,18 @@ export function rowMatchesIdent(r: Row, ident: RowIdent, projectLabel?: string):
   }
   const wantSr = normSrNo(ident.srNo);
   const gotSr = normSrNo(id.srNo);
+  const wantIndex = normSrNo(ident.sourceIndex ?? "");
+  const gotIndex = normSrNo(id.sourceIndex ?? "");
   const wantAct = normIdent(ident.activity);
   const gotAct = normIdent(id.activity);
+
+  if (wantIndex && gotIndex) {
+    if (wantIndex !== gotIndex) return false;
+    // Source row index is the strongest disambiguator, but keep activity as a
+    // guard against a sheet being re-sorted between dashboard and detail load.
+    if (wantAct && gotAct) return looseEqualOrContains(wantAct, gotAct);
+    return true;
+  }
   if (wantSr && gotSr) {
     if (wantSr !== gotSr) return false;
     if (wantAct && gotAct) return looseEqualOrContains(wantAct, gotAct);
