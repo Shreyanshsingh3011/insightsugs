@@ -66,6 +66,7 @@ function PersonPage() {
       loading={anyLoading}
       refetching={anyFetching}
       onRefresh={refetchAll}
+      verificationTarget={{ kind: "person", label: decoded }}
       actionContext={{
         scopeKind: "person",
         scopeLabel: displayName,

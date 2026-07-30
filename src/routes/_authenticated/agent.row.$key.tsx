@@ -31,6 +31,7 @@ import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
 import { DraftActionButton } from "@/components/DraftActionButton";
+import { verifyDashboardConsistency } from "@/lib/dashboard-consistency";
 
 
 export const Route = createFileRoute("/_authenticated/agent/row/$key")({
@@ -65,6 +66,10 @@ function RowPage() {
     () => rows.find(r => rowMatchesIdent(r, ident, String(r["__project"] ?? ""))) ?? null,
     [rows, ident],
   );
+  const consistency = useMemo(() => {
+    const scoped = liveRow ? [toScopedRow(liveRow, 0, String(liveRow["__project"] ?? ident.project ?? ""))] : [];
+    return verifyDashboardConsistency(scoped, { kind: "row", key });
+  }, [liveRow, ident.project, key]);
 
   // When the live row isn't in cache (source query still loading, or a
   // transient refetch error dropped its payload), only bail out with the
@@ -217,7 +222,21 @@ function RowPage() {
                 }>{status}</Badge>
                 {criticality !== "—" && <Badge variant="secondary">{criticality}</Badge>}
                 {ident.srNo && <Badge variant="secondary">Sr. No. {ident.srNo}</Badge>}
+                {consistency.available && (
+                  <Badge
+                    variant="outline"
+                    className={consistency.ok ? TONE.ok : TONE.high}
+                    title={consistency.message}
+                  >
+                    {consistency.ok ? "Dashboard verified" : "Dashboard mismatch"}
+                  </Badge>
+                )}
               </div>
+              {consistency.available && !consistency.ok && (
+                <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-xs leading-relaxed text-rose-700">
+                  {consistency.message} {consistency.samples.length ? `Check: ${consistency.samples.join("; ")}.` : ""}
+                </p>
+              )}
             </div>
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-2">

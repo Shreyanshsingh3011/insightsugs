@@ -11,9 +11,9 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { toScopedRow, type ScopedRow } from "@/lib/entity-scope";
-import { isRowEffectivelyDone } from "@/lib/status-utils";
+import { isRowEffectivelyDone, statusBucketForRow } from "@/lib/status-utils";
 
-type KpiId = "health" | "ontime" | "overdue" | "tat" | "risk";
+type KpiId = "health" | "completed" | "ontime" | "delayed" | "overdue" | "tat" | "risk" | "remaining" | "notstarted";
 const KPI_META: Record<KpiId, {
   title: string; rule: string; tone: "ok" | "med" | "high" | "low";
   filter: (r: ScopedRow) => boolean;
@@ -31,6 +31,19 @@ const KPI_META: Record<KpiId, {
     rule: "Completed activities (including finished-within-TAT) whose delay ≤ 0.",
     tone: "ok",
     filter: (r) => isRowEffectivelyDone(r.row) && r.delay <= 0,
+  },
+  completed: {
+    title: "Completed activities",
+    rule: "Every activity that is effectively complete, including rows completed by dates or terminal status.",
+    tone: "ok",
+    filter: (r) => isRowEffectivelyDone(r.row),
+  },
+  delayed: {
+    title: "Delayed activities",
+    rule: "Not effectively complete AND delayed by explicit delay, delayed status, or Days Taken exceeding TAT.",
+    tone: "high",
+    filter: (r) => !isRowEffectivelyDone(r.row) && (r.delay > 0 || statusBucketForRow(r.row) === "Delayed" || (r.tat > 0 && r.taken > r.tat)),
+    sort: (a, b) => b.delay - a.delay,
   },
   overdue: {
     title: "Overdue activities",
@@ -52,6 +65,19 @@ const KPI_META: Record<KpiId, {
     tone: "high",
     filter: (r) => !isRowEffectivelyDone(r.row) && (r.delay > 30 || (r.delay > 0 && /critical|high/i.test(String(r.row["Criticality"] ?? "")))),
     sort: (a, b) => b.delay - a.delay,
+  },
+  remaining: {
+    title: "Remaining activities",
+    rule: "Every activity not yet effectively complete; this is the row set behind the ETA projection.",
+    tone: "med",
+    filter: (r) => !isRowEffectivelyDone(r.row),
+    sort: (a, b) => b.delay - a.delay,
+  },
+  notstarted: {
+    title: "Not-started activities",
+    rule: "Not effectively complete AND status bucket is Not Started.",
+    tone: "low",
+    filter: (r) => !isRowEffectivelyDone(r.row) && (statusBucketForRow(r.row) === "Not Started" || /not\s*started/i.test(r.status)),
   },
 };
 
@@ -104,6 +130,7 @@ function KpiPage() {
       loading={anyLoading}
       refetching={anyFetching}
       onRefresh={refetchAll}
+      verificationTarget={{ kind: "kpi", id: id as KpiId }}
       actionContext={{
         scopeKind: "project",
         scopeLabel: meta.title,
