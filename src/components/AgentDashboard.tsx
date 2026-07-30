@@ -69,6 +69,7 @@ import {
   Sheet as UISheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import { formatEtaDays } from "@/lib/eta-format";
+import { buildDashboardSnapshot, saveDashboardSnapshot } from "@/lib/dashboard-consistency";
 
 // ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
 const FALLBACK_PROJECTS: AgentProject[] = [
@@ -738,6 +739,17 @@ export default function AgentDashboard() {
   }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept, qaScenario]);
 
   const d = useMemo(() => derive(payload), [payload]);
+
+  useEffect(() => {
+    const rows = payload?.data ?? [];
+    saveDashboardSnapshot(buildDashboardSnapshot(rows, {
+      scopeLabel: payload?.project ?? "Dashboard",
+      selected,
+      focusPerson,
+      focusDept,
+      generatedAt: payload?.generated_at,
+    }));
+  }, [payload, selected, focusPerson, focusDept]);
 
   // Options for the admin focus bar — derived from the UNFILTERED scoped rows
   // so admins can always pivot back and see the full option list.
