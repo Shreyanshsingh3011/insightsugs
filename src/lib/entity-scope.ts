@@ -19,25 +19,70 @@ export function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+// ── Source-agnostic header resolution ───────────────────────────────────────
+// Any new sheet/data source will use its own column names. Rather than
+// hard-coding one alias list per sheet, we (1) try the known aliases, then
+// (2) scan every header of the row and take the first whose NORMALIZED name
+// matches a semantic pattern (e.g. anything containing "activity" / "task").
+// This keeps links, row keys and detail pages working for sources we have
+// never seen before.
+function normHeader(k: string): string {
+  return k.toLowerCase().replace(/[\s\-_/.,;:()\u2013\u2014]+/g, " ").trim();
+}
+
+/** First non-empty value whose header matches any of the given patterns. */
+export function pickByPattern(r: Row, patterns: RegExp[]): string {
+  for (const p of patterns) {
+    for (const k of Object.keys(r)) {
+      if (k.startsWith("__")) continue;
+      if (!p.test(normHeader(k))) continue;
+      const v = r[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    }
+  }
+  return "";
+}
+
 export function personName(r: Row) {
   // Prefer the resolved display name stamped onto decorated rows by the
-  // AgentDashboard's person resolver. Falls back to the raw source columns.
+  // AgentDashboard's person resolver. Falls back to the raw source columns,
+  // then to any owner-like header on unknown sources.
   const decorated = pick(r, "__personDisplay");
   if (decorated) return decorated;
-  return pick(r, "Responsible Person", "Responsibility", "approvers name", "Owner Name", "Assignee");
+  return (
+    pick(r, "Responsible Person", "Responsibility", "approvers name", "Owner Name", "Assignee") ||
+    pickByPattern(r, [
+      /responsib|approver|owner|assignee|assigned to|accountable|in charge|incharge|spoc|poc/,
+      /\b(person|manager|engineer|officer|lead)\b/,
+    ])
+  );
 }
 export function personEmail(r: Row) {
-  return pick(r, "__personEmail", "Responsible Person Mail ID", "approvers email id");
+  return (
+    pick(r, "__personEmail", "Responsible Person Mail ID", "approvers email id") ||
+    pickByPattern(r, [/mail/])
+  );
 }
 export function stageName(r: Row) {
-  return pick(r, "Stages", "Stages of Process");
+  return (
+    pick(r, "Stages", "Stages of Process", "Stage", "Phase", "Milestone") ||
+    pickByPattern(r, [/\bstage|phase|milestone|process stage\b/])
+  );
 }
 export function activityName(r: Row) {
-  return pick(r, "Activity List", "Process Descriptions", "Process");
+  return (
+    pick(r, "Activity List", "Process Descriptions", "Process", "Activity", "Task", "Task Name",
+      "Work Item", "Description", "Particulars", "Title") ||
+    pickByPattern(r, [
+      /activity|task|work item|particular|deliverable|scope item/,
+      /\b(process|description|title|name|subject)\b/,
+    ])
+  );
 }
 export function statusText(r: Row) {
   return rowStatusText(r);
 }
+
 
 export type ScopedRow = {
   i: number;
