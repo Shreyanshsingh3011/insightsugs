@@ -128,8 +128,22 @@ function RowPage() {
   const tat = sanitizeDuration(num(row["TAT"]));
   const taken = sanitizeDuration(num(row["Days Taken"]));
   const terminal = isRowEffectivelyDone(row);
-  const rawDelay = sanitizeDuration(num(row["Delay in Days"])) || Math.max(0, taken - tat);
-  const delay = terminal ? 0 : rawDelay;
+  // Delay must agree with the status pill. `sanitizedDelayDays` reads the
+  // explicit "Delay in Days" column AND parses phrasing like "Delay by 24
+  // days" out of the status text — without it the KPI rendered 0d while the
+  // badge said "24 days delay". Overrun (taken − TAT) is the last fallback.
+  const explicitDelay = sanitizedDelayDays(row);
+  const overrunDelay = Math.max(0, taken - tat);
+  const rawDelay = explicitDelay || overrunDelay;
+  // Only zero-out a terminal row when nothing explicitly reports a delay;
+  // a completed-but-late row should still show how late it finished.
+  const delay = terminal && !explicitDelay ? 0 : rawDelay;
+  const delayBasis = explicitDelay
+    ? 'reported in the source row ("Delay in Days" / status text)'
+    : overrunDelay > 0
+      ? `derived from Days taken (${taken}d) exceeding TAT (${tat}d)`
+      : "no delay reported in the source row";
+
   const criticality = String(row["Criticality"] ?? "—");
   const startDate = String(row["Start Date"] ?? row["Planned Start"] ?? "—");
   const hc1 = String(row["HC-1"] ?? row["HC1"] ?? "—");
