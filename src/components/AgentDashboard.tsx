@@ -1889,7 +1889,7 @@ export default function AgentDashboard() {
                   const s = perf[p.id];
                   const effectiveSource = sources.find((source) => source.project.id === p.id);
                   if (!s && !effectiveSource) return null;
-                  const diff = s.diff;
+                  const diff = s?.diff;
                   const changedBits: string[] = [];
                   if (diff?.added) changedBits.push(`+${diff.added}`);
                   if (diff?.removed) changedBits.push(`-${diff.removed}`);
