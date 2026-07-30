@@ -662,7 +662,7 @@ export default function AgentDashboard() {
         : s
     ));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, qaScenario]);
+  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, effectiveScenario]);
 
   const anyLoading = queries.some(q => q.isLoading);
   const anyFetching = queries.some(q => q.isFetching);
@@ -748,7 +748,7 @@ export default function AgentDashboard() {
       generated_at: s.payload.generated_at,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept, qaScenario]);
+  }, [selected, queries.map(q => q.dataUpdatedAt).join(","), scope.mode, scope.nameNeedles.join("|"), canFocus, focusPerson, focusDept, effectiveScenario]);
 
   const d = useMemo(() => derive(payload), [payload]);
 
