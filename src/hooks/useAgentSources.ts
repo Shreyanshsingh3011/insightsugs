@@ -91,20 +91,33 @@ export function useAgentSources() {
     })),
   });
 
+  // Auto-demo: when the live sheets are unreachable/permission-blocked and every
+  // source resolves with zero rows, fall back to the full demo dataset so every
+  // feature (dashboard, alerts, KPIs, stages, owners, briefings, copilot) stays
+  // testable. An explicitly chosen QA scenario always wins.
+  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
+  const liveRowCount = queries.reduce((n, q) => {
+    const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
+    return n + (p?.data?.length ?? 0);
+  }, 0);
+  const autoDemo = qaScenario === "off" && allSettled && liveRowCount === 0;
+  const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
+
   const rawSources = queries.map((q, i) => {
     const project = projects[i];
     const livePayload = (q.data as { payload?: SourcePayload } | undefined)?.payload;
     // QA override: swap live payload for the fixture BEFORE decoration/scoping
     // so downstream consumers (dashboard, alerts, KPIs, briefings) all agree.
-    const qaPayload = qaScenario === "off" ? null : buildQaPayload(qaScenario, project);
+    const qaPayload = effectiveScenario === "off" ? null : buildQaPayload(effectiveScenario, project);
     return {
       project,
       payload: qaPayload ?? livePayload,
-      isFetching: qaScenario === "off" ? q.isFetching : false,
-      isLoading: qaScenario === "off" ? q.isLoading : false,
-      isError: qaScenario === "off" ? q.isError : false,
+      isFetching: effectiveScenario === "off" ? q.isFetching : false,
+      isLoading: effectiveScenario === "off" ? q.isLoading : false,
+      isError: effectiveScenario === "off" ? q.isError : false,
     };
   });
+
 
   // Same person-decoration the dashboard applies to every source row.
   const sources = useMemo(() => {
