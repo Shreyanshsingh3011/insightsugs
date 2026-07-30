@@ -86,6 +86,13 @@ const START_ALIASES = [
   "planned_start", "planned_start_date",
 ];
 
+const TAT_ALIASES = ["TAT", "Tat", "tat", "TAT (days)", "TAT Days", "tat_days"];
+const DAYS_TAKEN_ALIASES = ["Days Taken", "days_taken", "Days taken", "Days_Taken"];
+const DELAY_ALIASES = [
+  "Delay in Days", "Delay (In Days)", "Delay In Days", "Delay in days",
+  "delay_in_days", "Delay Days", "Delay (Days)", "Delay", "delay",
+];
+
 
 function normKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -149,7 +156,7 @@ export function completionDateForRow(row: StatusRow): Date | null {
   }
   // Days-Taken column sometimes leaks a completion serial-date instead of a
   // duration; treat that leak as the completion timestamp.
-  const daysTakenRaw = valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]);
+  const daysTakenRaw = valueForAliases(row, DAYS_TAKEN_ALIASES);
   const dtNum = Number(String(daysTakenRaw ?? "").replace(/[,\s]/g, ""));
   if (Number.isFinite(dtNum) && dtNum >= 30000 && dtNum <= 70000) {
     return parseDateCell(dtNum);
@@ -196,8 +203,8 @@ function isMeaningfulCompletionValue(raw: unknown): boolean {
 
 function hasCompletionDateSerialInDurationColumn(row: StatusRow): boolean {
   const candidates = [
-    valueForAliases(row, ["Days Taken", "days_taken", "Days taken"]),
-    valueForAliases(row, ["Delay in Days", "delay_in_days", "Delay Days", "Delay (Days)", "Delay"]),
+    valueForAliases(row, DAYS_TAKEN_ALIASES),
+    valueForAliases(row, DELAY_ALIASES),
   ];
   for (const raw of candidates) {
     if (!raw) continue;
@@ -322,12 +329,12 @@ export function isRowEffectivelyDone(row: StatusRow): boolean {
   const isSerial = (n: number) => n >= 30000 && n <= 70000;
   if (!explicitlyDelayed) {
     // Excel date serials leaked into duration/delay columns = completion date recorded.
-    if (isSerial(toNum(row["Days Taken"]))) return true;
-    if (isSerial(toNum(row["Delay in Days"]))) return true;
+    if (isSerial(toNum(valueForAliases(row, DAYS_TAKEN_ALIASES)))) return true;
+    if (isSerial(toNum(valueForAliases(row, DELAY_ALIASES)))) return true;
   }
-  const tat = toNum(row["TAT"]);
+  const tat = toNum(valueForAliases(row, TAT_ALIASES));
   const recomputed = recomputeDaysTaken(row);
-  const rawTaken = recomputed ?? toNum(row["Days Taken"]);
+  const rawTaken = recomputed ?? toNum(valueForAliases(row, DAYS_TAKEN_ALIASES));
   const taken = rawTaken > 3650 || rawTaken < 0 ? 0 : rawTaken;
 
   if (taken > 0 && tat > 0 && taken <= tat) return true;
@@ -343,7 +350,7 @@ export function sanitizedDelayDays(row: StatusRow): number {
     const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
     return Number.isFinite(n) ? n : 0;
   };
-  const raw = toNum(row["Delay in Days"]);
+  const raw = toNum(valueForAliases(row, DELAY_ALIASES));
   const explicit = raw > 3650 || raw < 0 || (raw >= 30000 && raw <= 70000) ? 0 : raw;
   if (explicit > 0) return Math.round(explicit);
   const status = rowStatusText(row);
@@ -382,14 +389,14 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
     const n = Number(String(v ?? "").replace(/[,\s]/g, ""));
     return Number.isFinite(n) ? n : 0;
   };
-  const tat = sanitizeDuration(toNum(row["TAT"]));
+  const tat = sanitizeDuration(toNum(valueForAliases(row, TAT_ALIASES)));
   const recomputed = recomputeDaysTaken(row);
-  const rawTaken = sanitizeDuration(toNum(row["Days Taken"]));
+  const rawTaken = sanitizeDuration(toNum(valueForAliases(row, DAYS_TAKEN_ALIASES)));
   // Prefer authoritative recomputed value from Start/End dates; only fall back
   // to the sheet's Days Taken column when we cannot derive it from dates.
   const taken = recomputed ?? rawTaken;
 
-  const explicitDelay = sanitizeDuration(toNum(row["Delay in Days"]));
+  const explicitDelay = sanitizeDuration(toNum(valueForAliases(row, DELAY_ALIASES)));
   const statusText = rowStatusText(row);
   const statusLower = statusText.toLowerCase();
   const explicitlyActive = /(in\s*progress|under\s*progress|ongoing|wip|working|pending|open|not\s*(complete|completed|done|started?)|yet\s*to)/.test(statusLower);
@@ -418,8 +425,8 @@ export function computeRowStatus(row: StatusRow): ComputedRowStatus {
   // Matches AgentDashboard's `effectivelyDone` so entity pages (Project Health,
   // KPI drill-downs, Person/Stage/Row views) never contradict the dashboard.
   const isSerialLeak = (n: number) => n >= 30000 && n <= 70000;
-  const rawDelayNum = toNum(row["Delay in Days"]);
-  const rawTakenNum = toNum(row["Days Taken"]);
+  const rawDelayNum = toNum(valueForAliases(row, DELAY_ALIASES));
+  const rawTakenNum = toNum(valueForAliases(row, DAYS_TAKEN_ALIASES));
   const finishedWithinTat = tat > 0 && taken > 0 && taken <= tat && !explicitlyDelayed;
   const serialLeakSaysDone = !explicitlyDelayed && (isSerialLeak(rawDelayNum) || isSerialLeak(rawTakenNum));
 

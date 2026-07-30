@@ -23,10 +23,10 @@ import { Button } from "@/components/ui/button";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import {
   decodeRowKey, rowMatchesIdent, personName, personEmail, stageName,
-  activityName, statusText, num, encodeKey as encodeEntityKey, toScopedRow,
+  activityName, encodeKey as encodeEntityKey, toScopedRow,
   type Row,
 } from "@/lib/entity-scope";
-import { isRowEffectivelyDone, sanitizeDuration, sanitizedDelayDays, statusBucketForRow } from "@/lib/status-utils";
+import { computeRowStatus, sanitizedDelayDays, statusBucketForRow } from "@/lib/status-utils";
 import { EntityActionsBar } from "@/components/EntityActionsBar";
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
@@ -75,7 +75,7 @@ function RowPage() {
   const anyError = sources.some((s) => s.isError);
   const knownProject = ident.project && sources.some(s => s.project.label === ident.project);
 
-  if (!liveRow && (anyLoading || projectMissing || (!knownProject && !ident.activity))) {
+  if (!liveRow) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10 space-y-4">
         <Link to="/agent" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -108,14 +108,7 @@ function RowPage() {
     );
   }
 
-  // Row missing from cache but we know enough from the URL to render a
-  // minimal shell (project + activity/srNo). Uses a synthetic Row so
-  // downstream helpers all no-op gracefully.
-  const row: Row = liveRow ?? ({
-    "__project": ident.project,
-    "Sr. No.": ident.srNo,
-    "Activity List": ident.activity,
-  } as unknown as Row);
+  const row: Row = liveRow;
 
 
 
@@ -124,17 +117,18 @@ function RowPage() {
   const person = personName(row) || "Unassigned";
   const email = personEmail(row);
   const stage = stageName(row) || "—";
-  const status = statusText(row) || "—";
-  const tat = sanitizeDuration(num(row["TAT"]));
-  const taken = sanitizeDuration(num(row["Days Taken"]));
-  const terminal = isRowEffectivelyDone(row);
+  const computed = computeRowStatus(row);
+  const status = computed.label || "—";
+  const tat = computed.tat;
+  const taken = computed.taken;
+  const terminal = computed.isDone;
   // Delay must agree with the status pill. `sanitizedDelayDays` reads the
   // explicit "Delay in Days" column AND parses phrasing like "Delay by 24
   // days" out of the status text — without it the KPI rendered 0d while the
   // badge said "24 days delay". Overrun (taken − TAT) is the last fallback.
   const explicitDelay = sanitizedDelayDays(row);
   const overrunDelay = Math.max(0, taken - tat);
-  const rawDelay = explicitDelay || overrunDelay;
+  const rawDelay = computed.delay || explicitDelay || overrunDelay;
   // Only zero-out a terminal row when nothing explicitly reports a delay;
   // a completed-but-late row should still show how late it finished.
   const delay = terminal && !explicitDelay ? 0 : rawDelay;
