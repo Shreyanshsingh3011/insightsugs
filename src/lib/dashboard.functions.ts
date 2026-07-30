@@ -128,7 +128,7 @@ function normalizeRow(
   // status text ("Delay by 24 days") instead — without this fallback those
   // rows land on the dashboard as flagged but report 0 overdue days.
   if (!isCompleted && overdue === 0) {
-    overdue = sanitizedDelayDays(row as Record<string, unknown>) || sanitizedDelayDays(merged as unknown as Record<string, unknown>);
+    overdue = sanitizedDelayDays(merged as unknown as Record<string, unknown>);
   }
 
   const breachFlag = /^(true|yes|1|breach|y)$/i.test(merged.breach || "");
