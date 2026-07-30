@@ -87,6 +87,13 @@ describe("rowMatchesIdent — Sr. No. tolerance", () => {
   it("distinct Sr. No. values do not collide", () => {
     expect(rowMatchesIdent(mkRow({ "Sr. No.": "13" }), baseIdent)).toBe(false);
   });
+
+  it("requires activity to match when Sr. No. repeats in a project", () => {
+    const firstRepeated = mkRow({ "Sr. No.": "44", "Activity List": "Survey approval" });
+    const clicked = { project: "Himachal", srNo: "44", activity: "BOQ approval" };
+    expect(rowMatchesIdent(firstRepeated, clicked)).toBe(false);
+    expect(rowMatchesIdent(mkRow({ "Sr. No.": "44", "Activity List": "BOQ approval" }), clicked)).toBe(true);
+  });
 });
 
 describe("rowMatchesIdent — activity fallback", () => {
@@ -114,6 +121,16 @@ describe("rowMatchesIdent — activity fallback", () => {
     const r: Row = { "__project": "Bihar", "Process Descriptions": "Kickoff" };
     expect(
       rowMatchesIdent(r, { project: "Bihar", srNo: "", activity: "Kickoff" }),
+    ).toBe(true);
+  });
+
+  it("falls back to activity when the URL has no Sr. No. but the row does", () => {
+    expect(
+      rowMatchesIdent(mkRow({ "Sr. No.": "15", "Activity List": "Route survey" }), {
+        project: "Himachal",
+        srNo: "",
+        activity: "Route survey",
+      }),
     ).toBe(true);
   });
 });

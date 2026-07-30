@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
-import { encodeKey as encodeEntityKey, encodeRowKey } from "@/lib/entity-scope";
+import { encodeKey as encodeEntityKey, encodeRowKey, rowIdent } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 
@@ -32,7 +32,7 @@ import { generateGeminiFn } from "@/lib/gemini.functions";
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, computeRowStatus, completionDateForRow, type StatusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, computeRowStatus, completionDateForRow, sanitizedDelayDays, type StatusBucket } from "@/lib/status-utils";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 
@@ -161,20 +161,13 @@ function hasCompletionDateSerialInDaysTaken(r: Row): boolean {
 }
 
 
-function statusDelayDays(status: string): number {
-  const direct = status.match(/(?:delay(?:ed)?|late|overdue)\s*(?:by)?\s*(\d+(?:\.\d+)?)/i);
-  const reversed = status.match(/(\d+(?:\.\d+)?)\s*(?:days?|d)\s*(?:delay(?:ed)?|late|overdue)/i);
-  const value = Number(direct?.[1] ?? reversed?.[1] ?? 0);
-  return Number.isFinite(value) ? Math.round(value) : 0;
-}
-
-function delayForRow(r: Row, terminal: boolean, status: string): number {
-  if (terminal) return 0;
-  const explicit = clampRealDays(num(r["Delay in Days"]));
-  // Fallback: use status text when the numeric column is empty OR was
-  // clamped away because it held a date serial. Ensures Avg Delay isn't
-  // pinned at 0 when the sheet only encodes delay in the status string.
-  return explicit || statusDelayDays(status);
+function delayForRow(r: Row, terminal: boolean): number {
+  const explicit = sanitizedDelayDays(r);
+  // Keep completed-but-late rows honest when the source explicitly reports a
+  // delay; otherwise suppress terminal rows so old delay columns do not reopen
+  // finished work on the dashboard.
+  if (terminal && explicit <= 0) return 0;
+  return explicit;
 }
 
 function daysTakenForRow(r: Row): number {
@@ -247,7 +240,7 @@ function derive(payload: Payload | undefined) {
     const crit = pick(r, "Criticality") || "—";
     const process = pick(r, "Process", "Process Descriptions") || "—";
     const email = pick(r, "Responsible Person Mail ID", "approvers email id");
-    const delay = delayForRow(r, terminal, rowStatus);
+    const delay = delayForRow(r, terminal);
     const tatRaw = num(r["TAT"]);
     // Reject serial-date leaks (Excel serials ~30000–70000) and other absurd
     // TAT values so a single bad cell can't inflate the ETA forecast into
@@ -1505,11 +1498,7 @@ export default function AgentDashboard() {
         sheet: projectLabel,
         row_index: rowNumber,
         citation: citationFor(projectLabel, rowNumber),
-        row_key: encodeRowKey({
-          project: projectLabel,
-          srNo: String(raw["Sr. No."] ?? raw["Sr No"] ?? raw["ID"] ?? ""),
-          activity: r.activity || "",
-        }),
+        row_key: encodeRowKey(rowIdent(raw, projectLabel)),
         source_url: source?.url,
         activity: r.activity,
         person: r.person,
@@ -2301,11 +2290,7 @@ export default function AgentDashboard() {
                 if (a.row) {
                   to = "/agent/row/$key";
                   params = {
-                    key: encodeRowKey({
-                      project: String((a.row as Row)["__project"] ?? payload?.project ?? ""),
-                      srNo: String((a.row as Row)["Sr. No."] ?? (a.row as Row)["Sr No"] ?? (a.row as Row)["ID"] ?? ""),
-                      activity: String(a.row["Activity List"] ?? a.row["Process Descriptions"] ?? a.row["Process"] ?? a.title ?? ""),
-                    }),
+                    key: encodeRowKey(rowIdent(a.row as Row, String((a.row as Row)["__project"] ?? payload?.project ?? ""))),
                   };
                 } else {
                   to = "/agent/person/$key";
@@ -2520,11 +2505,7 @@ export default function AgentDashboard() {
                   <TableBody>
                     {filteredRows.slice(0, 200).map(r => {
                       const src = rowsAll[r.i] as Row;
-                      const rowKey = encodeRowKey({
-                        project: String(src["__project"] ?? payload?.project ?? ""),
-                        srNo: String(src["Sr. No."] ?? src["Sr No"] ?? src["ID"] ?? ""),
-                        activity: r.activity || "",
-                      });
+                      const rowKey = encodeRowKey(rowIdent(src, String(src["__project"] ?? payload?.project ?? "")));
                       const link = { to: "/agent/row/$key" as const, params: { key: rowKey } };
                       return (
                         <TableRow key={r.i} className="cursor-pointer hover:bg-muted/40" onClick={(e) => {
@@ -2700,11 +2681,7 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {d.overdue.slice(0, 8).map((o, i) => {
-                  const rowKey = encodeRowKey({
-                    project: String((o.row as Row)?.["__project"] ?? payload?.project ?? ""),
-                    srNo: String((o.row as Row)?.["Sr. No."] ?? (o.row as Row)?.["Sr No"] ?? (o.row as Row)?.["ID"] ?? ""),
-                    activity: o.activity || "",
-                  });
+                  const rowKey = encodeRowKey(rowIdent(o.row as Row, String((o.row as Row)?.["__project"] ?? payload?.project ?? "")));
                   const link = { to: "/agent/row/$key" as const, params: { key: rowKey } };
                   return (
                     <Link key={i} {...link} className="block">
@@ -2736,11 +2713,7 @@ export default function AgentDashboard() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {d.anomalies.map((a, i) => {
-                  const rowKey = encodeRowKey({
-                    project: String((a.row as Row)?.["__project"] ?? payload?.project ?? ""),
-                    srNo: String((a.row as Row)?.["Sr. No."] ?? (a.row as Row)?.["Sr No"] ?? (a.row as Row)?.["ID"] ?? ""),
-                    activity: a.activity || "",
-                  });
+                  const rowKey = encodeRowKey(rowIdent(a.row as Row, String((a.row as Row)?.["__project"] ?? payload?.project ?? "")));
                   return (
                     <Link
                       key={i}

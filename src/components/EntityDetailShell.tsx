@@ -20,7 +20,7 @@ import { EntityActionsBar, type EntityActionContext } from "@/components/EntityA
 import { DetailBreadcrumbs } from "@/components/DetailBreadcrumbs";
 import { DetailExportMenu } from "@/components/DetailExportMenu";
 import { encodeDetailPayload } from "@/lib/agent-detail-payload";
-import { summarize, type ScopedRow, encodeRowKey } from "@/lib/entity-scope";
+import { summarize, type ScopedRow, encodeRowKey, rowIdent } from "@/lib/entity-scope";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { statusBucketForRow } from "@/lib/status-utils";
 
@@ -197,9 +197,8 @@ export function EntityDetailShell({
                 <TableBody>
                   {filtered.slice(0, 200).map((r) => {
                     const rowKey = encodeRowKey({
-                      project: r.project,
-                      srNo: String(r.row["Sr. No."] ?? r.row["Sr No"] ?? r.row["ID"] ?? ""),
-                      activity: r.activity,
+                      ...rowIdent(r.row, r.project),
+                      activity: rowIdent(r.row, r.project).activity || r.activity,
                     });
                     // Legacy aggregate payload kept for the redirect fallback.
                     void encodeDetailPayload;
