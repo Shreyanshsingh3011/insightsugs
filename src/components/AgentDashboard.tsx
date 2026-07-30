@@ -32,7 +32,7 @@ import { generateGeminiFn } from "@/lib/gemini.functions";
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, statusBucket, statusBucketForRow, computeRowStatus, completionDateForRow, sanitizedDelayDays, type StatusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, computeRowStatus, completionDateForRow, type StatusBucket } from "@/lib/status-utils";
 import { ProjectAssignmentPicker } from "@/components/ProjectAssignmentPicker";
 import { QuickAddDependencyDialog } from "@/components/QuickAddDependencyDialog";
 
@@ -152,40 +152,12 @@ function rawDaysTakenForRow(r: Row): number {
   return numPick(r, "Days Taken", "days_taken", "Days taken", "Days_Taken");
 }
 
-function hasCompletionDateSerialInDaysTaken(r: Row): boolean {
-  // Only treat a leaked date-serial as "completed" when the row's status
-  // text does NOT explicitly report an active delay. Otherwise sheet
-  // formulas mask genuinely-late rows as done — the exact symptom in
-  // Issues 6/8/9 (Completed filter showed delayed task, 46,200-day row
-  // painted green, Avg delay = 0 despite many delays).
-  const statusText = String(rowStatusText(r) ?? "").toLowerCase();
-  const explicitlyDelayed = /(delay|late|overdue|breach|slipp|pending|open|in\s*progress|not\s*(complete|done|start))/i.test(statusText);
-  if (explicitlyDelayed) return false;
-  if (isLikelySheetDateSerial(rawDaysTakenForRow(r))) return true;
-  if (isLikelySheetDateSerial(num(r["Delay in Days"]))) return true;
-  return false;
-}
-
-
-function delayForRow(r: Row, terminal: boolean): number {
-  const explicit = sanitizedDelayDays(r);
-  // Keep completed-but-late rows honest when the source explicitly reports a
-  // delay; otherwise suppress terminal rows so old delay columns do not reopen
-  // finished work on the dashboard.
-  if (terminal && explicit <= 0) return 0;
-  return explicit;
-}
-
 function daysTakenForRow(r: Row): number {
   const raw = rawDaysTakenForRow(r);
   return isLikelySheetDateSerial(raw) ? 0 : clampRealDays(raw);
 }
 
 // Render-safe ETA formatter lives in src/lib/eta-format.ts (imported at top).
-
-function bucket(s: string): StatusBucket {
-  return statusBucket(s);
-}
 
 function loadReportFilters(key: string): ReportFilters {
   if (typeof window === "undefined") return DEFAULT_REPORT_FILTERS;
