@@ -141,7 +141,7 @@ export function useAgentSources() {
         : s
     ));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, qaScenario]);
+  }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, effectiveScenario]);
 
   // Pick up the dashboard's persisted focus so detail pages reflect the
   // exact slice the user is looking at on /agent.
