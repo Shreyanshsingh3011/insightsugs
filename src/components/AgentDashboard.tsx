@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
-import { encodeKey as encodeEntityKey, encodeRowKey, rowIdent } from "@/lib/entity-scope";
+import { encodeKey as encodeEntityKey, encodeRowKey, rowIdent, isPlaceholderLabel } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
 import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
 
@@ -2276,10 +2276,10 @@ export default function AgentDashboard() {
                   params = {
                     key: encodeRowKey(rowIdent(a.row as Row, String((a.row as Row)["__project"] ?? payload?.project ?? ""))),
                   };
-                } else if (a.stage) {
+                } else if (a.stage && !isPlaceholderLabel(a.stage)) {
                   to = "/agent/stage/$key";
                   params = { key: encodeEntityKey(a.stage) };
-                } else if (a.person) {
+                } else if (a.person && !isPlaceholderLabel(a.person)) {
                   to = "/agent/person/$key";
                   params = { key: encodeEntityKey(a.person) };
                 } else {
@@ -2554,7 +2554,8 @@ export default function AgentDashboard() {
                     margin={{ left: 10, right: 10 }}
                     onClick={(e: { activeLabel?: string } | null) => {
                       const stage = e?.activeLabel;
-                      if (!stage) return;
+                      // Placeholder stage labels ("\u2014") have no detail page to open.
+                      if (!stage || isPlaceholderLabel(stage)) return;
                       nav({ to: "/agent/stage/$key", params: { key: encodeEntityKey(stage) } });
                     }}
                   >
