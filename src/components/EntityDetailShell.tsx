@@ -23,6 +23,7 @@ import { encodeDetailPayload } from "@/lib/agent-detail-payload";
 import { summarize, type ScopedRow, encodeRowKey, rowIdent } from "@/lib/entity-scope";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import { statusBucketForRow } from "@/lib/status-utils";
+import { verifyDashboardConsistency, type DashboardVerificationTarget } from "@/lib/dashboard-consistency";
 
 export type EntityKind = "person" | "stage" | "project" | "kpi" | "row";
 export type EntityDetailShellProps = {
@@ -35,6 +36,7 @@ export type EntityDetailShellProps = {
   refetching?: boolean;
   onRefresh?: () => void;
   actionContext: EntityActionContext;
+  verificationTarget?: DashboardVerificationTarget;
   extra?: React.ReactNode;
 };
 
@@ -72,9 +74,13 @@ function Icon({ kind }: { kind: EntityKind }) {
 }
 
 export function EntityDetailShell({
-  title, subtitle, kindIcon, rows, loading, refetching, onRefresh, actionContext, extra,
+  title, subtitle, kindIcon, rows, loading, refetching, onRefresh, actionContext, verificationTarget, extra,
 }: EntityDetailShellProps) {
   const s = useMemo(() => summarize(rows), [rows]);
+  const consistency = useMemo(
+    () => verificationTarget ? verifyDashboardConsistency(rows, verificationTarget) : null,
+    [rows, verificationTarget],
+  );
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     if (!q.trim()) return rows;
@@ -132,10 +138,24 @@ export function EntityDetailShell({
                 <Badge variant="outline">{s.n} activities</Badge>
                 <Badge variant="outline" className={TONE.ok}>{s.done} done</Badge>
                 <Badge variant="outline" className={s.delayed > 0 ? TONE.high : TONE.low}>{s.delayed} delayed</Badge>
+                {consistency?.available && (
+                  <Badge
+                    variant="outline"
+                    className={consistency.ok ? TONE.ok : TONE.high}
+                    title={`${consistency.message}${consistency.samples.length ? ` Missing/mismatched: ${consistency.samples.join("; ")}` : ""}`}
+                  >
+                    {consistency.ok ? "Dashboard verified" : "Dashboard mismatch"}
+                  </Badge>
+                )}
                 {actionContext.responsibleEmail && (
                   <Badge variant="secondary">{actionContext.responsibleEmail}</Badge>
                 )}
               </div>
+              {consistency?.available && !consistency.ok && (
+                <p className="mt-2 rounded-md border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-xs leading-relaxed text-rose-700">
+                  {consistency.message} {consistency.samples.length ? `Check: ${consistency.samples.join("; ")}.` : ""}
+                </p>
+              )}
             </div>
           </div>
           <div className="mt-4">
