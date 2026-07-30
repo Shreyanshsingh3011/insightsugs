@@ -2269,16 +2269,22 @@ export default function AgentDashboard() {
               {d.actions.slice(0, 8).map(a => {
                 // Route each action to its most specific detail page.
                 // Prefer the row page when the action ties to one activity, else fall back to the person page.
-                let to: "/agent/row/$key" | "/agent/person/$key";
+                let to: "/agent/row/$key" | "/agent/person/$key" | "/agent/stage/$key" | "/agent";
                 let params: { key: string };
                 if (a.row) {
                   to = "/agent/row/$key";
                   params = {
                     key: encodeRowKey(rowIdent(a.row as Row, String((a.row as Row)["__project"] ?? payload?.project ?? ""))),
                   };
-                } else {
+                } else if (a.stage) {
+                  to = "/agent/stage/$key";
+                  params = { key: encodeEntityKey(a.stage) };
+                } else if (a.person) {
                   to = "/agent/person/$key";
-                  params = { key: encodeEntityKey(a.person || a.title) };
+                  params = { key: encodeEntityKey(a.person) };
+                } else {
+                  to = "/agent";
+                  params = { key: "" };
                 }
                 const projectLabel = String((a.row as Row | undefined)?.["__project"] ?? payload?.project ?? "");
                 const activity = String(
@@ -2298,7 +2304,7 @@ export default function AgentDashboard() {
                     <div className="flex items-start justify-between gap-2">
                       <Link
                         to={to}
-                        params={params}
+                        params={to === "/agent" ? undefined : params}
                         className="min-w-0 flex-1 outline-none"
                       >
                         <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
