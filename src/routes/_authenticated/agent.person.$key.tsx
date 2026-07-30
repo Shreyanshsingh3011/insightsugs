@@ -11,7 +11,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
 import {
-  decodeKey, personEmail, personName, toScopedRow, pick, type Row,
+  decodeKey, personEmail, personName, toScopedRow, pick, isPlaceholderLabel, type Row,
 } from "@/lib/entity-scope";
 
 import { isTerminalRow } from "@/lib/status-utils";
@@ -32,7 +32,13 @@ function PersonPage() {
   const norm = (s: string) => s.toLowerCase().replace(/[\s\-_.]+/g, " ").trim();
   const needle = norm(decoded);
   const isEmail = needle.includes("@");
+  // "Unassigned"/"\u2014" is a real bucket on the dashboard, so resolve it to the
+  // rows that genuinely have no owner instead of rendering an empty page.
+  const unassigned = isPlaceholderLabel(decoded);
   const scoped = useMemo(() => {
+    if (unassigned) {
+      return rows.filter((r) => !personName(r) && !personEmail(r)).map((r, i) => toScopedRow(r, i));
+    }
     const match = (r: Row) => {
       const n = norm(personName(r));
       const e = norm(personEmail(r));
@@ -42,12 +48,12 @@ function PersonPage() {
     const exact = rows.filter((r) => norm(personName(r)) === needle || norm(personEmail(r)) === needle);
     const chosen = exact.length ? exact : rows.filter(match);
     return chosen.map((r, i) => toScopedRow(r, i));
-  }, [rows, needle, isEmail]);
+  }, [rows, needle, isEmail, unassigned]);
 
 
   // Pick canonical display info from the first matching row.
   const first = scoped[0]?.row;
-  const displayName = first ? personName(first) || decoded : decoded;
+  const displayName = unassigned ? "Unassigned" : (first ? personName(first) || decoded : decoded);
   const email = first ? personEmail(first) : (decoded.includes("@") ? decoded : "");
   const dept = first ? pick(first, "Department", "Vertical", "Team") : "";
 
