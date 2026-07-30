@@ -173,7 +173,7 @@ export function rowIdent(r: Row, projectLabel?: string): RowIdent {
     // "Item No", "Ref ID"); fall back to a header pattern scan so row keys
     // stay stable for sheets we've never seen.
     srNo: pick(r, ...SR_NO_ALIASES)
-      || pickByPattern(r, [/^(sr|s|sl|srl|seq|item|line|ref)\b.*\b(no|num|number|id)\b/, /^(no|id)$/]),
+      || pickByPattern(r, [/^(sr|s|sl|srl|seq|item|line|ref)\b\s*\b(n|no|num|number|id)\b/, /^(no|id)$/]),
     activity: activityName(r),
   };
 }
