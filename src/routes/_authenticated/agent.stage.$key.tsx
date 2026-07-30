@@ -55,6 +55,7 @@ function StagePage() {
       loading={anyLoading}
       refetching={anyFetching}
       onRefresh={refetchAll}
+      verificationTarget={{ kind: "stage", label: decoded }}
       actionContext={{
         scopeKind: "stage",
         scopeLabel: decoded,

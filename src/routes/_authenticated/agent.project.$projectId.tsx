@@ -64,6 +64,7 @@ function ProjectPage() {
         loading={anyLoading}
         refetching={anyFetching}
         onRefresh={refetchAll}
+        verificationTarget={{ kind: "project", label }}
         actionContext={{
           scopeKind: "project",
           scopeLabel: label,
