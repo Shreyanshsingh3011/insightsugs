@@ -169,10 +169,15 @@ const SR_NO_ALIASES = [
 export function rowIdent(r: Row, projectLabel?: string): RowIdent {
   return {
     project: projectLabel || String(r["__project"] ?? "") || "",
-    srNo: pick(r, ...SR_NO_ALIASES),
+    // Unknown sources name their index column anything ("Sr no", "S/N",
+    // "Item No", "Ref ID"); fall back to a header pattern scan so row keys
+    // stay stable for sheets we've never seen.
+    srNo: pick(r, ...SR_NO_ALIASES)
+      || pickByPattern(r, [/^(sr|s|sl|srl|seq|item|line|ref)\b.*\b(no|num|number|id)\b/, /^(no|id)$/]),
     activity: activityName(r),
   };
 }
+
 
 export function encodeRowKey(ident: RowIdent): string {
   return encodeKey(`${ident.project}::${ident.srNo}::${ident.activity}`);
