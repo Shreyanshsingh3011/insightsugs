@@ -9,6 +9,7 @@ import type { AgentProject } from "@/lib/agent-registry.functions";
 
 export type QaScenarioId =
   | "off"
+  | "demo"
   | "empty"
   | "single"
   | "many-alerts"
@@ -18,7 +19,8 @@ export type QaScenarioId =
   | "missing-owners";
 
 export const QA_SCENARIOS: { id: QaScenarioId; label: string; description: string }[] = [
-  { id: "off",              label: "Live data (off)",       description: "Use real sheets. Default." },
+  { id: "off",              label: "Live data (auto-demo)", description: "Use real sheets. Falls back to demo data automatically when every sheet returns 0 rows." },
+  { id: "demo",             label: "Demo dataset (full)",   description: "Realistic multi-project workflow data. Every feature testable: alerts, KPIs, stages, owners, briefings, copilot." },
   { id: "empty",            label: "Empty (0 rows)",        description: "Every project has zero activities. Tests empty states." },
   { id: "single",           label: "Single row",            description: "Exactly one row per project." },
   { id: "many-alerts",      label: "50 overdue alerts",     description: "50 heavily-overdue rows in NIT-58. Stress-tests /alerts and KPI totals." },
@@ -27,6 +29,8 @@ export const QA_SCENARIOS: { id: QaScenarioId; label: string; description: strin
   { id: "date-serial-leak", label: "Excel date-serial leak",description: "Delay/TAT columns leak 46000+ serials. Tests sanitization + row-quality badges." },
   { id: "missing-owners",   label: "Missing owners",        description: "No Responsible Person / email set. Tests unassigned fallback." },
 ];
+
+
 
 const STAGES = ["Pre-Tender", "Tender", "Pre-Award", "Award", "Execution", "Handover"];
 const OWNERS = [
