@@ -11,7 +11,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { RowQualitySummary } from "@/components/RowQualitySummary";
 import { useAgentSources } from "@/hooks/useAgentSources";
-import { toScopedRow } from "@/lib/entity-scope";
+import { decodeKey, toScopedRow } from "@/lib/entity-scope";
 import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/project/$projectId")({
@@ -22,11 +22,15 @@ export const Route = createFileRoute("/_authenticated/agent/project/$projectId")
 function ProjectPage() {
   const { projectId } = Route.useParams();
   const { projects, sources, anyLoading, anyFetching, refetchAll } = useAgentSources();
+  const decodedProjectId = useMemo(() => {
+    try { return decodeKey(projectId); } catch { return projectId; }
+  }, [projectId]);
 
   const norm = (s: string) => String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()]+/g, " ").trim();
-  const needle = norm(projectId);
+  const needle = norm(decodedProjectId);
   const project =
     projects.find((p) => p.id === projectId) ||
+    projects.find((p) => p.label === decodedProjectId) ||
     projects.find((p) => norm(p.id) === needle || norm(p.label) === needle) ||
     projects.find((p) => {
       const a = norm(p.label), b = norm(p.id);
@@ -41,7 +45,7 @@ function ProjectPage() {
     });
   // Use canonical project label (e.g. "Himachal") — the connector string is
   // often generic ("Google Sheet — public CSV") and breaks row-key matching.
-  const label = project?.label || projectId;
+  const label = project?.label || decodedProjectId;
   const dept = src?.payload?.department;
 
   const scoped = useMemo(() => {
@@ -68,7 +72,7 @@ function ProjectPage() {
         actionContext={{
           scopeKind: "project",
           scopeLabel: label,
-          scopeRef: projectId,
+          scopeRef: decodedProjectId,
           defaultDept: dept ?? null,
           summaryLine: scoped.length
             ? `Project has ${scoped.length} activities; ${scoped.filter((r) => r.delay > 0 && !isTerminalRow(r.row)).length} delayed and ${scoped.filter((r) => isTerminalRow(r.row)).length} completed.`

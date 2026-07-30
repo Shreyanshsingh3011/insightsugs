@@ -151,6 +151,25 @@ describe("encodeRowKey / decodeRowKey round trip", () => {
     expect(decodeRowKey(key)).toEqual(ident);
   });
 
+  it("round-trips source row index for exact dashboard-to-detail hydration", () => {
+    const ident: RowIdent = {
+      project: "NIT-76",
+      sourceIndex: "42",
+      srNo: "7",
+      activity: "Duplicate activity",
+    };
+    const key = encodeRowKey(ident);
+    expect(decodeRowKey(key)).toEqual(ident);
+  });
+
+  it("uses source row index to disambiguate duplicate Sr No/activity rows", () => {
+    const clicked = mkRow({ __project: "NIT-76", __sourceRowIndex: "9", "Sr. No.": "3", "Activity List": "Approval" });
+    const duplicate = mkRow({ __project: "NIT-76", __sourceRowIndex: "10", "Sr. No.": "3", "Activity List": "Approval" });
+    const decoded = decodeRowKey(encodeRowKey(rowIdent(clicked)));
+    expect(rowMatchesIdent(clicked, decoded)).toBe(true);
+    expect(rowMatchesIdent(duplicate, decoded)).toBe(false);
+  });
+
   it("dashboard card deep-link: encode from live row, decode, match same row", () => {
     const row = mkRow({ __project: "Himachal Pradesh", "Sr. No.": "045" });
     const ident = rowIdent(row);
