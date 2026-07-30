@@ -10,7 +10,7 @@ import { useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { EntityDetailShell } from "@/components/EntityDetailShell";
 import { useAgentSources } from "@/hooks/useAgentSources";
-import { decodeKey, stageName, toScopedRow } from "@/lib/entity-scope";
+import { decodeKey, stageName, toScopedRow, isPlaceholderLabel } from "@/lib/entity-scope";
 import { isTerminalRow } from "@/lib/status-utils";
 
 export const Route = createFileRoute("/_authenticated/agent/stage/$key")({
@@ -26,7 +26,11 @@ function StagePage() {
   const norm = (s: string) => s.toLowerCase().replace(/[\s\-_/]+/g, " ").trim();
   const needle = norm(decoded);
 
+  // A blank/placeholder stage is a real bucket on the dashboard: resolve it to
+  // the rows that have no stage instead of showing an empty page.
+  const unstaged = isPlaceholderLabel(decoded);
   const scoped = useMemo(() => {
+    if (unstaged) return rows.filter((r) => !stageName(r)).map((r, i) => toScopedRow(r, i));
     const exact = rows.filter((r) => norm(stageName(r)) === needle);
     const matched = exact.length
       ? exact
@@ -35,7 +39,7 @@ function StagePage() {
           return n && (n.includes(needle) || needle.includes(n));
         });
     return matched.map((r, i) => toScopedRow(r, i));
-  }, [rows, needle]);
+  }, [rows, needle, unstaged]);
 
 
 
@@ -44,7 +48,7 @@ function StagePage() {
 
   return (
     <EntityDetailShell
-      title={decoded}
+      title={unstaged ? "Unstaged activities" : decoded}
       subtitle={`${projects.size} project(s) · ${people.size} owner(s)`}
       kindIcon="stage"
       rows={scoped}
