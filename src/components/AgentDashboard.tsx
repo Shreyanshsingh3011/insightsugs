@@ -611,15 +611,16 @@ export default function AgentDashboard() {
   });
 
 
-  // Auto-demo: when every live source resolves with zero rows (sheets
-  // unreachable / permission-blocked), fall back to the full demo dataset so
-  // the whole app stays testable. An explicit QA scenario always wins.
+  // Auto-demo is canonical for the whole workspace. If even one configured
+  // source is empty/unavailable, mixing live NIT-76 rows with demo/empty rows
+  // makes dashboard totals and destination pages impossible to verify. In that
+  // degraded state the whole app switches to the same deterministic demo set;
+  // once every live source has rows, real data takes over again automatically.
   const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
-  const liveRowCount = queries.reduce((n, q) => {
+  const autoDemo = qaScenario === "off" && allSettled && queries.some((q) => {
     const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    return n + (p?.data?.length ?? 0);
-  }, 0);
-  const autoDemo = qaScenario === "off" && allSettled && liveRowCount === 0;
+    return (p?.data?.length ?? 0) === 0;
+  });
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
@@ -629,6 +630,7 @@ export default function AgentDashboard() {
     return {
       project,
       payload: qaPayload ?? livePayload,
+      isDemo: effectiveScenario !== "off",
       isFetching: effectiveScenario === "off" ? q.isFetching : false,
       isLoading: effectiveScenario === "off" ? q.isLoading : false,
       isError: effectiveScenario === "off" ? q.isError : false,

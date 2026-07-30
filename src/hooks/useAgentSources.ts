@@ -91,16 +91,16 @@ export function useAgentSources() {
     })),
   });
 
-  // Auto-demo: when the live sheets are unreachable/permission-blocked and every
-  // source resolves with zero rows, fall back to the full demo dataset so every
-  // feature (dashboard, alerts, KPIs, stages, owners, briefings, copilot) stays
-  // testable. An explicitly chosen QA scenario always wins.
+  // Auto-demo is canonical for the whole workspace. If even one configured
+  // source is empty/unavailable, mixing live NIT-76 rows with demo/empty rows
+  // makes dashboard totals and destination pages impossible to verify. In that
+  // degraded state the whole app switches to the same deterministic demo set;
+  // once every live source has rows, real data takes over again automatically.
   const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
-  const liveRowCount = queries.reduce((n, q) => {
+  const autoDemo = qaScenario === "off" && allSettled && queries.some((q) => {
     const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    return n + (p?.data?.length ?? 0);
-  }, 0);
-  const autoDemo = qaScenario === "off" && allSettled && liveRowCount === 0;
+    return (p?.data?.length ?? 0) === 0;
+  });
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
@@ -112,6 +112,7 @@ export function useAgentSources() {
     return {
       project,
       payload: qaPayload ?? livePayload,
+      isDemo: effectiveScenario !== "off",
       isFetching: effectiveScenario === "off" ? q.isFetching : false,
       isLoading: effectiveScenario === "off" ? q.isLoading : false,
       isError: effectiveScenario === "off" ? q.isError : false,
@@ -215,7 +216,7 @@ export function useAgentSources() {
     refetchAll,
     scope,
     // Demo-data signals so the UI can label itself honestly.
-    isDemoData: effectiveScenario !== "off",
+    isDemoData: rawSources.some((s) => s.isDemo),
     isAutoDemo: autoDemo,
     // Surface the applied dashboard focus so pages can label themselves.
     focus: { selected, person: focusPerson, dept: focusDept },
