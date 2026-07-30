@@ -142,8 +142,14 @@ export function decodeRowKey(key: string): RowIdent {
 /** Normalize identity strings so tiny drift (case, punctuation, whitespace,
  * leading zeros on Sr. No.) doesn't break row-key matching from dashboard
  * cards. Mirrors the fuzzy-normalize logic used by stage/person routes. */
+const PLACEHOLDERS = new Set(["", "-", "--", "\u2014", "\u2013", "n a", "na", "none", "null", "undefined", "unnamed", "unassigned"]);
+
 function normIdent(s: string): string {
-  return String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()]+/g, " ").trim();
+  const t = String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()\u2013\u2014]+/g, " ").trim();
+  // Detail pages render placeholder dashes ("\u2014") when a sheet column is blank.
+  // Treat those as "unknown" instead of a literal value, otherwise a link built
+  // from a placeholder can never match the real row.
+  return PLACEHOLDERS.has(t) ? "" : t;
 }
 function normSrNo(s: string): string {
   const raw = String(s ?? "").trim();
