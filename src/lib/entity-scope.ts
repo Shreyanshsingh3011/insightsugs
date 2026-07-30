@@ -146,8 +146,9 @@ function normIdent(s: string): string {
   return String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()]+/g, " ").trim();
 }
 function normSrNo(s: string): string {
-  const t = String(s ?? "")
-    .trim()
+  const raw = String(s ?? "").trim();
+  if (!raw) return "";
+  const t = raw
     .toLowerCase()
     .replace(/^#/, "")
     .replace(/^0+/, "")
