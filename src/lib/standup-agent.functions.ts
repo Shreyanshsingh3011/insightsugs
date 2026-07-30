@@ -12,7 +12,7 @@ import { truncateJsonForPrompt } from "@/lib/json-truncate";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
-import { isRowEffectivelyDone, rowStatusText, sanitizeDuration } from "@/lib/status-utils";
+import { isRowEffectivelyDone, rowStatusText, sanitizedDelayDays } from "@/lib/status-utils";
 
 type Row = Record<string, unknown>;
 type ProjectDelayItem = {
@@ -63,7 +63,8 @@ function collectDelays(rows: Row[], directory: Map<string, string>): ProjectDela
   for (const r of rows) {
     const status = rowStatusText(r) || pick(r, "Status Category", "Status as on Date", "Status");
     if (isRowEffectivelyDone(r) || isCompleted(status)) continue;
-    const delay = sanitizeDuration(num(r["Delay in Days"]));
+    // Numeric column + status-text fallback, matching the dashboard.
+    const delay = sanitizedDelayDays(r);
     if (delay < 3) continue;
     const resolved = resolvePersonForRow(r, directory);
     out.push({
