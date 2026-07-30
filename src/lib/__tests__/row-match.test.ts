@@ -167,3 +167,36 @@ describe("encodeRowKey / decodeRowKey round trip", () => {
     expect(rowMatchesIdent(refreshed, decodeRowKey(key))).toBe(true);
   });
 });
+
+/**
+ * Source-agnostic tests: any NEW sheet the user adds will have its own column
+ * names. Row identity, links and detail pages must keep working without
+ * per-sheet code changes.
+ */
+describe("unknown data sources — generic header resolution", () => {
+  it("derives activity + Sr. No. from unfamiliar headers", () => {
+    const r: Row = {
+      __project: "New Source",
+      "S/N": "7",
+      "Task Name": "Foundation casting",
+      "Assigned To": "A. Kumar",
+      "Phase": "Execution",
+    };
+    const ident = rowIdent(r);
+    expect(ident.srNo).toBe("7");
+    expect(ident.activity).toBe("Foundation casting");
+    expect(rowMatchesIdent(r, decodeRowKey(encodeRowKey(ident)))).toBe(true);
+  });
+
+  it("matches when only a descriptive column exists", () => {
+    const r: Row = { __project: "Vendor Tracker", "Work Item": "Invoice reconciliation" };
+    const ident = rowIdent(r);
+    expect(ident.activity).toBe("Invoice reconciliation");
+    expect(rowMatchesIdent(r, decodeRowKey(encodeRowKey(ident)))).toBe(true);
+  });
+
+  it("ignores internal __ fields when scanning headers", () => {
+    const r: Row = { __project: "X", __personDisplay: "Zed", "Item No": "3", "Particulars": "Survey" };
+    expect(rowIdent(r)).toEqual({ project: "X", srNo: "3", activity: "Survey" });
+  });
+});
