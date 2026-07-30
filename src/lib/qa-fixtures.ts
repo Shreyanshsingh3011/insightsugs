@@ -198,9 +198,10 @@ export function buildQaPayload(
 ): { connector: string; department: string; data: Row[]; generated_at: string } | null {
   if (id === "off") return null;
   return {
-    connector: `QA fixture — ${id}`,
-    department: "QA",
+    connector: id === "demo" ? "Demo dataset (sheets unavailable)" : `QA fixture — ${id}`,
+    department: id === "demo" ? "Projects" : "QA",
     data: buildRowsForScenario(id, project),
     generated_at: new Date().toISOString(),
   };
+
 }
