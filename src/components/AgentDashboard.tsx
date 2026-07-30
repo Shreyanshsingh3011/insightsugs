@@ -2269,8 +2269,8 @@ export default function AgentDashboard() {
               {d.actions.slice(0, 8).map(a => {
                 // Route each action to its most specific detail page.
                 // Prefer the row page when the action ties to one activity, else fall back to the person page.
-                let to: "/agent/row/$key" | "/agent/person/$key" | "/agent/stage/$key" | "/agent";
-                let params: { key: string };
+                let to: "/agent/row/$key" | "/agent/person/$key" | "/agent/stage/$key" | "/agent/kpi/$id";
+                let params: { key: string } | { id: string };
                 if (a.row) {
                   to = "/agent/row/$key";
                   params = {
@@ -2283,8 +2283,10 @@ export default function AgentDashboard() {
                   to = "/agent/person/$key";
                   params = { key: encodeEntityKey(a.person) };
                 } else {
-                  to = "/agent";
-                  params = { key: "" };
+                  // Aggregate actions (Backlog / Pace) have no single entity: send the
+                  // user to the matching KPI drilldown instead of a dead self-link.
+                  to = "/agent/kpi/$id";
+                  params = { id: a.source === "Pace" ? "tat" : "overdue" };
                 }
                 const projectLabel = String((a.row as Row | undefined)?.["__project"] ?? payload?.project ?? "");
                 const activity = String(
@@ -2304,7 +2306,7 @@ export default function AgentDashboard() {
                     <div className="flex items-start justify-between gap-2">
                       <Link
                         to={to}
-                        params={to === "/agent" ? undefined : params}
+                        params={params as never}
                         className="min-w-0 flex-1 outline-none"
                       >
                         <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">{a.source}</div>
