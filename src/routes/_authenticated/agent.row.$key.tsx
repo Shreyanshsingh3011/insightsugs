@@ -255,7 +255,7 @@ function RowPage() {
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Activity metrics">
         <Kpi icon={<Clock className="h-4 w-4" />} label="TAT" value={tat ? `${tat}d` : "—"} tone="low" />
         <Kpi icon={<Gauge className="h-4 w-4" />} label="Days taken" value={taken ? `${taken}d` : "—"} tone={!terminal && taken > tat && tat > 0 ? "high" : "ok"} />
-        <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Delay" value={delay ? `${delay}d` : "0d"} tone={tone} />
+        <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Delay" value={delay ? `${delay}d` : "0d"} tone={tone} hint={delayBasis} />
         <Kpi icon={<CheckCircle2 className="h-4 w-4" />} label="Status" value={status} tone={
           terminal ? "ok" : statusBucketForRow(row) === "Delayed" ? "high" : "med"
         } />
