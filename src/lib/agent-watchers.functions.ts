@@ -12,7 +12,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { resolvePersonForRow } from "@/lib/person-resolver";
-import { isRowEffectivelyDone, rowStatusText, sanitizeDuration } from "@/lib/status-utils";
+import { isRowEffectivelyDone, rowStatusText, sanitizeDuration, sanitizedDelayDays } from "@/lib/status-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -113,7 +113,10 @@ function ruleSeeds(
   const person   = resolved.displayName || "the responsible person";
   const email    = (resolved.email || pick(row, "Responsible Person Mail ID", "approvers email id").toLowerCase()) || null;
   const srNo     = pick(row, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo");
-  const delay    = sanitizeDuration(num(row["Delay in Days"]));
+  // Same derivation as the dashboard/status pill: numeric column first, then
+  // the delay stated in the status text ("Delay by 24 days"). Reading the raw
+  // column alone made watchers skip rows the dashboard flags as delayed.
+  const delay    = sanitizedDelayDays(row);
   const tat      = sanitizeDuration(num(row["TAT"]));
   const taken    = sanitizeDuration(num(row["Days Taken"]));
   const crit     = pick(row, "Criticality").toLowerCase();

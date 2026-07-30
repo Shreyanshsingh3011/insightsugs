@@ -26,7 +26,7 @@ import type {
   FlagEntry,
 } from "@/lib/dashboard-data";
 import { resolvePerson, type ProfileDirectory } from "@/lib/person-resolver";
-import { isTerminalRow, rowStatusText, sanitizeDuration, statusBucket } from "@/lib/status-utils";
+import { isTerminalRow, rowStatusText, sanitizeDuration, sanitizedDelayDays, statusBucket } from "@/lib/status-utils";
 
 
 type Row = Record<string, string>;
@@ -121,6 +121,14 @@ function normalizeRow(
     overdue = Math.max(0, daysBetween(plannedEnd, actualEnd));
   } else if (!isCompleted && plannedEnd) {
     overdue = Math.max(0, daysBetween(plannedEnd, now));
+  }
+
+  // Date math only works when the row carries a planned-end date. Many sheets
+  // state the delay in the "Delay in Days" column or in prose inside the
+  // status text ("Delay by 24 days") instead — without this fallback those
+  // rows land on the dashboard as flagged but report 0 overdue days.
+  if (!isCompleted && overdue === 0) {
+    overdue = sanitizedDelayDays(row as Record<string, unknown>) || sanitizedDelayDays(merged as unknown as Record<string, unknown>);
   }
 
   const breachFlag = /^(true|yes|1|breach|y)$/i.test(merged.breach || "");
