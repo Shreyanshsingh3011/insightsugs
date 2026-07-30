@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_authenticated/agent/project/$projectId")
 /** Page component for "/_authenticated/agent/project/$projectId". */
 function ProjectPage() {
   const { projectId } = Route.useParams();
-  const { projects, sources, anyLoading, anyFetching, refetchAll } = useAgentSources();
+  const { projects, sources, rows, anyLoading, anyFetching, refetchAll } = useAgentSources();
   const decodedProjectId = useMemo(() => {
     try { return decodeKey(projectId); } catch { return projectId; }
   }, [projectId]);
@@ -49,13 +49,18 @@ function ProjectPage() {
   const dept = src?.payload?.department;
 
   const scoped = useMemo(() => {
-    const data = src?.payload?.data ?? [];
-    return data.map((r, i) => toScopedRow({ ...r, __project: label }, i));
-  }, [src?.payload?.data, label]);
+    const wanted = norm(label);
+    return rows
+      .filter((r) => {
+        const actual = norm(String(r["__project"] ?? ""));
+        return actual === wanted || (actual && wanted && (actual.includes(wanted) || wanted.includes(actual)));
+      })
+      .map((r, i) => toScopedRow(r, i, label));
+  }, [rows, label]);
 
   const people = new Set(scoped.map((r) => r.person).filter((p) => p && p !== "Unassigned"));
 
-  const rawRows = src?.payload?.data ?? [];
+  const rawRows = scoped.map((r) => r.row);
 
   return (
     <div className="space-y-3">
