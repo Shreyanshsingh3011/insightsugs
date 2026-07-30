@@ -36,18 +36,20 @@ function PersonPage() {
   // rows that genuinely have no owner instead of rendering an empty page.
   const unassigned = isPlaceholderLabel(decoded);
   const scoped = useMemo(() => {
-    if (unassigned) {
-      return rows.filter((r) => !personName(r) && !personEmail(r)).map((r, i) => toScopedRow(r, i));
-    }
-    const match = (r: Row) => {
-      const n = norm(personName(r));
-      const e = norm(personEmail(r));
-      if (isEmail) return e === needle || e.includes(needle);
-      return n === needle || e === needle || (n && (n.includes(needle) || needle.includes(n)));
-    };
-    const exact = rows.filter((r) => norm(personName(r)) === needle || norm(personEmail(r)) === needle);
-    const chosen = exact.length ? exact : rows.filter(match);
-    return chosen.map((r, i) => toScopedRow(r, i));
+    // Match on the CANONICAL owner (toScopedRow → resolvePerson), the same field
+    // the dashboard uses to build the link. Filtering raw sheet columns here made
+    // this page disagree with the dashboard whenever the owner was resolved from
+    // a fallback (responsibility column, profile lookup, role default).
+    const all = rows.map((r, i) => toScopedRow(r, i, String(r["__project"] ?? "")));
+    if (unassigned) return all.filter((r) => isPlaceholderLabel(r.person) && !r.email);
+    const exact = all.filter((r) => norm(r.person) === needle || norm(r.email) === needle);
+    if (exact.length) return exact;
+    return all.filter((r) => {
+      const n = norm(r.person);
+      const e = norm(r.email);
+      if (isEmail) return e.includes(needle);
+      return Boolean(n) && (n.includes(needle) || needle.includes(n));
+    });
   }, [rows, needle, isEmail, unassigned]);
 
 
