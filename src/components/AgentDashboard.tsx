@@ -611,16 +611,10 @@ export default function AgentDashboard() {
   });
 
 
-  // Auto-demo is canonical for the whole workspace. If even one configured
-  // source is empty/unavailable, mixing live NIT-76 rows with demo/empty rows
-  // makes dashboard totals and destination pages impossible to verify. In that
-  // degraded state the whole app switches to the same deterministic demo set;
-  // once every live source has rows, real data takes over again automatically.
-  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
-  const autoDemo = qaScenario === "off" && allSettled && queries.some((q) => {
-    const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    return (p?.data?.length ?? 0) === 0;
-  });
+  // Keep one immediate, deterministic test dataset across the whole platform
+  // while live-sheet testing is disabled. Waiting for failed requests caused
+  // detail pages to briefly render zero rows while the dashboard showed demo.
+  const autoDemo = qaScenario === "off";
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
@@ -667,8 +661,8 @@ export default function AgentDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queries.map((q) => q.dataUpdatedAt).join(","), profileDir, effectiveScenario]);
 
-  const anyLoading = queries.some(q => q.isLoading);
-  const anyFetching = queries.some(q => q.isFetching);
+  const anyLoading = rawSources.some((s) => s.isLoading);
+  const anyFetching = rawSources.some((s) => s.isFetching);
   const allError = queries.length > 0 && queries.every(q => q.isError);
   const lastSyncedAt = sources
     .map(s => s.payload?.generated_at)

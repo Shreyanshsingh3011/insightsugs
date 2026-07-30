@@ -19,7 +19,7 @@ export type QaScenarioId =
   | "missing-owners";
 
 export const QA_SCENARIOS: { id: QaScenarioId; label: string; description: string }[] = [
-  { id: "off",              label: "Live data (auto-demo)", description: "Use real sheets. Falls back to demo data automatically when every sheet returns 0 rows." },
+  { id: "off",              label: "Demo data (default)",   description: "Use the stable full demo dataset across every page while live-sheet testing is disabled." },
   { id: "demo",             label: "Demo dataset (full)",   description: "Realistic multi-project workflow data. Every feature testable: alerts, KPIs, stages, owners, briefings, copilot." },
   { id: "empty",            label: "Empty (0 rows)",        description: "Every project has zero activities. Tests empty states." },
   { id: "single",           label: "Single row",            description: "Exactly one row per project." },

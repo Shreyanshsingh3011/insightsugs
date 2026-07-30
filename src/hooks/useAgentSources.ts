@@ -91,16 +91,11 @@ export function useAgentSources() {
     })),
   });
 
-  // Auto-demo is canonical for the whole workspace. If even one configured
-  // source is empty/unavailable, mixing live NIT-76 rows with demo/empty rows
-  // makes dashboard totals and destination pages impossible to verify. In that
-  // degraded state the whole app switches to the same deterministic demo set;
-  // once every live source has rows, real data takes over again automatically.
-  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading);
-  const autoDemo = qaScenario === "off" && allSettled && queries.some((q) => {
-    const p = (q.data as { payload?: SourcePayload } | undefined)?.payload;
-    return (p?.data?.length ?? 0) === 0;
-  });
+  // The user requested a stable platform-wide test dataset while the sheets are
+  // unavailable. Make demo mode immediate rather than waiting for five failing
+  // requests: that loading race previously rendered 0 rows on a detail page
+  // while the dashboard already showed demo rows.
+  const autoDemo = qaScenario === "off";
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
@@ -202,8 +197,8 @@ export function useAgentSources() {
     effectiveScenario,
   ]);
 
-  const anyLoading = queries.some((q) => q.isLoading);
-  const anyFetching = queries.some((q) => q.isFetching);
+  const anyLoading = rawSources.some((s) => s.isLoading);
+  const anyFetching = rawSources.some((s) => s.isFetching);
   const refetchAll = () => { queries.forEach((q) => q.refetch()); };
 
   return {
