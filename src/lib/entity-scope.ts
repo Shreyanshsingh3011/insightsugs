@@ -115,10 +115,16 @@ export function decodeKey(s: string): string {
 // the URL stays short and the page rehydrates from the live source cache.
 export type RowIdent = { project: string; srNo: string; activity: string };
 
+const SR_NO_ALIASES = [
+  "Sr. No.", "Sr No", "Sr.No", "Sr.No.", "Serial No", "Serial No.",
+  "S. No.", "S No", "S.No", "S.No.", "SNo", "Sl. No.", "Sl No",
+  "ID", "Id", "id",
+];
+
 export function rowIdent(r: Row, projectLabel?: string): RowIdent {
   return {
     project: projectLabel || String(r["__project"] ?? "") || "",
-    srNo: pick(r, "Sr. No.", "Sr No", "ID", "Id", "S.No", "SNo"),
+    srNo: pick(r, ...SR_NO_ALIASES),
     activity: activityName(r),
   };
 }
@@ -140,13 +146,28 @@ function normIdent(s: string): string {
   return String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()]+/g, " ").trim();
 }
 function normSrNo(s: string): string {
-  const t = String(s ?? "").trim().replace(/^0+/, "");
-  return t.toLowerCase();
+  const t = String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^#/, "")
+    .replace(/^0+/, "")
+    .replace(/[\s\-_/.,;:()]+/g, "");
+  return t || "0";
+}
+
+function looseEqualOrContains(want: string, got: string): boolean {
+  if (!want || !got) return false;
+  return got === want || got.includes(want) || want.includes(got);
 }
 
 /** Match a source row against a decoded ident. Falls back to activity if Sr. No. is blank.
  * All comparisons are normalized (case/whitespace/punctuation-insensitive) so
- * dashboard card links resolve even when sheet values have minor drift. */
+ * dashboard card links resolve even when sheet values have minor drift.
+ *
+ * Important: a few sheets repeat Sr. No. values across sections. When the URL
+ * carries both Sr. No. and activity, require BOTH to match; otherwise the row
+ * page can hydrate the first row with that Sr. No. and show a different task
+ * than the card the user clicked. */
 export function rowMatchesIdent(r: Row, ident: RowIdent, projectLabel?: string): boolean {
   const id = rowIdent(r, projectLabel);
   const wantProject = normIdent(ident.project);
@@ -157,9 +178,13 @@ export function rowMatchesIdent(r: Row, ident: RowIdent, projectLabel?: string):
   }
   const wantSr = normSrNo(ident.srNo);
   const gotSr = normSrNo(id.srNo);
-  if (wantSr && gotSr) return wantSr === gotSr;
   const wantAct = normIdent(ident.activity);
   const gotAct = normIdent(id.activity);
+  if (wantSr && gotSr) {
+    if (wantSr !== gotSr) return false;
+    if (wantAct && gotAct) return looseEqualOrContains(wantAct, gotAct);
+    return true;
+  }
   if (!wantAct) return false;
-  return gotAct === wantAct || (!!gotAct && (gotAct.includes(wantAct) || wantAct.includes(gotAct)));
+  return looseEqualOrContains(wantAct, gotAct);
 }
