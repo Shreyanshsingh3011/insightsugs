@@ -144,6 +144,13 @@ export function decodeRowKey(key: string): RowIdent {
  * cards. Mirrors the fuzzy-normalize logic used by stage/person routes. */
 const PLACEHOLDERS = new Set(["", "-", "--", "\u2014", "\u2013", "n a", "na", "none", "null", "undefined", "unnamed", "unassigned"]);
 
+/** True when a label is a UI placeholder ("\u2014", "Unassigned", blank ...) and
+ * therefore must never be turned into an entity link. */
+export function isPlaceholderLabel(s: unknown): boolean {
+  const t = String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()\u2013\u2014]+/g, " ").trim();
+  return PLACEHOLDERS.has(t);
+}
+
 function normIdent(s: string): string {
   const t = String(s ?? "").toLowerCase().replace(/[\s\-_/.,;:()\u2013\u2014]+/g, " ").trim();
   // Detail pages render placeholder dashes ("\u2014") when a sheet column is blank.
