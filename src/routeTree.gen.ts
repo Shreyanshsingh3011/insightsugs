@@ -42,6 +42,7 @@ import { Route as AuthenticatedSheetsSheetIdRouteImport } from './routes/_authen
 import { Route as AuthenticatedAlertsIdRouteImport } from './routes/_authenticated/alerts.$id'
 import { Route as AuthenticatedAgentRunsRouteImport } from './routes/_authenticated/agent.runs'
 import { Route as AuthenticatedAgentPlannerRouteImport } from './routes/_authenticated/agent.planner'
+import { Route as AuthenticatedAgentMismatchInspectorRouteImport } from './routes/_authenticated/agent.mismatch-inspector'
 import { Route as AuthenticatedAgentMemoryRouteImport } from './routes/_authenticated/agent.memory'
 import { Route as AuthenticatedAgentInboxRouteImport } from './routes/_authenticated/agent.inbox'
 import { Route as AuthenticatedAgentEvalsRouteImport } from './routes/_authenticated/agent.evals'
@@ -257,6 +258,12 @@ const AuthenticatedAgentPlannerRoute =
   AuthenticatedAgentPlannerRouteImport.update({
     id: '/planner',
     path: '/planner',
+    getParentRoute: () => AuthenticatedAgentRoute,
+  } as any)
+const AuthenticatedAgentMismatchInspectorRoute =
+  AuthenticatedAgentMismatchInspectorRouteImport.update({
+    id: '/mismatch-inspector',
+    path: '/mismatch-inspector',
     getParentRoute: () => AuthenticatedAgentRoute,
   } as any)
 const AuthenticatedAgentMemoryRoute =
@@ -562,6 +569,7 @@ export interface FileRoutesByFullPath {
   '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/agent/memory': typeof AuthenticatedAgentMemoryRoute
+  '/agent/mismatch-inspector': typeof AuthenticatedAgentMismatchInspectorRoute
   '/agent/planner': typeof AuthenticatedAgentPlannerRoute
   '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -638,6 +646,7 @@ export interface FileRoutesByTo {
   '/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/agent/memory': typeof AuthenticatedAgentMemoryRoute
+  '/agent/mismatch-inspector': typeof AuthenticatedAgentMismatchInspectorRoute
   '/agent/planner': typeof AuthenticatedAgentPlannerRoute
   '/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -719,6 +728,7 @@ export interface FileRoutesById {
   '/_authenticated/agent/evals': typeof AuthenticatedAgentEvalsRoute
   '/_authenticated/agent/inbox': typeof AuthenticatedAgentInboxRoute
   '/_authenticated/agent/memory': typeof AuthenticatedAgentMemoryRoute
+  '/_authenticated/agent/mismatch-inspector': typeof AuthenticatedAgentMismatchInspectorRoute
   '/_authenticated/agent/planner': typeof AuthenticatedAgentPlannerRoute
   '/_authenticated/agent/runs': typeof AuthenticatedAgentRunsRoute
   '/_authenticated/alerts/$id': typeof AuthenticatedAlertsIdRoute
@@ -800,6 +810,7 @@ export interface FileRouteTypes {
     | '/agent/evals'
     | '/agent/inbox'
     | '/agent/memory'
+    | '/agent/mismatch-inspector'
     | '/agent/planner'
     | '/agent/runs'
     | '/alerts/$id'
@@ -876,6 +887,7 @@ export interface FileRouteTypes {
     | '/agent/evals'
     | '/agent/inbox'
     | '/agent/memory'
+    | '/agent/mismatch-inspector'
     | '/agent/planner'
     | '/agent/runs'
     | '/alerts/$id'
@@ -956,6 +968,7 @@ export interface FileRouteTypes {
     | '/_authenticated/agent/evals'
     | '/_authenticated/agent/inbox'
     | '/_authenticated/agent/memory'
+    | '/_authenticated/agent/mismatch-inspector'
     | '/_authenticated/agent/planner'
     | '/_authenticated/agent/runs'
     | '/_authenticated/alerts/$id'
@@ -1261,6 +1274,13 @@ declare module '@tanstack/react-router' {
       path: '/planner'
       fullPath: '/agent/planner'
       preLoaderRoute: typeof AuthenticatedAgentPlannerRouteImport
+      parentRoute: typeof AuthenticatedAgentRoute
+    }
+    '/_authenticated/agent/mismatch-inspector': {
+      id: '/_authenticated/agent/mismatch-inspector'
+      path: '/mismatch-inspector'
+      fullPath: '/agent/mismatch-inspector'
+      preLoaderRoute: typeof AuthenticatedAgentMismatchInspectorRouteImport
       parentRoute: typeof AuthenticatedAgentRoute
     }
     '/_authenticated/agent/memory': {
@@ -1589,6 +1609,7 @@ interface AuthenticatedAgentRouteChildren {
   AuthenticatedAgentEvalsRoute: typeof AuthenticatedAgentEvalsRoute
   AuthenticatedAgentInboxRoute: typeof AuthenticatedAgentInboxRoute
   AuthenticatedAgentMemoryRoute: typeof AuthenticatedAgentMemoryRoute
+  AuthenticatedAgentMismatchInspectorRoute: typeof AuthenticatedAgentMismatchInspectorRoute
   AuthenticatedAgentPlannerRoute: typeof AuthenticatedAgentPlannerRoute
   AuthenticatedAgentRunsRoute: typeof AuthenticatedAgentRunsRoute
   AuthenticatedAgentIndexRoute: typeof AuthenticatedAgentIndexRoute
@@ -1607,6 +1628,8 @@ const AuthenticatedAgentRouteChildren: AuthenticatedAgentRouteChildren = {
   AuthenticatedAgentEvalsRoute: AuthenticatedAgentEvalsRoute,
   AuthenticatedAgentInboxRoute: AuthenticatedAgentInboxRoute,
   AuthenticatedAgentMemoryRoute: AuthenticatedAgentMemoryRoute,
+  AuthenticatedAgentMismatchInspectorRoute:
+    AuthenticatedAgentMismatchInspectorRoute,
   AuthenticatedAgentPlannerRoute: AuthenticatedAgentPlannerRoute,
   AuthenticatedAgentRunsRoute: AuthenticatedAgentRunsRoute,
   AuthenticatedAgentIndexRoute: AuthenticatedAgentIndexRoute,
