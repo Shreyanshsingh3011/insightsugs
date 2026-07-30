@@ -197,7 +197,7 @@ export function useAgentSources() {
     focusPerson,
     focusDept,
     canFocus,
-    qaScenario,
+    effectiveScenario,
   ]);
 
   const anyLoading = queries.some((q) => q.isLoading);
@@ -213,7 +213,11 @@ export function useAgentSources() {
     anyFetching,
     refetchAll,
     scope,
+    // Demo-data signals so the UI can label itself honestly.
+    isDemoData: effectiveScenario !== "off",
+    isAutoDemo: autoDemo,
     // Surface the applied dashboard focus so pages can label themselves.
     focus: { selected, person: focusPerson, dept: focusDept },
   };
+
 }
