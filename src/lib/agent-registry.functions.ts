@@ -17,7 +17,33 @@ import { createServerFn } from "@tanstack/react-start";
 const MASTER_SHEET_ID = "1N8JUhzKgLpxlCj61XUkLj85vDilpL0vartwfgxJGGpk";
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
-export type AgentProject = { id: string; label: string; url: string; tab?: string; note?: string };
+export type AgentProject = {
+  id: string;
+  label: string;
+  url: string;
+  tab?: string;
+  note?: string;
+  /**
+   * When several projects share ONE source sheet, `match` is the value of the
+   * sheet's "Project" column that belongs to this project. Rows are filtered
+   * client-side by this value so every filter/picker keeps working unchanged.
+   */
+  match?: string;
+};
+
+/** Row-level filter for projects that share a single consolidated sheet. */
+export function rowsForProject<T extends Record<string, unknown>>(
+  rows: T[] | undefined,
+  project: { match?: string } | undefined,
+): T[] {
+  const m = project?.match?.trim().toLowerCase();
+  if (!rows) return [];
+  if (!m) return rows;
+  return rows.filter((r) => {
+    const v = String(r["Project"] ?? r["project"] ?? r["Plant"] ?? "").trim().toLowerCase();
+    return v === m;
+  });
+}
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "src";
