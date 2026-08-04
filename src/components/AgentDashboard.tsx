@@ -24,7 +24,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
 import { activityName, encodeKey as encodeEntityKey, encodeRowKey, rowIdent, isPlaceholderLabel, stageName } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
-import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
+import { fetchAgentProjects, FALLBACK_PROJECTS as REGISTRY_PROJECTS, rowsForProject, type AgentProject } from "@/lib/agent-registry.functions";
 
 import { recordSyncAudit } from "@/lib/sync-audit.functions";
 import { diffRows, type RowDiff } from "@/lib/row-diff";
