@@ -164,15 +164,21 @@ async function fetchPublicCSV(): Promise<string[][]> {
   throw new Error(`Public sheet unreachable: ${lastErr || "no data"}`);
 }
 
-// Built-in fallback — kept in sync with AgentDashboard.FALLBACK_PROJECTS and
-// useAgentSources.FALLBACK_PROJECTS. Used when the master sheet is empty or
-// unreachable so watchers/cron still have something to scan.
+// Single consolidated source sheet: one tab holds every plant, distinguished
+// by the "Project" column. Each entry below points at the SAME sheet and is
+// filtered by `match`, so all existing filters/pickers behave identically.
+export const MASTER_SOURCE_URL =
+  "https://docs.google.com/spreadsheets/d/1N8JUhzKgLpxlCj61XUkLj85vDilpL0vartwfgxJGGpk/edit?gid=1583147307#gid=1583147307";
+
 export const FALLBACK_PROJECTS: AgentProject[] = [
-  { id: "nit58", label: "NIT-58",        url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1573279418#gid=1573279418" },
-  { id: "bihar", label: "Bihar",         url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1685983370#gid=1685983370" },
-  { id: "hp",    label: "Himachal",      url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1063989895#gid=1063989895" },
-  { id: "pspcl", label: "PSPCL",         url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=318275095#gid=318275095" },
-  { id: "nit76", label: "NIT-76",        url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
+  { id: "nit58", label: "NIT-58",        url: MASTER_SOURCE_URL, match: "NIT-58" },
+  { id: "bihar", label: "ULA 1.1 Bihar", url: MASTER_SOURCE_URL, match: "ULA 1.1 Bihar" },
+  { id: "hp",    label: "Himachal",      url: MASTER_SOURCE_URL, match: "Himachal" },
+  { id: "pspcl", label: "PSPCL",         url: MASTER_SOURCE_URL, match: "PSPCL" },
+  { id: "nit76", label: "NIT-76 Konkan", url: MASTER_SOURCE_URL, match: "NIT-76 Konkan" },
+  { id: "sodl",  label: "SODL",          url: MASTER_SOURCE_URL, match: "SODL" },
+  { id: "nodl",  label: "NODL",          url: MASTER_SOURCE_URL, match: "NODL" },
+  { id: "wodl",  label: "WODL",          url: MASTER_SOURCE_URL, match: "WODL" },
 ];
 
 // Pure server-side helper — safe to import from other server code
