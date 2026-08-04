@@ -24,7 +24,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 // (Aggregate detail payload retired — every card now deep-links to its own dedicated page.)
 import { activityName, encodeKey as encodeEntityKey, encodeRowKey, rowIdent, isPlaceholderLabel, stageName } from "@/lib/entity-scope";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
-import { fetchAgentProjects, type AgentProject } from "@/lib/agent-registry.functions";
+import { fetchAgentProjects, FALLBACK_PROJECTS as REGISTRY_PROJECTS, rowsForProject, type AgentProject } from "@/lib/agent-registry.functions";
 
 import { recordSyncAudit } from "@/lib/sync-audit.functions";
 import { diffRows, type RowDiff } from "@/lib/row-diff";
@@ -71,14 +71,9 @@ import {
 import { formatEtaDays } from "@/lib/eta-format";
 import { buildDashboardSnapshot, saveDashboardSnapshot } from "@/lib/dashboard-consistency";
 
-// ────────────────── FIXED SOURCES (fallback if master sheet unavailable) ──────────────────
-const FALLBACK_PROJECTS: AgentProject[] = [
-  { id: "nit58", label: "NIT-58",   url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1573279418#gid=1573279418" },
-  { id: "bihar", label: "Bihar",    url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1685983370#gid=1685983370" },
-  { id: "hp",    label: "Himachal", url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=1063989895#gid=1063989895" },
-  { id: "pspcl", label: "PSPCL",    url: "https://docs.google.com/spreadsheets/d/1ZQ56Y0nWMO28RQnWB1nQrjqNfFUuh8tIPw2k48eXEzQ/edit?gid=318275095#gid=318275095" },
-  { id: "nit76", label: "NIT-76",   url: "https://sheet2api-bypassed-login.vercel.app/api/public/f81e454c36f9c0c609d103ba99e950b4" },
-];
+// ────────────────── FIXED SOURCES ──────────────────
+// Single consolidated sheet for every plant — see agent-registry.functions.ts.
+const FALLBACK_PROJECTS: AgentProject[] = REGISTRY_PROJECTS;
 const AUTO_REFRESH_MS = 2 * 60_000;
 const REGISTRY_REFRESH_MS = 5 * 60_000;
 
@@ -588,9 +583,10 @@ export default function AgentDashboard() {
           const started = performance.now();
           const res = await fetchUrl({ data: { url: effectiveUrl, tab: p.tab } });
           const clientMs = Math.round(performance.now() - started);
+          const payload = (res as { payload?: SourcePayload }).payload;
           return {
             project: p,
-            payload: (res as { payload?: SourcePayload }).payload,
+            payload: payload ? { ...payload, data: rowsForProject(payload.data, p) } : payload,
             fetchMs: (res as { fetchMs?: number }).fetchMs ?? clientMs,
             fetchedAt: (res as { fetchedAt?: number }).fetchedAt ?? Date.now(),
           };
