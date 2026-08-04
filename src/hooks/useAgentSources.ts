@@ -78,7 +78,11 @@ export function useAgentSources() {
       queryKey: ["agent-src", p.id, p.url, p.tab ?? ""] as const,
       queryFn: async () => {
         const res = await fetchUrl({ data: { url: p.url, tab: p.tab } });
-        return { project: p, payload: (res as { payload?: SourcePayload }).payload };
+        const payload = (res as { payload?: SourcePayload }).payload;
+        return {
+          project: p,
+          payload: payload ? { ...payload, data: rowsForProject(payload.data, p) } : payload,
+        };
       },
       staleTime: 0,
       refetchInterval: AUTO_REFRESH_MS,
