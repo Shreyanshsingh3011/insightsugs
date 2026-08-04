@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueries, keepPreviousData } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { fetchInsightUrl } from "@/lib/insights-proxy.functions";
-import { FALLBACK_PROJECTS, type AgentProject } from "@/lib/agent-registry.functions";
+import { FALLBACK_PROJECTS, rowsForProject, type AgentProject } from "@/lib/agent-registry.functions";
 import { useAgentScope, rowMatchesUser } from "@/hooks/useAgentScope";
 import { useProfileDirectory } from "@/hooks/useProfileDirectory";
 import { resolvePersonForRow } from "@/lib/person-resolver";
