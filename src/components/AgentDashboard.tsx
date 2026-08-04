@@ -611,10 +611,13 @@ export default function AgentDashboard() {
   });
 
 
-  // Keep one immediate, deterministic test dataset across the whole platform
-  // while live-sheet testing is disabled. Waiting for failed requests caused
-  // detail pages to briefly render zero rows while the dashboard showed demo.
-  const autoDemo = qaScenario === "off";
+  // Live-first: the source sheet is the truth. Only fall back to the demo
+  // dataset when every source has settled and none of them returned rows.
+  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading && !q.isFetching);
+  const anyLiveRows = queries.some(
+    (q) => ((q.data as { payload?: SourcePayload } | undefined)?.payload?.data?.length ?? 0) > 0,
+  );
+  const autoDemo = qaScenario === "off" && allSettled && !anyLiveRows;
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {

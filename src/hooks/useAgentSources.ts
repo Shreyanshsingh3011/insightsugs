@@ -91,11 +91,13 @@ export function useAgentSources() {
     })),
   });
 
-  // The user requested a stable platform-wide test dataset while the sheets are
-  // unavailable. Make demo mode immediate rather than waiting for five failing
-  // requests: that loading race previously rendered 0 rows on a detail page
-  // while the dashboard already showed demo rows.
-  const autoDemo = qaScenario === "off";
+  // Live-first, matching AgentDashboard exactly: demo data only kicks in once
+  // every source has settled and none of them returned any rows.
+  const allSettled = queries.length > 0 && queries.every((q) => !q.isLoading && !q.isFetching);
+  const anyLiveRows = queries.some(
+    (q) => ((q.data as { payload?: SourcePayload } | undefined)?.payload?.data?.length ?? 0) > 0,
+  );
+  const autoDemo = qaScenario === "off" && allSettled && !anyLiveRows;
   const effectiveScenario = qaScenario !== "off" ? qaScenario : (autoDemo ? "demo" : "off");
 
   const rawSources = queries.map((q, i) => {
