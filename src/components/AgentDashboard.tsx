@@ -583,9 +583,10 @@ export default function AgentDashboard() {
           const started = performance.now();
           const res = await fetchUrl({ data: { url: effectiveUrl, tab: p.tab } });
           const clientMs = Math.round(performance.now() - started);
+          const payload = (res as { payload?: SourcePayload }).payload;
           return {
             project: p,
-            payload: (res as { payload?: SourcePayload }).payload,
+            payload: payload ? { ...payload, data: rowsForProject(payload.data, p) } : payload,
             fetchMs: (res as { fetchMs?: number }).fetchMs ?? clientMs,
             fetchedAt: (res as { fetchedAt?: number }).fetchedAt ?? Date.now(),
           };
